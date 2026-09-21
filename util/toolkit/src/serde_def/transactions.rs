@@ -50,7 +50,7 @@ impl SourceTransactions {
 				.as_secs();
 			blocks.push(RawBlockData::new_from_timestamp(
 				now_secs,
-				blocks.get(0).map(|b| b.ledger_version).unwrap_or_default(),
+				blocks.last().map(|b| b.ledger_version).unwrap_or_default(),
 				Default::default(),
 			));
 		}
@@ -166,9 +166,19 @@ impl SourceTransactions {
 			.map(|b| subxt::utils::H256::from(b.hash))
 	}
 
+	/// Ledger version of the first block: what the replay context is built at.
 	pub fn ledger_version(&self) -> LedgerVersion {
 		self.blocks
 			.first()
+			.map(|b| b.ledger_version())
+			.unwrap_or(LedgerVersion::default())
+	}
+
+	/// Ledger version of the last block: what the chain runs now, and what transactions built
+	/// from this source are validated against.
+	pub fn tip_ledger_version(&self) -> LedgerVersion {
+		self.blocks
+			.last()
 			.map(|b| b.ledger_version())
 			.unwrap_or(LedgerVersion::default())
 	}
@@ -229,5 +239,32 @@ mod tests {
 		);
 		assert_eq!(src_no_warp.blocks.last().unwrap().number, 3);
 		assert_eq!(src_no_warp.blocks.iter().max_by_key(|b| b.number).unwrap().number, 3,);
+	}
+
+	fn block_at_version(number: u64, version: LedgerVersion) -> RawBlockData {
+		RawBlockData { ledger_version: version, ..block_at(number) }
+	}
+
+	/// A chain forked from ledger 8: the first block stays ledger 8 while the tip is ledger 9,
+	/// and the dust-warp synthetic block continues the tip, not genesis.
+	#[test]
+	fn tip_ledger_version_follows_the_last_block_across_a_fork() {
+		let forked = vec![
+			block_at_version(1, LedgerVersion::Ledger8),
+			block_at_version(2, LedgerVersion::Ledger8),
+			block_at_version(3, LedgerVersion::Ledger9),
+		];
+
+		let src = SourceTransactions::from_blocks(forked.clone(), false, Some("test".into()));
+		assert_eq!(src.ledger_version(), LedgerVersion::Ledger8);
+		assert_eq!(src.tip_ledger_version(), LedgerVersion::Ledger9);
+
+		let warped = SourceTransactions::from_blocks(forked, true, Some("test".into()));
+		assert_eq!(warped.blocks.last().unwrap().ledger_version(), LedgerVersion::Ledger9);
+		assert_eq!(warped.tip_ledger_version(), LedgerVersion::Ledger9);
+
+		let unforked = vec![block_at_version(1, LedgerVersion::Ledger8)];
+		let src = SourceTransactions::from_blocks(unforked, false, Some("test".into()));
+		assert_eq!(src.tip_ledger_version(), LedgerVersion::Ledger8);
 	}
 }

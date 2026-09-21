@@ -157,6 +157,20 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
+	/// Add a wallet built on the current ledger state, for identities with no earlier history
+	/// (e.g. ECDSA on a chain forked from ledger 8).
+	pub fn add_wallet(&self, seed: WalletSeed, scheme: UnshieldedSignatureScheme) {
+		let wallet = {
+			let ledger_state =
+				self.ledger_state.lock().expect("Error locking `LedgerContext` ledger state");
+			Wallet::new(seed.clone(), &ledger_state, scheme)
+		};
+		self.wallets
+			.lock()
+			.expect("Error locking `LedgerContext` wallets")
+			.insert(seed, wallet);
+	}
+
 	/// Apply all transactions in a block to the ledger, returning events without
 	/// processing wallets. Also applies `post_block_update` (fee adjustments).
 	/// `root_verified` must only be true when the caller checks the resulting

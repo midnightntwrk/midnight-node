@@ -27,8 +27,9 @@ mod common;
 use clap::Parser;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_node_toolkit::{
-	cli::{Cli, run_command},
+	cli::{Cli, Commands, run_command},
 	client::MidnightNodeClientConfig,
+	commands::show_address,
 };
 use std::{
 	net::TcpListener,
@@ -49,6 +50,37 @@ use testcontainers::{
 
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+
+/// Seed of the ECDSA identity exercised after the fork. It has no pre-fork history: ledger 8
+/// cannot represent it.
+const ECDSA_SEED: &str = "1000000000000000000000000000000000000000000000000000000000000001";
+
+/// Unshielded address for a (possibly `ecdsa:`-prefixed) seed on the `undeployed` network.
+fn unshielded_address(seed: &str) -> String {
+	let cli = Cli::parse_from([
+		"midnight-node-toolkit",
+		"show-address",
+		"--network",
+		"undeployed",
+		"--seed",
+		seed,
+		"--unshielded",
+	]);
+	match cli.command {
+		Commands::ShowAddress(args) => match show_address::execute(args) {
+			show_address::ShowAddress::SingleAddress(addr) => addr,
+			show_address::ShowAddress::Addresses(_) => panic!("expected a single address"),
+		},
+		_ => unreachable!(),
+	}
+}
+
+/// The compiled `contract-simple` artifacts, needed for a contract deploy.
+fn contract_artifacts_ready() -> bool {
+	std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR")
+		.map(|dir| Path::new(&dir).exists())
+		.unwrap_or(false)
+}
 
 /// The compiled runtime blob, under whichever directory holds it.
 const RUNTIME_WASM_FILE: &str = "midnight_node_runtime.compact.compressed.wasm";
@@ -555,4 +587,74 @@ async fn hardfork_single_tx() {
 		&url,
 	])
 	.await;
+
+	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history. The identity cannot exist
+	//    before the fork; the toolkit creates it at the fork block.
+	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
+	let ecdsa_address = unshielded_address(&ecdsa_seed);
+
+	// 7a. Fund it from the Schnorr genesis wallet.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		"1000",
+		"--destination-address",
+		&ecdsa_address,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7b. Spend from it. The ECDSA wallet holds no DUST, so the Schnorr wallet pays the fee.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		&ecdsa_seed,
+		"--funding-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		"1",
+		"--destination-address",
+		"mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r",
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7c. The read path resolves the identity too.
+	run_cli(&["show-wallet", "--fetch-cache", "inmemory", "--seed", &ecdsa_seed, "-s", &url]).await;
+
+	// 7d. A contract with an ECDSA maintenance committee.
+	if contract_artifacts_ready() {
+		run_cli(&[
+			"generate-txs",
+			"--fetch-cache",
+			"inmemory",
+			"contract-simple",
+			"deploy",
+			"--authority-seed",
+			&ecdsa_seed,
+			"-s",
+			&url,
+			"-d",
+			&url,
+		])
+		.await;
+	} else {
+		eprintln!(
+			"[hardfork_e2e] MIDNIGHT_LEDGER_TEST_STATIC_DIR unset; skipping ECDSA committee deploy"
+		);
+	}
 }
