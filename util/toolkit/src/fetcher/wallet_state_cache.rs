@@ -18,8 +18,8 @@
 
 use midnight_ledger_unsafe_helpers::{
 	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged, ledger_8,
-	serialize_untagged,
+	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged,
+	fork::fork_aware_context::watch_only_ecdsa_wallet_8, ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
@@ -434,19 +434,28 @@ pub fn restore_context_from_ledger_snapshot_8(
 
 /// Ledger-8 variant of [`inject_wallet_from_cache`].
 ///
-/// Always Schnorr: ECDSA is unrepresentable before ledger 9, so an `ecdsa:` seed replays the
-/// ledger-8 leg under its Schnorr identity and is re-keyed at the fork. Only the shielded and
-/// dust state restored here is scheme-independent, so the entry's cache key (which *does* carry
-/// the requested scheme) still selects the right history.
+/// The restored shielded and dust state is scheme-independent, so only the unshielded sub-wallet
+/// differs: Schnorr gets its real identity, while an `ecdsa:` seed gets a watch-only one (no key
+/// material — ECDSA is unrepresentable before ledger 9, and deriving the seed's *Schnorr* key as
+/// a stand-in would materialise an identity the caller never asked for). The fork installs the
+/// real ECDSA key material.
 pub fn inject_wallet_from_cache_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
 	cached: &CachedWalletState,
 	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
 	ledger_state: &ledger_8::LedgerState<ledger_8::DefaultDB>,
 ) -> Result<(), CacheError> {
 	let seed_8 = ledger_8::WalletSeed::try_from(seed.as_bytes())
 		.map_err(|_| CacheError::DeserializeWalletState("seed conversion to ledger 8".into()))?;
-	let mut wallet = ledger_8::Wallet::default(seed_8.clone(), ledger_state);
+	let mut wallet = match scheme {
+		UnshieldedSignatureScheme::Schnorr => {
+			ledger_8::Wallet::default(seed_8.clone(), ledger_state)
+		},
+		UnshieldedSignatureScheme::Ecdsa => {
+			watch_only_ecdsa_wallet_8(seed, seed_8.clone(), ledger_state)
+		},
+	};
 
 	if !cached.shielded_state_bytes.is_empty() {
 		let shielded_state = ledger_8::deserialize_untagged::<
@@ -689,8 +698,14 @@ mod tests {
 			l8::serialize(&**restored.ledger_state.lock().unwrap()).expect("serialize failed");
 		assert_eq!(original, roundtrip, "ledger-8 state diverged across snapshot roundtrip");
 
-		inject_wallet_from_cache_8(&restored, &wallet_snapshot, &seed, &ledger_state)
-			.expect("inject failed");
+		inject_wallet_from_cache_8(
+			&restored,
+			&wallet_snapshot,
+			&seed,
+			UnshieldedSignatureScheme::Schnorr,
+			&ledger_state,
+		)
+		.expect("inject failed");
 		let seed_8 = l8::WalletSeed::try_from(seed.as_bytes()).unwrap();
 		let original_wallets = ctx.wallets.lock().unwrap();
 		let restored_wallets = restored.wallets.lock().unwrap();

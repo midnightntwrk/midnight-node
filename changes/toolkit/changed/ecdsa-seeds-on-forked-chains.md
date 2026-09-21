@@ -5,10 +5,14 @@ The ECDSA guard checked the ledger version of the first block, so every chain wi
 history refused `ecdsa:` seeds even after the hard fork to ledger 9. The guard now checks the
 chain tip.
 
-Ledger 8 cannot represent an ECDSA NIGHT key, so such a seed replays the pre-fork blocks under
-its Schnorr identity, and only its unshielded identity is re-keyed to ECDSA at the fork block.
-The shielded address is scheme-independent — `ecdsa:<seed>` and `<seed>` share one — so shielded
-funds received before the fork stay visible and spendable after it.
+Ledger 8 cannot represent an ECDSA NIGHT key, so before the fork such a seed gets a *watch-only*
+unshielded sub-wallet at its ECDSA address — no key material is derived for it, and in particular
+not the seed's Schnorr key, which is a separate identity at a separate derivation path
+(`m/44'/2400'/0'/0/0` vs `.../4/0`). Its shielded and dust sub-wallets are real and replay
+normally, and the real ECDSA key material is installed at the fork block.
+
+That matters because the shielded address is scheme-independent — `ecdsa:<seed>` and `<seed>`
+share one — so shielded funds received before the fork stay visible and spendable after it.
 
 A chain still on ledger 8 keeps the clear refusal.
 

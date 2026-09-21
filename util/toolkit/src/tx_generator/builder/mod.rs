@@ -959,24 +959,13 @@ fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureS
 	schemes.get(seed).copied().unwrap_or_default()
 }
 
-/// The scheme a wallet is *built* with at `version`. ECDSA is unrepresentable before ledger 9
-/// (see `ledger_8::ecdsa`), so an `ecdsa:` seed replays the ledger-8 leg under its Schnorr
-/// identity; [`ecdsa_seeds_rekeyed_at_fork`] lists the seeds re-keyed once the fork is crossed.
-/// Only the unshielded sub-wallet is scheme-dependent, so the shielded history replayed on the
-/// ledger-8 leg — the seed's shielded address is the same either way — carries across the fork.
-fn scheme_at(
-	schemes: &WalletSchemes,
-	seed: &WalletSeed,
-	version: LedgerVersion,
-) -> UnshieldedSignatureScheme {
-	match version {
-		LedgerVersion::Ledger9 => scheme_of(schemes, seed),
-		_ => UnshieldedSignatureScheme::Schnorr,
-	}
-}
-
 /// Seeds whose unshielded identity must be re-keyed to ECDSA at the 8->9 fork, i.e. the ECDSA
 /// ones when the replay starts before the fork. Empty when it starts at ledger 9.
+///
+/// Before the fork these seeds hold a watch-only unshielded sub-wallet (no key material of any
+/// kind — see `ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes`) while their shielded
+/// sub-wallet, which is scheme-independent, replays normally. Only the unshielded identity is
+/// swapped at the fork, so pre-fork shielded funds survive.
 fn ecdsa_seeds_rekeyed_at_fork(
 	seeds: &[WalletSeed],
 	schemes: &WalletSchemes,
@@ -1130,7 +1119,7 @@ async fn initialize_context(
 	let Some(start_height) = restore_height else {
 		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
 			.iter()
-			.map(|seed| (seed.clone(), scheme_at(schemes, seed, received_tx.ledger_version())))
+			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
 			.collect();
 		return timed!(
 			"new_from_wallet_seeds (cold)",
@@ -1167,13 +1156,19 @@ async fn initialize_context(
 				)
 			});
 			for (seed, state) in cached.drain(..) {
-				wallet_state_cache::inject_wallet_from_cache_8(&ctx, &state, &seed, &ledger_state)
-					.unwrap_or_else(|e| {
-						panic!(
-							"failed to inject wallet at height {}: {} — clear caches and retry",
-							start_height, e
-						)
-					});
+				wallet_state_cache::inject_wallet_from_cache_8(
+					&ctx,
+					&state,
+					&seed,
+					scheme_of(schemes, &seed),
+					&ledger_state,
+				)
+				.unwrap_or_else(|e| {
+					panic!(
+						"failed to inject wallet at height {}: {} — clear caches and retry",
+						start_height, e
+					)
+				});
 			}
 			ForkAwareLedgerContext::Ledger8(ctx)
 		},
@@ -1826,7 +1821,7 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	let rekeyed_at_fork = ecdsa_seeds_rekeyed_at_fork(wallet_seeds, schemes, initial_version);
 	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
 		.iter()
-		.map(|seed| (seed.clone(), scheme_at(schemes, seed, initial_version)))
+		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
 		.collect();
 
 	let t = std::time::Instant::now();
@@ -2094,25 +2089,17 @@ mod tests {
 	}
 
 	#[test]
-	fn ecdsa_seeds_replay_ledger8_as_schnorr_and_rekey_at_the_fork() {
+	fn ecdsa_seeds_are_rekeyed_only_when_the_replay_starts_before_the_fork() {
 		let seeds = [seed(1), seed(2)];
 		let schemes = WalletSchemes::from([(seed(2), UnshieldedSignatureScheme::Ecdsa)]);
 
-		// Ledger-8 genesis: both seeds replay the pre-fork leg, the ECDSA one as Schnorr.
-		assert_eq!(
-			scheme_at(&schemes, &seed(2), LedgerVersion::Ledger8),
-			UnshieldedSignatureScheme::Schnorr
-		);
+		// Ledger-8 genesis: both seeds replay the pre-fork leg, the ECDSA one watch-only.
 		assert_eq!(
 			ecdsa_seeds_rekeyed_at_fork(&seeds, &schemes, LedgerVersion::Ledger8),
 			vec![seed(2)]
 		);
 
 		// Ledger-9 genesis: built with their real scheme, nothing to re-key.
-		assert_eq!(
-			scheme_at(&schemes, &seed(2), LedgerVersion::Ledger9),
-			UnshieldedSignatureScheme::Ecdsa
-		);
 		assert!(ecdsa_seeds_rekeyed_at_fork(&seeds, &schemes, LedgerVersion::Ledger9).is_empty());
 	}
 
