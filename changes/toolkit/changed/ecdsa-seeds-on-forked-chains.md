@@ -6,5 +6,5 @@ history refused `ecdsa:` seeds even after the hard fork to ledger 9. The guard n
 chain tip, and the context builder creates ECDSA wallets at the fork block, where the ledger-9
 state first exists. A chain still on ledger 8 keeps the clear refusal.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2181
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2180
