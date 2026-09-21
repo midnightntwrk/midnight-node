@@ -110,6 +110,7 @@ pub mod authority_keys {
 
 	impl UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2AddBabeSessionKeys {
 		fn on_runtime_upgrade() -> Weight {
+			log.info("translating committee & session keys and initializing QueuedCommittee");
 			let db = <Runtime as frame_system::Config>::DbWeight::get();
 			let mut weight = db.reads_writes(3, 1);
 
