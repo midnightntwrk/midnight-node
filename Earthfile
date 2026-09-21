@@ -2160,7 +2160,7 @@ sync-mainnet-1000-snapshot:
     ARG MIN_EPOCH=617
     # postgres:17.4-alpine matches the loader image used by run-sync.sh and
     # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
-    FROM postgres:17.4-alpine
+    FROM postgres:17.10-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     RUN apk add --no-cache bash xz
     WORKDIR /work
     COPY scripts/sync-test/build-snapshot.sh ./
