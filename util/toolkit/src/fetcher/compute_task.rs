@@ -190,6 +190,22 @@ impl ComputeTask {
 				)
 				.await
 			},
+			// Spec 2_001_001 is 2_001_000 plus the 2.1.0 benchmark weights (#2160) and
+			// nothing else: dispatch weights are not part of the decodable metadata this
+			// path reads, and the extrinsic envelope and event types are untouched
+			// (`transaction_version` stayed at 4). So the 2.1.0 subxt snapshot decodes
+			// 2_001_001 blocks unchanged — the same reasoning that lets
+			// `MidnightMetadata2_0_0` reuse the 1.0.0 snapshot above. Give it its own
+			// `midnight_metadata_2.1.1.scale` if a later 2_001_001 runtime ever changes
+			// calls or events.
+			RuntimeVersion::V2_1_1 => {
+				Self::process_block_with_protocol::<MidnightMetadata2_1_0>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
+			},
 		}
 	}
 
