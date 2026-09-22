@@ -52,9 +52,8 @@ const INDEXER_SECRET: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefde
 
 #[tokio::test]
 async fn indexer_show_wallet_reports_genesis_balances() {
-	// Opt-in: the `indexer-standalone` image is not yet published/pinned in CI (issue #1186
-	// follow-up), so this test only runs when explicitly enabled. Set `MN_RUN_INDEXER_E2E=1`
-	// (and ensure Docker + the node/indexer images are available) to run it.
+	// Opt-in via `MN_RUN_INDEXER_E2E=1`: the `indexer-standalone` image is not yet published and
+	// pinned in CI (issue #1186 follow-up).
 	if std::env::var_os("MN_RUN_INDEXER_E2E").is_none() {
 		eprintln!(
 			"skipping indexer_show_wallet_e2e: set MN_RUN_INDEXER_E2E=1 to run \

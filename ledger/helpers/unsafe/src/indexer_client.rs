@@ -22,12 +22,19 @@
 //! It speaks GraphQL over HTTP (queries/mutations) and over the `graphql-transport-ws` WebSocket
 //! sub-protocol (subscriptions) — the WS framing mirrors the indexer's own reference client in
 //! `indexer/indexer-tests/src/graphql_ws_client.rs`. The `HexEncoded` scalar is decoded to raw
-//! bytes here; turning those blobs into ledger types is the job of
-//! each version's `IndexerContext` (`crate::ledger_8`/`crate::ledger_9`), which is why this client
-//! lives at the crate root rather than inside one of them.
+//! bytes here; turning them into ledger types is each version's `IndexerContext`, which is why
+//! this client sits at the crate root rather than inside one generation.
 //!
 //! Only the operations needed by the read-only `show-wallet` path are defined (see issue #1186):
 //! `connect`/`disconnect`, the latest `block`, and the shielded/unshielded/dust subscriptions.
+//!
+//! The stream-drain policy that sits on top of those subscriptions — idle timeouts, the wallet
+//! fan-out ceiling, and the [`SyncProgress`] counters — is version-independent too, so it lives
+//! here rather than being duplicated in each generation's `IndexerContext`.
+
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use graphql_client::GraphQLQuery;
@@ -127,9 +134,9 @@ pub enum TransactionResultKind {
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
 	pub height: u64,
-	/// The block's node spec version (e.g. `1_000_000`). The indexer serves each chain in its
-	/// own ledger encodings, so callers map this to a ledger generation (via the helpers'
-	/// `LedgerVersion::from_spec_version`) to pick the matching `IndexerContext`.
+	/// The block's node spec version (e.g. `1_000_000`). The indexer serves each chain in its own
+	/// ledger encodings, so callers map this via `LedgerVersion::from_spec_version` to pick a
+	/// matching `IndexerContext`.
 	pub protocol_version: u32,
 	/// Block timestamp in unix seconds.
 	pub timestamp: u64,
@@ -567,6 +574,121 @@ fn map_unshielded_utxo(
 fn decode_hex(s: &str) -> IndexerResult<Vec<u8>> {
 	let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
 	hex::decode(s).map_err(|e| IndexerClientError::Decode(format!("hex: {e}")))
+}
+
+/// Dead-connection backstop for the progress-bearing subscriptions (shielded, unshielded).
+///
+/// These streams signal catch-up with a progress heartbeat, not with silence — every 30s
+/// server-side (`progress_update_interval` in the indexer's `config.yaml`), even for a wallet with
+/// no relevant transactions. Must stay comfortably above that interval: set it equal and the local
+/// timer beats the heartbeat across the network, and a sparse-but-live wallet reads as drained.
+pub const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// Idle timeout for the dust ledger-events subscription, which has no progress heartbeat: here
+/// silence genuinely means "no more events", so it needs no margin over the server's interval.
+pub const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How often [`SyncProgress::log_until_done`] emits a one-line sync-progress heartbeat while a
+/// sync run drains the subscriptions.
+const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Default ceiling on wallets drained at once by one sync run; overridable per run (the toolkit
+/// exposes it as `show-wallet --indexer-concurrency` / `MN_INDEXER_CONCURRENCY`).
+///
+/// Each wallet holds three concurrent subscriptions, so the indexer sees up to three times this
+/// many open WebSockets — and as many server-side scans — from a single run. Unbounded fan-out
+/// over the seed list would instead scale that with the caller's seed count.
+///
+/// [`NonZeroUsize`] because the value reaches `StreamExt::buffer_unordered`, which polls nothing
+/// and hangs on a limit of zero rather than rejecting it.
+pub const DEFAULT_WALLET_SYNC_CONCURRENCY: NonZeroUsize = NonZeroUsize::new(4).unwrap();
+
+/// Shared, thread-safe sync-progress counters for one wallet-sync run.
+///
+/// Every stream folds its own monotonically-increasing frontier into these totals, so they sum
+/// across all concurrent seeds without any per-wallet bookkeeping.
+#[derive(Default)]
+pub struct SyncProgress {
+	/// Number of wallets (seeds) being synced; `3 * wallets` is the total stream count.
+	pub wallets: usize,
+	pub shielded: StreamProgress,
+	pub unshielded: StreamProgress,
+	pub dust: StreamProgress,
+}
+
+/// Aggregated frontier for one stream kind (shielded / unshielded / dust) across all seeds.
+#[derive(Default)]
+pub struct StreamProgress {
+	/// Sum of each seed's latest scanned frontier.
+	scanned: AtomicU64,
+	/// Sum of each seed's latest reported target (0 for a stream until the indexer reports one).
+	target: AtomicU64,
+	/// Number of this stream's seeds that have finished draining.
+	done: AtomicU64,
+}
+
+impl StreamProgress {
+	/// Fold a newly-observed scanned frontier into the shared total.
+	///
+	/// `last` is this stream's previously-contributed value; only the positive delta `now - *last`
+	/// is added, so repeated reports and concurrent seeds sum correctly and never double-count.
+	/// Non-increasing values are ignored (the frontiers are monotonic).
+	pub fn advance_scanned(&self, last: &mut u64, now: u64) {
+		if now > *last {
+			self.scanned.fetch_add(now - *last, Ordering::Relaxed);
+			*last = now;
+		}
+	}
+
+	/// As [`advance_scanned`](Self::advance_scanned), but for the target frontier.
+	pub fn advance_target(&self, last: &mut u64, now: u64) {
+		if now > *last {
+			self.target.fetch_add(now - *last, Ordering::Relaxed);
+			*last = now;
+		}
+	}
+
+	/// Mark one seed's stream of this kind as fully drained.
+	pub fn finish(&self) {
+		self.done.fetch_add(1, Ordering::Relaxed);
+	}
+
+	/// Render `scanned/target`, showing `…` for the target until the indexer reports one.
+	fn display(&self) -> String {
+		let scanned = self.scanned.load(Ordering::Relaxed);
+		let target = self.target.load(Ordering::Relaxed);
+		if target == 0 { format!("{scanned}/…") } else { format!("{scanned}/{target}") }
+	}
+}
+
+impl SyncProgress {
+	/// Log a one-line progress heartbeat every [`PROGRESS_LOG_INTERVAL`] until the future is
+	/// dropped. Loops forever by design — the caller races it against the sync work in a `select!`
+	/// and drops it once the work finishes.
+	pub async fn log_until_done(&self) {
+		let mut ticker = tokio::time::interval(PROGRESS_LOG_INTERVAL);
+		// The first `interval` tick is immediate; skip it so the first line lands one interval in
+		// (and fast syncs that finish under `PROGRESS_LOG_INTERVAL` log nothing at all).
+		ticker.tick().await;
+		loop {
+			ticker.tick().await;
+			let n = self.wallets;
+			let streams = 3 * n;
+			let done = self.shielded.done.load(Ordering::Relaxed)
+				+ self.unshielded.done.load(Ordering::Relaxed)
+				+ self.dust.done.load(Ordering::Relaxed);
+			// The default toolkit filter is `midnight_node_toolkit=info` but `warn` elsewhere, so
+			// this target keeps the heartbeat visible without misreporting it as a warning.
+			log::info!(
+				target: "midnight_node_toolkit::indexer",
+				"indexer: syncing {n} wallet(s) — shielded {}, unshielded {}, dust {} \
+				 ({done}/{streams} streams caught up)",
+				self.shielded.display(),
+				self.unshielded.display(),
+				self.dust.display(),
+			);
+		}
+	}
 }
 
 #[cfg(test)]

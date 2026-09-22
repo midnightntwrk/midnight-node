@@ -27,6 +27,8 @@ use clap::Args;
 #[cfg(feature = "indexer-client")]
 use midnight_ledger_unsafe_helpers::IndexerClient;
 #[cfg(feature = "indexer-client")]
+use midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY;
+#[cfg(feature = "indexer-client")]
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
@@ -74,12 +76,18 @@ pub struct ShowWalletArgs {
 	#[arg(long, env = "MN_INDEXER_URL")]
 	pub indexer_url: Option<String>,
 	// TODO: make `--network` optional once the indexer exposes its network id. It has no GraphQL
-	// field for it today, so the value must be supplied here to build the bech32 viewing-key /
-	// address HRPs (`mn_shield-esk_<network>`, `mn_addr_<network>`) that the indexer validates
-	// exactly. Once a network-id API lands we can default this to auto-detection.
+	// field for it today, so the value must be supplied to build the bech32 HRPs
+	// (`mn_shield-esk_<network>`, `mn_addr_<network>`) the indexer validates exactly.
 	/// Network id used to derive the viewing key / address for the indexer path.
 	#[arg(long, default_value = "undeployed")]
 	pub network: String,
+	/// Indexer path only: how many wallets to sync at once. Each one holds three concurrent
+	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
+	/// for a large seed set against an indexer that can take the load; lower it if the indexer
+	/// starts dropping connections.
+	#[cfg(feature = "indexer-client")]
+	#[arg(long, env = "MN_INDEXER_CONCURRENCY", default_value_t = DEFAULT_WALLET_SYNC_CONCURRENCY)]
+	pub indexer_concurrency: std::num::NonZeroUsize,
 }
 
 pub async fn execute(
@@ -186,9 +194,8 @@ pub async fn execute(
 /// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
 /// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
 ///
-/// The indexer serves each chain in its own ledger encodings (it carries both generations itself),
-/// so the generation is read off the chain rather than assumed, and the matching per-version
-/// reconstruction is dispatched below.
+/// The indexer carries both ledger generations and serves each chain in its own encodings, so the
+/// generation is read off the chain rather than assumed.
 #[cfg(feature = "indexer-client")]
 async fn execute_indexer(
 	args: ShowWalletArgs,
@@ -206,17 +213,16 @@ async fn execute_indexer(
 		return Ok(ShowWalletResult::DryRun(()));
 	}
 
-	// The indexer path derives only the Schnorr unshielded identity from the seed; it has no way
-	// to resolve the ECDSA identity's UTXOs. Reject ECDSA rather than silently returning the wrong
-	// unshielded address (the block-replay path handles ECDSA via `ensure_ecdsa_supported`).
+	// Only the Schnorr unshielded identity is derivable from the seed here, so an ECDSA seed would
+	// silently report the wrong address. The replay path handles ECDSA via `ensure_ecdsa_supported`.
 	if !matches!(scheme, midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr) {
 		return Err("indexer-backed show-wallet only supports the Schnorr NIGHT identity; \
 		            an `ecdsa:` seed requires the block-replay path (omit --indexer-url)"
 			.into());
 	}
 
-	// One cheap `block` query before the sync, purely to learn the chain's generation. The
-	// per-version context re-queries it for ledger parameters; not worth threading through.
+	// The per-version context re-queries this block for ledger parameters; not worth threading
+	// the first answer through just to save one cheap query.
 	let spec_version = IndexerClient::new(indexer_url)?.latest_block().await?.protocol_version;
 	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
 		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
@@ -228,7 +234,14 @@ async fn execute_indexer(
 		LedgerVersion::Ledger9 => {
 			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
 			Ok(fork_wallet_result_v9(
-				show_wallet_from_indexer(indexer_url, &network, seed, args.debug).await?,
+				show_wallet_from_indexer(
+					indexer_url,
+					&network,
+					seed,
+					args.debug,
+					args.indexer_concurrency,
+				)
+				.await?,
 			))
 		},
 		LedgerVersion::Ledger8 => {
@@ -239,7 +252,14 @@ async fn execute_indexer(
 					seed,
 				);
 			Ok(fork_wallet_result_v8(
-				show_wallet_from_indexer(indexer_url, &network, seed, args.debug).await?,
+				show_wallet_from_indexer(
+					indexer_url,
+					&network,
+					seed,
+					args.debug,
+					args.indexer_concurrency,
+				)
+				.await?,
 			))
 		},
 	}
@@ -316,6 +336,8 @@ mod tests {
 			dry_run: false,
 			indexer_url: None,
 			network: "undeployed".to_string(),
+			#[cfg(feature = "indexer-client")]
+			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		super::execute(args).await
@@ -373,6 +395,8 @@ mod tests {
 			dry_run: false,
 			indexer_url: None,
 			network: "undeployed".to_string(),
+			#[cfg(feature = "indexer-client")]
+			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		super::execute(args).await
@@ -416,6 +440,8 @@ mod tests {
 			dry_run: false,
 			indexer_url: None,
 			network: "undeployed".to_string(),
+			#[cfg(feature = "indexer-client")]
+			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		let res = super::execute(args)
@@ -426,5 +452,26 @@ mod tests {
 			"the ECDSA identity of the funded Schnorr seed 01 owns no NIGHT UTXOs (distinct \
 			 unshielded identity)"
 		);
+	}
+
+	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
+	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
+	#[cfg(feature = "indexer-client")]
+	#[test]
+	fn indexer_concurrency_rejects_zero() {
+		use clap::Parser;
+
+		#[derive(Parser)]
+		struct Cli {
+			#[command(flatten)]
+			args: ShowWalletArgs,
+		}
+
+		let parse = |n: &str| {
+			Cli::try_parse_from(["t", "--seed", &"0".repeat(64), "--indexer-concurrency", n])
+		};
+
+		assert!(parse("0").is_err(), "--indexer-concurrency 0 would hang the drain");
+		assert_eq!(parse("8").unwrap().args.indexer_concurrency.get(), 8);
 	}
 }

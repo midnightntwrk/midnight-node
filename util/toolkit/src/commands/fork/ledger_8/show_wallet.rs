@@ -103,20 +103,20 @@ pub fn show_wallet_from_address(
 
 /// Indexer-backed wallet reconstruction for this ledger generation.
 ///
-/// The GraphQL client itself is version-independent — it deals in hex blobs — but the blobs it
-/// returns are this chain's native ledger encodings, so they must be decoded with this
-/// generation's codecs. `show_wallet::execute` picks the copy matching the chain's reported
-/// protocol version.
+/// The indexer's blobs are the chain's native ledger encodings, so they decode with this
+/// generation's codecs; `show_wallet::execute` picks the copy matching the chain's protocol
+/// version.
 #[cfg(feature = "indexer-client")]
 pub async fn show_wallet_from_indexer(
 	indexer_url: &str,
 	network: &str,
 	seed: WalletSeed,
 	debug: bool,
+	concurrency: std::num::NonZeroUsize,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	use ledger_helpers_local::{BuilderContext, IndexerContext};
 
-	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, network)?;
+	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, network, concurrency)?;
 	ctx.init_wallets(std::slice::from_ref(&seed)).await?;
 
 	let (coins, dust_utxos, debug_str) = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
@@ -155,9 +155,8 @@ pub async fn show_wallet_from_indexer(
 
 	Ok(match debug_str {
 		Some(debug_str) => ShowWalletResult::Debug(debug_str, utxos),
-		// The indexer reconstructs shielded/unshielded/dust wallet state but not the node's full
-		// `LedgerState`, so the ledger-level claimable maps (block rewards / bridge transfers) are
-		// unavailable on this path and reported as zero.
+		// The indexer reconstructs wallet state but not the node's full `LedgerState`, so the
+		// ledger-level claimable maps are unavailable here and reported as zero.
 		None => ShowWalletResult::Json(WalletInfoJson {
 			coins,
 			utxos,

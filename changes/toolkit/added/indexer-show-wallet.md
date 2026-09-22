@@ -12,6 +12,10 @@ plus `graphql-transport-ws` subscriptions) and the wallet sync (`connect`, drain
 shielded/unshielded/dust subscriptions to the chain tip) in a new `IndexerContext`. Building
 transactions over the indexer is a follow-up that reuses everything here.
 
+Wallets are synced four at a time by default; `--indexer-concurrency` (env
+`MN_INDEXER_CONCURRENCY`) adjusts that. Each wallet holds three concurrent subscriptions, so the
+indexer sees up to three times that many open WebSockets from one run.
+
 Both ledger generations are supported. The indexer carries v8 and v9 itself and serves each chain
 in its own encodings, so `show-wallet` reads `Block.protocolVersion` and dispatches to the matching
 `IndexerContext` rather than assuming the latest. The existing replay path is unchanged.
