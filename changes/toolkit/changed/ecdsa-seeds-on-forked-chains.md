@@ -18,9 +18,6 @@ share one — so shielded funds received before the fork stay visible and spenda
 A chain still on ledger 8 keeps the clear refusal, and it is now checked over every requested
 seed before the replay starts, so a wallet-cache entry cannot wave an unsupported chain through.
 
-ECDSA wallet-cache entries are rebuilt once, since a cached ECDSA wallet's shielded state now
-includes its pre-fork history. Schnorr caches are unaffected.
-
 PR: https://github.com/midnightntwrk/midnight-node/pull/2181
 PR: https://github.com/midnightntwrk/midnight-node/pull/2183
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2180

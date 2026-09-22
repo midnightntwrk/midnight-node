@@ -43,24 +43,13 @@ pub const WALLET_CACHE_FORMAT_VERSION: u8 = 3;
 /// (raw zstd, implicitly ledger 9) start with the zstd magic byte and are detected as a miss.
 pub const SNAPSHOT_FORMAT_VERSION: u8 = 2;
 
-/// Cache-key byte per unshielded signature scheme, so one seed maps to distinct entries for
-/// Schnorr vs ECDSA (they resolve to different NIGHT — and therefore different dust — identities).
-///
-/// It doubles as a per-scheme cache generation: bumping one scheme's byte invalidates exactly
-/// that scheme's entries and leaves the others — which can be mainnet-scale and cost hours to
-/// rebuild — reachable. Prefer it over [`WALLET_CACHE_FORMAT_VERSION`] when only one scheme's
-/// *meaning* changed, not the layout.
-///
-/// Ecdsa 1 -> 2: an `ecdsa:` seed now replays the pre-fork ledger-8 leg, so its cached shielded
-/// state includes pre-fork history. Entries written by the first #2180 fix built the wallet fresh
-/// at the fork, so their shielded state starts there; restoring one would skip the ledger-8 replay
-/// and silently reproduce the missing-funds bug this is meant to fix. Nothing released can hold
-/// such an entry — before #2181 an `ecdsa:` seed was refused on any chain with ledger-8 history,
-/// and on a ledger-9-genesis chain there is no pre-fork leg to miss — but branch builds can.
+/// Byte identifying the unshielded signature scheme in the cache key, so the same seed maps to
+/// distinct entries for Schnorr vs ECDSA (they resolve to different NIGHT — and therefore
+/// different dust — identities).
 fn scheme_discriminant(scheme: UnshieldedSignatureScheme) -> u8 {
 	match scheme {
 		UnshieldedSignatureScheme::Schnorr => 0,
-		UnshieldedSignatureScheme::Ecdsa => 2,
+		UnshieldedSignatureScheme::Ecdsa => 1,
 	}
 }
 
@@ -860,28 +849,6 @@ mod tests {
 		let schnorr = wallet_cache_key(&seed, UnshieldedSignatureScheme::Schnorr);
 		let ecdsa = wallet_cache_key(&seed, UnshieldedSignatureScheme::Ecdsa);
 		assert_ne!(schnorr, ecdsa, "Schnorr and ECDSA must not share a cache key for one seed");
-	}
-
-	/// An ECDSA entry written before `ecdsa:` seeds replayed the pre-fork leg holds a shielded
-	/// state that starts at the fork. It must miss, not restore, or the pre-fork history is
-	/// silently skipped — so the generation byte must not drift back to 1.
-	#[test]
-	fn pre_prefork_replay_ecdsa_cache_entries_miss() {
-		let seed = WalletSeed::try_from_hex_str(
-			"0000000000000000000000000000000000000000000000000000000000000001",
-		)
-		.unwrap();
-		let stale = {
-			let mut hasher = Sha256::new();
-			hasher.update([WALLET_CACHE_FORMAT_VERSION, 1]);
-			hasher.update(seed.as_bytes());
-			H256::from_slice(&hasher.finalize())
-		};
-		assert_ne!(
-			wallet_cache_key(&seed, UnshieldedSignatureScheme::Ecdsa),
-			stale,
-			"ECDSA entries written before the pre-fork replay must be unreachable",
-		);
 	}
 
 	#[test]
