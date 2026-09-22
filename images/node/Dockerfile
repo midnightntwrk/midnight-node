@@ -12,7 +12,6 @@ RUN microdnf -y install \
     tar-1.34 \
     procps-ng-3.3.17 \
     strace-6.12 \
-    gdb-16.3 \
     vim-enhanced-9.1.1591 \
     jq-1.7.1 \
     tree-1.8.0 && \
