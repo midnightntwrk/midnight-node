@@ -320,9 +320,7 @@ async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
 	}
 }
 
-/// GH #2180: an ECDSA wallet on a chain forked from ledger 8 is created at the fork block, and
-/// the cached paths (cold, warm from a ledger-9 snapshot, chunked with ledger-8 checkpoints)
-/// agree with the raw replay on it.
+/// GH #2180: every cached path agrees with the raw replay for an ECDSA wallet across the fork.
 #[tokio::test]
 async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
 	let source = synthetic_source(6, 4);
@@ -380,10 +378,8 @@ async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
 	assert_contexts_equal("ecdsa chunked", &chunked, &raw, &seeds);
 }
 
-/// A cache entry must not wave an ECDSA seed past the ledger-9 requirement. A checkpointing run
-/// against a chain still on ledger 8 writes cache entries before the guard rejects it, so the
-/// retry finds every seed cached; if the guard only looked at the uncached seeds it would see an
-/// empty list and hand back watch-only wallets instead of the error.
+/// A checkpointing run on a ledger-8 chain caches the seed before the guard fires; the retry must
+/// still be refused, so the guard cannot depend on which seeds are cached.
 #[tokio::test]
 #[should_panic(expected = "only supported from ledger 9")]
 async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
@@ -394,8 +390,7 @@ async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
 	let tmp = tempfile::TempDir::new().unwrap();
 	let backend = FileBackend::new(tmp.path());
 
-	// Plant the ledger-8 entry such a run leaves behind: same seed and heights, keyed under the
-	// ECDSA identity. Replaying it as Schnorr is just a convenient way to produce a real one.
+	// Plant the entry such a run leaves behind, keyed under the ECDSA identity.
 	let _ = build_fork_aware_context_cached(&[ecdsa.clone()], &source, Some(&backend), 0).await;
 	let mut planted = backend
 		.get_wallet_states(

@@ -432,13 +432,8 @@ pub fn restore_context_from_ledger_snapshot_8(
 	Ok((context, ledger_state, snapshot.block_height))
 }
 
-/// Ledger-8 variant of [`inject_wallet_from_cache`].
-///
-/// The restored shielded and dust state is scheme-independent, so only the unshielded sub-wallet
-/// differs: Schnorr gets its real identity, while an `ecdsa:` seed gets a watch-only one (no key
-/// material — ECDSA is unrepresentable before ledger 9, and deriving the seed's *Schnorr* key as
-/// a stand-in would materialise an identity the caller never asked for). The fork installs the
-/// real ECDSA key material.
+/// Ledger-8 variant of [`inject_wallet_from_cache`]. An `ecdsa:` seed gets a watch-only wallet
+/// (see [`watch_only_ecdsa_wallet_8`]); the cached state itself does not depend on the scheme.
 pub fn inject_wallet_from_cache_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
 	cached: &CachedWalletState,

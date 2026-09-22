@@ -158,18 +158,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
-	/// Give an existing wallet the `scheme` key material for its unshielded (NIGHT) identity,
-	/// keeping its shielded sub-wallet — and therefore every pre-fork shielded output it has
-	/// already replayed.
-	///
-	/// ECDSA is unrepresentable before ledger 9 (see `ledger_8::ecdsa`), so a seed requested as
-	/// `ecdsa:` replays the pre-fork chain *watch-only*, at its ECDSA address and with no key
-	/// material; this hands it the keys once the fork makes them representable. The address is
-	/// unchanged — it is derived from the same seed and scheme the watcher used — so this grants
-	/// the ability to spend, it does not move the identity.
-	///
-	/// Only `unshielded` is scheme-dependent: `shielded` derives from the root seed alone, and
-	/// `dust` is wiped across the fork anyway (see `fork_context_8_to_9`).
+	/// Replace an existing wallet's unshielded (NIGHT) keys, keeping its shielded state. Used after
+	/// the 8->9 fork for `ecdsa:` seeds, which replay ledger 8 watch-only.
 	pub fn install_unshielded_keys(&self, seed: &WalletSeed, scheme: UnshieldedSignatureScheme) {
 		let mut wallets = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
 		let wallet = wallets

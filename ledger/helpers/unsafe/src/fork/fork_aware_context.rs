@@ -26,13 +26,9 @@ pub enum ForkAwareLedgerContext {
 	Ledger9(crate::ledger_9::context::LedgerContext<Db9>),
 }
 
-/// A ledger-8 wallet for a seed whose NIGHT identity is ECDSA: real shielded and dust
-/// sub-wallets (both derive from the root seed alone, so they are scheme-independent) plus a
-/// watch-only unshielded sub-wallet holding the seed's ECDSA address and no key material.
-///
-/// The address is computed with the ledger-9 types because ledger 8's `coin-structure` has no
-/// `From<ecdsa::VerifyingKey> for UserAddress`; both generations' `UserAddress` is the same
-/// 32-byte hash, so the bytes carry over directly.
+/// Ledger-8 wallet for an `ecdsa:` seed: real shielded and dust sub-wallets, watch-only unshielded
+/// one at the ECDSA address. Ledger 8 cannot derive that address, so it is computed with the
+/// ledger-9 types; `UserAddress` is the same 32-byte hash in both.
 pub fn watch_only_ecdsa_wallet_8(
 	seed: &crate::ledger_9::WalletSeed,
 	seed_8: crate::ledger_8::WalletSeed,
@@ -96,14 +92,8 @@ impl ForkAwareLedgerContext {
 
 	/// Like [`Self::new_from_wallet_seeds`] but with a per-seed unshielded signature scheme.
 	///
-	/// ECDSA identities are only representable from ledger 9 (see `ledger_8::ecdsa`). On an
-	/// earlier generation such a seed gets a **watch-only** wallet at its ECDSA NIGHT address:
-	/// no signing key of any kind is derived for it, and in particular not the seed's Schnorr
-	/// one — a distinct identity, at a distinct derivation path, that the caller did not ask for.
-	/// The unshielded sub-wallet is never read while replaying blocks (shielded replay uses
-	/// `shielded`, dust replay uses `dust`), so the seed still accumulates its pre-fork shielded
-	/// history; [`crate::ledger_9::context::LedgerContext::install_unshielded_keys`] installs the real
-	/// ECDSA key material once the 8->9 fork is crossed.
+	/// Ledger 8 cannot hold an ECDSA key, so there such seeds get a watch-only wallet (see
+	/// [`watch_only_ecdsa_wallet_8`]) and their keys are installed after the 8->9 fork.
 	pub fn new_from_wallet_seeds_with_schemes(
 		version: LedgerVersion,
 		network_id: impl Into<String>,
@@ -301,10 +291,7 @@ mod tests {
 		WalletSeed::Short([0x42; 16])
 	}
 
-	/// An `ecdsa:` seed must never cause the seed's *Schnorr* signing key to be derived as a
-	/// pre-fork stand-in: that is a different identity, at a different derivation path
-	/// (`.../0/0` vs `.../4/0`), which the caller did not ask for. On ledger 8 the seed gets a
-	/// watch-only wallet at its ECDSA address — no key material at all.
+	/// No key is derived pre-fork, and the watched address is the ECDSA one, not the Schnorr one.
 	#[test]
 	fn ecdsa_seed_is_watch_only_before_the_fork() {
 		let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
@@ -332,8 +319,7 @@ mod tests {
 		assert_eq!(wallet.unshielded.user_address.0.0, ecdsa.0.0, "must watch the ECDSA address");
 	}
 
-	/// The shielded sub-wallet is real regardless: it derives from the root seed alone, so the
-	/// watch-only wallet still replays the seed's pre-fork shielded history.
+	/// Shielded and dust identities do not depend on the scheme, so pre-fork history still replays.
 	#[test]
 	fn ecdsa_seed_keeps_a_usable_shielded_subwallet_before_the_fork() {
 		let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(

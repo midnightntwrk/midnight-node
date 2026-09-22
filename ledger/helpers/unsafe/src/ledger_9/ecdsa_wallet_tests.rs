@@ -106,21 +106,14 @@ fn ecdsa_address_mip0003_conformance() {
 	}
 }
 
-/// GH #2180: installing ECDSA keys at the 8->9 fork keeps the shielded sub-wallet the identity
-/// replayed the pre-fork chain with. The shielded address is scheme-independent, so shielded
-/// funds sent to an `ecdsa:` seed before the fork must stay spendable after it.
-///
-/// Also pins that installing keys does not *move* the identity: the NIGHT address is the one the
-/// pre-fork wallet was already watching, so funds are never watched at one address and spent
-/// from another.
+/// GH #2180: installing keys at the fork keeps the replayed shielded state and the watched address.
 #[test]
 fn install_unshielded_keys_keeps_shielded_history() {
 	use super::{DefaultDB, LedgerContext, UnshieldedSignatureScheme};
 
 	let ctx = LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed()]);
 
-	// Stand in for the pre-fork wallet: a shielded output replayed on the ledger-8 leg, and a
-	// watch-only NIGHT identity at the ECDSA address (what `watch_only_ecdsa_wallet_8` builds).
+	// Pre-fork stand-in: some replayed shielded state and a watch-only ECDSA identity.
 	let watched = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address;
 	{
 		let mut wallets = ctx.wallets.lock().unwrap();
