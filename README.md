@@ -50,7 +50,7 @@ Implementation of the Midnight blockchain node, providing consensus, transaction
      │  │                                                              │  │
      │  │    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │  │
      │  │    │   RPC    │  │Consensus │  │ Keystore │  │ Network  │    │  │
-     │  │    │  Server  │  │   AURA   │  │          │  │   P2P    │◀───│──│────▶ Other Midnight Nodes
+     │  │    │  Server  │  │   AURA   │  │          │  │   P2P    │◀───│──│───▶ Other Midnight Nodes
      │  │    │          │  │ GRANDPA  │  │          │  │Port 30333│    │  │
      │  │    └──────────┘  └──────────┘  └──────────┘  └──────────┘    │  │
      │  └──────────────────────────────────────────────────────────────┘  │
