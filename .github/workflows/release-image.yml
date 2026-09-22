@@ -20,7 +20,6 @@ on:
         default: "latest"
         type: choice
         options:
-          - "Don't create a release."
           - draft
           - prerelease
           - latest
@@ -408,12 +407,8 @@ jobs:
     name: Create release
     runs-on: ubuntu-latest
     needs: [validate-inputs, prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
-    # Allow running when SBOM jobs are skipped (due to skip-node/skip-toolkit) but not when they fail.
-    # The release-type guard matches create-release-assets/srtool-build/finalize-checksums: without
-    # it "Don't create a release." still reached `gh release create` and created one.
-    if: >-
-      !cancelled() && !failure() &&
-      github.event.inputs.release-type != 'Don''t create a release.'
+    # Allow running when SBOM jobs are skipped (due to skip-node/skip-toolkit) but not when they fail
+    if: ${{ !cancelled() && !failure() }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -652,7 +647,6 @@ jobs:
     needs: [validate-inputs, finalize-release, prepare-release]
     if: >-
       !cancelled() && !failure() &&
-      github.event.inputs.release-type != 'Don''t create a release.' &&
       (github.event.inputs.skip-node != 'true' || github.event.inputs.skip-toolkit != 'true')
     strategy:
       matrix:
@@ -769,7 +763,6 @@ jobs:
     needs: [validate-inputs, prepare-release, finalize-release]
     if: >-
       !cancelled() && !failure() &&
-      github.event.inputs.release-type != 'Don''t create a release.' &&
       github.event.inputs.skip-runtime != 'true'
     uses: ./.github/workflows/srtool-build.yml
     with:
@@ -786,7 +779,6 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       !cancelled() && !failure() &&
-      github.event.inputs.release-type != 'Don''t create a release.' &&
       (github.event.inputs.skip-node != 'true' || github.event.inputs.skip-toolkit != 'true')
     steps:
       - name: Setup Env
