@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::MaybeFromCandidateKeys;
 use crate::authority_selection_inputs::AuthoritySelectionInputs;
 use crate::filter_invalid_candidates::RegisterValidatorSignedMessage;
@@ -96,10 +98,10 @@ impl_opaque_keys! {
 impl MaybeFromCandidateKeys for AccountKeys {}
 
 impl AccountKeys {
-	pub fn from_seed(seed: &str) -> AccountKeys {
-		let mut aura = format!("aura-{seed}").into_bytes();
+	pub fn from_seeds(aura_seed: &str, grandpa_seed: &str) -> AccountKeys {
+		let mut aura = format!("aura-{aura_seed}").into_bytes();
 		aura.resize(32, 0);
-		let mut grandpa = format!("grandpa-{seed}").into_bytes();
+		let mut grandpa = format!("grandpa-{grandpa_seed}").into_bytes();
 		grandpa.resize(32, 0);
 		AccountKeys {
 			aura: sp_core::sr25519::Public::from(<[u8; 32]>::try_from(aura).unwrap()).into(),
@@ -111,7 +113,9 @@ impl AccountKeys {
 #[derive(Clone)]
 pub(crate) struct MockValidator {
 	pub name: &'static str,
-	pub seed: &'static str,
+	pub id_seed: &'static str,
+	pub aura_seed: &'static str,
+	pub grandpa_seed: &'static str,
 	pub stake: u64,
 }
 
@@ -126,9 +130,31 @@ pub const HENRY: MockValidator = MockValidator::new("henry", "//8", 800);
 pub const IDA: MockValidator = MockValidator::new("ida", "//9", 900);
 pub const JAMES: MockValidator = MockValidator::new("james", "//10", 1000);
 pub const KIM: MockValidator = MockValidator::new("kim", "//11", 1100);
+// Accounts that we consider not rightful owners of keys
+pub const FALSE_CHARLIE: MockValidator = MockValidator {
+	name: "not_charlie",
+	id_seed: "//12",
+	aura_seed: CHARLIE.aura_seed,
+	grandpa_seed: "//12",
+	stake: 1000,
+};
+pub const FALSE_DAVE: MockValidator = MockValidator {
+	name: "not_dave",
+	id_seed: "//13",
+	aura_seed: "//13",
+	grandpa_seed: DAVE.grandpa_seed,
+	stake: 1000,
+};
+pub const FALSE_GREG: MockValidator = MockValidator {
+	name: "not_greg",
+	id_seed: "//14",
+	aura_seed: GREG.aura_seed,
+	grandpa_seed: "//14",
+	stake: 1000,
+};
 
 // Table for AccountId lookup, to improve `account_id_to_name` performance.
-const ALL_MOCK_VALIDATORS: [(MockValidator, [u8; 33]); 11] = [
+const ALL_MOCK_VALIDATORS: [(MockValidator, [u8; 33]); 14] = [
 	(ALICE, hex!("0333022898140662dfea847e3cbfe5e989845ac6766e83472f8b0c650d85e77bae")),
 	(BOB, hex!("02182879ec92e811e2a8cc117f3cde1f61d3cba0093134cfb1ed17a4ef74915d4a")),
 	(CHARLIE, hex!("02f4f4d0eccb899bf2d611b56e0afec7c740efba404f8d0e82a545f988c45316c4")),
@@ -140,6 +166,9 @@ const ALL_MOCK_VALIDATORS: [(MockValidator, [u8; 33]); 11] = [
 	(IDA, hex!("03586dafcdab3d4647d4dc68732a9cab8aa34c00c5edd04e65d9dd44c2a1fd21e2")),
 	(JAMES, hex!("03aec8e80ea0375f8669d6e55d7abb6a3117678d7bb851a1bd100a01e52a4fed90")),
 	(KIM, hex!("03e843f200e30bc5b951c73a96d968db1c0cd05e357d910fce159fc59c40e9d6e2")),
+	(FALSE_CHARLIE, hex!("029338ece1c6bc6439dc4d16bfe33f28c9f0af31626bb8142849742b7a624f6807")),
+	(FALSE_DAVE, hex!("0203d51bba2124f480e3507eb1764fc3019ac7abae8ee215683a285078bda7f51d")),
+	(FALSE_GREG, hex!("03d46c454f9b620603feef8c3a2a5d7098205b8566500fda0fa0b456d6ded54538")),
 ];
 
 pub fn account_id_to_name(account_id: AccountId) -> &'static str {
@@ -153,21 +182,21 @@ pub fn account_id_to_name(account_id: AccountId) -> &'static str {
 
 impl MockValidator {
 	pub const fn new(name: &'static str, seed: &'static str, stake: u64) -> Self {
-		Self { name, seed, stake }
+		Self { name, id_seed: seed, aura_seed: seed, grandpa_seed: seed, stake }
 	}
 	pub fn account_id(&self) -> AccountId {
 		AccountId(self.ecdsa_pair().public())
 	}
 
 	pub fn ecdsa_pair(&self) -> ecdsa::Pair {
-		ecdsa::Pair::from_string(self.seed, None).expect("static values are valid; qed")
+		ecdsa::Pair::from_string(self.id_seed, None).expect("static values are valid; qed")
 	}
 
 	pub fn sidechain_pub_key(&self) -> SidechainPublicKey {
 		SidechainPublicKey(self.account_id().0.0.to_vec())
 	}
 	pub fn session_keys(&self) -> AccountKeys {
-		AccountKeys::from_seed(self.seed)
+		AccountKeys::from_seeds(self.aura_seed, self.grandpa_seed)
 	}
 
 	pub fn keys(&self) -> CandidateKeys {
@@ -360,6 +389,32 @@ fn ariadne_does_not_return_empty_committee() {
 		ScEpochNumber::zero(),
 	);
 	assert_eq!(calculated_committee, None);
+}
+
+#[test]
+fn candidates_with_duplicated_keys_are_removed() {
+	let authority_selection_inputs = create_authority_selection_inputs(
+		&vec![ALICE, BOB, CHARLIE, FALSE_CHARLIE, DAVE],
+		&vec![EVE, FALSE_DAVE, FERDIE, GREG, FALSE_GREG, IDA],
+		DParameter { num_permissioned_candidates: 4, num_registered_candidates: 28 },
+	);
+
+	let committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+		UtxoId::default(),
+		authority_selection_inputs,
+		ScEpochNumber::zero(),
+	)
+	.unwrap();
+	let committee_names = committee
+		.iter()
+		.map(|member| account_id_to_name(member.authority_id()))
+		.collect::<BTreeSet<_>>();
+	let mut committee_names = committee_names.into_iter().collect::<Vec<_>>();
+	committee_names.sort();
+	// From permissioned FALSE_CHARLIE is filtered out.
+	// Registered candidates FALSE_DAVE, FALSE_GREG and GREG are filtered out.
+	let expected_committee_names = vec!["alice", "bob", "charlie", "dave", "eve", "ferdie", "ida"];
+	assert_eq!(committee_names, expected_committee_names);
 }
 
 // helpers
