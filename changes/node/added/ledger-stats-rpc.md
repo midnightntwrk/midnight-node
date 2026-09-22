@@ -33,4 +33,4 @@ Two notes for operators:
   an `at` outside that window fails even though the arena still holds the data.
   Query an archive node for historical blocks.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2189
