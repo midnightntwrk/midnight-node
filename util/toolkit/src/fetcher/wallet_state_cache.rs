@@ -43,13 +43,13 @@ pub const WALLET_CACHE_FORMAT_VERSION: u8 = 3;
 /// (raw zstd, implicitly ledger 9) start with the zstd magic byte and are detected as a miss.
 pub const SNAPSHOT_FORMAT_VERSION: u8 = 2;
 
-/// Byte identifying the unshielded signature scheme in the cache key, so the same seed maps to
-/// distinct entries for Schnorr vs ECDSA (they resolve to different NIGHT — and therefore
-/// different dust — identities).
-/// Cache-key byte per unshielded signature scheme, doubling as a per-scheme cache generation:
-/// bumping one scheme's byte invalidates exactly that scheme's entries and leaves the others —
-/// which can be mainnet-scale and cost hours to rebuild — reachable. Prefer it over
-/// [`WALLET_CACHE_FORMAT_VERSION`] when only one scheme's *meaning* changed, not the layout.
+/// Cache-key byte per unshielded signature scheme, so one seed maps to distinct entries for
+/// Schnorr vs ECDSA (they resolve to different NIGHT — and therefore different dust — identities).
+///
+/// It doubles as a per-scheme cache generation: bumping one scheme's byte invalidates exactly
+/// that scheme's entries and leaves the others — which can be mainnet-scale and cost hours to
+/// rebuild — reachable. Prefer it over [`WALLET_CACHE_FORMAT_VERSION`] when only one scheme's
+/// *meaning* changed, not the layout.
 ///
 /// Ecdsa 1 -> 2: an `ecdsa:` seed now replays the pre-fork ledger-8 leg, so its cached shielded
 /// state includes pre-fork history. Entries written by the first #2180 fix built the wallet fresh

@@ -169,6 +169,11 @@ impl Drop for NodeUnderTest {
 	}
 }
 
+/// Raise the node's RPC connection cap (default 100). Every toolkit CLI call in this test opens
+/// several websocket connections, and those made from the same test process outlive the call, so
+/// the default cap runs out partway through the post-fork steps and the node answers HTTP 429.
+const RPC_MAX_CONNECTIONS_ARG: &str = "--rpc-max-connections 1000";
+
 /// An unused localhost port, so a local node does not collide with whatever else
 /// the developer has running.
 fn free_port() -> u16 {
@@ -192,6 +197,7 @@ async fn start_node(
 			.with_exposed_port(ContainerPort::Tcp(9944))
 			.with_env_var("CFG_PRESET", "dev")
 			.with_env_var("CHAIN", "/chainspec/chainspec.json")
+			.with_env_var("APPEND_ARGS", RPC_MAX_CONNECTIONS_ARG)
 			.with_copy_to("/chainspec/chainspec.json", chainspec.into_bytes())
 			.start()
 			.await
@@ -215,7 +221,10 @@ async fn start_node(
 		.env("CFG_PRESET", "dev")
 		.env("CHAIN", &chainspec_path)
 		.env("BASE_PATH", tempdir.join("chain"))
-		.env("APPEND_ARGS", format!("--rpc-port {rpc_port} --port 0 --no-prometheus"))
+		.env(
+			"APPEND_ARGS",
+			format!("--rpc-port {rpc_port} --port 0 --no-prometheus {RPC_MAX_CONNECTIONS_ARG}"),
+		)
 		.spawn()
 		.unwrap_or_else(|e| panic!("failed to spawn NODE_BINARY {binary}: {e}"));
 	eprintln!(
