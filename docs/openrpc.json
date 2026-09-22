@@ -149,6 +149,33 @@
       ]
     },
     {
+      "name": "midnight_ledgerStats",
+      "summary": "Returns the collection sizes held at the ledger-state root.",
+      "description": "Most notably the unshielded UTXO set size, which no other RPC exposes — it lives in the ledger arena, outside the Substrate trie. Every value is read from a trie-root annotation, so the cost is independent of the size of the state. If `at` is null, the best block is used. A node running with default state pruning only retains trie state for recent blocks, so an older `at` fails on such a node even though the arena still holds the data.",
+      "params": [
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "stats",
+        "description": "Ledger-state collection sizes",
+        "schema": {
+          "$ref": "#/components/schemas/LedgerStats"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/LedgerStatsError"
+        }
+      ]
+    },
+    {
       "name": "systemParameters_getTermsAndConditions",
       "summary": "Get the current Terms and Conditions.",
       "description": "Returns the hash and URL of the current terms and conditions, or null if not set.",
@@ -1464,6 +1491,77 @@
           }
         }
       },
+      "LedgerStats": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "LedgerStats",
+        "description": "Collection sizes held at the ledger-state root.\n\n`u64` counts serialize as JSON numbers; `unshieldedUtxoNight` is a `u128` of atomic Stars, which exceeds `Number.MAX_SAFE_INTEGER`, so it is serialized as a decimal string to survive a JavaScript client.",
+        "type": "object",
+        "required": [
+          "contractCount",
+          "dustCommitmentCount",
+          "dustLiveNoteCount",
+          "dustNullifierCount",
+          "unshieldedUtxoCount",
+          "unshieldedUtxoNight",
+          "zswapCommitmentCount",
+          "zswapLiveNoteCount",
+          "zswapNullifierCount"
+        ],
+        "properties": {
+          "contractCount": {
+            "description": "Contracts currently deployed.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "dustCommitmentCount": {
+            "description": "DUST commitments ever created.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "dustLiveNoteCount": {
+            "description": "Live DUST notes: commitments minus nullifiers.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "dustNullifierCount": {
+            "description": "DUST nullifiers, i.e. DUST notes ever spent.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "unshieldedUtxoCount": {
+            "description": "Live unshielded UTXOs — the UTXO set size.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "unshieldedUtxoNight": {
+            "description": "NIGHT held across those UTXOs, in atomic Stars (1 NIGHT = 1e6 Stars), as a decimal string.",
+            "type": "string"
+          },
+          "zswapCommitmentCount": {
+            "description": "Zswap note commitments ever created.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "zswapLiveNoteCount": {
+            "description": "Live shielded notes: commitments minus nullifiers.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "zswapNullifierCount": {
+            "description": "Zswap nullifiers, i.e. shielded notes ever spent.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
       "PeerReputationInfo": {
         "type": "object",
         "description": "Peer information enriched with reputation and ban status",
@@ -1703,6 +1801,13 @@
         "message": "Invalid params",
         "data": {
           "description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
+        }
+      },
+      "LedgerStatsError": {
+        "code": -32603,
+        "message": "Internal error",
+        "data": {
+          "description": "Variants: UnknownBlock and NoStateKey (both -32602 Invalid params), StateKeyUnavailable and LedgerUnavailable (-32603 Internal error). StateKeyUnavailable is the expected result for a block outside a pruned node's retained state window."
         }
       },
       "SystemParametersRpcError": {

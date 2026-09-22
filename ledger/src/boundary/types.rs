@@ -276,3 +276,30 @@ pub struct UtxoInfo {
 	pub value: u128,
 	pub output_no: u32,
 }
+
+/// Collection sizes held at the `LedgerState` root, served by
+/// `midnight_ledgerStats`.
+///
+/// Every field is an O(1) read: the counts come from annotations maintained at
+/// the root of each storage trie (`NightAnn` carries `{ size, value }`,
+/// `SizeAnn` a count), and the commitment totals are scalar fields. Nothing here
+/// traverses a collection, so the cost does not grow with the size of the state.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, Clone, PartialEq, Eq)]
+pub struct LedgerStats {
+	/// Live unshielded UTXOs — the UTXO set size.
+	pub unshielded_utxo_count: u64,
+	/// NIGHT held across those UTXOs, in atomic Stars (1 NIGHT = 1e6 Stars).
+	pub unshielded_utxo_night: u128,
+	/// Zswap note commitments ever inserted into the tree (`first_free`), i.e.
+	/// every shielded output the chain has ever produced.
+	pub zswap_commitment_count: u64,
+	/// Zswap nullifiers, i.e. shielded notes ever spent. The live shielded note
+	/// count is `zswap_commitment_count - zswap_nullifier_count`.
+	pub zswap_nullifier_count: u64,
+	/// DUST commitments ever created.
+	pub dust_commitment_count: u64,
+	/// DUST nullifiers, i.e. DUST notes ever spent.
+	pub dust_nullifier_count: u64,
+	/// Contracts currently deployed.
+	pub contract_count: u64,
+}
