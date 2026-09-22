@@ -6,6 +6,7 @@
 query LatestBlock {
   block {
     height
+    protocolVersion
     timestamp
     zswapEndIndex
     ledgerParameters

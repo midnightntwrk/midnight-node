@@ -127,6 +127,10 @@ pub enum TransactionResultKind {
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
 	pub height: u64,
+	/// The block's node spec version (e.g. `1_000_000`). The indexer serves each chain in its
+	/// own ledger encodings, so callers map this to a ledger generation (via the helpers'
+	/// `LedgerVersion::from_spec_version`) to pick the matching `IndexerContext`.
+	pub protocol_version: u32,
 	/// Block timestamp in unix seconds.
 	pub timestamp: u64,
 	/// Exclusive end index into the global zswap merkle tree at this block.
@@ -273,6 +277,7 @@ impl IndexerClient {
 			.ok_or_else(|| IndexerClientError::Malformed("no block returned".into()))?;
 		Ok(BlockInfo {
 			height: block.height as u64,
+			protocol_version: block.protocol_version as u32,
 			timestamp: block.timestamp as u64,
 			zswap_end_index: block.zswap_end_index as u64,
 			ledger_parameters: decode_hex(&block.ledger_parameters)?,
@@ -605,6 +610,25 @@ mod tests {
 			std::path::Path::new(path).exists(),
 			"indexer schema not found at {path} — is the `indexer` submodule checked out?"
 		);
+	}
+
+	/// Pins `protocolVersion` in the `LatestBlock` query: `show-wallet` reads it to pick the
+	/// ledger generation, and dropping it from the query would silently lose that dispatch.
+	#[test]
+	fn latest_block_carries_protocol_version() {
+		let v = json!({
+			"block": {
+				"height": 42,
+				"protocolVersion": 1_000_000,
+				"timestamp": 1700000000,
+				"zswapEndIndex": 7,
+				"ledgerParameters": "00",
+			}
+		});
+		let resp: latest_block::ResponseData = serde_json::from_value(v).unwrap();
+		let block = resp.block.expect("block");
+		// 1_000_000 is a ledger-8 chain; the mapping itself lives in `LedgerVersion::from_spec_version`.
+		assert_eq!(block.protocol_version, 1_000_000);
 	}
 
 	/// Maps a `ShieldedTransactionsProgress` JSON payload through the generated types, pinning the

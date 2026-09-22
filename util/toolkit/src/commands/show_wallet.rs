@@ -13,8 +13,6 @@
 
 use std::collections::HashMap;
 
-#[cfg(feature = "indexer-client")]
-use crate::commands::fork::ledger_9::serde_convert::{qualified_dust_output_to_ser, utxo_to_ser};
 use crate::source::Source;
 use crate::tx_generator::builder::{
 	WalletSchemes, build_fork_aware_context_cached_with_schemes, ensure_ecdsa_supported,
@@ -27,11 +25,9 @@ use crate::{
 };
 use clap::Args;
 #[cfg(feature = "indexer-client")]
-use hex::ToHex as _;
+use midnight_ledger_unsafe_helpers::IndexerClient;
 #[cfg(feature = "indexer-client")]
-use midnight_ledger_unsafe_helpers::{
-	BuilderContext, DefaultDB, IndexerContext, serialize_untagged,
-};
+use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -74,7 +70,7 @@ pub struct ShowWalletArgs {
 	pub dry_run: bool,
 	/// Reconstruct wallet state from a Midnight indexer (`api/v4` base URL, e.g.
 	/// `http://127.0.0.1:8088/api/v4`) instead of replaying every block from the node.
-	/// Requires `--seed`. Latest ledger version (v9) only.
+	/// Requires `--seed`. The ledger generation is taken from the chain the indexer serves.
 	#[arg(long, env = "MN_INDEXER_URL")]
 	pub indexer_url: Option<String>,
 	// TODO: make `--network` optional once the indexer exposes its network id. It has no GraphQL
@@ -187,10 +183,12 @@ pub async fn execute(
 		))
 	}
 }
-
 /// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
-/// than replaying blocks. Latest ledger version (v9 / [`DefaultDB`]) only; produces the same
-/// [`WalletInfoJson`] as the replay path. See issue #1186.
+/// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
+///
+/// The indexer serves each chain in its own ledger encodings (it carries both generations itself),
+/// so the generation is read off the chain rather than assumed, and the matching per-version
+/// reconstruction is dispatched below.
 #[cfg(feature = "indexer-client")]
 async fn execute_indexer(
 	args: ShowWalletArgs,
@@ -217,57 +215,33 @@ async fn execute_indexer(
 			.into());
 	}
 
-	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, args.network.clone())?;
-	ctx.init_wallets(std::slice::from_ref(&seed)).await?;
+	// One cheap `block` query before the sync, purely to learn the chain's generation. The
+	// per-version context re-queries it for ledger parameters; not worth threading through.
+	let spec_version = IndexerClient::new(indexer_url)?.latest_block().await?.protocol_version;
+	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
+		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
+	})?;
+	log::info!("Indexer chain is at protocol version {spec_version} ({ledger_version:?})");
 
-	// Shielded coins + dust come straight off the synced wallet; unshielded UTXOs come from the
-	// unshielded subscription reconciliation. This mirrors `fork::common::show_wallet`.
-	let (coins, dust_utxos, debug_str) = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
-		let coins = wallet
-			.shielded
-			.state
-			.coins
-			.iter()
-			.map(|(k, v)| {
-				(
-					serialize_untagged(&k).unwrap().encode_hex(),
-					QualifiedInfoSer {
-						nonce: serialize_untagged(&v.nonce).unwrap().encode_hex(),
-						token_type: serialize_untagged(&v.type_).unwrap().encode_hex(),
-						value: v.value,
-						mt_index: v.mt_index,
-					},
-				)
-			})
-			.collect::<HashMap<String, QualifiedInfoSer>>();
-		let dust_utxos = wallet
-			.dust
-			.dust_local_state
-			.as_ref()
-			.map_or(vec![], |s| s.utxos().map(qualified_dust_output_to_ser).collect());
-		let debug_str = args.debug.then(|| format!("{wallet:#?}"));
-		(coins, dust_utxos, debug_str)
-	});
-
-	let utxos: Vec<UtxoSer> = ctx
-		.unshielded_utxos(seed)
-		.await
-		.into_iter()
-		.map(|(utxo, _ctime)| utxo_to_ser(utxo))
-		.collect();
-
-	match debug_str {
-		Some(debug_str) => Ok(ShowWalletResult::Debug(debug_str, utxos)),
-		// The indexer reconstructs shielded/unshielded/dust wallet state but not the node's full
-		// `LedgerState`, so the ledger-level claimable maps (block rewards / bridge transfers) are
-		// unavailable on this path and reported as zero.
-		None => Ok(ShowWalletResult::Json(WalletInfoJson {
-			coins,
-			utxos,
-			dust_utxos,
-			claimable_block_rewards: 0,
-			claimable_bridge_transfers: 0,
-		})),
+	let network = args.network.clone();
+	match ledger_version {
+		LedgerVersion::Ledger9 => {
+			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
+			Ok(fork_wallet_result_v9(
+				show_wallet_from_indexer(indexer_url, &network, seed, args.debug).await?,
+			))
+		},
+		LedgerVersion::Ledger8 => {
+			use crate::commands::fork::ledger_8::show_wallet::show_wallet_from_indexer;
+			// `WalletSeed` is a per-generation type; the replay path converts the same way.
+			let seed =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					seed,
+				);
+			Ok(fork_wallet_result_v8(
+				show_wallet_from_indexer(indexer_url, &network, seed, args.debug).await?,
+			))
+		},
 	}
 }
 

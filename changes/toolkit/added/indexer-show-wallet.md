@@ -10,8 +10,11 @@ as the replay path.
 This is the foundation of the indexer-backed toolkit: it adds the GraphQL client (HTTP queries
 plus `graphql-transport-ws` subscriptions) and the wallet sync (`connect`, draining the
 shielded/unshielded/dust subscriptions to the chain tip) in a new `IndexerContext`. Building
-transactions over the indexer is a follow-up that reuses everything here. Only the latest ledger
-version (v9) is supported on the indexer path; the existing multi-version replay path is unchanged.
+transactions over the indexer is a follow-up that reuses everything here.
+
+Both ledger generations are supported. The indexer carries v8 and v9 itself and serves each chain
+in its own encodings, so `show-wallet` reads `Block.protocolVersion` and dispatches to the matching
+`IndexerContext` rather than assuming the latest. The existing replay path is unchanged.
 
 The client's GraphQL operations are typed against the indexer's committed schema
 (`indexer/indexer-api/graphql/schema-v4.graphql`, read from the submodule at compile time via
