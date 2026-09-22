@@ -12,7 +12,46 @@ VERSION 0.8
 # EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
 # leaves the workspace on the PR merge commit in detached-HEAD state, so
 # the builtin resolves to the literal string `HEAD` across every PR.
+#
+# The `/target` cache mounts also suffix the id with `-${TARGETARCH}` (e.g.
+# `target-<key>-amd64`). BuildKit cache-mount ids are NOT scoped by platform
+# (moby/buildkit#2598), so a daemon that ever builds more than one arch (e.g.
+# emulated multi-platform) would otherwise point both arches at the same native
+# `/target/release` and thrash each other's artifacts. Native per-arch runners
+# already isolate them today; the suffix makes this correct regardless of the
+# daemon topology, at no cost (same-arch builds still share the cache).
 ARG --global CACHE_KEY=local
+
+# Set true when building on a CI runner. When true, targets declare NO persistent CACHE
+# mounts (cargo registry/git and /target), so every CI build is clean and nothing is served
+# from a shared, cross-run cache. Defaults false for local builds, which DO mount the caches
+# so cargo's incremental fingerprinting can reuse artifacts across runs. CI runs set this via
+# EARTHLY_BUILD_ARGS=CI=true (see .envrc and the rebuild-*-bot workflows), keyed off the CI
+# environment variable GitHub Actions always exports.
+ARG --global CI=false
+
+# renovate: datasource=node-version depName=node versioning=node
+ARG --global NODEJS_VERSION=24.18.0
+
+# renovate: datasource=npm packageName=npm
+ARG --global NPM_VERSION=12.0.2
+
+# GHCR namespace images are published to. Defaults to the upstream private namespace.
+# Forks and private clones override it so a build never publishes into an org it
+# does not own. CI sets this via EARTHLY_BUILD_ARGS (see .github/workflows).
+ARG --global GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+
+# Public mirror namespace. Defaults to GHCR_REGISTRY, which makes the mirror tag a duplicate
+# of one the build already pushes -- i.e. a no-op. Only the canonical upstream repo sets this
+# to ghcr.io/midnightntwrk, so no fork can publish publicly by accident.
+ARG --global GHCR_REGISTRY_PUBLIC=ghcr.io/midnight-ntwrk
+
+# Image basename, so a fork publishes <owner>/<its-repo> instead of overwriting midnight-node.
+ARG --global IMAGE_REPO=midnight-node
+
+# Repo this build came from, for the OCI source label (GHCR links a package to the repo
+# named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
+ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
 
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
@@ -129,7 +168,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.95-trixie
+    FROM rust:1.98.1-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -143,6 +182,18 @@ subxt:
 # build-node-only builds only the midnight-node binary
 build-node-only:
     FROM +build-prepare
+    ARG TARGETARCH
+    # Same cache wiring as +build. This target builds a strict subset (-p midnight-node) of
+    # +build's --workspace, so sharing the cargo registry/git and the per-branch /target
+    # lets the two reuse each other's compiled artifacts. /target uses Earthly's default
+    # `locked` sharing: concurrent builds on the same CACHE_KEY serialize rather than
+    # clobber each other, and different branches get a different CACHE_KEY (see top of
+    # file) so they never share /target at all.
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
@@ -150,8 +201,9 @@ build-node-only:
 
     RUN cargo auditable build -p midnight-node --locked --release
 
+    # cp (not mv) so the linked binary stays in the persistent /target cache (see +build).
     RUN mkdir -p /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node /artifacts-$NATIVEARCH
+        && cp /target/release/midnight-node /artifacts-$NATIVEARCH
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH
 
@@ -162,9 +214,11 @@ node-image-minimal:
     USER root
 
     RUN mkdir -p /node
-    COPY +build-node-only/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build-node-only/artifacts-$NATIVEARCH/midnight-node /
 
-    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    # Only /node (created above as root) needs fixing: everything else is copied
+    # with --chown, so no `chown -R` rewrites it into a duplicate layer.
+    RUN chown appuser:appuser /node
     SAVE IMAGE localhost/node-minimal:latest
 
 # Grabs metadata.scale file from the latest node
@@ -195,10 +249,13 @@ rebuild-metadata:
 rebuild-sqlx:
     ARG USEROS
     FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -700,27 +757,35 @@ node-ci-image-single-platform:
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
 
-    # Node.js + npm — pinned official binaries, NOT AL2023's microdnf nodejs (which is
-    # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
-    # straight off this base image, so the version baked here is the one it uses.
-    # renovate: datasource=node-version packageName=node
-    ARG NODE_VERSION=24.18.0
+    # +local-env-ci runs `npm ci`/`npm run` straight off this base image, so the node
+    # and npm baked here are the ones it uses. Versions: NODEJS_VERSION/NPM_VERSION.
     RUN ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
-        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
+        curl -fsSL "https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
         node --version && npm --version
 
-    # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
-    # `docker compose` calls run against earthly's injected docker CLI (which has no
-    # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
+    # Docker compose + buildx plugins — needed by the +local-env-ci WITH DOCKER targets,
+    # whose `docker compose` calls run against earthly's injected docker CLI (which has no
+    # bundled plugins). compose v5 dropped its internal buildkit builder and delegates
+    # `build:` to Docker Bake, so buildx is not optional: without it the contract-compiler
+    # service in local-env's compose file fails to build.
+    # compose's asset suffix is uname -m (x86_64/aarch64); buildx's is Go-style
+    # (amd64/arm64), hence the mapping — same shape as the gh and node installs above.
     # renovate: datasource=github-releases packageName=docker/compose
-    ARG COMPOSE_VERSION=v2.31.0
+    ARG COMPOSE_VERSION=v5.5.0
+    # renovate: datasource=github-releases packageName=docker/buildx
+    ARG BUILDX_VERSION=v0.36.1
     RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
         curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
-        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then BUILDX_ARCH="arm64"; else BUILDX_ARCH="amd64"; fi && \
+        curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${BUILDX_ARCH}" \
+          -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
     # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
     # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
@@ -751,11 +816,14 @@ node-ci-image-single-platform:
     # Security patches land when the FROM @sha256 digest above is bumped (renovate);
     # a rebuild on the same digest reproduces identical packages by design.
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
-    LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
+    # Repo-named like every other image here: GHCR_REGISTRY only isolates by *owner*, so two
+    # clones under one owner would otherwise write the same ref. IMAGE_REPO defaults to
+    # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
-        ghcr.io/midnight-ntwrk/midnight-node-ci:$IMAGE_TAG-$NATIVEARCH
+        ${GHCR_REGISTRY}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
@@ -771,6 +839,38 @@ prep-no-copy:
     FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
+
+    # Pin npm for every target built off +prep/+prep-no-copy — notably the +local-env-*
+    # targets, which run `npm ci` in local-environment/ against this image's node with no
+    # tarball overlay of their own. Deliberately here rather than (only) in the CI base
+    # image: that image is consumed by tag above, and the tag is derived from RUST_VERSION
+    # and COMPACTC_VERSION, so an npm-only bump produces no new tag and would not reach
+    # any build until the image was force-republished. Targets that DO overlay node
+    # (+toolkit-js-prep, +build-test-toolkit) re-pin after their overlay.
+    RUN npm install -g npm@${NPM_VERSION} && node --version && npm --version
+
+    # cargo's home lives here — git/registry cache, config.toml, AND build-time-installed tool
+    # binaries ($CARGO_HOME/bin). Relocating it makes the CACHE --id cargo-git/cargo-reg mounts
+    # (declared at /usr/local/cargo/* in every build/check/test target) actually effective.
+    # Set BEFORE the cargo-tool install(s) below so those tools land in $CARGO_HOME/bin, and put
+    # that dir on PATH so they resolve. (cargo/rustc are rustup proxies in /root/.cargo/bin, also
+    # on PATH from the CI image, and are unaffected — CARGO_HOME only moves cargo's data/bin home.)
+    ENV CARGO_HOME=/usr/local/cargo
+    ENV PATH="/usr/local/cargo/bin:${PATH}"
+    # Pin git-fetch-with-cli at CARGO_HOME (canonical, workdir-independent) rather than relying on
+    # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
+    # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
+    # directory-level .cargo/config.toml still overrides it.
+    RUN mkdir -p "$CARGO_HOME" \
+      && echo "[net]" >> "$CARGO_HOME/config.toml" \
+      && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
+
+    # rustc 1.98.1 dropped `--allow-undefined` from the wasm32v1-none target spec's
+    # pre-link-args, which Substrate's `sp_io` host-function imports rely on. The repo's
+    # .cargo/config.toml sets this for local builds, but the build/check targets descend
+    # from here and never COPY .cargo in (adding it would also drag in `[profile.release]
+    # debug = 1`), so set it as an ENV for every derived target.
+    ENV WASM_BUILD_RUSTFLAGS="-C link-arg=--allow-undefined"
 
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
@@ -892,19 +992,18 @@ toolkit-js-prep:
     RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     # rm -rf node_modules first: this image inherits node/npm from the CI base, and
     # `tar` overlays rather than replaces, so leftover files from the base's older npm
     # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
-    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
-    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt at the
+    # current NODEJS_VERSION — then the base and this overlay agree and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         rm -rf /usr/local/lib/node_modules && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     COPY COMPACTC_VERSION .
@@ -967,10 +1066,13 @@ check-deps:
 # check-rust runs cargo fmt and clippy.
 planner:
     FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -978,16 +1080,20 @@ check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
     # COPY +planner/recipe.json /recipe.json
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    END
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    END
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1007,22 +1113,42 @@ check-rust:
     ENV SKIP_WASM_BUILD=1
 
 # check-feature-unification verifies each crate compiles without dev-deps,
-# catching issues where workspace feature unification masks missing dependencies.
+# catching missing dependencies masked by workspace feature unification.
+# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
+# Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
+# the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
     FROM +check-rust-prepare
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    END
+    # Scope tooling deps in their own layer so workspace edits don't reinstall.
+    COPY scripts/package.json scripts/package-lock.json scripts/
+    RUN cd scripts && npm ci --no-audit --no-fund
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-    # `cargo hack check --workspace` compiles the toolkit, whose indexer-client reads the schema.
+    # `cargo hack check` compiles the toolkit, whose indexer-client reads the schema.
     COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
+    COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
+    COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    RUN cargo binstall --no-confirm cargo-hack
-    RUN cargo hack check --workspace --no-dev-deps
+    # The CI base image ships an unpinned cargo-hack; pin here so the check
+    # doesn't silently change behaviour when that image is rebuilt.
+    # renovate: datasource=crate packageName=cargo-hack
+    ARG CARGO_HACK_VERSION=0.6.45
+    RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
+    RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
+            .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
+        if [ -z "$PACKAGES" ]; then \
+            echo "feature-unification: nothing affected - skipping"; exit 0; \
+        fi && \
+        echo "feature-unification scope: $PACKAGES" && \
+        cargo hack check $PACKAGES --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -1050,10 +1176,13 @@ check:
 test:
     ARG NATIVEARCH
     FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
 
     # Test
     RUN mkdir /test-artifacts
@@ -1078,8 +1207,9 @@ test:
     # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            if [ -n "$DOCKERHUB_TOKEN" ]; then \
-              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            if [ -n "$DOCKERHUB_TOKEN" ] && \
+               ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+              echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
@@ -1102,10 +1232,13 @@ test:
 test-pallet-fixtures:
     ARG NATIVEARCH
     FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
@@ -1129,33 +1262,35 @@ test-pallet-fixtures:
 build-test-toolkit:
     ARG NATIVEARCH
     FROM +prep
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=24.18.0
-    ARG TARGETARCH
+    # Native architecture: the tests run on the native platform even though toolkit-js is from amd64.
+    # TARGETARCH already declared above for the /target cache id
     # rm -rf node_modules first: this image inherits node/npm from the CI base, and
     # `tar` overlays rather than replaces, so leftover files from the base's older npm
     # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
-    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
-    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt at the
+    # current NODEJS_VERSION — then the base and this overlay agree and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
         rm -rf /usr/local/lib/node_modules && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     # Test
@@ -1211,8 +1346,9 @@ test-toolkit:
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                if [ -n "$DOCKERHUB_TOKEN" ]; then \
-                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                if [ -n "$DOCKERHUB_TOKEN" ] && \
+                   ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+                  echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
                 docker run \
                 --network=host \
@@ -1228,8 +1364,9 @@ test-toolkit:
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                if [ -n "$DOCKERHUB_TOKEN" ]; then \
-                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                if [ -n "$DOCKERHUB_TOKEN" ] && \
+                   ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+                  echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
                 docker run \
                 --network=host \
@@ -1266,9 +1403,17 @@ build-prepare:
 # build creates production ready binaries
 build:
     FROM +build-prepare
-    # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # CACHE /target
+    ARG TARGETARCH
+    # Caching is gated on CI (see top of file). Local builds (CI=false) mount the cargo
+    # registry/git caches and a per-branch-scoped /target dir so cargo's incremental
+    # fingerprinting can skip unchanged crates across runs. A CI build (CI=true) declares
+    # none of them and compiles from scratch.
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
     # `cargo build --workspace` compiles the toolkit (indexer-client default on), whose typed
@@ -1290,10 +1435,13 @@ build:
     RUN \
         cargo auditable build --workspace --locked --release
 
+    # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
+    # (local, CI=false); otherwise cargo would re-link every binary on the next run even
+    # when its inputs are unchanged.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
-        && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
-        && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
+        && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
+        && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
+        && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
@@ -1327,14 +1475,15 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
-# The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
-# reproducibility - srtool's environment is fixed and verified.
+# Note: srtool uses its own pinned Rust version (currently 1.98.1) for deterministic builds.
+# The project's rust-toolchain.toml is intentionally NOT used here to maintain
+# reproducibility - srtool's environment is fixed and verified, but keep it in step with
+# rust-toolchain.toml anyway.
 srtool-build:
-    # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_VERSION=0.18.4
-    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
-    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
+    ARG SRTOOL_TAG=1.98.1-0.18.5
+    FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1363,8 +1512,10 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    ARG SRTOOL_VERSION=0.18.4
-    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
+    ARG SRTOOL_TAG=1.98.1-0.18.5
+    FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
@@ -1388,8 +1539,8 @@ node-image:
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN mkdir -p node
 
-    COPY +build/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
@@ -1397,18 +1548,22 @@ node-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
-    RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
+    RUN echo image tag=$IMAGE_REPO:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
+    # Only /node needs fixing: the binaries are copied with --chown and the base
+    # image already owns ./bin and ./res, so no `chown -R` duplicates them.
+    RUN chown -R appuser:appuser /node
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
+        $GHCR_REGISTRY/$IMAGE_REPO:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG \
+        $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG_DEV
+    # Public mirror. Only the canonical upstream repo points GHCR_REGISTRY_PUBLIC somewhere
+    # else; everywhere else this is a no-op, so a fork cannot publish publicly by accident.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO:$IMAGE_TAG
+    END
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1435,11 +1590,10 @@ node-benchmarks-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=midnight-node-benchmarks
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
     SAVE IMAGE --push \
@@ -1467,48 +1621,44 @@ toolkit-image:
     RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version && \
-        npm install -g npm@11.11.0 && npm --version
+        npm install -g npm@${NPM_VERSION} && \
+        node --version && npm --version
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
-        COPY +toolkit-js-prep/toolkit-js /toolkit-js
+        COPY --chown=appuser:appuser +toolkit-js-prep/toolkit-js /toolkit-js
         # compactc for run-compactc invocations from this image (e.g. genesis
         # compiling simple-merkle-tree.compact). Reuse the SAME compiler the CI
         # image selected per COMPACTC_VERSION (built or fetched) and that compiled
         # the contracts in +toolkit-js-prep — no rebuild, no risk of a divergent
         # compactc version between the CI and toolkit images.
-        COPY +toolkit-js-prep/compact-home /compact-home
+        COPY --chown=appuser:appuser +toolkit-js-prep/compact-home /compact-home
         ENV COMPACT_HOME=/compact-home
     ELSE
-        RUN mkdir -p /toolkit-js
+        RUN mkdir -p /toolkit-js && chown appuser:appuser /toolkit-js
     END
 
-    COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
-    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync && chown -R appuser:appuser /.cache
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
+        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    END
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
@@ -1527,19 +1677,16 @@ audit-npm:
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        npm install -g npm@11.11.0 && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     COPY ${DIRECTORY} ${DIRECTORY}
@@ -1566,19 +1713,16 @@ audit-yarn:
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        npm install -g npm@11.11.0 && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     # Install and enable corepack for yarn support
@@ -1618,21 +1762,23 @@ fix-lock-npm:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Keep in sync with audit-npm target
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        npm install -g npm@11.11.0 && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
-    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
+    # .npmrc must come along: this is the only npm site that copies individual files
+    # rather than the whole directory, and without it the lockfile would be regenerated
+    # with no min-release-age cooldown — the one place it matters most, since `npm install`
+    # is what resolves fresh versions.
+    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/.npmrc ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
     RUN npm install
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
@@ -1793,11 +1939,11 @@ local-env-ci:
           && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
         echo "+local-env-ci needs all five image refs, e.g.:"; \
         echo "  earthly -P +local-env-ci \\"; \
-        echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
-        echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
-        echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
-        echo "    --CHAIN_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/chain-indexer:<tag> \\"; \
-        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag>"; \
+        echo "    --NODE_IMAGE=$GHCR_REGISTRY/$IMAGE_REPO:<tag> \\"; \
+        echo "    --TOOLKIT_IMAGE=$GHCR_REGISTRY/$IMAGE_REPO-toolkit:<tag> \\"; \
+        echo "    --INDEXER_API_IMAGE=$GHCR_REGISTRY/indexer-api:<tag> \\"; \
+        echo "    --CHAIN_INDEXER_IMAGE=$GHCR_REGISTRY/chain-indexer:<tag> \\"; \
+        echo "    --WALLET_INDEXER_IMAGE=$GHCR_REGISTRY/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
     # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
@@ -1821,8 +1967,9 @@ local-env-ci:
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            if [ -n "$DOCKERHUB_TOKEN" ]; then \
-              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            if [ -n "$DOCKERHUB_TOKEN" ] && \
+               ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+              echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
             ROOT="$PWD" && \
             cd local-environment && \

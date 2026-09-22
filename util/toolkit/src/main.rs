@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let _ = rustls::crypto::ring::default_provider().install_default();
 
 	let result = panic::catch_unwind(AssertUnwindSafe(|| {
-		tokio::runtime::Builder::new_current_thread()
+		tokio::runtime::Builder::new_multi_thread()
 			.enable_all()
 			.build()
 			.unwrap()

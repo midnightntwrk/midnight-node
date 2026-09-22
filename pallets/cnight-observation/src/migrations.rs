@@ -13,5 +13,6 @@
 // limitations under the License.
 
 pub mod v1;
+pub mod v2;
 
 pub const PALLET_MIGRATIONS_ID: &[u8; 25] = b"pallet-cnight-observation";

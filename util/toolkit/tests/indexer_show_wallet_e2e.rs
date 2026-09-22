@@ -30,7 +30,7 @@
 mod common;
 
 use common::{test_image, wait_for_node::wait_for_finalized_block};
-use midnight_node_ledger_helpers::IndexerClient;
+use midnight_ledger_unsafe_helpers::IndexerClient;
 use midnight_node_toolkit::client::MidnightNodeClient;
 use std::process::Command;
 use std::time::{Duration, Instant};

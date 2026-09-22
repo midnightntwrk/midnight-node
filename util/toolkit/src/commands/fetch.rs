@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::{GetTxs, GetTxsFromUrl, create_file_wallet_cache};
 use crate::{
@@ -26,6 +39,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 
 	let ledger_state_db = src.ledger_state_db.clone();
 	let fetch_cache = src.fetch_cache.clone();
+	let replay_checkpoint_interval = src.replay_checkpoint_interval;
 
 	let start = std::time::Instant::now();
 	let txs: SourceTransactions = GetTxsFromUrl::new(
@@ -44,7 +58,13 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 	if let Some(seeds) = seeds {
 		let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 		let t = std::time::Instant::now();
-		let _ctx = build_fork_aware_context_cached(&seeds, &txs, wallet_cache.as_deref()).await;
+		let _ctx = build_fork_aware_context_cached(
+			&seeds,
+			&txs,
+			wallet_cache.as_deref(),
+			replay_checkpoint_interval,
+		)
+		.await;
 		log::info!(
 			"built wallet state cache for {} seeds in {:.3} s",
 			seeds.len(),

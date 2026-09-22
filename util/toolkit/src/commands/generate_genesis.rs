@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::cli_parsers::{self as cli};
 use clap::Args;
 use serde::Deserialize;
@@ -6,7 +19,7 @@ use std::path::{Path, PathBuf};
 use crate::genesis_generator::{
 	FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator, IcsConfig, ReserveConfig,
 };
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	LedgerParameters, Serializable, SystemTransaction, Tagged, WalletSeed,
 	midnight_serialize::tagged_deserialize, serialize,
 };
@@ -207,8 +220,8 @@ pub async fn execute(
 	)
 	.await?;
 
-	let state_filename = format!("genesis_state_{}.mn", &args.network);
-	let block_filename = format!("genesis_block_{}.mn", &args.network);
+	let state_filename = format!("genesis_state_{}.mn", args.network);
+	let block_filename = format!("genesis_block_{}.mn", args.network);
 	let genesis_state_path = dir.join(&state_filename);
 	let genesis_tx_path = dir.join(&block_filename);
 
@@ -241,7 +254,7 @@ mod test {
 	use crate::cli::{Cli, run_command};
 	use crate::{DefaultDB, LedgerState};
 	use clap::Parser;
-	use midnight_node_ledger_helpers::INITIAL_PARAMETERS;
+	use midnight_ledger_unsafe_helpers::INITIAL_PARAMETERS;
 	use std::{
 		env::temp_dir,
 		fs::{self, remove_file},

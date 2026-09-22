@@ -150,6 +150,16 @@ The `circuit` command accepts the following options via the command line:
 A path to a file containing the serialized onchain (or Ledger) state that represents the _current_ state of
 the contract. The executing circuit will apply to this given state.
 
+- `--output-events <file>`
+**Optional** A path to a file where the contract log events emitted during circuit execution are written as
+JSON (the raw `LogEvent[]`; `bigint` values are serialized as decimal strings and byte arrays as number
+arrays). Events are only written when this option is supplied.
+Requires `COMPACTC_VERSION` ≥ 0.33.0 — earlier variants predate the compact-js events API and do not accept
+this flag. (When driven through the Rust toolkit, requesting events on an older version fails early with a
+clear error; passing `--output-events` directly to an older toolkit-js instead yields a confusing
+"Invalid number of arguments" error, because `@effect/cli` absorbs the unknown flag into the trailing
+variadic arguments.)
+
 #### Arguments
 The `circuit` command requires the following arguments:
 
@@ -229,7 +239,7 @@ different `compactc` versions, each supported version has its own sibling worksp
 compact-0.29.0/     → @midnight-ntwrk/compact-js* 2.4.3   (public npm)
 compact-0.30.0/     → @midnight-ntwrk/compact-js* 2.5.0   (public npm)
 compact-0.31.0/     → @midnight-ntwrk/compact-js* 2.5.1   (public npm)
-compact-0.33.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.6 (public npm)
+compact-0.33.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.7 (public npm)
 ```
 
 The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`). At

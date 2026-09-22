@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::collections::HashMap;
 
 #[cfg(feature = "indexer-client")]
@@ -16,7 +29,9 @@ use clap::Args;
 #[cfg(feature = "indexer-client")]
 use hex::ToHex as _;
 #[cfg(feature = "indexer-client")]
-use midnight_node_ledger_helpers::{BuilderContext, DefaultDB, IndexerContext, serialize_untagged};
+use midnight_ledger_unsafe_helpers::{
+	BuilderContext, DefaultDB, IndexerContext, serialize_untagged,
+};
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -88,6 +103,7 @@ pub async fn execute(
 
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	// Exactly one of `--seed` / `--address` is set (clap's `wallet_id` group).
@@ -115,18 +131,11 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&schemes,
+			replay_checkpoint_interval,
 		)
 		.await;
 
 		Ok(fork_ctx.dispatch(
-			|ctx| {
-				let seed_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed.clone());
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
-					&ctx, seed_v7, args.debug,
-				);
-				fork_wallet_result_v7(result)
-			},
 			|ctx| {
 			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
@@ -153,21 +162,12 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&WalletSchemes::new(),
+			replay_checkpoint_interval,
 		)
 		.await;
 
 		let address_clone = address.clone();
 		Ok(fork_ctx.dispatch(
-			|ctx| {
-				let addr_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
-						&address_clone,
-					);
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
-					&ctx, addr_v7,
-				);
-				fork_wallet_result_v7(result)
-			},
 			|ctx| {
 				let addr_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
@@ -211,7 +211,7 @@ async fn execute_indexer(
 	// The indexer path derives only the Schnorr unshielded identity from the seed; it has no way
 	// to resolve the ECDSA identity's UTXOs. Reject ECDSA rather than silently returning the wrong
 	// unshielded address (the block-replay path handles ECDSA via `ensure_ecdsa_supported`).
-	if !matches!(scheme, midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr) {
+	if !matches!(scheme, midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr) {
 		return Err("indexer-backed show-wallet only supports the Schnorr NIGHT identity; \
 		            an `ecdsa:` seed requires the block-replay path (omit --indexer-url)"
 			.into());
@@ -291,16 +291,6 @@ fn fork_wallet_result_v8(
 	}
 }
 
-fn fork_wallet_result_v7(
-	result: crate::commands::fork::ledger_7::show_wallet::ShowWalletResult,
-) -> ShowWalletResult {
-	use crate::commands::fork::ledger_7::show_wallet::ShowWalletResult as R;
-	match result {
-		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
-		R::Json(j) => ShowWalletResult::Json(j),
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -344,6 +334,7 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -397,10 +388,11 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			}),
 			address: None,
 			debug: false,
@@ -439,10 +431,11 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Ecdsa,
 			}),
 			address: None,
 			debug: false,

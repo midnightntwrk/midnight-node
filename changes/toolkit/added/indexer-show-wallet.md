@@ -17,7 +17,7 @@ The client's GraphQL operations are typed against the indexer's committed schema
 (`indexer/indexer-api/graphql/schema-v4.graphql`, read from the submodule at compile time via
 `graphql_client`), so an incompatible schema change in the submodule breaks the build rather than
 failing at runtime. The whole indexer client lives behind a new `indexer-client` cargo feature —
-on by default for the toolkit, off for `midnight-node-ledger-helpers` — so the node and other
+on by default for the toolkit, off for `midnight-ledger-unsafe-helpers` — so the node and other
 consumers still build without the indexer submodule. `--workspace`/toolkit builds (which enable
 the feature) need the submodule checked out; the relevant Earthly targets copy just the schema
 file, and `tests/e2e` opts out of the feature.

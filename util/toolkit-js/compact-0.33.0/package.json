@@ -21,9 +21,9 @@
     "@effect/platform-node": "^0.107.0",
     "@effect/cli": "^0.75.0",
     "@midnight-ntwrk/platform-js": "^3.0.0",
-    "@midnight-ntwrk/compact-js": "^2.5.5-rc.6",
-    "@midnight-ntwrk/compact-js-command": "^2.5.5-rc.6",
-    "@midnight-ntwrk/compact-js-node": "^2.5.5-rc.6",
+    "@midnight-ntwrk/compact-js": "^2.5.5-rc.7",
+    "@midnight-ntwrk/compact-js-command": "^2.5.5-rc.7",
+    "@midnight-ntwrk/compact-js-node": "^2.5.5-rc.7",
     "@midnight-ntwrk/compact-runtime": "^0.18.0-rc.1",
     "effect": "^3.21.4"
   }
