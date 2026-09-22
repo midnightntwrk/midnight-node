@@ -959,28 +959,53 @@ fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureS
 	schemes.get(seed).copied().unwrap_or_default()
 }
 
-/// A ledger-8 context cannot hold an ECDSA identity, and one has no pre-fork history to replay,
-/// so on a ledger-8 genesis ECDSA wallets are created at the fork instead.
-fn split_seeds_born_at_fork(
+/// Seeds whose unshielded identity must be given its ECDSA keys at the 8->9 fork, i.e. the ECDSA
+/// ones when the replay starts before the fork. Empty when it starts at ledger 9.
+///
+/// This is an *install* list, not a guard: pass only seeds whose wallet is in the context at the
+/// fork block, since [`LedgerContext::install_unshielded_keys`] requires one. Seeds restored from
+/// cache are injected after the fork and rebuilt with their real scheme there, so they must be
+/// left out. [`assert_ecdsa_supported`] is what rejects an unsupported chain.
+///
+/// Before the fork these seeds hold a watch-only unshielded sub-wallet (no key material of any
+/// kind — see `ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes`) while their shielded
+/// sub-wallet, which is scheme-independent, replays normally. Only the unshielded identity is
+/// swapped at the fork, so pre-fork shielded funds survive.
+fn ecdsa_seeds_keyed_at_fork(
 	seeds: &[WalletSeed],
 	schemes: &WalletSchemes,
 	initial_version: LedgerVersion,
-) -> (Vec<WalletSeed>, Vec<WalletSeed>) {
+) -> Vec<WalletSeed> {
 	if initial_version == LedgerVersion::Ledger9 {
-		return (seeds.to_vec(), Vec::new());
+		return Vec::new();
 	}
 	seeds
 		.iter()
+		.filter(|seed| scheme_of(schemes, seed) == UnshieldedSignatureScheme::Ecdsa)
 		.cloned()
-		.partition(|seed| scheme_of(schemes, seed) != UnshieldedSignatureScheme::Ecdsa)
+		.collect()
 }
 
-/// Backstop for callers that skip [`ensure_ecdsa_supported`].
-fn assert_fork_wallets_created(ctx: &ForkAwareLedgerContext, born_at_fork: &[WalletSeed]) {
+/// Backstop for callers that skip [`ensure_ecdsa_supported`]: an ECDSA unshielded identity only
+/// becomes representable at ledger 9, so a chain that never gets there cannot serve one.
+///
+/// Checked over *every* requested seed, not over [`ecdsa_seeds_keyed_at_fork`]: that list holds
+/// only the seeds built cold (a cached seed is rebuilt with its real scheme on injection instead),
+/// so deriving the guard from it would let any cache entry wave an unsupported chain through —
+/// including the ledger-8 checkpoint a previous, correctly-panicking run wrote mid-replay.
+/// Checked up front against the chain tip, so an unsupported request fails before the replay
+/// rather than after it, leaving no such checkpoint behind.
+fn assert_ecdsa_supported(
+	tip: LedgerVersion,
+	wallet_seeds: &[WalletSeed],
+	schemes: &WalletSchemes,
+) {
 	assert!(
-		born_at_fork.is_empty() || ctx.version() == LedgerVersion::Ledger9,
-		"ECDSA unshielded signatures are only supported from ledger 9; the source chain is on {:?}",
-		ctx.version()
+		tip == LedgerVersion::Ledger9
+			|| !wallet_seeds
+				.iter()
+				.any(|seed| scheme_of(schemes, seed) == UnshieldedSignatureScheme::Ecdsa),
+		"ECDSA unshielded signatures are only supported from ledger 9; the source chain is on {tip:?}"
 	);
 }
 
@@ -1342,23 +1367,23 @@ fn replay_blocks_9(
 	}
 }
 
-/// Fork a ledger-8 context to ledger 9 (real state translation), instantiate the wallets
-/// deferred to the fork, and replay the ledger-9 blocks, if any. Returns the ledger-8 context
-/// unchanged when there are no ledger-9 blocks.
+/// Fork a ledger-8 context to ledger 9 (real state translation), hand the ECDSA identities the
+/// ledger-8 leg watched their key material, and replay the ledger-9 blocks, if any. Returns the
+/// ledger-8 context unchanged when there are no ledger-9 blocks.
 fn fork_8_to_9_if_needed(
 	ctx8: midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	l9_blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
-	born_at_fork: &[WalletSeed],
+	keyed_at_fork: &[WalletSeed],
 ) -> ForkAwareLedgerContext {
 	if l9_blocks.is_empty() {
 		ForkAwareLedgerContext::Ledger8(ctx8)
 	} else {
 		let ctx9 =
 			timed!("fork_context_8_to_9", fork_context_8_to_9(ctx8)).expect("fork 8 to 9 failed");
-		for seed in born_at_fork {
-			ctx9.add_wallet(seed.clone(), scheme_of(schemes, seed));
+		for seed in keyed_at_fork {
+			ctx9.install_unshielded_keys(seed, scheme_of(schemes, seed));
 		}
 		replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
 		ForkAwareLedgerContext::Ledger9(ctx9)
@@ -1366,13 +1391,13 @@ fn fork_8_to_9_if_needed(
 }
 
 /// Replays blocks across a potential Ledger8->Ledger9 fork boundary, injecting cached wallets
-/// at their saved height and creating `born_at_fork` wallets at the first ledger-9 block.
+/// at their saved height and installing `keyed_at_fork` identities' ECDSA keys at the fork.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
 	blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
-	born_at_fork: &[WalletSeed],
+	keyed_at_fork: &[WalletSeed],
 ) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
 		log::info!(
@@ -1394,7 +1419,7 @@ pub(crate) fn replay_blocks(
 	let result = match fork_ctx {
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			replay_blocks_8(&ctx8, l8_blocks);
-			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes, born_at_fork)
+			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes, keyed_at_fork)
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
@@ -1453,6 +1478,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	schemes: &WalletSchemes,
 	replay_checkpoint_interval: u64,
 ) -> ForkAwareLedgerContext {
+	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
 	if wallet_seeds.is_empty() {
 		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	}
@@ -1513,8 +1539,8 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	};
 
 	// 3. Initialize context (cold genesis or warm snapshot restore).
-	let (uncached_seeds, born_at_fork) =
-		split_seeds_born_at_fork(&uncached_seeds, schemes, received_tx.ledger_version());
+	let keyed_at_fork =
+		ecdsa_seeds_keyed_at_fork(&uncached_seeds, schemes, received_tx.ledger_version());
 	let fork_ctx = initialize_context(
 		received_tx,
 		&uncached_seeds,
@@ -1562,7 +1588,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 				chunk,
 				&cached[cached_cursor..cached_end],
 				schemes,
-				&born_at_fork,
+				&keyed_at_fork,
 			);
 			cached_cursor = cached_end;
 			// The final chunk's save is step 6 below.
@@ -1579,9 +1605,8 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		}
 		ctx
 	} else {
-		replay_blocks(fork_ctx, blocks, &cached, schemes, &born_at_fork)
+		replay_blocks(fork_ctx, blocks, &cached, schemes, &keyed_at_fork)
 	};
-	assert_fork_wallets_created(&fork_ctx, &born_at_fork);
 
 	// 6. Save updated cache. `blocks.last()` is sound here because
 	// step 4 already excluded the dust-warp synthetic (`number = 0`)
@@ -1671,10 +1696,8 @@ async fn save_cache_ledger8(
 
 	storage.set_ledger_snapshot(chain_id, snapshot).await;
 
-	// ECDSA wallets do not exist before the fork.
 	let wallet_snapshots: Vec<_> = wallet_seeds
 		.iter()
-		.filter(|seed| scheme_of(schemes, seed) != UnshieldedSignatureScheme::Ecdsa)
 		.filter_map(|seed| {
 			match wallet_state_cache::create_wallet_snapshot_8(
 				ctx,
@@ -1806,6 +1829,8 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	wallet_seeds: &[WalletSeed],
 	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
+	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
+
 	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks
@@ -1813,9 +1838,8 @@ pub fn build_fork_aware_context_raw_with_schemes(
 		.map(|b| b.ledger_version())
 		.unwrap_or(LedgerVersion::Ledger9);
 
-	let (initial_seeds, born_at_fork) =
-		split_seeds_born_at_fork(wallet_seeds, schemes, initial_version);
-	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = initial_seeds
+	let keyed_at_fork = ecdsa_seeds_keyed_at_fork(wallet_seeds, schemes, initial_version);
+	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
 		.iter()
 		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
 		.collect();
@@ -1828,9 +1852,7 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	);
 	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
 
-	let ctx = replay_blocks(ctx, &received_tx.blocks, &[], schemes, &born_at_fork);
-	assert_fork_wallets_created(&ctx, &born_at_fork);
-	ctx
+	replay_blocks(ctx, &received_tx.blocks, &[], schemes, &keyed_at_fork)
 }
 
 /// Build a fork-aware context from source transactions, returning a ledger 9 context.
@@ -2085,25 +2107,24 @@ mod tests {
 	}
 
 	#[test]
-	fn split_defers_ecdsa_seeds_only_on_a_ledger8_genesis() {
+	fn ecdsa_seeds_are_keyed_at_the_fork_only_when_the_replay_starts_before_it() {
 		let seeds = [seed(1), seed(2)];
 		let schemes = WalletSchemes::from([(seed(2), UnshieldedSignatureScheme::Ecdsa)]);
 
-		let (initial, deferred) =
-			split_seeds_born_at_fork(&seeds, &schemes, LedgerVersion::Ledger8);
-		assert_eq!(initial, vec![seed(1)]);
-		assert_eq!(deferred, vec![seed(2)]);
+		// Ledger-8 genesis: both seeds replay the pre-fork leg, the ECDSA one watch-only.
+		assert_eq!(
+			ecdsa_seeds_keyed_at_fork(&seeds, &schemes, LedgerVersion::Ledger8),
+			vec![seed(2)]
+		);
 
-		let (initial, deferred) =
-			split_seeds_born_at_fork(&seeds, &schemes, LedgerVersion::Ledger9);
-		assert_eq!(initial, seeds.to_vec());
-		assert!(deferred.is_empty());
+		// Ledger-9 genesis: built with their real scheme, nothing to key at a fork.
+		assert!(ecdsa_seeds_keyed_at_fork(&seeds, &schemes, LedgerVersion::Ledger9).is_empty());
 	}
 
-	/// GH #2180: on a chain forked from ledger 8, an ECDSA wallet is created at the fork block
-	/// (a ledger-8 context cannot hold one) while Schnorr wallets are translated across it.
+	/// GH #2180: on a chain forked from ledger 8, an ECDSA wallet replays the pre-fork leg under
+	/// watch-only and is handed its keys at the fork, while Schnorr wallets cross unchanged.
 	#[test]
-	fn ecdsa_wallets_are_born_at_the_fork() {
+	fn ecdsa_wallets_are_keyed_at_the_fork() {
 		let source = forked_source(3, 3);
 		let (schnorr, ecdsa) = (seed(1), seed(2));
 		let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
@@ -2125,6 +2146,33 @@ mod tests {
 		let actual =
 			&wallets.get(&ecdsa).expect("ECDSA wallet must exist after the fork").unshielded;
 		assert_eq!(actual.verifying_key(), expected.verifying_key(), "wrong NIGHT identity");
+	}
+
+	/// The keyed wallet is the one that replayed the ledger-8 leg, not a fresh one: its
+	/// shielded sub-wallet — which is scheme-independent — is identical to the Schnorr replay
+	/// of the same seed, so pre-fork shielded funds are still there. See
+	/// `install_unshielded_keys_keeps_shielded_history` for the install itself.
+	#[test]
+	fn ecdsa_wallet_keeps_the_shielded_wallet_it_replayed_with() {
+		let source = forked_source(3, 3);
+		let ecdsa = seed(2);
+		let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
+
+		let as_ecdsa =
+			build_fork_aware_context_raw_with_schemes(&source, &[ecdsa.clone()], &schemes)
+				.into_ledger9()
+				.expect("a forked chain ends on ledger 9");
+		let as_schnorr = build_fork_aware_context_raw(&source, &[ecdsa.clone()])
+			.into_ledger9()
+			.expect("a forked chain ends on ledger 9");
+
+		let shielded = |ctx: &LedgerContext<DefaultDB>| {
+			midnight_ledger_unsafe_helpers::ledger_9::serialize_untagged(
+				&ctx.wallets.lock().unwrap()[&ecdsa].shielded.state,
+			)
+			.expect("serialize shielded state")
+		};
+		assert_eq!(shielded(&as_ecdsa), shielded(&as_schnorr), "pre-fork shielded history lost");
 	}
 
 	#[test]

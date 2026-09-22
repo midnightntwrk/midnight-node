@@ -105,3 +105,41 @@ fn ecdsa_address_mip0003_conformance() {
 		assert_eq!(actual, expected, "uniform bytes {uniform_bytes:02x?}");
 	}
 }
+
+/// GH #2180: installing ECDSA keys at the 8->9 fork keeps the shielded sub-wallet the identity
+/// replayed the pre-fork chain with. The shielded address is scheme-independent, so shielded
+/// funds sent to an `ecdsa:` seed before the fork must stay spendable after it.
+///
+/// Also pins that installing keys does not *move* the identity: the NIGHT address is the one the
+/// pre-fork wallet was already watching, so funds are never watched at one address and spent
+/// from another.
+#[test]
+fn install_unshielded_keys_keeps_shielded_history() {
+	use super::{DefaultDB, LedgerContext, UnshieldedSignatureScheme};
+
+	let ctx = LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed()]);
+
+	// Stand in for the pre-fork wallet: a shielded output replayed on the ledger-8 leg, and a
+	// watch-only NIGHT identity at the ECDSA address (what `watch_only_ecdsa_wallet_8` builds).
+	let watched = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address;
+	{
+		let mut wallets = ctx.wallets.lock().unwrap();
+		let wallet = wallets.get_mut(&seed()).unwrap();
+		wallet.shielded.state.first_free = 7;
+		wallet.unshielded = UnshieldedWallet::from(watched);
+	}
+
+	ctx.install_unshielded_keys(&seed(), UnshieldedSignatureScheme::Ecdsa);
+
+	let wallets = ctx.wallets.lock().unwrap();
+	let wallet = wallets.get(&seed()).expect("wallet survives the key install");
+	assert_eq!(wallet.shielded.state.first_free, 7, "shielded history must survive the install");
+	assert_eq!(
+		wallet.unshielded.user_address, watched,
+		"installing keys must not move the identity off the address it was watching",
+	);
+	assert!(
+		wallet.unshielded.maintenance_verifying_key().is_some(),
+		"the identity must now hold key material",
+	);
+}

@@ -29,7 +29,7 @@ use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
 	client::MidnightNodeClientConfig,
-	commands::show_address,
+	commands::{show_address, show_wallet},
 };
 use std::{
 	net::TcpListener,
@@ -51,12 +51,29 @@ use testcontainers::{
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-/// Seed of the ECDSA identity exercised after the fork. It has no pre-fork history: ledger 8
-/// cannot represent it.
+/// Seed of the ECDSA identity exercised across the fork. Ledger 8 cannot represent an ECDSA NIGHT
+/// key, so the seed replays the pre-fork leg watch-only, at its ECDSA address and with no key
+/// material; the fork installs the keys.
+///
+/// The *address* is representable before the fork either way — `UserAddress` is a bare 32-byte
+/// hash and the ledger does not know which scheme it belongs to — so NIGHT can be sent to it on
+/// the ledger-8 leg. It just cannot be spent there: ledger 8's signature types carry no ECDSA
+/// variant. Step 3b funds both sides of this identity pre-fork and step 7 spends them after, which
+/// is what makes the fork boundary itself the thing under test.
 const ECDSA_SEED: &str = "1000000000000000000000000000000000000000000000000000000000000001";
 
-/// Unshielded address for a (possibly `ecdsa:`-prefixed) seed on the `undeployed` network.
-fn unshielded_address(seed: &str) -> String {
+/// NIGHT sent to the ECDSA `UserAddress` while the chain is still on ledger 8 (step 3b), spent
+/// after the fork (step 7b). Deliberately distinctive so step 7 identifies *these* outputs rather
+/// than any later funding.
+const PREFORK_NIGHT: u128 = 500;
+
+/// Shielded amount sent pre-fork to the ECDSA identity's shielded address, which is
+/// scheme-independent — `ecdsa:<seed>` and `<seed>` share one.
+const PREFORK_SHIELDED: u128 = 777;
+
+/// Address of one kind (`--shielded` / `--unshielded` / …) for a (possibly `ecdsa:`-prefixed) seed
+/// on the `undeployed` network.
+fn address_of(seed: &str, kind: &str) -> String {
 	let cli = Cli::parse_from([
 		"midnight-node-toolkit",
 		"show-address",
@@ -64,12 +81,36 @@ fn unshielded_address(seed: &str) -> String {
 		"undeployed",
 		"--seed",
 		seed,
-		"--unshielded",
+		kind,
 	]);
 	match cli.command {
 		Commands::ShowAddress(args) => match show_address::execute(args) {
 			show_address::ShowAddress::SingleAddress(addr) => addr,
 			show_address::ShowAddress::Addresses(_) => panic!("expected a single address"),
+		},
+		_ => unreachable!(),
+	}
+}
+
+/// `show-wallet` for a seed as structured data, so the test can assert on balances instead of
+/// only on the command exiting cleanly.
+async fn wallet_state(seed: &str, url: &str) -> show_wallet::WalletInfoJson {
+	let cli = Cli::parse_from([
+		"midnight-node-toolkit",
+		"show-wallet",
+		"--fetch-cache",
+		"inmemory",
+		"--seed",
+		seed,
+		"-s",
+		url,
+	]);
+	match cli.command {
+		Commands::ShowWallet(args) => {
+			match show_wallet::execute(args).await.expect("show-wallet failed") {
+				show_wallet::ShowWalletResult::Json(info) => info,
+				other => panic!("expected JSON wallet info, got {other:?}"),
+			}
 		},
 		_ => unreachable!(),
 	}
@@ -128,6 +169,11 @@ impl Drop for NodeUnderTest {
 	}
 }
 
+/// Raise the node's RPC connection cap (default 100). Every toolkit CLI call in this test opens
+/// several websocket connections, and those made from the same test process outlive the call, so
+/// the default cap runs out partway through the post-fork steps and the node answers HTTP 429.
+const RPC_MAX_CONNECTIONS_ARG: &str = "--rpc-max-connections 1000";
+
 /// An unused localhost port, so a local node does not collide with whatever else
 /// the developer has running.
 fn free_port() -> u16 {
@@ -151,6 +197,7 @@ async fn start_node(
 			.with_exposed_port(ContainerPort::Tcp(9944))
 			.with_env_var("CFG_PRESET", "dev")
 			.with_env_var("CHAIN", "/chainspec/chainspec.json")
+			.with_env_var("APPEND_ARGS", RPC_MAX_CONNECTIONS_ARG)
 			.with_copy_to("/chainspec/chainspec.json", chainspec.into_bytes())
 			.start()
 			.await
@@ -174,7 +221,10 @@ async fn start_node(
 		.env("CFG_PRESET", "dev")
 		.env("CHAIN", &chainspec_path)
 		.env("BASE_PATH", tempdir.join("chain"))
-		.env("APPEND_ARGS", format!("--rpc-port {rpc_port} --port 0 --no-prometheus"))
+		.env(
+			"APPEND_ARGS",
+			format!("--rpc-port {rpc_port} --port 0 --no-prometheus {RPC_MAX_CONNECTIONS_ARG}"),
+		)
 		.spawn()
 		.unwrap_or_else(|e| panic!("failed to spawn NODE_BINARY {binary}: {e}"));
 	eprintln!(
@@ -434,6 +484,65 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
+	// 3b. GH #2180: fund the `ecdsa:` identity while the chain is *still on ledger 8*, on both
+	//     sides, so step 7 can prove what survives the fork. Sent from the Schnorr genesis
+	//     wallet, which holds both NIGHT and genesis-minted shielded coins.
+	//
+	//     - Shielded: an ordinary shielded transfer — the address is scheme-independent. For the
+	//       `ecdsa:` wallet to see this coin after the fork it must have replayed the ledger-8
+	//       leg with a real shielded sub-wallet; a wallet built fresh at the fork starts with an
+	//       empty shielded state and the coin is silently invisible.
+	//     - Unshielded: NIGHT to the ECDSA `UserAddress`. Ledger 8 holds the UTxO happily but
+	//       cannot authorize a spend from it, so it sits there until the fork installs the keys.
+	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
+	let ecdsa_address = address_of(&ecdsa_seed, "--unshielded");
+	let ecdsa_shielded_address = address_of(&ecdsa_seed, "--shielded");
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		&PREFORK_NIGHT.to_string(),
+		"--destination-address",
+		&ecdsa_address,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--shielded-amount",
+		&PREFORK_SHIELDED.to_string(),
+		"--destination-address",
+		&ecdsa_shielded_address,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// Not asserted here: there is no supported way to *read* this identity yet. `show-wallet
+	// --seed ecdsa:…` is refused while the tip is on ledger 8 (`ensure_ecdsa_supported`), which
+	// is the intended behaviour — the watch-only sub-wallet is an internal replay construct, not
+	// user-visible state. `run_cli` already panics if either transfer failed, and step 7a is
+	// what proves the funds arrived and crossed.
+	eprintln!(
+		"[hardfork_e2e] ecdsa identity funded pre-fork: {PREFORK_NIGHT} NIGHT + {PREFORK_SHIELDED} shielded"
+	);
+
 	// 4. Runtime upgrade: take the new WASM from the node under test and apply it
 	let wasm_path = tempdir.path().join("runtime.wasm");
 	std::fs::write(&wasm_path, runtime_wasm(node_binary.as_deref())).expect("write wasm");
@@ -588,12 +697,80 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history. The identity cannot exist
-	//    before the fork; the toolkit creates it at the fork block.
-	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
-	let ecdsa_address = unshielded_address(&ecdsa_seed);
+	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history. The NIGHT identity cannot be
+	//    keyed before the fork; the toolkit watches it and installs its keys at the fork block.
+	//    `ecdsa_seed` / `ecdsa_address` were funded pre-fork in step 3b.
 
-	// 7a. Fund it from the Schnorr genesis wallet.
+	// 7a. The pre-fork funds must have crossed the boundary — the end-to-end proof of it.
+	//
+	//     Shielded is the one that regresses silently: the coin lives in the wallet's *replayed*
+	//     state, so an identity held out of the ledger-8 leg reports zero and every spend of it
+	//     fails as "insufficient funds" on coins that are present on chain.
+	//
+	//     Unshielded is read from the ledger's UTxO set at query time, so it only needs the
+	//     address to be unchanged across the fork and the UTxO to survive the v8->v9 state
+	//     translation. Asserting it here pins both.
+	let post_fork = wallet_state(&ecdsa_seed, &url).await;
+	assert!(
+		post_fork.coins.values().any(|c| c.value == PREFORK_SHIELDED),
+		"the shielded coin received before the fork must survive it; got {:?}",
+		post_fork.coins,
+	);
+	assert!(
+		post_fork.utxos.iter().any(|u| u.value == PREFORK_NIGHT),
+		"the NIGHT sent to the ECDSA address before the fork must survive it; got {:?}",
+		post_fork.utxos,
+	);
+	eprintln!("[hardfork_e2e] pre-fork NIGHT and shielded coin both survived the fork");
+
+	// 7b. Spend the pre-fork NIGHT, before any post-fork funding exists to draw on: unspendable
+	//     on ledger 8, spendable now that the fork installed the keys. The ECDSA wallet holds no
+	//     DUST (the fork wiped it and 5b only restores cNIGHT's slice), so the Schnorr wallet
+	//     pays the fee.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		&ecdsa_seed,
+		"--funding-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		&(PREFORK_NIGHT / 2).to_string(),
+		"--destination-address",
+		"mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r",
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7c. Spend the pre-fork shielded coin. A zswap input is proved, not signed with the NIGHT
+	//     key, so the signature scheme is irrelevant to spending it — what matters is that the
+	//     coin is in the replayed shielded state at all.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		&ecdsa_seed,
+		"--funding-seed",
+		SOURCE_SEED,
+		"--shielded-amount",
+		&(PREFORK_SHIELDED / 2).to_string(),
+		"--destination-address",
+		"mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d",
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7d. Fund it again post-fork, from the Schnorr genesis wallet.
 	run_cli(&[
 		"generate-txs",
 		"--fetch-cache",
@@ -612,7 +789,7 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 7b. Spend from it. The ECDSA wallet holds no DUST, so the Schnorr wallet pays the fee.
+	// 7e. Spend that post-fork funding too.
 	run_cli(&[
 		"generate-txs",
 		"--fetch-cache",
@@ -633,10 +810,10 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 7c. The read path resolves the identity too.
+	// 7f. The read path resolves the identity too.
 	run_cli(&["show-wallet", "--fetch-cache", "inmemory", "--seed", &ecdsa_seed, "-s", &url]).await;
 
-	// 7d. A contract with an ECDSA maintenance committee.
+	// 7g. A contract with an ECDSA maintenance committee.
 	if contract_artifacts_ready() {
 		run_cli(&[
 			"generate-txs",
