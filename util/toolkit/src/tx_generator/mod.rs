@@ -20,7 +20,10 @@ pub mod builder;
 pub mod destination;
 pub mod source;
 
-use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_cached};
+use builder::{
+	Builder, DynamicError, ProverConfig, build_fork_aware_context_cached_with_schemes,
+	ensure_ecdsa_supported,
+};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
 use source::{
 	FetchCacheConfig, GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
@@ -49,6 +52,7 @@ pub struct TxGenerator {
 	pub prover_config: ProverConfig,
 	pub fetch_cache_config: FetchCacheConfig,
 	pub ledger_state_db: String,
+	pub replay_checkpoint_interval: u64,
 	pub dry_run: bool,
 }
 
@@ -62,6 +66,7 @@ impl TxGenerator {
 	) -> Result<Self, TxGeneratorError> {
 		let fetch_cache_config = src.fetch_cache.clone();
 		let ledger_state_db = src.ledger_state_db.clone();
+		let replay_checkpoint_interval = src.replay_checkpoint_interval;
 		let source = Self::source(src, dry_run).await?;
 		let destinations = Self::destinations(dest, dry_run).await?;
 		if dry_run {
@@ -76,6 +81,7 @@ impl TxGenerator {
 			prover_config,
 			fetch_cache_config,
 			ledger_state_db,
+			replay_checkpoint_interval,
 			dry_run,
 		})
 	}
@@ -192,15 +198,29 @@ impl TxGenerator {
 			.builder_config
 			.relevant_wallet_seeds()
 			.map_err(|e| DynamicError { error: e.into() })?;
+		let schemes = self
+			.builder_config
+			.relevant_wallet_schemes()
+			.map_err(|e| DynamicError { error: e.into() })?;
+
+		// Guard: ECDSA unshielded identities are only representable from ledger 9. Reject early with
+		// a clear CLI error instead of letting the loud panic fire deep in context construction.
+		ensure_ecdsa_supported(received_txs.ledger_version(), &schemes)?;
+
 		let fork_ctx = if seeds.is_empty() {
 			None
 		} else {
 			let wallet_cache =
 				create_file_wallet_cache(&self.ledger_state_db, &self.fetch_cache_config);
 			let t = std::time::Instant::now();
-			let ctx =
-				build_fork_aware_context_cached(&seeds, received_txs, wallet_cache.as_deref())
-					.await;
+			let ctx = build_fork_aware_context_cached_with_schemes(
+				&seeds,
+				received_txs,
+				wallet_cache.as_deref(),
+				&schemes,
+				self.replay_checkpoint_interval,
+			)
+			.await;
 			log::debug!("[perf] build_fork_aware_context_cached took {:?}", t.elapsed());
 			Some(ctx)
 		};

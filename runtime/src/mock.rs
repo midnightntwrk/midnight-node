@@ -29,9 +29,9 @@ use sp_core::crypto::CryptoType;
 use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
-	BuildStorage, Digest, DigestItem, MultiSigner, impl_opaque_keys,
+	BuildStorage, Digest, DigestItem, impl_opaque_keys,
 	key_types::{AURA, GRANDPA},
-	traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, OpaqueKeys},
+	traits::{BlakeTwo256, ConvertInto, IdentityLookup, OpaqueKeys},
 };
 use std::cmp::max;
 
@@ -76,8 +76,6 @@ impl AccountKeys {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AccountId(ecdsa::Public);
 
-pallet_partner_chains_session::impl_pallet_session_config!(Test);
-
 // Configure a mock runtime to test the pallet.
 frame_support::construct_runtime!(
 	pub enum Test {
@@ -86,8 +84,8 @@ frame_support::construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management,
 		Aura: pallet_aura,
 		Grandpa: pallet_grandpa,
-		PalletSession: pallet_session,
-		Session: pallet_partner_chains_session,
+		Session: pallet_session,
+		Historical: pallet_session::historical,
 	}
 );
 
@@ -148,15 +146,32 @@ impl MaybeFromCandidateKeys for TestSessionKeys {
 	}
 }
 
-impl pallet_partner_chains_session::Config for Test {
+impl pallet_session::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
 	type ValidatorId = <Self as frame_system::Config>::AccountId;
-	type ShouldEndSession = ValidatorManagementSessionManager<Test>;
+	type ValidatorIdOf = ConvertInto;
+	type ShouldEndSession = SessionCommitteeManagement;
 	type NextSessionRotation = ();
-	type SessionManager = ValidatorManagementSessionManager<Test>;
+	type SessionManager = SessionCommitteeManagement;
 	type SessionHandler = <TestSessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = TestSessionKeys;
+	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
+	type WeightInfo = pallet_session::weights::SubstrateWeight<Test>;
 	type Currency = CurrencyWaiver;
 	type KeyDeposit = ();
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId32, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId32) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
 }
 
 impl pallet_sidechain::Config for Test {
@@ -237,8 +252,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		(bob().cross_chain.public(), bob().session()).into(),
 	];
 
-	let session_keys: Vec<_> =
-		vec![(alice().account(), alice().session()), (bob().account(), bob().session())];
 	let main_chain_scripts = MainChainScripts::default();
 	pallet_session_validator_management::GenesisConfig::<Test> {
 		initial_authorities,
@@ -247,7 +260,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	.assimilate_storage(&mut t)
 	.unwrap();
 
-	pallet_partner_chains_session::GenesisConfig::<Test> { initial_validators: session_keys }
+	pallet_session::GenesisConfig::<Test>::default()
 		.assimilate_storage(&mut t)
 		.unwrap();
 
@@ -407,9 +420,6 @@ impl TestKeys {
 	pub fn from_seed(s: &str) -> Self {
 		Self { cross_chain: pair_from_seed(s), aura: pair_from_seed(s), grandpa: pair_from_seed(s) }
 	}
-	pub fn account(&self) -> AccountId32 {
-		MultiSigner::from(sp_core::ecdsa::Public::from(self.cross_chain.public())).into_account()
-	}
 	pub fn session(&self) -> TestSessionKeys {
 		TestSessionKeys { aura: self.aura.public(), grandpa: self.grandpa.public() }
 	}
@@ -523,7 +533,6 @@ macro_rules! assert_aura_authorities {
 		assert_eq!(actual_authorities, expected_authorities);
 	}};
 }
-use crate::session_manager::ValidatorManagementSessionManager;
 pub(crate) use assert_aura_authorities;
 use sidechain_slots::SlotsPerEpoch;
 use sp_session_validator_management::MainChainScripts;

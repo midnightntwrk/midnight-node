@@ -5,12 +5,14 @@ use frame_support::{
 };
 use frame_system::EnsureRoot;
 use pallet_balances::AccountData;
-use pallet_partner_chains_session::{SessionHandler, ShouldEndSession};
+use pallet_session::{SessionHandler, ShouldEndSession};
 use parity_scale_codec::MaxEncodedLen;
 
 use sidechain_domain::{ScEpochNumber, ScSlotNumber};
 use sp_core::{ConstU16, ConstU32, ConstU64, ConstU128, H256, ecdsa};
-use sp_runtime::{AccountId32, BoundToRuntimeAppPublic, KeyTypeId, impl_opaque_keys};
+use sp_runtime::{
+	AccountId32, BoundToRuntimeAppPublic, KeyTypeId, impl_opaque_keys, traits::ConvertInto,
+};
 
 pub struct CrossChainPublicLikeModule;
 impl BoundToRuntimeAppPublic for CrossChainPublicLikeModule {
@@ -62,7 +64,7 @@ construct_runtime! {
 		Balances: pallet_balances::pallet,
 		Bridge: pallet_partner_chains_bridge::pallet,
 		SessionCommitteeManagement: pallet_session_validator_management::pallet,
-		Session: pallet_partner_chains_session::pallet,
+		Session: pallet_session::pallet,
 	}
 }
 
@@ -147,15 +149,19 @@ impl pallet_session_validator_management::Config for MockRuntime {
 	type BenchmarkHelper = ();
 }
 
-impl pallet_partner_chains_session::Config for MockRuntime {
+impl pallet_session::Config for MockRuntime {
+	type RuntimeEvent = RuntimeEvent;
 	type ValidatorId = AccountId32;
+	type ValidatorIdOf = ConvertInto;
 	type ShouldEndSession = Mock;
 	type NextSessionRotation = ();
 	type SessionManager = ();
 	type SessionHandler = Mock;
 	type Keys = TestSessionKeys;
+	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
+	type WeightInfo = pallet_session::weights::SubstrateWeight<MockRuntime>;
 	type Currency = Balances;
-	type KeyDeposit = ();
+	type KeyDeposit = ConstU128<0>;
 }
 
 impl pallet_balances::Config for MockRuntime {

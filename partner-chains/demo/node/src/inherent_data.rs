@@ -23,7 +23,6 @@ use sp_inherents::CreateInherentDataProviders;
 use sp_partner_chains_bridge::{
 	TokenBridgeDataSource, TokenBridgeIDPRuntimeApi, TokenBridgeInherentDataProvider,
 };
-use sp_partner_chains_consensus_aura::CurrentSlotProvider;
 use sp_runtime::traits::{Block as BlockT, Header, Zero};
 use sp_session_validator_management::SessionValidatorManagementApi;
 use sp_timestamp::{InherentDataProvider as TimestampIDP, Timestamp};
@@ -110,12 +109,6 @@ pub struct VerifierCIDP<T> {
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<AccountId> + Send + Sync>,
-}
-
-impl<T: Send + Sync> CurrentSlotProvider for VerifierCIDP<T> {
-	fn slot(&self) -> Slot {
-		*timestamp_and_slot_cidp(self.config.slot_duration(), self.config.time_source.clone()).0
-	}
 }
 
 #[async_trait]

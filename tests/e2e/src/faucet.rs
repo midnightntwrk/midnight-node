@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 //! Faucet manager for e2e tests.
 //!
 //! Backs a pool of `N` long-lived "worker" UTXOs at the shared funded faucet address.
@@ -248,7 +261,8 @@ impl FaucetManager {
         if candidates.is_empty() {
             panic!(
                 "FaucetManager: no live UTXO >= {} lovelace left at {} to replace a stale \
-                 worker. Faucet needs top-up or re-prime.",
+                 worker. Either top up the faucet (send more tADA to this address) or re-prime \
+                 it (re-split its balance into fresh large worker UTXOs).",
                 need.max(MIN_WORKER_LOVELACE),
                 self.faucet.address_as_bech32(),
             );

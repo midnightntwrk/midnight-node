@@ -1,0 +1,52 @@
+[package]
+name = "sc-partner-chains-consensus"
+version = "1.8.1"
+description = "Partner Chains consensus components: inherent digest, block proposal, and inherent checking at block import or in the import-queue verifier"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
+repository.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+log.workspace = true
+sc-consensus = { workspace = true, default-features = true }
+sp-api = { workspace = true, default-features = true }
+sp-block-builder = { workspace = true, default-features = true }
+sp-consensus.workspace = true
+sp-consensus-slots = { workspace = true, default-features = true }
+sp-inherents = { workspace = true, default-features = true }
+sp-partner-chains-consensus.workspace = true
+sp-runtime = { workspace = true, default-features = true }
+
+[dev-dependencies]
+parity-scale-codec = { workspace = true, default-features = true }
+sc-block-builder = { workspace = true, default-features = true }
+sc-consensus-aura = { workspace = true, default-features = true }
+sc-client-api = { workspace = true, default-features = true }
+sc-consensus-babe = { workspace = true, default-features = true }
+sc-consensus-epochs = { workspace = true, default-features = true }
+sc-network-test = { workspace = true }
+sc-transaction-pool-api = { workspace = true, default-features = true }
+sp-blockchain = { workspace = true }
+sp-consensus-aura = { workspace = true, default-features = true }
+sp-consensus-babe = { workspace = true, default-features = true }
+sp-externalities = { workspace = true, default-features = true }
+sp-keystore = { workspace = true, default-features = true }
+sp-state-machine = { workspace = true, default-features = true }
+sp-timestamp = { workspace = true, default-features = true }
+sp-tracing = { workspace = true, default-features = true }
+sp-version = { workspace = true, default-features = true }
+substrate-test-runtime-client = { workspace = true }
+tokio.workspace = true
+
+[lib]
+doctest = false

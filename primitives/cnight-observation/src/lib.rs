@@ -200,31 +200,6 @@ impl CardanoPosition {
 		self.tx_index_in_block += 1;
 		self
 	}
-
-	/// Lowest position within `block_number` (tx index 0). Only
-	/// `(block_number, tx_index_in_block)` are significant when used as a
-	/// range bound; `block_hash`/`block_timestamp` are placeholders.
-	pub fn min_for_block(block_number: u32) -> Self {
-		Self {
-			block_hash: McBlockHash([0u8; 32]),
-			block_number,
-			block_timestamp: Default::default(),
-			tx_index_in_block: 0,
-		}
-	}
-
-	/// Highest position within `block_number`. `tx_index_in_block` is
-	/// `i32::MAX` so it survives the `as i32` cast in the SQL bind path
-	/// without underflowing to `-1`. Like [`Self::min_for_block`], the
-	/// `block_hash`/`block_timestamp` are placeholders.
-	pub fn max_for_block(block_number: u32) -> Self {
-		Self {
-			block_hash: McBlockHash([0u8; 32]),
-			block_number,
-			block_timestamp: Default::default(),
-			tx_index_in_block: u32::try_from(i32::MAX).expect("i32::MAX is non-negative"),
-		}
-	}
 }
 
 impl PartialOrd for CardanoPosition {
@@ -397,6 +372,10 @@ impl core::fmt::Display for ObservedUtxoHeader {
 )]
 pub struct UtxoIndexInTx(pub u16);
 
+/// Legacy observed-UTXO ordering, used by nodes when runtime is below
+/// [`DATA_ORDERED_UTXOS_SPEC_VERSION`]. Orders by `tx_position`, then puts
+/// created UTXOs ahead of spent ones, then breaks ties on `utxo_tx_hash` and
+/// `utxo_index`. Needed for historical blocks verification.
 impl PartialOrd for ObservedUtxoHeader {
 	fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
 		match self.tx_position.partial_cmp(&other.tx_position) {
@@ -420,12 +399,60 @@ impl PartialOrd for ObservedUtxoHeader {
 	}
 }
 
+/// First runtime `spec_version` whose `process_tokens` expects observed UTXOs
+/// ordered tx_position and then by variant rank.
+pub const DATA_ORDERED_UTXOS_SPEC_VERSION: u32 = 2_000_000;
+
+impl ObservedUtxoData {
+	/// Mapping mutations run before asset events so an `AssetCreate` always
+	/// observes the final registration state, and removals run before
+	/// additions.
+	pub fn ordering_rank(&self) -> u8 {
+		match self {
+			Self::Deregistration(_) => 0,
+			Self::Registration(_) => 1,
+			Self::AssetSpend(_) => 2,
+			Self::AssetCreate(_) => 3,
+		}
+	}
+}
+
+/// Total order over observed UTXOs.
+///
+/// `tx_position` stays the primary key and the variant rank must never be
+/// promoted above it: a single inherent's batch spans a whole observation
+/// window, so a UTXO's `AssetCreate` and the `AssetSpend` that consumes it can
+/// both land in one batch, and only the real on-chain Cardano order keeps the
+/// create ahead of the spend.
+///
+/// The trailing `utxo_tx_hash`/`utxo_index` tie-break is not semantically
+/// meaningful — order within one variant is irrelevant to processing — but it
+/// must stay deterministic across validators.
+pub fn cmp_observed_utxos_by_data(a: &ObservedUtxo, b: &ObservedUtxo) -> core::cmp::Ordering {
+	a.header
+		.tx_position
+		.block_number
+		.cmp(&b.header.tx_position.block_number)
+		.then_with(|| {
+			a.header
+				.tx_position
+				.tx_index_in_block
+				.cmp(&b.header.tx_position.tx_index_in_block)
+		})
+		.then_with(|| a.data.ordering_rank().cmp(&b.data.ordering_rank()))
+		.then_with(|| a.header.utxo_tx_hash.0.cmp(&b.header.utxo_tx_hash.0))
+		.then_with(|| a.header.utxo_index.0.cmp(&b.header.utxo_index.0))
+}
+
+pub fn sort_observed_utxos(utxos: &mut [ObservedUtxo], spec_version: u32) {
+	if spec_version >= DATA_ORDERED_UTXOS_SPEC_VERSION {
+		utxos.sort_by(cmp_observed_utxos_by_data);
+	} else {
+		utxos.sort();
+	}
+}
+
 decl_runtime_apis! {
-	// v2 marks the consensus-affecting reduction of the cNight db-sync over-fetch
-	// factor from 64x to 4x. Node binaries gate the multiplier on this version so
-	// the change only takes effect at the runtime upgrade boundary; mixing old and
-	// new binaries against the same runtime version stays consensus-equivalent.
-	#[api_version(2)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
@@ -439,9 +466,6 @@ decl_runtime_apis! {
 
 		fn get_cardano_block_window_size() -> u32;
 
-		// Despite the historic name, this returns the per-block *transaction* capacity
-		// (`pallet_cnight_observation::CardanoTxCapacityPerBlock`), not a UTXO count.
-		// Callers must multiply by the per-tx UTXO over-fetch factor to get a row limit.
 		fn get_utxo_capacity_per_block() -> u32;
 	}
 }

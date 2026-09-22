@@ -1,7 +1,20 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use midnight_ledger_unsafe_helpers::{UnshieldedSignatureScheme, WalletSeed};
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
-use midnight_node_ledger_helpers::WalletSeed;
 use midnight_node_toolkit::commands::dust_balance;
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -285,8 +298,14 @@ async fn run_warmup() {
             fetch_only_cached: false,
             fetch_cache: fetch_cache_config(),
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
-        seeds: seeds.clone(),
+        // e2e wallets are all Schnorr NIGHT identities; pair each seed with its scheme.
+        seeds: seeds
+            .iter()
+            .cloned()
+            .map(|s| (s, UnshieldedSignatureScheme::Schnorr))
+            .collect(),
         dry_run: false,
     };
 
@@ -344,7 +363,7 @@ pub(crate) const DEV_WALLET_SEED: &str =
 /// just-started env poll here (rather than flake) while the faucet job runs and
 /// DUST accrues. Panics with a clear message if funding never arrives.
 pub(crate) async fn ensure_dev_wallet_funded() {
-    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_ledger_unsafe_helpers::WalletSeed;
     use midnight_node_toolkit::commands::show_wallet::{self, ShowWalletArgs, ShowWalletResult};
 
     let settings = Settings::default();
@@ -363,8 +382,12 @@ pub(crate) async fn ensure_dev_wallet_funded() {
                 fetch_only_cached: false,
                 fetch_cache: fetch_cache_config(),
                 ledger_state_db: String::new(),
+                replay_checkpoint_interval: 0,
             },
-            seed: Some(seed.clone()),
+            seed: Some(midnight_node_toolkit::cli_parsers::SchemeSeed {
+                seed: seed.clone(),
+                scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
+            }),
             address: None,
             debug: false,
             dry_run: false,
@@ -411,6 +434,7 @@ fn live_source(url: &str) -> Source {
         fetch_only_cached: false,
         fetch_cache: fetch_cache_config(),
         ledger_state_db: String::new(),
+        replay_checkpoint_interval: 0,
     }
 }
 
@@ -483,7 +507,7 @@ pub(crate) async fn deploy_and_confirm(
     client: &midnight_node_e2e::api::midnight::MidnightClient,
     url: &str,
 ) -> (Vec<u8>, String) {
-    use midnight_node_ledger_helpers::extract_tx_with_context;
+    use midnight_ledger_unsafe_helpers::extract_tx_with_context;
     use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
 
     let tempdir = tempfile::tempdir().expect("create tempdir");
@@ -549,7 +573,10 @@ pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::
             shielded_token_type: vec![],
             unshielded_amount: vec![100],
             unshielded_token_type: vec![],
-            source_seed: seed,
+            source_seed: cli::SchemeSeed {
+                seed,
+                scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
+            },
             funding_seed: None,
             destination_address: vec![recipient],
             input_utxos: vec![],

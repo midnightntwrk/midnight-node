@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::tx_generator::source::GetTxsFromFile;
 use clap::Args;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
@@ -59,17 +72,12 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 		return Err(ContractAddressError::TransactionIsSystemTransaction);
 	};
 
-	// Try ledger_9 first, fall back to ledger_8, then ledger_7
+	// Try ledger_9 first, fall back to ledger_8
 	let both = crate::commands::fork::ledger_9::contract_address::extract_contract_address(
 		tx_bytes.as_slice(),
 	)
 	.or_else(|_| {
 		crate::commands::fork::ledger_8::contract_address::extract_contract_address(
-			tx_bytes.as_slice(),
-		)
-	})
-	.or_else(|_| {
-		crate::commands::fork::ledger_7::contract_address::extract_contract_address(
 			tx_bytes.as_slice(),
 		)
 	})?;

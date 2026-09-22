@@ -10,21 +10,21 @@ export type Witnesses<PS> = {
 }
 
 export type ImpureCircuits<PS> = {
-  store(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  check(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  store(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): Promise<__compactRuntime.CircuitResults<PS, []>>;
+  check(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): Promise<__compactRuntime.CircuitResults<PS, []>>;
 }
 
 export type ProvableCircuits<PS> = {
-  store(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  check(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  store(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): Promise<__compactRuntime.CircuitResults<PS, []>>;
+  check(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): Promise<__compactRuntime.CircuitResults<PS, []>>;
 }
 
 export type PureCircuits = {
 }
 
 export type Circuits<PS> = {
-  store(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  check(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  store(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): Promise<__compactRuntime.CircuitResults<PS, []>>;
+  check(context: __compactRuntime.CircuitContext<PS>, something_0: bigint): Promise<__compactRuntime.CircuitResults<PS, []>>;
 }
 
 export type Ledger = {
@@ -40,8 +40,9 @@ export declare class Contract<PS = any, W extends Witnesses<PS> = Witnesses<PS>>
   impureCircuits: ImpureCircuits<PS>;
   provableCircuits: ProvableCircuits<PS>;
   constructor(witnesses: W);
-  initialState(context: __compactRuntime.ConstructorContext<PS>): __compactRuntime.ConstructorResult<PS>;
+  initialState(context: __compactRuntime.ConstructorContext<PS>): Promise<__compactRuntime.ConstructorResult<PS>>;
 }
 
 export declare function ledger(state: __compactRuntime.StateValue | __compactRuntime.ChargedState): Ledger;
 export declare const pureCircuits: PureCircuits;
+export declare const expectedVk: Record<string, string>;

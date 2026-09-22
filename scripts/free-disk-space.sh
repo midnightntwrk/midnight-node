@@ -1,4 +1,17 @@
 #!/bin/bash
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 set -euo pipefail
 
 # Free disk space on GitHub action runners
@@ -164,16 +177,6 @@ cleanPackages() {
         || echo "::warning::The command [sudo apt-get clean] failed"
 }
 
-# Remove Docker images, containers, volumes, and build cache.
-# Ubuntu 22 runners have docker images already installed.
-cleanDocker() {
-    echo "=> Removing the following docker images:"
-    sudo docker image ls
-    echo "=> Removing docker images, containers, volumes, and build cache..."
-    sudo docker system prune -af || true
-    sudo docker builder prune -af || true
-}
-
 # Remove Swap storage
 cleanSwap() {
     sudo swapoff -a || true
@@ -185,7 +188,10 @@ cleanSwap() {
 echo "Initial disk space:"
 df -h /
 # cleanPackages - slow and doesn't free much.
-cleanDocker
+# cleanDocker removed: ubuntu-24.04 runners ship ~no preinstalled docker images
+# (actions/runner-images#12625), and pruning raced the build now that this
+# script runs backgrounded. Log usage so we can verify that stays true.
+sudo docker system df || true
 cleanSwap
 removeUnusedFilesAndDirs
 echo "Final disk space:"

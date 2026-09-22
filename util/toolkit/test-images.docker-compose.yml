@@ -15,8 +15,11 @@ services:
     depends_on:
       guard:
         condition: service_completed_successfully
+  # Ledger-8 release: the hardfork_e2e test forks from this (ledger 8, runtime
+  # spec_version 1_000_000, pallet-midnight storage version 1) up to the current
+  # ledger-9 runtime, exercising the v8->v9 state migration.
   midnight-node-fork-from:
-    image: ${FORK_FROM_NODE_IMAGE:-midnightntwrk/midnight-node:0.21.0}
+    image: ${FORK_FROM_NODE_IMAGE:-midnightntwrk/midnight-node:1.0.1}
     depends_on:
       guard:
         condition: service_completed_successfully

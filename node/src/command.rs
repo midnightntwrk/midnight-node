@@ -94,14 +94,17 @@ pub fn run() -> sc_cli::Result<()> {
 			run_subcommand(cli.subcommand, cfg)
 		},
 		Err(e) if e.kind() == clap::error::ErrorKind::DisplayHelp => {
-			// Only show current config settings for main command.
+			// Only show current config settings for main command. `RunMidnight` (not bare
+			// `RunCmd`) so Midnight-specific run flags show up in the help text.
 			if !subcommand_used {
 				if std::env::args().any(|a| a == "--help") {
-					let _ =
-						RunCmd::try_parse_from(["midnight-node", "--help"]).unwrap_err().print();
+					let _ = RunMidnight::try_parse_from(["midnight-node", "--help"])
+						.unwrap_err()
+						.print();
 					Cfg::help();
 				} else {
-					let _ = RunCmd::try_parse_from(["midnight-node", "-h"]).unwrap_err().print();
+					let _ =
+						RunMidnight::try_parse_from(["midnight-node", "-h"]).unwrap_err().print();
 				}
 			}
 			let _ = e.print();
@@ -132,7 +135,7 @@ fn get_cfg(validate: bool) -> sc_cli::Result<Cfg> {
 	let cfg = if validate { Cfg::new() } else { Cfg::new_no_validation() };
 	let cfg = cfg.map_err(|e| {
 		let msg = format!("configuration error: {e}");
-		eprintln!("{}", &msg);
+		eprintln!("{}", msg);
 		Cfg::help();
 		sc_cli::Error::Input(msg)
 	})?;
@@ -230,7 +233,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
 		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("AURA pubkey: {}", &keypair.public())
+		log::info!("AURA pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.babe_seed_file {
@@ -243,7 +246,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid BABE seed: {e}")))?;
 		keystore.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("BABE pubkey: {}", &keypair.public())
+		log::info!("BABE pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {
@@ -256,7 +259,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
 		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("GRANDPA pubkey: {}", &keypair.public())
+		log::info!("GRANDPA pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.cross_chain_seed_file {
@@ -271,7 +274,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		keystore
 			.insert(KeyTypeId(*b"crch"), seed, &keypair.public().to_raw_vec())
 			.unwrap();
-		log::info!("CROSS_CHAIN pubkey: {}", &keypair.public())
+		log::info!("CROSS_CHAIN pubkey: {}", keypair.public())
 	}
 
 	// Hold the database backend handle outside the tokio runtime so we can
@@ -332,6 +335,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			hwbench,
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
+			run_midnight.serve_warp_ledger_sync,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;
@@ -1559,8 +1563,8 @@ mod tests {
 		chain_spec_genesis: &[u8],
 		compiled_genesis: &[u8],
 	) -> sc_cli::Result<()> {
-		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
-		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		let spec_hash = sp_crypto_hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_crypto_hashing::blake2_256(compiled_genesis);
 		if spec_hash != compiled_hash {
 			return Err(sc_cli::Error::Input(format!(
 				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",

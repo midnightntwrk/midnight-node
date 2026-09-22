@@ -1,0 +1,18 @@
+name: Default labels on issue open
+
+# Dispatcher — calls the reusable workflow in midnightntwrk/workflows.
+# Stamps status:untriaged on any issue opened without a status:* label.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: default-labels-on-open-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    uses: midnightntwrk/workflows/.github/workflows/default-labels-on-open.yml@2a516da4425edff87dd8d080bfb1c4125866f727

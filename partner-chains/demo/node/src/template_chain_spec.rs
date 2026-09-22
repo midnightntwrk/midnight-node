@@ -1,7 +1,7 @@
 use crate::chain_spec::*;
 use partner_chains_demo_runtime::{
 	AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
+	SessionCommitteeManagementConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
 use sp_core::serde::de::Error;
@@ -26,12 +26,8 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			key: None,
 		},
 		transaction_payment: Default::default(),
-		session: SessionConfig {
-			// Initial validators are meant to be updated in the chain spec file, so it is empty here.
-			initial_validators: vec![],
-		},
+		session: Default::default(),
 		sidechain: SidechainConfig { genesis_utxo, ..Default::default() },
-		pallet_session: Default::default(),
 		session_committee_management: SessionCommitteeManagementConfig {
 			// Same as SessionConfig
 			initial_authorities: vec![],

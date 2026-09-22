@@ -3,7 +3,6 @@ x-common-variables: &common-variables
   SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
   CARDANO_SECURITY_PARAMETER: 432
   CARDANO_ACTIVE_SLOTS_COEFF: 0.05
-  BLOCK_STABILITY_MARGIN: 10
   MC__FIRST_EPOCH_TIMESTAMP_MILLIS: 1666656000000
   MC__FIRST_EPOCH_NUMBER: 0
   MC__EPOCH_DURATION_MILLIS: 86400000
@@ -522,3 +521,12 @@ volumes:
   node-data-9:
   node-data-10:
   node-data-11:
+
+networks:
+  # Stable, project-name-independent network name so external consumers
+  # (e.g. the midnight-indexer overlay) can attach with `external: true`.
+  # Without an explicit name compose derives `<project>_default`, which
+  # shifts when COMPOSE_PROJECT_NAME is set and would no longer match the
+  # MIDNIGHT_FORK_NETWORK recorded in artifacts/testnet-02.manifest.env.
+  default:
+    name: midnight-fork-testnet-02

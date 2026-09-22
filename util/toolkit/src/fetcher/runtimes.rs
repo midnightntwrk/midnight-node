@@ -25,7 +25,10 @@ pub enum RuntimeVersion {
 	V0_21_0,
 	V0_22_0,
 	V1_0_0,
+	V1_0_3,
 	V2_0_0,
+	V2_1_0,
+	V3_0_0,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -34,7 +37,10 @@ impl TryFrom<u32> for RuntimeVersion {
 			000_021_000 => Ok(Self::V0_21_0),
 			000_022_000 => Ok(Self::V0_22_0),
 			001_000_000 => Ok(Self::V1_0_0),
+			001_000_003 => Ok(Self::V1_0_3),
 			002_000_000 => Ok(Self::V2_0_0),
+			002_001_000 => Ok(Self::V2_1_0),
+			003_000_000 => Ok(Self::V3_0_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -47,7 +53,10 @@ impl RuntimeVersion {
 			Self::V0_21_0 => 000_021_000,
 			Self::V0_22_0 => 000_022_000,
 			Self::V1_0_0 => 001_000_000,
+			Self::V1_0_3 => 001_000_003,
 			Self::V2_0_0 => 002_000_000,
+			Self::V2_1_0 => 002_001_000,
+			Self::V3_0_0 => 003_000_000,
 		}
 	}
 
@@ -148,6 +157,12 @@ impl_midnight_metadata!(
 	midnight_node_metadata::midnight_metadata_1_0_0
 );
 
+impl_midnight_metadata!(
+	MidnightMetadata1_0_3,
+	mn_meta_1_0_3,
+	midnight_node_metadata::midnight_metadata_1_0_3
+);
+
 // The ledger-9 runtime (spec 2_000_000) keeps the same extrinsic envelope
 // (send_mn_transaction / send_mn_system_transaction / timestamp.set), so the
 // 1.0.0 subxt metadata decodes it correctly; only the inner ledger tx bytes
@@ -156,4 +171,16 @@ impl_midnight_metadata!(
 	MidnightMetadata2_0_0,
 	mn_meta_2_0_0,
 	midnight_node_metadata::midnight_metadata_2_0_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata2_1_0,
+	mn_meta_2_1_0,
+	midnight_node_metadata::midnight_metadata_2_1_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata3_0_0,
+	mn_meta_3_0_0,
+	midnight_node_metadata::midnight_metadata_3_0_0
 );
