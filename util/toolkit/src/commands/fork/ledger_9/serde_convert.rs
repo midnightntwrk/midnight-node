@@ -3,7 +3,7 @@ use hex::ToHex as _;
 use ledger_helpers_local::{
 	InitialNonce, QualifiedDustOutput, QualifiedInfo, Utxo, persistent_commit, serialize_untagged,
 };
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 pub fn utxo_to_ser(utxo: Utxo) -> UtxoSer {
 	let intent_hash = utxo.intent_hash.0.0.encode_hex();
@@ -39,7 +39,7 @@ pub fn qualified_dust_output_to_ser(output: QualifiedDustOutput) -> QualifiedDus
 		dust_public: serialize_untagged(&output.owner).unwrap().encode_hex(),
 		nonce: serialize_untagged(&output.nonce).unwrap().encode_hex(),
 		seq: output.seq,
-		ctime: midnight_node_ledger_helpers::Timestamp::from_secs(output.ctime.to_secs()),
+		ctime: midnight_ledger_unsafe_helpers::Timestamp::from_secs(output.ctime.to_secs()),
 		backing_night: serialize_untagged(&output.backing_night).unwrap().encode_hex(),
 		mt_index: output.mt_index,
 	}
@@ -52,6 +52,6 @@ pub fn dust_generation_info_to_ser(
 		value: info.value,
 		owner_dust_public_key: serialize_untagged(&info.owner).unwrap().encode_hex(),
 		nonce: serialize_untagged(&info.nonce).unwrap().encode_hex(),
-		dtime: midnight_node_ledger_helpers::Timestamp::from_secs(info.dtime.to_secs()),
+		dtime: midnight_ledger_unsafe_helpers::Timestamp::from_secs(info.dtime.to_secs()),
 	}
 }

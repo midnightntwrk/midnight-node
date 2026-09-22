@@ -22,7 +22,7 @@ use frame_support::weights::RuntimeDbWeight;
 use frame_support::*;
 use midnight_node_ledger::latest::types::BlockContext;
 use midnight_primitives::{
-	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
+	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionCNightExecutor,
 };
 use sidechain_domain::*;
 #[cfg(feature = "std")]
@@ -159,7 +159,7 @@ impl MidnightSystemTx {
 	}
 }
 
-impl MidnightSystemTransactionExecutor for MidnightSystemTx {
+impl MidnightSystemTransactionCNightExecutor for MidnightSystemTx {
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
 	) -> Result<midnight_node_ledger::types::Hash, __private::DispatchError> {

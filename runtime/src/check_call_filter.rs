@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::{RuntimeCall, RuntimeOrigin};
 use frame_support::{pallet_prelude::TransactionSource, traits::Contains};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
@@ -9,7 +22,7 @@ use sp_runtime::{
 };
 
 /// Filter that whitelists Governance calls
-struct GovernanceAuthorityCallFilter;
+pub struct GovernanceAuthorityCallFilter;
 impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 	fn contains(call: &RuntimeCall) -> bool {
 		matches!(
@@ -19,6 +32,53 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
 				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
+		)
+	}
+}
+
+/// The runtime's inherent calls, whitelisted in safe mode.
+///
+/// `BaseCallFilter` filters every non-Root origin, including the None origin inherents
+/// dispatch with. A filtered Mandatory inherent means `BadMandatory`, i.e. no valid blocks
+/// can be built, so every inherent must be whitelisted for the chain to stay live while
+/// safe mode is entered. `Midnight::send_mn_transaction` (the unsigned user-transaction
+/// entry point) is deliberately NOT listed: filtering user traffic is the point of safe mode.
+pub struct InherentCalls;
+impl Contains<RuntimeCall> for InherentCalls {
+	fn contains(call: &RuntimeCall) -> bool {
+		matches!(
+			call,
+			RuntimeCall::Timestamp(pallet_timestamp::Call::set { .. })
+				| RuntimeCall::SessionCommitteeManagement(
+					pallet_session_validator_management::Call::set { .. }
+				) | RuntimeCall::CNightObservation(
+				pallet_cnight_observation::Call::process_tokens { .. }
+			) | RuntimeCall::Bridge(pallet_partner_chains_bridge::Call::handle_transfers { .. })
+				| RuntimeCall::FederatedAuthorityObservation(
+					pallet_federated_authority_observation::Call::reset_members { .. }
+				)
+		)
+	}
+}
+
+/// Calls the collectives dispatch internally (with their `Members` origin) when one of
+/// their proposals passes, whitelisted in safe mode.
+///
+/// `pallet_collective` dispatches an approved proposal through the origin's call filter,
+/// and its `Members` origin is not Root, so `BaseCallFilter` applies. Without these the
+/// safe-mode recovery flow dead-ends: neither body could record a
+/// `FederatedAuthority::motion_approve`, so no motion could ever be `motion_close`d to
+/// dispatch a fix as Root. Both calls are origin-gated to the collective proportion
+/// origins, so whitelisting them adds no exposure for signed or unsigned traffic.
+pub struct FederatedMotionCalls;
+impl Contains<RuntimeCall> for FederatedMotionCalls {
+	fn contains(call: &RuntimeCall) -> bool {
+		matches!(
+			call,
+			RuntimeCall::FederatedAuthority(
+				pallet_federated_authority::Call::motion_approve { .. }
+					| pallet_federated_authority::Call::motion_revoke { .. }
+			)
 		)
 	}
 }

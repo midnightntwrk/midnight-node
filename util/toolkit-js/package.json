@@ -40,9 +40,10 @@
     "shx": "0.4.0",
     "turbo": "2.9.14",
     "typescript": "5.9.3",
-    "vitest": "4.1.0"
+    "vitest": "4.1.11"
   },
   "overrides": {
+    "toml": "^4.3.0",
     "esbuild": "0.28.1",
     "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
     "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"

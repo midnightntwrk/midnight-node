@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+pub use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 pub mod batch_single_tx;
 mod batches;
@@ -44,16 +44,16 @@ pub use deregister_dust_address::*;
 pub use do_nothing::*;
 pub use register_dust_address::*;
 
-use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
-use midnight_node_ledger_helpers::ledger_8::{
+use midnight_ledger_unsafe_helpers::ledger_8::{
 	DefaultDB, ProofMarker, Signature, TransactionWithContext,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
 
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> SerializedTx {
 	let context =
-		midnight_node_ledger_helpers::fork::fork_8_to_9::block_context_8_to_9(&tx.block_context);
+		midnight_ledger_unsafe_helpers::fork::fork_8_to_9::block_context_8_to_9(&tx.block_context);
 	let raw_tx = transactions::from_serde_tx(&tx.tx);
 	let tx_hash = tx.tx.transaction_hash().0.0;
 	SerializedTx { tx: raw_tx, context, tx_hash }
