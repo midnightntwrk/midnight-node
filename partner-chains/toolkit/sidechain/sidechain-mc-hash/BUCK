@@ -22,7 +22,7 @@ rust_library(
         "CARGO_PKG_HOMEPAGE": "https://midnight.network",
     },
     deps = [
-        "root//partner-chains/substrate-extensions/aura/primitives:sp-partner-chains-consensus-aura",
+        "root//partner-chains/toolkit/consensus/primitives:sp-partner-chains-consensus",
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
         "root//third-party:async-trait",
         "root//third-party:derive-new",
@@ -61,7 +61,8 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "https://midnight.network",
     },
     deps = [
-        "root//partner-chains/substrate-extensions/aura/primitives:sp-partner-chains-consensus-aura",
+        "root//partner-chains/toolkit/consensus/primitives:sp-partner-chains-consensus",
+        "root//partner-chains/toolkit/consensus:sc-partner-chains-consensus",
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
         "root//third-party:async-trait",
         "root//third-party:derive-new",

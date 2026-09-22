@@ -32,6 +32,7 @@ rust_binary(
         "root//third-party:serde_json",
         "root//third-party:sp-consensus-beefy",
         "root//third-party:sp-core",
+        "root//third-party:sp-crypto-hashing",
         "root//third-party:subxt",
         "root//third-party:thiserror",
         "root//third-party:tokio",

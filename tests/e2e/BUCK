@@ -21,7 +21,7 @@ rust_library(
         "CARGO_PKG_HOMEPAGE": "",
     },
     deps = [
-        "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
         "root//metadata:midnight-node-metadata",
         "root//partner-chains/toolkit/utils/ogmios-client:ogmios-client",
         "root//tests/e2e/macros:midnight-node-e2e-macros",
@@ -63,7 +63,7 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "",
     },
     deps = [
-        "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
         "root//metadata:midnight-node-metadata",
         "root//partner-chains/toolkit/utils/ogmios-client:ogmios-client",
         "root//tests/e2e/macros:midnight-node-e2e-macros",
@@ -108,7 +108,7 @@ rust_test(
     },
     deps = [
         ":midnight-node-e2e",
-        "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
         "root//metadata:midnight-node-metadata",
         "root//partner-chains/toolkit/utils/ogmios-client:ogmios-client",
         "root//tests/e2e/macros:midnight-node-e2e-macros",

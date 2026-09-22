@@ -87,6 +87,7 @@ rust_test(
         "root//third-party:serde",
         "root//third-party:serde_json",
         "root//third-party:sp-timestamp",
+        "root//third-party:tokio",
     ],
     visibility = ["PUBLIC"],
 )

@@ -21,7 +21,6 @@ rust_library(
         "CARGO_PKG_HOMEPAGE": "https://midnight.network",
     },
     deps = [
-        "root//partner-chains/substrate-extensions/partner-chains-session:pallet-partner-chains-session",
         "root//partner-chains/toolkit/bridge/pallet:pallet-partner-chains-bridge",
         "root//partner-chains/toolkit/bridge/primitives:sp-partner-chains-bridge",
         "root//partner-chains/toolkit/committee-selection/authority-selection-inherents:authority-selection-inherents",
@@ -41,6 +40,7 @@ rust_library(
         "root//third-party:hex",
         "root//third-party:inquire",
         "root//third-party:libp2p-identity",
+        "root//third-party:pallet-session",
         "root//third-party:secp256k1",
         "root//third-party:serde",
         "root//third-party:serde_json",
@@ -74,7 +74,6 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "https://midnight.network",
     },
     deps = [
-        "root//partner-chains/substrate-extensions/partner-chains-session:pallet-partner-chains-session",
         "root//partner-chains/toolkit/bridge/pallet:pallet-partner-chains-bridge",
         "root//partner-chains/toolkit/bridge/primitives:sp-partner-chains-bridge",
         "root//partner-chains/toolkit/committee-selection/authority-selection-inherents:authority-selection-inherents",
@@ -98,6 +97,7 @@ rust_test(
         "root//third-party:inquire",
         "root//third-party:libp2p-identity",
         "root//third-party:pallet-balances",
+        "root//third-party:pallet-session",
         "root//third-party:parity-scale-codec",
         "root//third-party:pretty_assertions",
         "root//third-party:scale-info",

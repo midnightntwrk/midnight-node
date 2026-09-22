@@ -80,7 +80,7 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "https://substrate.io",
     },
     deps = [
-        "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
         "root//ledger:midnight-node-ledger",
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
         "root//primitives/midnight:midnight-primitives",

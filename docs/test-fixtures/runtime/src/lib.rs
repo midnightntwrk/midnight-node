@@ -47,7 +47,7 @@ pub use frame_support::{
 	},
 };
 pub use frame_system::Call as SystemCall;
-use frame_system::{EnsureNone, EnsureRoot};
+use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
@@ -61,7 +61,6 @@ pub use pallet_session_validator_management::{self, Config};
 pub use pallet_timestamp::Call as TimestampCall;
 pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
-use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
 	DParameter, MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData,
 	ScEpochNumber, ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
@@ -84,7 +83,7 @@ use sp_runtime::traits::StaticLookup;
 //use sp_block_rewards::GetBlockRewardPoints;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
-use sp_runtime::traits::{Convert, Keccak256};
+use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
 use sp_runtime::{
 	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue, generic, impl_opaque_keys,
 	traits::{
@@ -110,19 +109,15 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 #[cfg(test)]
 mod mock;
 
-/// Handover phase is 1/6th length of an epoch.
-/// With committee size 5 we would like any validator to have two slots for signing certificates.
-/// 5 * 2 * 6 = 60
-/// (Needs to multiply cleanly into 24h)
+/// Number of slots per partner-chain epoch: 300 slots of 6-second blocks give 30-minute
+/// epochs. The epoch length must divide 24h evenly.
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
-pub mod authorship;
 pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
 mod migrations;
-mod session_manager;
 pub mod weights;
 
 use check_call_filter::CheckCallFilter;
@@ -280,11 +275,11 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_000_000,
+	spec_version: 003_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
-	system_version: 1,
+	system_version: 3,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -297,6 +292,12 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 //       Attempting to do so will brick block production.
 // slot time set to 6s
 pub const SLOT_DURATION: u64 = 6 * 1000;
+
+pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
+	sp_consensus_babe::BabeEpochConfiguration {
+		c: (1, 4),
+		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+	};
 
 /// The version information used to identify this runtime when compiled natively.
 #[cfg(feature = "std")]
@@ -325,7 +326,7 @@ parameter_types! {
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = TxPause;
+	type BaseCallFilter = InsideBoth<SafeMode, TxPause>;
 	/// The block type for the runtime.
 	type Block = Block;
 	/// The type for storing how many extrinsics an account has signed.
@@ -373,8 +374,9 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Needed if chain is upgradeing from before PC 1.6
-		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
+		// Initializes the QueuedCommittee storage added in v2
+		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
+		// See migrations::authority_keys when opaque::SessionKeys changes shape.
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -391,7 +393,61 @@ impl pallet_aura::Config for Runtime {
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
-pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
+impl pallet_authorship::Config for Runtime {
+	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
+	type EventHandler = ();
+}
+
+impl pallet_babe::Config for Runtime {
+	type EpochDuration = SidechainEpochDuration;
+	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
+	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
+	type DisabledValidators = ();
+	// TODO: Issue #1863
+	type WeightInfo = ();
+	type MaxAuthorities = MaxAuthorities;
+	type MaxNominators = ConstU32<5>;
+	// Equivocation reporting is disabled, matching GRANDPA/BEEFY.
+	type KeyOwnerProof = sp_core::Void;
+	type EquivocationReportSystem = ();
+}
+
+/// BABE uses epoch lenght defined by pallet sidechain
+pub struct SidechainEpochDuration;
+
+impl Get<u64> for SidechainEpochDuration {
+	fn get() -> u64 {
+		Sidechain::slots_per_epoch().0.into()
+	}
+}
+
+impl pallet_session::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type ValidatorId = <Self as frame_system::Config>::AccountId;
+	type ValidatorIdOf = ConvertInto;
+	type ShouldEndSession = SessionCommitteeManagement;
+	type NextSessionRotation = ();
+	type SessionManager = SessionCommitteeManagement;
+	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
+	type Keys = opaque::SessionKeys;
+	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
+	type WeightInfo = pallet_session::weights::SubstrateWeight<Runtime>;
+	type Currency = CurrencyWaiver;
+	type KeyDeposit = ();
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
+}
 
 impl pallet_grandpa::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
@@ -473,7 +529,7 @@ impl pallet_beefy_mmr::Config for Runtime {
 impl pallet_timestamp::Config for Runtime {
 	/// A timestamp: milliseconds since the unix epoch.
 	type Moment = u64;
-	type OnTimestampSet = Aura;
+	type OnTimestampSet = ConsensusEngine;
 	type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
 	type WeightInfo = weights::pallet_timestamp::WeightInfo<Runtime>;
 }
@@ -488,14 +544,18 @@ parameter_types! {
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	#[cfg(not(feature = "runtime-benchmarks"))]
-	type Migrations = (pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,);
+	// Append-only: `ActiveCursor.index` indexes this tuple.
+	type Migrations = (
+		pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,
+		pallet_cnight_observation::migrations::v2::MigrateV1ToV2<Runtime>,
+	);
 	// Benchmarks need mocked migrations to guarantee that they succeed.
 	#[cfg(feature = "runtime-benchmarks")]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
 	type CursorMaxLen = ConstU32<65_536>;
 	type IdentifierMaxLen = ConstU32<256>;
 	type MigrationStatusHandler = ();
-	type FailedMigrationHandler = frame_support::migrations::FreezeChainOnFailedMigration;
+	type FailedMigrationHandler = migrations::EnterSafeModeAndUnstuckOnFailedMigration;
 	type MaxServiceWeight = MbmServiceWeight;
 	type WeightInfo = weights::pallet_migrations::WeightInfo<Runtime>;
 }
@@ -520,17 +580,6 @@ impl pallet_scheduler::Config for Runtime {
 	type OriginPrivilegeCmp = EqualPrivilegeOnly;
 	type Preimages = Preimage;
 	type BlockNumberProvider = frame_system::Pallet<Runtime>;
-}
-
-impl pallet_partner_chains_session::Config for Runtime {
-	type ValidatorId = <Self as frame_system::Config>::AccountId;
-	type ShouldEndSession = ValidatorManagementSessionManager<Runtime>;
-	type NextSessionRotation = ();
-	type SessionManager = ValidatorManagementSessionManager<Runtime>;
-	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
-	type Keys = opaque::SessionKeys;
-	type Currency = CurrencyWaiver;
-	type KeyDeposit = ();
 }
 
 parameter_types! {
@@ -613,7 +662,9 @@ impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
 
 impl pallet_sidechain::Config for Runtime {
 	fn current_slot_number() -> ScSlotNumber {
-		ScSlotNumber(*pallet_aura::CurrentSlot::<Self>::get())
+		// Single source of truth: active engine `CurrentSlot`. Babe (3) and Aura (2)
+		// both run before Sidechain (4), so storage is already updated for this block.
+		ScSlotNumber(*ConsensusEngine::current_slot())
 	}
 	type OnNewEpoch = LogBeneficiaries;
 }
@@ -703,6 +754,44 @@ impl pallet_tx_pause::Config for Runtime {
 	type WhitelistedCalls = Nothing;
 	type MaxNameLen = ConstU32<256>;
 	type WeightInfo = weights::pallet_tx_pause::WeightInfo<Runtime>;
+}
+
+parameter_types! {
+	/// Nominal durations for the permissionless `enter`/`extend` calls. Inert in practice:
+	/// `EnterDepositAmount`/`ExtendDepositAmount` are `None`, which disables permissionless
+	/// entry entirely.
+	pub const SafeModeEnterDuration: BlockNumber = DAYS;
+	pub const SafeModeExtendDuration: BlockNumber = DAYS;
+	/// How long a single Root `force_enter`/`force_extend` lasts.
+	pub const SafeModeForceDuration: BlockNumber = 7 * DAYS;
+}
+
+impl pallet_safe_mode::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	// Deposits are disabled (`EnterDepositAmount`/`ExtendDepositAmount` = None), so the
+	// Currency is typecheck-only.
+	type Currency = CurrencyWaiver;
+	type RuntimeHoldReason = RuntimeHoldReason;
+	// While safe mode is entered only these calls (plus safe-mode's own, auto-exempted by
+	// pallet name) pass `BaseCallFilter`: the governance recovery path (including the
+	// motion calls the collectives dispatch internally) and the inherents block production
+	// depends on. Root bypasses the filter entirely.
+	type WhitelistedCalls = (
+		check_call_filter::GovernanceAuthorityCallFilter,
+		check_call_filter::InherentCalls,
+		check_call_filter::FederatedMotionCalls,
+	);
+	type EnterDuration = SafeModeEnterDuration;
+	type ExtendDuration = SafeModeExtendDuration;
+	type EnterDepositAmount = ();
+	type ExtendDepositAmount = ();
+	type ForceEnterOrigin = EnsureRootWithSuccess<AccountId, SafeModeForceDuration>;
+	type ForceExtendOrigin = EnsureRootWithSuccess<AccountId, SafeModeForceDuration>;
+	type ForceExitOrigin = EnsureRoot<AccountId>;
+	type ForceDepositOrigin = EnsureRoot<AccountId>;
+	type Notify = ();
+	type ReleaseDelay = ();
+	type WeightInfo = pallet_safe_mode::weights::SubstrateWeight<Runtime>;
 }
 
 pub const MOTION_DURATION: BlockNumber = 5 * DAYS;
@@ -894,11 +983,28 @@ impl pallet_throttle::Config for Runtime {
 }
 
 parameter_types! {
+	pub BabeEpochConfigurationValue: sp_consensus_babe::BabeEpochConfiguration =
+		BABE_GENESIS_EPOCH_CONFIG;
+}
+
+impl pallet_consensus_engine::Config for Runtime {
+	// Some state transitions are governance-driven: federated-authority motions dispatch approved
+	// calls as root.
+	type GovernanceOrigin = EnsureRoot<AccountId>;
+	type EpochDuration = SidechainEpochDuration;
+	type EpochConfiguration = BabeEpochConfigurationValue;
+	// Unit weights for now. Issue #1863.
+	type WeightInfo = ();
+}
+
+parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
 }
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type LedgerStateProvider = Midnight;
+	type LedgerBlockContextProvider = Midnight;
 	type WeightInfo = weights::pallet_cnight_observation::WeightInfo<Runtime>;
 }
 
@@ -996,8 +1102,10 @@ mod runtime {
 	pub type Timestamp = pallet_timestamp::Pallet<Runtime>;
 	#[runtime::pallet_index(2)]
 	pub type Aura = pallet_aura::Pallet<Runtime>;
+	// BABE immediately after AURA so both engines write `CurrentSlot` before
+	// `Sidechain` (4) reads it via `ConsensusEngine::current_slot()`.
 	#[runtime::pallet_index(3)]
-	pub type Grandpa = pallet_grandpa::Pallet<Runtime>;
+	pub type Babe = pallet_babe::Pallet<Runtime>;
 	#[runtime::pallet_index(4)]
 	pub type Sidechain = pallet_sidechain::Pallet<Runtime>;
 
@@ -1007,12 +1115,34 @@ mod runtime {
 	#[runtime::pallet_index(6)]
 	pub type MidnightSystem = pallet_midnight_system::Pallet<Runtime>;
 
+	#[runtime::pallet_index(7)]
+	pub type Grandpa = pallet_grandpa::Pallet<Runtime>;
+
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+
+	// Authorship must be before Session (polkadot-sdk hook order).
+	#[runtime::pallet_index(9)]
+	pub type Authorship = pallet_authorship::Pallet<Runtime>;
+
+	// Consensus engine transition state machine. Hook order (pallet index order) is
+	// load-bearing: its `on_initialize` digest guards must run after Babe (which
+	// consumes BABE pre-digests) but before anything that mutates the state they
+	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
+	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
+	// which the `authority_index == slot % n` transition guard compares with. Both
+	// the block author and the AURA seal verifier work from the parent state, so
+	// the guards must too.
+	#[runtime::pallet_index(10)]
+	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
+
 	#[runtime::pallet_index(30)]
-	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
+	#[runtime::disable_call]
+	pub type Session = pallet_session::Pallet<Runtime>;
+	#[runtime::pallet_index(31)]
+	pub type Historical = pallet_session::historical::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards = 9,
+	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1026,17 +1156,13 @@ mod runtime {
 
 	#[runtime::pallet_index(16)]
 	pub type MultiBlockMigrations = pallet_migrations::Pallet<Runtime>;
-	// Only stub implementation of pallet_session should be wired.
-	// Partner Chains session_manager ValidatorManagementSessionManager writes to pallet_session::pallet::CurrentIndex.
-	// ValidatorManagementSessionManager is wired in by pallet_partner_chains_session.
-	#[runtime::pallet_index(17)]
-	pub type PalletSession = pallet_session::Pallet<Runtime>;
 
 	#[runtime::pallet_index(18)]
 	pub type Scheduler = pallet_scheduler::Pallet<Runtime>;
 	#[runtime::pallet_index(19)]
 	pub type TxPause = pallet_tx_pause::Pallet<Runtime>;
-	// SafeMode: pallet_safe_mode = 20,
+	#[runtime::pallet_index(20)]
+	pub type SafeMode = pallet_safe_mode::Pallet<Runtime>;
 
 	// BEEFY Bridges support.
 	#[runtime::pallet_index(21)]
@@ -1119,7 +1245,18 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
+pub type Migrations = (
+	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// MUST precede the pallet-midnight translation below: it captures the
+	// still-untranslated v8 state key, which the cNIGHT dust generation replay
+	// (`pallet_cnight_observation::migrations::v2::MigrateV1ToV2`) reads the
+	// wiped entries' values and owners from.
+	pallet_cnight_observation::migrations::v2::RecordPreForkState<Runtime>,
+	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
+	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
+	// this ledger-9 runtime (storage version 2).
+	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -1400,6 +1537,47 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl sp_consensus_babe::BabeApi<Block> for Runtime {
+		fn configuration() -> sp_consensus_babe::BabeConfiguration {
+			let epoch_config = Babe::epoch_config().unwrap_or(BABE_GENESIS_EPOCH_CONFIG);
+			sp_consensus_babe::BabeConfiguration {
+				slot_duration: Babe::slot_duration(),
+				epoch_length: SidechainEpochDuration::get(),
+				c: epoch_config.c,
+				authorities: Babe::authorities().to_vec(),
+				randomness: Babe::randomness(),
+				allowed_slots: epoch_config.allowed_slots,
+			}
+		}
+
+		fn current_epoch_start() -> sp_consensus_babe::Slot {
+			Babe::current_epoch_start()
+		}
+
+		fn current_epoch() -> sp_consensus_babe::Epoch {
+			Babe::current_epoch()
+		}
+
+		fn next_epoch() -> sp_consensus_babe::Epoch {
+			Babe::next_epoch()
+		}
+
+		fn generate_key_ownership_proof(
+			_slot: sp_consensus_babe::Slot,
+			_authority_id: sp_consensus_babe::AuthorityId,
+		) -> Option<sp_consensus_babe::OpaqueKeyOwnershipProof> {
+			// Equivocation reporting is disabled, so no proof can be generated.
+			None
+		}
+
+		fn submit_report_equivocation_unsigned_extrinsic(
+			_equivocation_proof: sp_consensus_babe::EquivocationProof<<Block as BlockT>::Header>,
+			_key_owner_proof: sp_consensus_babe::OpaqueKeyOwnershipProof,
+		) -> Option<()> {
+			None
+		}
+	}
+
 	impl sp_consensus_beefy::BeefyApi<Block, BeefyId> for Runtime {
 		fn beefy_genesis() -> Option<BlockNumber> {
 			pallet_beefy::GenesisBlock::<Runtime>::get()
@@ -1651,7 +1829,7 @@ impl_runtime_apis! {
 		fn get_sidechain_status() -> SidechainStatus {
 			SidechainStatus {
 				epoch: Sidechain::current_epoch_number(),
-				slot: ScSlotNumber(*pallet_aura::CurrentSlot::<Runtime>::get()),
+				slot: <Runtime as pallet_sidechain::Config>::current_slot_number(),
 				slots_per_epoch: Sidechain::slots_per_epoch().0,
 			}
 		}
@@ -1663,6 +1841,16 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
+		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
+			ConsensusEngine::active_engine()
+		}
+
+		fn should_emit_babe_preruntime_digest() -> bool {
+			ConsensusEngine::should_emit_babe_preruntime_digest()
+		}
+	}
+
 	impl sp_sidechain::GetGenesisUtxo<Block> for Runtime {
 		fn genesis_utxo() -> UtxoId {
 			Sidechain::genesis_utxo()
@@ -1670,6 +1858,10 @@ impl_runtime_apis! {
 	}
 
 	impl sidechain_slots::SlotApi<Block> for Runtime {
+		// The AURA slot duration needs no engine dispatch: it is the `SlotDuration`
+		// config constant, and BABE's (`MinimumPeriod * 2`) is the same 6s, so the
+		// value stays correct after the flip. `slot_duration_is_the_same_for_both_engines`
+		// guards that equality.
 		fn slot_config() -> sidechain_slots::ScSlotConfig {
 			sidechain_slots::ScSlotConfig {
 				slots_per_epoch: Sidechain::slots_per_epoch(),
@@ -1827,6 +2019,8 @@ mod tests {
 		new_test_ext().execute_with(|| {
 			// Needs to be run to initialize first slot and epoch numbers;
 			advance_block();
+
+			// Scheduled committee goes into effect after a 2-epoch delay
 			set_committee_through_inherent_data(&[alice()]);
 			until_epoch_after_finalizing(1, &|| {
 				assert_current_epoch!(0);
@@ -1838,30 +2032,37 @@ mod tests {
 			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(1);
 				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice()]);
+				assert_grandpa_authorities!([alice(), bob()]);
 			});
-
+			set_committee_through_inherent_data(&[alice()]);
 			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(2);
 				assert_grandpa_weights();
+				assert_grandpa_authorities!([alice()]);
+			});
+			set_committee_through_inherent_data(&[alice(), bob()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(3);
+				assert_grandpa_weights();
 				assert_grandpa_authorities!([bob()]);
 			});
-
-			// Authorities can be set as late as in the first block of new epoch, but it makes session last 1 block longer
-			set_committee_through_inherent_data(&[alice()]);
-			advance_block();
-			assert_current_epoch!(3);
-			assert_grandpa_authorities!([bob()]);
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH - 1, &|| {
-				assert_current_epoch!(3);
+			set_committee_through_inherent_data(&[bob(), alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(4);
 				assert_grandpa_weights();
 				assert_grandpa_authorities!([alice()]);
 			});
-
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(5);
 				assert_grandpa_weights();
 				assert_grandpa_authorities!([alice(), bob()]);
+			});
+
+			// When there's no new committees being scheduled, the last committee stays in power
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+				assert_grandpa_weights();
+				assert_grandpa_authorities!([bob(), alice()]);
 			});
 		});
 
@@ -1876,32 +2077,44 @@ mod tests {
 	#[test]
 	fn check_aura_authorities_rotation() {
 		new_test_ext().execute_with(|| {
+			// Needs to be run to initialize first slot and epoch numbers;
 			advance_block();
+			// Scheduled committee goes into effect after a 2-epoch delay
 			set_committee_through_inherent_data(&[alice()]);
-			until_epoch(1, &|| {
+			until_epoch_after_finalizing(1, &|| {
 				assert_current_epoch!(0);
 				assert_aura_authorities!([alice(), bob()]);
 			});
 
-			for_next_n_blocks(SLOTS_PER_EPOCH, &|| {
+			set_committee_through_inherent_data(&[bob()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(1);
+				assert_aura_authorities!([alice(), bob()]);
+			});
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(2);
 				assert_aura_authorities!([alice()]);
 			});
-
-			// Authorities can be set as late as in the first block of new epoch, but it makes session last 1 block longer
-			set_committee_through_inherent_data(&[bob()]);
-			assert_current_epoch!(2);
-			assert_aura_authorities!([alice()]);
-			advance_block();
 			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH - 1, &|| {
-				assert_current_epoch!(2);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(3);
 				assert_aura_authorities!([bob()]);
 			});
-
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH * 3, &|| {
+			set_committee_through_inherent_data(&[bob(), alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(4);
+				assert_aura_authorities!([alice()]);
+			});
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(5);
 				assert_aura_authorities!([alice(), bob()]);
+			});
+
+			// When there's no new committees being scheduled, the last committee stays in power
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+				assert_aura_authorities!([bob(), alice()]);
 			});
 		});
 	}
@@ -2057,5 +2270,413 @@ mod tests {
 			.collect();
 
 		candidates
+	}
+
+	mod sidechain_slot_number {
+		use crate::Runtime;
+		use frame_support::traits::Hooks;
+		use pallet_consensus_engine::{EngineState, State};
+		use parity_scale_codec::Encode;
+		use sidechain_domain::ScSlotNumber;
+		use sp_consensus_babe::BABE_ENGINE_ID;
+		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
+		use sp_consensus_slots::Slot;
+		use sp_runtime::{Digest, DigestItem};
+
+		fn babe_pre_digest(slot: u64) -> DigestItem {
+			DigestItem::PreRuntime(
+				BABE_ENGINE_ID,
+				PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+					authority_index: 0,
+					slot: Slot::from(slot),
+				})
+				.encode(),
+			)
+		}
+
+		fn initialize_block_with_logs(logs: Vec<DigestItem>) {
+			frame_system::Pallet::<Runtime>::initialize(&1, &Default::default(), &Digest { logs });
+		}
+
+		fn current_slot_number() -> ScSlotNumber {
+			<Runtime as pallet_sidechain::Config>::current_slot_number()
+		}
+
+		#[test]
+		fn is_read_from_aura_storage_pre_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(7u64));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(99u64));
+				assert_eq!(current_slot_number(), ScSlotNumber(7));
+			});
+		}
+
+		#[test]
+		fn is_read_from_babe_storage_post_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::Babe);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(7u64));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(42u64));
+				assert_eq!(current_slot_number(), ScSlotNumber(42));
+			});
+		}
+
+		/// Regression: with Babe before Sidechain, Babe's `on_initialize` copies the
+		/// pre-digest into `CurrentSlot` before Sidechain reads it — so a stale
+		/// storage value is overwritten for this block.
+		#[test]
+		fn babe_hook_refreshes_storage_before_sidechain_reads() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::Babe);
+				// Suppress premature genesis init so Babe only updates CurrentSlot.
+				pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(1u64));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(41u64));
+				initialize_block_with_logs(vec![babe_pre_digest(42)]);
+
+				pallet_babe::Pallet::<Runtime>::on_initialize(1);
+
+				assert_eq!(current_slot_number(), ScSlotNumber(42));
+			});
+		}
+	}
+
+	/// Tests for the slot reported by the `GetSidechainStatus` runtime API across the
+	/// AURA to BABE consensus flip.
+	mod sidechain_status {
+		use crate::Runtime;
+		use pallet_consensus_engine::{EngineState, State};
+		use sidechain_domain::{ScEpochNumber, ScSlotNumber};
+		use sp_consensus_slots::Slot;
+		use sp_sidechain::SidechainStatus;
+
+		/// Slot the AURA storage is left frozen at, standing in for the value
+		/// `pallet_aura::CurrentSlot` keeps forever once BABE takes over.
+		const STALE_AURA_SLOT: u64 = 41;
+		const BABE_SLOT: u64 = 4242;
+
+		fn get_sidechain_status() -> SidechainStatus {
+			<Runtime as sp_sidechain::runtime_decl_for_get_sidechain_status::GetSidechainStatus<
+				crate::Block,
+			>>::get_sidechain_status()
+		}
+
+		fn slots_per_epoch() -> u64 {
+			u64::from(crate::Sidechain::slots_per_epoch().0)
+		}
+
+		#[test]
+		fn slot_is_read_from_aura_storage_pre_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				// Default engine state is Aura.
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+
+				let status = get_sidechain_status();
+
+				assert_eq!(status.slot, ScSlotNumber(STALE_AURA_SLOT));
+				assert_eq!(status.epoch, ScEpochNumber(STALE_AURA_SLOT / slots_per_epoch()));
+			});
+		}
+
+		// Regression test: this API used to read `pallet_aura::CurrentSlot`
+		// unconditionally, which stops advancing once BABE produces blocks, so the
+		// reported slot (and the epoch derived from it) froze at the flip.
+		#[test]
+		fn slot_is_read_from_babe_storage_post_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::Babe);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+
+				let status = get_sidechain_status();
+
+				assert_eq!(status.slot, ScSlotNumber(BABE_SLOT));
+				assert_eq!(status.epoch, ScEpochNumber(BABE_SLOT / slots_per_epoch()));
+			});
+		}
+
+		// The armed and scheduled states still produce AURA blocks, so the slot must
+		// keep coming from AURA until the flip actually completes.
+		#[test]
+		fn slot_is_read_from_aura_storage_while_the_flip_is_pending() {
+			for state in [State::ArmedBabe, State::ScheduledFlip] {
+				sp_io::TestExternalities::default().execute_with(|| {
+					EngineState::<Runtime>::put(state);
+					pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+					pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+
+					assert_eq!(
+						get_sidechain_status().slot,
+						ScSlotNumber(STALE_AURA_SLOT),
+						"unexpected slot in state {state:?}"
+					);
+				});
+			}
+		}
+	}
+
+	/// The slot duration reported by `SlotApi` comes from AURA's config, so it must not
+	/// diverge from BABE's once BABE produces the blocks.
+	mod slot_config {
+		use crate::{Block, Runtime};
+
+		fn slot_config() -> sidechain_slots::ScSlotConfig {
+			<Runtime as sidechain_slots::runtime_decl_for_slot_api::SlotApi<Block>>::slot_config()
+		}
+
+		#[test]
+		fn slot_duration_is_the_same_for_both_engines() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				// Both are config constants — AURA's `SlotDuration` and BABE's
+				// `MinimumPeriod * 2` — so `slot_config` needs no engine dispatch as
+				// long as they agree. This test fails if a future config change makes
+				// them diverge.
+				assert_eq!(
+					crate::Aura::slot_duration(),
+					crate::Babe::slot_duration(),
+					"AURA and BABE slot durations diverged; SlotApi::slot_config must \
+					 dispatch on the active engine"
+				);
+				assert_eq!(slot_config().slot_duration.as_millis(), crate::SLOT_DURATION);
+			});
+		}
+	}
+
+	mod failed_mbm_recovery {
+		use crate::{AccountId, BlockNumber, Executive, Runtime, RuntimeCall, VERSION};
+		use frame_support::{
+			assert_ok, dispatch::GetDispatchInfo, migrations::MultiStepMigrator, traits::Contains,
+		};
+		use parity_scale_codec::Encode;
+		use sp_runtime::{
+			BuildStorage, ExtrinsicInclusionMode,
+			traits::{Dispatchable, Hash as _, Header as _},
+		};
+
+		fn ongoing() -> bool {
+			<Runtime as frame_system::Config>::MultiBlockMigrator::ongoing()
+		}
+
+		fn can_set_code() -> frame_system::CanSetCodeResult<Runtime> {
+			frame_system::Pallet::<Runtime>::can_set_code(&[], false)
+		}
+
+		/// Fail migration 0 (cnight v1 `MigrateV0ToV1`) by planting an active cursor whose
+		/// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size cursor
+		/// type -> `InvalidCursor` -> `FailedMigrationHandler`, then step the MBMs the way
+		/// Executive does after inherent application. Leaves the chain in safe mode with
+		/// the cursor unstuck.
+		fn fail_mbm_and_enter_safe_mode() {
+			// Mark the runtime as already upgraded so a later `initialize_block` doesn't
+			// onboard the MBMs again.
+			frame_system::LastRuntimeUpgrade::<Runtime>::put(
+				frame_system::LastRuntimeUpgradeInfo::from(VERSION),
+			);
+			frame_system::Pallet::<Runtime>::set_block_number(1);
+			assert!(can_set_code().into_result().is_ok());
+
+			assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
+				crate::RuntimeOrigin::root(),
+				0,
+				Some(vec![0u8].try_into().unwrap()),
+				Some(1),
+			));
+			assert!(ongoing());
+			assert!(matches!(
+				can_set_code(),
+				frame_system::CanSetCodeResult::MultiBlockMigrationsOngoing
+			));
+
+			Executive::inherents_applied();
+
+			// Safe mode entered indefinitely, cursor unstuck, upgrades unblocked.
+			assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), Some(BlockNumber::MAX));
+			assert!(!ongoing());
+			assert!(can_set_code().into_result().is_ok());
+		}
+
+		/// A failed multi-block migration must enter safe mode and unstuck the cursor
+		/// instead of freezing the chain (`can_set_code` blocked forever with no on-chain
+		/// recovery on a standalone chain).
+		#[test]
+		fn failed_mbm_enters_safe_mode_and_unstucks() {
+			let t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+			sp_io::TestExternalities::from(t).execute_with(|| {
+				fail_mbm_and_enter_safe_mode();
+
+				// `BaseCallFilter` now blocks user calls...
+				type Filter = <Runtime as frame_system::Config>::BaseCallFilter;
+				assert!(!Filter::contains(&RuntimeCall::Midnight(
+					pallet_midnight::Call::send_mn_transaction { midnight_tx: vec![] }
+				)));
+				// ...but keeps the inherents, governance, and safe-mode recovery calls.
+				assert!(Filter::contains(&RuntimeCall::Timestamp(pallet_timestamp::Call::set {
+					now: 0
+				})));
+				assert!(Filter::contains(&RuntimeCall::Council(pallet_collective::Call::vote {
+					proposal: crate::Hash::default(),
+					index: 0,
+					approve: true,
+				})));
+				assert!(Filter::contains(&RuntimeCall::SafeMode(
+					pallet_safe_mode::Call::force_exit {}
+				)));
+
+				// The next block admits normal (non-inherent) extrinsics again.
+				let header = crate::Header::new(
+					2,
+					Default::default(),
+					Default::default(),
+					frame_system::Pallet::<Runtime>::parent_hash(),
+					Default::default(),
+				);
+				assert_eq!(
+					Executive::initialize_block(&header),
+					ExtrinsicInclusionMode::AllExtrinsics
+				);
+			});
+		}
+
+		fn account(b: u8) -> AccountId {
+			AccountId::from([b; 32])
+		}
+
+		/// Dispatch `call` the way an applied extrinsic would: through the signed origin,
+		/// which carries `BaseCallFilter`. This is what makes the test end-to-end — a call
+		/// filtered in safe mode fails here with `CallFiltered`.
+		fn dispatch_signed(call: RuntimeCall, who: AccountId) {
+			assert_ok!(call.dispatch(crate::RuntimeOrigin::signed(who)));
+		}
+
+		/// Governance must be able to execute the full set-code recovery flow while the
+		/// chain sits in post-failure safe mode: both collectives approve a
+		/// `FederatedAuthority` motion, and closing the motion dispatches
+		/// `System::authorize_upgrade` as Root (the fixed runtime is then applied via the
+		/// whitelisted `System::apply_authorized_upgrade`). The collectives dispatch
+		/// `motion_approve` internally with their (non-Root) `Members` origin, which goes
+		/// through `BaseCallFilter` — the safe-mode whitelist must let it through or
+		/// recovery dead-ends.
+		#[test]
+		fn governance_can_authorize_set_code_in_safe_mode() {
+			let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+			// Seed both governance bodies (membership genesis forwards to the collectives).
+			pallet_membership::GenesisConfig::<Runtime, pallet_membership::Instance1> {
+				members: vec![account(1), account(2)].try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+			pallet_membership::GenesisConfig::<Runtime, pallet_membership::Instance2> {
+				members: vec![account(1), account(2)].try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+
+			sp_io::TestExternalities::from(t).execute_with(|| {
+				fail_mbm_and_enter_safe_mode();
+
+				// The motion governance wants dispatched as Root: authorize the fixed
+				// runtime's code hash.
+				let motion = RuntimeCall::System(frame_system::Call::authorize_upgrade {
+					code_hash: crate::Hash::repeat_byte(7),
+				});
+				let motion_hash = <Runtime as frame_system::Config>::Hashing::hash_of(&motion);
+				assert!(frame_system::Pallet::<Runtime>::authorized_upgrade().is_none());
+
+				// Council: propose motion_approve, both members vote aye, close dispatches
+				// it with the Council's `Members` origin.
+				let proposal = RuntimeCall::FederatedAuthority(
+					pallet_federated_authority::Call::motion_approve {
+						call: alloc::boxed::Box::new(motion.clone()),
+					},
+				);
+				let len = proposal.encoded_size() as u32;
+				let weight = proposal.get_dispatch_info().call_weight;
+				let hash = <Runtime as frame_system::Config>::Hashing::hash_of(&proposal);
+
+				dispatch_signed(
+					RuntimeCall::Council(pallet_collective::Call::propose {
+						threshold: 2,
+						proposal: alloc::boxed::Box::new(proposal.clone()),
+						length_bound: len,
+					}),
+					account(1),
+				);
+				for who in [account(1), account(2)] {
+					dispatch_signed(
+						RuntimeCall::Council(pallet_collective::Call::vote {
+							proposal: hash,
+							index: 0,
+							approve: true,
+						}),
+						who,
+					);
+				}
+				dispatch_signed(
+					RuntimeCall::Council(pallet_collective::Call::close {
+						proposal_hash: hash,
+						index: 0,
+						proposal_weight_bound: weight,
+						length_bound: len,
+					}),
+					account(1),
+				);
+				// The inner motion_approve must have landed (do_approve_proposal swallows a
+				// filtered dispatch into an event, so check the motion actually exists).
+				assert!(
+					pallet_federated_authority::Motions::<Runtime>::get(motion_hash).is_some(),
+					"Council's motion_approve was not executed — blocked by BaseCallFilter?"
+				);
+
+				// Technical Committee: same flow.
+				dispatch_signed(
+					RuntimeCall::TechnicalCommittee(pallet_collective::Call::propose {
+						threshold: 2,
+						proposal: alloc::boxed::Box::new(proposal.clone()),
+						length_bound: len,
+					}),
+					account(1),
+				);
+				for who in [account(1), account(2)] {
+					dispatch_signed(
+						RuntimeCall::TechnicalCommittee(pallet_collective::Call::vote {
+							proposal: hash,
+							index: 0,
+							approve: true,
+						}),
+						who,
+					);
+				}
+				dispatch_signed(
+					RuntimeCall::TechnicalCommittee(pallet_collective::Call::close {
+						proposal_hash: hash,
+						index: 0,
+						proposal_weight_bound: weight,
+						length_bound: len,
+					}),
+					account(1),
+				);
+
+				// Both bodies approved: closing the motion dispatches it as Root.
+				dispatch_signed(
+					RuntimeCall::FederatedAuthority(
+						pallet_federated_authority::Call::motion_close {
+							motion_hash,
+							proposal_weight_bound: motion.get_dispatch_info().call_weight,
+						},
+					),
+					account(1),
+				);
+				assert!(
+					frame_system::Pallet::<Runtime>::authorized_upgrade().is_some(),
+					"authorize_upgrade did not execute — motion dispatch failed"
+				);
+
+				// And governance can lift safe mode once the fixed runtime is applied.
+				assert_ok!(crate::SafeMode::force_exit(crate::RuntimeOrigin::root()));
+				assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), None);
+			});
+		}
 	}
 }

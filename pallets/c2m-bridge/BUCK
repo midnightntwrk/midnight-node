@@ -38,6 +38,7 @@ rust_library(
             "root//wasm-deps:scale-info",
             "root//wasm-deps:sp-api",
             "root//wasm-deps:sp-core",
+            "root//wasm-deps:sp-crypto-hashing",
         ],
         "DEFAULT": [
             "root//ledger:midnight-node-ledger",
@@ -53,6 +54,7 @@ rust_library(
             "root//third-party:scale-info",
             "root//third-party:sp-api",
             "root//third-party:sp-core",
+            "root//third-party:sp-crypto-hashing",
         ],
     }),
     visibility = ["PUBLIC"],
@@ -94,6 +96,7 @@ rust_test(
         "root//third-party:serde_json",
         "root//third-party:sp-api",
         "root//third-party:sp-core",
+        "root//third-party:sp-crypto-hashing",
         "root//third-party:sp-io",
         "root//third-party:sp-runtime",
     ],

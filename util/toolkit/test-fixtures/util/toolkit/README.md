@@ -133,6 +133,10 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 - `redb:<filename>` - persists fetched transactions to disk. Toolkit process must have exclusive access to this file
 - `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` - persists fetched transactions to a postgres database. Supports concurrent readers/writers.
 
+Wallet state reconstructed during block replay is cached per seed in `--ledger-state-db` (`MN_LEDGER_CACHE_DB`), so repeat queries only replay new blocks. This works on ledger-8 and ledger-9 chains; a cache written under ledger 8 is discarded (with a warning, falling back to a full replay) once the chain has moved on to ledger 9. During a long replay, `--replay-checkpoint-interval <BLOCKS>` (`MN_REPLAY_CHECKPOINT_INTERVAL`) saves intermediate checkpoints so an interrupted run resumes from the last one instead of genesis.
+
+Replay verifies finalized history in proof-erased form (no zero-knowledge proof, signature or balancing re-verification) and instead compares the locally computed ledger state root with the on-chain `Midnight.StateKey` after every block; a mismatch aborts the replay. The toolkit is a testing tool that trusts the node it talks to, so there is no strict-verification mode.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console
@@ -140,7 +144,7 @@ $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 [..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
 [..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
 [..]Dry-run: Destination rate: 1.0 TPS[..]
-[..]Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false, coin_selection: LargestFirst })[..]
+[..]Dry-run: Builder type: Batches(BatchesArgs { funding_seed: SchemeSeed { seed: WalletSeed::Medium(REDACTED), scheme: Schnorr }, num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false, coin_selection: LargestFirst })[..]
 [..]Dry-run: local prover (no proof server)[..]
 
 ```

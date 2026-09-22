@@ -53,14 +53,18 @@
    "midnight-primitives",
    "midnight-primitives-beefy",
    "midnight-primitives-cnight-observation",
+   "midnight-primitives-consensus-engine",
    "midnight-primitives-federated-authority-observation",
    "midnight-primitives-session-info",
    "pallet-aura",
+   "pallet-authorship",
+   "pallet-babe",
    "pallet-beefy",
    "pallet-beefy-mmr",
    "pallet-c2m-bridge",
    "pallet-cnight-observation",
    "pallet-collective",
+   "pallet-consensus-engine",
    "pallet-federated-authority",
    "pallet-federated-authority-observation",
    "pallet-grandpa",
@@ -70,8 +74,8 @@
    "pallet-migrations",
    "pallet-mmr",
    "pallet-partner-chains-bridge",
-   "pallet-partner-chains-session",
    "pallet-preimage",
+   "pallet-safe-mode",
    "pallet-scheduler",
    "pallet-session",
    "pallet-session-validator-management",
@@ -89,6 +93,7 @@
    "sp-api",
    "sp-block-builder",
    "sp-consensus-aura",
+   "sp-consensus-babe",
    "sp-consensus-beefy",
    "sp-consensus-grandpa",
    "sp-consensus-slots",
@@ -141,6 +146,14 @@
   ],
   "features": []
  },
+ "midnight-primitives-consensus-engine": {
+  "deps": [
+   "parity-scale-codec",
+   "scale-info",
+   "sp-api"
+  ],
+  "features": []
+ },
  "midnight-primitives-federated-authority-observation": {
   "deps": [
    "hex",
@@ -190,6 +203,7 @@
    "sidechain-domain",
    "sp-api",
    "sp-core",
+   "sp-crypto-hashing",
    "sp-partner-chains-bridge"
   ],
   "features": []
@@ -211,6 +225,22 @@
    "sidechain-domain",
    "sp-core",
    "sp-runtime"
+  ],
+  "features": []
+ },
+ "pallet-consensus-engine": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "midnight-primitives-consensus-engine",
+   "pallet-aura",
+   "pallet-babe",
+   "parity-scale-codec",
+   "scale-info",
+   "sp-consensus-aura",
+   "sp-consensus-babe",
+   "sp-consensus-slots"
   ],
   "features": []
  },
@@ -279,35 +309,21 @@
   ],
   "features": []
  },
- "pallet-partner-chains-session": {
-  "deps": [
-   "frame-support",
-   "frame-system",
-   "impl-trait-for-tuples",
-   "log",
-   "pallet-session",
-   "parity-scale-codec",
-   "scale-info",
-   "sp-runtime",
-   "sp-staking",
-   "sp-std"
-  ],
-  "features": [
-   "pallet-session",
-   "pallet-session-compat"
-  ]
- },
  "pallet-session-validator-management": {
   "deps": [
    "frame-support",
    "frame-system",
    "log",
+   "pallet-session",
    "parity-scale-codec",
    "scale-info",
    "sidechain-domain",
    "sp-core",
+   "sp-crypto-hashing",
+   "sp-io",
    "sp-runtime",
    "sp-session-validator-management",
+   "sp-staking",
    "sp-std"
   ],
   "features": []
