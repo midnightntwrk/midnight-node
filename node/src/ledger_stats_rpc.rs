@@ -216,13 +216,11 @@ where
 		// exactly when it matters, as clients poll a newly produced block. Serialising
 		// on this mutex instead means one caller reads the arena and the rest wake to
 		// a hit. The read is O(1), so the wait it imposes is bounded.
-		let mut cache = match self.cache.lock() {
-			Ok(guard) => Some(guard),
-			// A panic during an earlier fill poisons the mutex. Losing the memo is
-			// survivable; refusing every later call is not, so fall through to an
-			// uncached read rather than propagating the poison.
-			Err(_) => None,
-		};
+		//
+		// A panic during an earlier fill poisons the mutex. Losing the memo is
+		// survivable; refusing every later call is not, so a poisoned lock becomes
+		// `None` and the call falls through to an uncached read.
+		let mut cache = self.cache.lock().ok();
 
 		if let Some(guard) = cache.as_ref()
 			&& let Some((hash, stats)) = guard.as_ref()
