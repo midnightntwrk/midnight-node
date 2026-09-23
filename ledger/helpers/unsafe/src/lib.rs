@@ -58,6 +58,26 @@ pub enum CoinSelectionStrategy {
 	SmallestFirst,
 }
 
+/// An untagged-serialized zswap `WalletState`.
+///
+/// This and the other `*Raw` sync-state types sit at the crate root, outside the
+/// `indexer-client` feature, because the toolkit's wallet cache stores them either way.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZswapWalletStateRaw(pub Vec<u8>);
+
+/// An untagged-serialized `DustLocalState`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DustLocalStateRaw(pub Vec<u8>);
+
+/// An unshielded UTXO as its untagged-serialized `Utxo` plus its creation time.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UnshieldedUtxoRaw {
+	pub utxo: Vec<u8>,
+	pub ctime_secs: u64,
+	/// The indexer's `registeredForDustGeneration`.
+	pub backs_dust_generation: bool,
+}
+
 /// Struct to store serialized verifying key bytes
 /// To be deserialized when constructing ContractOperations
 pub struct ContractVerifyingKeyBytes(pub Vec<u8>);

@@ -18,8 +18,8 @@
 
 use midnight_ledger_unsafe_helpers::{
 	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged, ledger_8,
-	serialize_untagged,
+	UnshieldedSignatureScheme, UnshieldedUtxoRaw, Wallet, WalletSeed, WalletState,
+	deserialize_untagged, ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
@@ -120,9 +120,8 @@ pub struct CachedWalletState {
 	pub shielded_state_bytes: Vec<u8>,
 	#[serde(with = "serde_opt_bytes")]
 	pub dust_local_state_bytes: Option<Vec<u8>>,
-	/// Indexer path only: reconciled UTXO set as (untagged `Utxo`, ctime secs, backs dust
-	/// generation).
-	pub unshielded_utxos: Vec<(Vec<u8>, u64, bool)>,
+	/// Indexer path only: reconciled UTXO set.
+	pub unshielded_utxos: Vec<UnshieldedUtxoRaw>,
 	/// Indexer path only: highest applied `transactionId` / dust ledger-event `id`.
 	pub unshielded_tx_id: u64,
 	pub dust_event_id: u64,
@@ -325,8 +324,8 @@ impl CachedWalletState {
 		Self {
 			seed_hash,
 			block_height,
-			shielded_state_bytes: sync.shielded_state.unwrap_or_default(),
-			dust_local_state_bytes: sync.dust_state,
+			shielded_state_bytes: sync.shielded_state.map(|s| s.0).unwrap_or_default(),
+			dust_local_state_bytes: sync.dust_state.map(|s| s.0),
 			unshielded_utxos: sync.unshielded_utxos,
 			unshielded_tx_id: sync.unshielded_tx_id,
 			dust_event_id: sync.dust_event_id,
@@ -338,11 +337,17 @@ impl CachedWalletState {
 	#[cfg(feature = "indexer-client")]
 	pub fn to_sync_state(&self) -> midnight_ledger_unsafe_helpers::WalletSyncState {
 		midnight_ledger_unsafe_helpers::WalletSyncState {
-			shielded_state: (!self.shielded_state_bytes.is_empty())
-				.then(|| self.shielded_state_bytes.clone()),
+			shielded_state: (!self.shielded_state_bytes.is_empty()).then(|| {
+				midnight_ledger_unsafe_helpers::ZswapWalletStateRaw(
+					self.shielded_state_bytes.clone(),
+				)
+			}),
 			unshielded_utxos: self.unshielded_utxos.clone(),
 			unshielded_tx_id: self.unshielded_tx_id,
-			dust_state: self.dust_local_state_bytes.clone(),
+			dust_state: self
+				.dust_local_state_bytes
+				.clone()
+				.map(midnight_ledger_unsafe_helpers::DustLocalStateRaw),
 			dust_event_id: self.dust_event_id,
 		}
 	}
@@ -953,16 +958,26 @@ mod tests {
 	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn sync_state_roundtrips_through_a_cache_entry() {
-		use midnight_ledger_unsafe_helpers::WalletSyncState;
+		use midnight_ledger_unsafe_helpers::{
+			DustLocalStateRaw, WalletSyncState, ZswapWalletStateRaw,
+		};
 
 		let sync = WalletSyncState {
-			shielded_state: Some(vec![0x11; 64]),
+			shielded_state: Some(ZswapWalletStateRaw(vec![0x11; 64])),
 			unshielded_utxos: vec![
-				(vec![0x22; 48], 1_700_000_000, true),
-				(vec![0x33; 48], 0, false),
+				UnshieldedUtxoRaw {
+					utxo: vec![0x22; 48],
+					ctime_secs: 1_700_000_000,
+					backs_dust_generation: true,
+				},
+				UnshieldedUtxoRaw {
+					utxo: vec![0x33; 48],
+					ctime_secs: 0,
+					backs_dust_generation: false,
+				},
 			],
 			unshielded_tx_id: 4321,
-			dust_state: Some(vec![0x44; 32]),
+			dust_state: Some(DustLocalStateRaw(vec![0x44; 32])),
 			dust_event_id: 9876,
 		};
 
