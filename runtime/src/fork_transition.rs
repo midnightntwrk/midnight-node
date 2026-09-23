@@ -70,7 +70,7 @@
 
 use alloc::vec::Vec;
 
-use parity_scale_codec::Decode;
+use parity_scale_codec::DecodeAll;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 
 use crate::BlockNumber;
@@ -128,7 +128,7 @@ pub fn aura_authorities_at(number: BlockNumber) -> Option<Vec<AuraId>> {
 /// Decode a fork delta out of one block-body blob, if that is what it is.
 fn decode_delta(blob: &[u8]) -> Option<StorageDelta> {
 	let rest = blob.strip_prefix(FORK_DELTA_MAGIC.as_slice())?;
-	StorageDelta::decode(&mut &rest[..]).ok()
+	StorageDelta::decode_all(&mut &rest[..]).ok()
 }
 
 /// Apply the fork block's delta and nothing else.
@@ -137,31 +137,45 @@ fn decode_delta(blob: &[u8]) -> Option<StorageDelta> {
 /// tool as raw writes on top of the parent state, and the fork block's header
 /// commits to the root of exactly those writes. Running `initialize_block` /
 /// `finalize_block` around them would add frame-system bookkeeping the tool
-/// never accounted for, and the resulting root would not match. That mismatch
-/// is caught -- the client compares the executed root against the header and
-/// rejects the block -- so a mistake here fails loudly rather than silently
-/// forking state.
+/// never accounted for, and the resulting root would not match.
+///
+/// Bypassing `Executive` also bypasses its `final_checks`, so the header
+/// commitments are re-established here and in the client:
+///
+/// - the extrinsics root is asserted below, so the body executed is exactly the
+///   body the header commits to;
+/// - the body must be exactly one well-formed delta blob, so a missing,
+///   corrupted or extra entry panics instead of being skipped;
+/// - the state root is checked by the client, which compares the executed root
+///   against the header after `execute_block` returns and rejects the block on
+///   mismatch.
 pub fn execute_fork_block(block: &<crate::Block as sp_runtime::traits::Block>::LazyBlock) {
-	let mut applied = 0usize;
-	for extrinsic in &block.extrinsics {
-		let Some(delta) = decode_delta(extrinsic.inner()) else {
-			continue;
-		};
+	let extrinsics_root = frame_system::extrinsics_root::<
+		<crate::Runtime as frame_system::Config>::Hashing,
+		_,
+	>(&block.extrinsics, crate::VERSION.extrinsics_root_state_version());
+	assert!(
+		block.header.extrinsics_root == extrinsics_root,
+		"Fork block extrinsics root must match its body.",
+	);
 
-		for (key, value) in &delta {
-			match value {
-				Some(value) => frame_support::storage::unhashed::put_raw(key, value),
-				None => frame_support::storage::unhashed::kill(key),
-			}
+	let [blob] = block.extrinsics.as_slice() else {
+		panic!("Fork block body must be exactly one delta blob, got {}", block.extrinsics.len());
+	};
+	let delta = decode_delta(blob.inner()).expect("Fork block body must be a well-formed delta");
+
+	for (key, value) in &delta {
+		match value {
+			Some(value) => frame_support::storage::unhashed::put_raw(key, value),
+			None => frame_support::storage::unhashed::kill(key),
 		}
-		applied += delta.len();
 	}
 
 	log::info!(
 		target: "runtime::fork-transition",
 		"Applied fork delta at #{:?}: {} storage writes",
 		block.header.number,
-		applied,
+		delta.len(),
 	);
 }
 
@@ -184,7 +198,7 @@ fn parse_hex32(raw: &str) -> Option<[u8; 32]> {
 	}
 
 	let mut out = [0u8; 32];
-	for (index, chunk) in raw.chunks_exact(2).enumerate() {
+	for (index, chunk) in raw.as_chunks::<2>().0.iter().enumerate() {
 		out[index] = (nibble(chunk[0])? << 4) | nibble(chunk[1])?;
 	}
 	Some(out)
@@ -202,6 +216,7 @@ fn nibble(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use parity_scale_codec::Decode;
 
 	/// The safety property this feature rests on: built without the fork
 	/// configuration, every hook is inert and the runtime behaves like stock.
@@ -259,7 +274,9 @@ mod tests {
 
 	fn decode_hex(raw: &str) -> Vec<u8> {
 		raw.as_bytes()
-			.chunks_exact(2)
+			.as_chunks::<2>()
+			.0
+			.iter()
 			.map(|c| (nibble(c[0]).unwrap() << 4) | nibble(c[1]).unwrap())
 			.collect()
 	}
@@ -276,6 +293,9 @@ mod tests {
 		// An ordinary extrinsic must never be mistaken for a delta.
 		assert_eq!(decode_delta(&delta.encode()), None);
 		assert_eq!(decode_delta(b"MNFORK1"), None);
+		// Trailing garbage after a valid delta is corruption, not a shorter delta.
+		blob.push(0);
+		assert_eq!(decode_delta(&blob), None);
 	}
 
 	#[test]

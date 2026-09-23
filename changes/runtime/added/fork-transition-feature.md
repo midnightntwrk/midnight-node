@@ -45,4 +45,5 @@ inherited main-chain reference through the mock follower, which only ~2% of real
 Cardano hashes satisfy, so `mock-authorities` gained `--fork-at` to fork at a
 compatible parent (typically a few dozen blocks back).
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2149
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2071
