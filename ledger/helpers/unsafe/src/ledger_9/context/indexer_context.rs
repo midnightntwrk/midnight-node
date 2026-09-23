@@ -133,7 +133,7 @@ impl IndexerContext<DefaultDB> {
 	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
 		let block = self.refresh_tip().await?;
 		// Fall back to network defaults if the blob won't decode, so dust syncing still proceeds.
-		let params = decode_ledger_parameters(&block).unwrap_or_else(|e| {
+		let params = LedgerParameters::try_from(&block).unwrap_or_else(|e| {
 			log::warn!("indexer: could not decode ledger parameters ({e}); using defaults");
 			(*LedgerState::<DefaultDB>::new(self.network_id.clone()).parameters).clone()
 		});
@@ -517,16 +517,22 @@ impl IndexerContext<DefaultDB> {
 	}
 }
 
-fn decode_ledger_parameters(block: &BlockInfo) -> Result<LedgerParameters, std::io::Error> {
-	deserialize(&block.ledger_parameters[..])
+impl TryFrom<&BlockInfo> for LedgerParameters {
+	type Error = std::io::Error;
+
+	fn try_from(block: &BlockInfo) -> Result<Self, Self::Error> {
+		deserialize(&block.ledger_parameters[..])
+	}
 }
 
-fn block_context(block: &BlockInfo) -> BlockContext {
-	make_block_context(
-		Timestamp::from_secs(block.timestamp),
-		HashOutput(block.parent_hash),
-		Timestamp::from_secs(block.last_block_time),
-	)
+impl From<&BlockInfo> for BlockContext {
+	fn from(block: &BlockInfo) -> Self {
+		make_block_context(
+			Timestamp::from_secs(block.timestamp),
+			HashOutput(block.parent_hash),
+			Timestamp::from_secs(block.last_block_time),
+		)
+	}
 }
 
 /// The midnight transaction for this ledger generation, matching `fork::apply_block_9`.
@@ -621,11 +627,11 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	}
 
 	async fn latest_block_context(&self) -> BlockContext {
-		block_context(&self.tip().await)
+		BlockContext::from(&self.tip().await)
 	}
 
 	async fn ledger_parameters(&self) -> LedgerParameters {
-		decode_ledger_parameters(&self.tip().await).expect("indexer: decode ledger parameters")
+		LedgerParameters::try_from(&self.tip().await).expect("indexer: decode ledger parameters")
 	}
 
 	async fn network_id(&self) -> String {
@@ -712,12 +718,12 @@ mod tests {
 	#[test]
 	fn decodes_tagged_ledger_parameters() {
 		let block = block_info(serialize(&INITIAL_PARAMETERS).unwrap());
-		assert_eq!(decode_ledger_parameters(&block).unwrap(), INITIAL_PARAMETERS);
+		assert_eq!(LedgerParameters::try_from(&block).unwrap(), INITIAL_PARAMETERS);
 	}
 
 	#[test]
 	fn block_context_matches_replay_construction() {
-		let ctx = block_context(&block_info(vec![]));
+		let ctx = BlockContext::from(&block_info(vec![]));
 		let expected = make_block_context(
 			Timestamp::from_secs(1_700_000_006),
 			HashOutput([0x11; 32]),
@@ -743,7 +749,7 @@ mod tests {
 
 		futures::executor::block_on(async {
 			assert_eq!(ctx.ledger_parameters().await, INITIAL_PARAMETERS);
-			assert_eq!(ctx.latest_block_context().await.tblock, block_context(&block).tblock);
+			assert_eq!(ctx.latest_block_context().await.tblock, BlockContext::from(&block).tblock);
 		});
 	}
 }
