@@ -34,7 +34,7 @@ pub mod extract_tx_with_context;
 #[cfg(feature = "indexer-client")]
 pub mod indexer_client;
 #[cfg(feature = "indexer-client")]
-pub use indexer_client::{IndexerClient, IndexerClientError};
+pub use indexer_client::{IndexerClient, IndexerClientError, WalletSyncState};
 
 /// Process-wide counters of replayed transactions that did not fully apply,
 /// shared by every ledger generation's `LedgerContext`.

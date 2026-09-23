@@ -31,15 +31,16 @@ use tokio::time::timeout;
 use super::BuilderContext;
 use crate::indexer_client::{
 	DUST_IDLE_TIMEOUT, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT, ShieldedEvent,
-	SyncProgress, TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData,
+	SyncProgress, TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData, WalletSyncState,
 };
 use crate::ledger_9::{
-	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustWallet, Event,
-	HashOutput, IntentHash, IntoWalletAddress, LedgerParameters, LedgerState,
+	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustLocalState,
+	DustWallet, Event, HashOutput, IntentHash, IntoWalletAddress, LedgerParameters, LedgerState,
 	MerkleTreeCollapsedUpdate, Offer, PedersenDowngradeable, ProofKind, ProofMarker,
-	PureGeneratorPedersen, Resolver, Serializable, ShieldedWallet, Signature, SignatureKind,
+	PureGeneratorPedersen, Resolver, Serializable, ShieldedWallet, Signature, SignatureKind, Sp,
 	Storable, Tagged, Timestamp, Transaction, UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet,
-	WalletSeed, ZswapChainState, deserialize,
+	WalletSeed, WalletState, ZswapChainState, deserialize, deserialize_untagged,
+	serialize_untagged,
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -100,8 +101,15 @@ impl IndexerContext<DefaultDB> {
 	/// `IndexerClient` supports the overlap — every method takes `&self` and opens a fresh
 	/// independent WebSocket per subscription.
 	///
-	/// No toolkit-side cache: each call re-drains to tip.
-	pub async fn init_wallets(&self, seeds: &[WalletSeed]) -> Result<(), BoxError> {
+	/// `resume` carries each seed's previously-synced state, and the returned map is what to
+	/// persist for the next run; a seed absent from `resume` drains from the origin. Nothing here
+	/// checks that a resume entry belongs to this chain or ledger generation — the blobs do not
+	/// self-identify, so the caller's cache key must guarantee it.
+	pub async fn init_wallets(
+		&self,
+		seeds: &[WalletSeed],
+		resume: &HashMap<WalletSeed, WalletSyncState>,
+	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
 		let block = self.client.latest_block().await?;
 		// Fall back to network defaults if the blob won't decode, so dust syncing still proceeds.
 		let params: LedgerParameters =
@@ -116,9 +124,9 @@ impl IndexerContext<DefaultDB> {
 		// `log_until_done` loops forever; it is dropped the moment the work arm resolves, so the
 		// `select!` yields the work's result.
 		let synced = {
-			let work = stream::iter(
-				seeds.iter().map(|seed| self.sync_wallet(seed, &params, tip_time, &progress)),
-			)
+			let work = stream::iter(seeds.iter().map(|seed| {
+				self.sync_wallet(seed, resume.get(seed), &params, tip_time, &progress)
+			}))
 			.buffer_unordered(self.wallet_sync_concurrency.get())
 			.try_collect::<Vec<_>>();
 			tokio::select! {
@@ -131,27 +139,34 @@ impl IndexerContext<DefaultDB> {
 		let mut wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
 		let mut unshielded =
 			self.unshielded.lock().expect("IndexerContext unshielded lock poisoned");
-		for (seed, wallet, utxos) in synced {
+		let mut next_resume = HashMap::with_capacity(synced.len());
+		for (seed, wallet, utxos, sync_state) in synced {
 			wallets.insert(seed.clone(), wallet);
-			unshielded.insert(seed, utxos);
+			unshielded.insert(seed.clone(), utxos);
+			next_resume.insert(seed, sync_state);
 		}
 
-		Ok(())
+		Ok(next_resume)
 	}
 
 	/// Build the wallet for `seed` and sync its shielded / unshielded / dust streams concurrently.
 	///
 	/// The three sub-syncs borrow disjoint fields of the freshly-built [`Wallet`]
 	/// (`&mut shielded`, `&unshielded`, `&mut dust`), so [`tokio::try_join!`] can overlap their
-	/// network waits on this single task. Returns the seed, the synced wallet, and its reconciled
-	/// unshielded UTXOs for the caller to store.
+	/// network waits on this single task. Returns the seed, the synced wallet, its reconciled
+	/// unshielded UTXOs, and the resume point for the next run.
+	///
+	/// The wallet is always rebuilt from the seed, so keys stay derived rather than persisted;
+	/// `resume` only reseeds the three accumulated states.
 	async fn sync_wallet(
 		&self,
 		seed: &WalletSeed,
+		resume: Option<&WalletSyncState>,
 		params: &LedgerParameters,
 		tip_time: Timestamp,
 		progress: &SyncProgress,
-	) -> Result<(WalletSeed, Wallet<DefaultDB>, Vec<(Utxo, Timestamp)>), BoxError> {
+	) -> Result<(WalletSeed, Wallet<DefaultDB>, Vec<(Utxo, Timestamp)>, WalletSyncState), BoxError>
+	{
 		let mut wallet = Wallet {
 			root_seed: Some(seed.clone()),
 			shielded: ShieldedWallet::default(seed.clone()),
@@ -160,24 +175,46 @@ impl IndexerContext<DefaultDB> {
 		};
 
 		let Wallet { shielded, unshielded, dust, .. } = &mut wallet;
-		let (_, unshielded_utxos, _) = tokio::try_join!(
-			self.sync_shielded(shielded, progress),
-			self.sync_unshielded(unshielded, progress),
-			self.sync_dust(dust, tip_time, progress),
+		let (shielded_state, (unshielded_utxos, unshielded_tx_id), (dust_state, dust_event_id)) = tokio::try_join!(
+			self.sync_shielded(shielded, resume, progress),
+			self.sync_unshielded(unshielded, resume, progress),
+			self.sync_dust(dust, resume, tip_time, progress),
 		)?;
 
-		Ok((seed.clone(), wallet, unshielded_utxos))
+		let utxo_blobs = unshielded_utxos
+			.iter()
+			.map(|(utxo, ctime)| Ok((serialize_untagged(utxo)?, ctime.to_secs())))
+			.collect::<Result<Vec<_>, std::io::Error>>()?;
+
+		let next = WalletSyncState {
+			shielded_state,
+			unshielded_utxos: utxo_blobs,
+			unshielded_tx_id,
+			dust_state,
+			dust_event_id,
+		};
+		Ok((seed.clone(), wallet, unshielded_utxos, next))
 	}
 
 	/// Drain `shieldedTransactions`, fast-forwarding the wallet's zswap merkle tree with each
 	/// gap-filling collapsed update and applying every relevant transaction's offers, until the
 	/// indexer reports it has checked all known state for this wallet.
+	///
+	/// Returns the serialized `WalletState` to persist, or `None` when the drain ended misaligned
+	/// (see [`IndexerContext::drain_shielded`]).
 	async fn sync_shielded(
 		&self,
 		shielded: &mut ShieldedWallet<DefaultDB>,
+		resume: Option<&WalletSyncState>,
 		progress: &SyncProgress,
-	) -> Result<(), BoxError> {
+	) -> Result<Option<Vec<u8>>, BoxError> {
+		if let Some(bytes) = resume.and_then(|r| r.shielded_state.as_ref()) {
+			shielded.state = deserialize_untagged::<WalletState<DefaultDB>>(&bytes[..])?;
+		}
 		let viewing_key = shielded.viewing_key(&self.network_id);
+		// `ConnectOptions.startIndex` is a *transaction id*, not a zswap index, and the indexer
+		// upserts it as a MIN, so it can neither carry the resume cursor nor narrow an existing
+		// server-side scan. The resume cursor goes to `shielded_transactions` instead.
 		let session_id = self.client.connect(&viewing_key, None).await?;
 
 		let result = self.drain_shielded(shielded, &session_id, progress).await;
@@ -186,18 +223,37 @@ impl IndexerContext<DefaultDB> {
 		if let Err(e) = self.client.disconnect(&session_id).await {
 			log::warn!("indexer: disconnect failed: {e}");
 		}
-		result?;
+		let aligned = result?;
 		progress.shielded.finish();
-		Ok(())
+		if !aligned {
+			log::debug!("indexer: shielded tail misaligned; not caching this wallet's zswap state");
+			return Ok(None);
+		}
+		Ok(Some(serialize_untagged(&shielded.state)?))
 	}
 
+	/// Returns whether the merkle tree ended aligned with the last relevant transaction's
+	/// `zswapEndIndex` — i.e. whether `state.first_free` is a sound resume cursor.
+	///
+	/// `relevant_offers` applies only the guaranteed offer of a `PartialSuccess` and nothing of a
+	/// `Failure`, so `first_free` can end *below* that transaction's `zswapEndIndex`. Resuming
+	/// there re-delivers the same transaction (the server selects `zswap_start_index >= index`)
+	/// with no collapsed update (it omits one whenever `index >= zswap_start_index`), and its
+	/// outputs get applied onto the tree twice. The live drain tolerates the gap because the next
+	/// transaction's collapsed update realigns the tree; a persisted cursor has no such rescue.
+	//
+	// ponytail: skip-persist on misalignment; add a
+	// zswapMerkleTreeCollapsedUpdate(first_free, last_end_index - 1) realign call if
+	// PartialSuccess tails turn out to be common.
 	async fn drain_shielded(
 		&self,
 		shielded: &mut ShieldedWallet<DefaultDB>,
 		session_id: &str,
 		progress: &SyncProgress,
-	) -> Result<(), BoxError> {
-		let mut stream = self.client.shielded_transactions(session_id, 0).await?;
+	) -> Result<bool, BoxError> {
+		// The cursor is the tree's own next free index, so state and cursor cannot drift.
+		let mut last_end_index = shielded.state.first_free;
+		let mut stream = self.client.shielded_transactions(session_id, last_end_index).await?;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
 		loop {
@@ -213,7 +269,13 @@ impl IndexerContext<DefaultDB> {
 			};
 
 			match event {
-				ShieldedEvent::Relevant { raw_transaction, result, collapsed_update, .. } => {
+				ShieldedEvent::Relevant {
+					raw_transaction,
+					result,
+					zswap_end_index,
+					collapsed_update,
+					..
+				} => {
 					if let Some(update_bytes) = collapsed_update {
 						let update: MerkleTreeCollapsedUpdate = deserialize(&update_bytes[..])?;
 						shielded.state = shielded
@@ -225,6 +287,7 @@ impl IndexerContext<DefaultDB> {
 					let tx: MnTx = deserialize(&raw_transaction[..])?;
 					let offers = relevant_offers(&tx, result);
 					shielded.apply_offers(&offers);
+					last_end_index = zswap_end_index;
 				},
 				ShieldedEvent::Progress {
 					highest_end_index, highest_checked_end_index, ..
@@ -238,17 +301,21 @@ impl IndexerContext<DefaultDB> {
 				},
 			}
 		}
-		Ok(())
+		Ok(shielded.state.first_free == last_end_index)
 	}
 
 	/// Drain `unshieldedTransactions` for the wallet's address, reconciling created vs spent UTXOs.
+	///
+	/// Returns the reconciled set and the highest applied `transactionId`. The fold is
+	/// order-independent, so seeding it from a previous run is equivalent to replaying from the
+	/// origin.
 	async fn sync_unshielded(
 		&self,
 		unshielded: &UnshieldedWallet,
+		resume: Option<&WalletSyncState>,
 		progress: &SyncProgress,
-	) -> Result<Vec<(Utxo, Timestamp)>, BoxError> {
+	) -> Result<(Vec<(Utxo, Timestamp)>, u64), BoxError> {
 		let address = unshielded.address(&self.network_id).to_bech32();
-		let mut stream = self.client.unshielded_transactions(&address, 0).await?;
 
 		// Keyed by (intent_hash, output_index) so a later spend removes the matching created UTXO.
 		let mut utxos: HashMap<(Vec<u8>, u32), (Utxo, Timestamp)> = HashMap::new();
@@ -258,6 +325,21 @@ impl IndexerContext<DefaultDB> {
 		// shielded `highest_checked >= highest` guard. Ids are 1-based, so an address with no
 		// transactions reports 0 and stops on the first progress.
 		let mut highest_applied_transaction_id = 0u64;
+		if let Some(r) = resume {
+			for (blob, ctime) in &r.unshielded_utxos {
+				let utxo: Utxo = deserialize_untagged(&blob[..])?;
+				let key = (utxo.intent_hash.0.0.to_vec(), utxo.output_no);
+				utxos.insert(key, (utxo, Timestamp::from_secs(*ctime)));
+			}
+			highest_applied_transaction_id = r.unshielded_tx_id;
+		}
+
+		// The server's cursor is inclusive (`transaction_id >= $2`), so resume past the last
+		// applied id. A cold run passes 1, which selects the same set as the 1-based ids' 0.
+		let mut stream = self
+			.client
+			.unshielded_transactions(&address, highest_applied_transaction_id + 1)
+			.await?;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
 		loop {
@@ -306,20 +388,39 @@ impl IndexerContext<DefaultDB> {
 		let mut utxos: Vec<(Utxo, Timestamp)> = utxos.into_values().collect();
 		utxos.sort_by(|a, b| a.0.cmp(&b.0));
 		progress.unshielded.finish();
-		Ok(utxos)
+		Ok((utxos, highest_applied_transaction_id))
 	}
 
 	/// Drain `dustLedgerEvents` and replay them into the wallet's dust state, then process TTLs up
 	/// to the chain tip. The events are the chain-wide ledger events; `replay_events` filters them
 	/// to this wallet by secret key, exactly as the local replay path does.
+	///
+	/// Returns the dust state as of the last applied event *before* `process_ttls`, plus that
+	/// event's id. `replay_events` rejects a gap with `NonLinearInsertion`, so a wrong resume
+	/// cursor fails loudly rather than producing a quietly wrong balance.
 	async fn sync_dust(
 		&self,
 		dust: &mut DustWallet<DefaultDB>,
+		resume: Option<&WalletSyncState>,
 		tip_time: Timestamp,
 		progress: &SyncProgress,
-	) -> Result<(), BoxError> {
-		let mut stream = self.client.dust_ledger_events(1).await?;
+	) -> Result<(Option<Vec<u8>>, u64), BoxError> {
+		let mut resume_id = 0u64;
+		if let Some(r) = resume
+			&& let Some(bytes) = &r.dust_state
+		{
+			let state = deserialize_untagged::<DustLocalState<DefaultDB>>(&bytes[..])?;
+			dust.dust_local_state = Some(Sp::new(state));
+			resume_id = r.dust_event_id;
+		}
+
+		// Resume *at* the last applied event, not past it. This stream has no progress heartbeat,
+		// so a caught-up wallet subscribed at `id + 1` would receive nothing and stall for the
+		// full `DUST_IDLE_TIMEOUT`; the re-delivered event carries `maxId`, which ends the drain
+		// in one round trip. It is skipped below rather than replayed.
+		let mut stream = self.client.dust_ledger_events(resume_id.max(1)).await?;
 		let mut events: Vec<Event<DefaultDB>> = Vec::new();
+		let mut applied_id = resume_id;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
 		loop {
@@ -331,8 +432,11 @@ impl IndexerContext<DefaultDB> {
 			};
 			progress.dust.advance_scanned(&mut last_scanned, item.id);
 			progress.dust.advance_target(&mut last_target, item.max_id);
-			let event: Event<DefaultDB> = deserialize(&item.raw[..])?;
-			events.push(event);
+			if item.id > resume_id {
+				let event: Event<DefaultDB> = deserialize(&item.raw[..])?;
+				events.push(event);
+				applied_id = item.id;
+			}
 			// `id`/`maxId` are 1-based and `maxId` is the highest known event: stop once reached.
 			if item.id >= item.max_id {
 				break;
@@ -340,9 +444,13 @@ impl IndexerContext<DefaultDB> {
 		}
 
 		dust.replay_events(&events).map_err(|e| format!("replay dust events: {e:?}"))?;
+		// Snapshot before the TTL projection: `process_ttls` expires UTXOs against *this* tip, so
+		// persisting its output and resuming from it would expire against two different tips.
+		let dust_state =
+			dust.dust_local_state.as_ref().map(|s| serialize_untagged(&**s)).transpose()?;
 		dust.process_ttls(tip_time);
 		progress.dust.finish();
-		Ok(())
+		Ok((dust_state, applied_id))
 	}
 }
 

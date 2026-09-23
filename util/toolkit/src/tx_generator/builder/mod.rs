@@ -1965,6 +1965,7 @@ mod tests {
 				block_height: height,
 				shielded_state_bytes: vec![],
 				dust_local_state_bytes: None,
+				..Default::default()
 			},
 		)
 	}

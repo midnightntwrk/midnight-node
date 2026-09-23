@@ -23,6 +23,9 @@
 //! to catch up, then runs `show-wallet --indexer-url …` for a funded genesis seed and asserts the
 //! reconstructed wallet reports non-empty shielded coins, unshielded UTXOs and dust UTXOs.
 //!
+//! An uncached run is also the oracle for the incremental wallet cache: a cache-resumed sync must
+//! reproduce it exactly, and an entry filed under another chain must never be served.
+//!
 //! Like the other container tests in this crate it needs Docker plus the pinned node/indexer
 //! images (resolved via `test-images.docker-compose.yml`), so it only runs where those are
 //! available (CI / a local Docker host).
@@ -32,6 +35,7 @@ mod common;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_ledger_unsafe_helpers::IndexerClient;
 use midnight_node_toolkit::client::MidnightNodeClient;
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 use testcontainers::{
@@ -106,20 +110,79 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 	wait_for_indexer_height(&indexer_url, node_height, Duration::from_secs(180)).await;
 
 	// --- run show-wallet against the indexer --------------------------------------------------
-	let bin = env!("CARGO_BIN_EXE_midnight-node-toolkit");
-	let output = Command::new(bin)
-		.args([
-			"show-wallet",
-			"--indexer-url",
-			&indexer_url,
-			"--network",
-			NETWORK,
-			"--seed",
-			FUNDED_SEED,
-		])
-		.output()
-		.expect("failed to run midnight-node-toolkit");
+	// Baseline: caching disabled, so every stream drains from the origin.
+	let baseline = show_wallet(&indexer_url, None);
 
+	let utxos = baseline["utxos"].as_array().expect("`utxos` should be an array");
+	let coins = baseline["coins"].as_object().expect("`coins` should be an object");
+	let dust = baseline["dust_utxos"].as_array().expect("`dust_utxos` should be an array");
+
+	assert!(!utxos.is_empty(), "expected non-empty unshielded UTXOs for funded seed");
+	assert!(!coins.is_empty(), "expected non-empty shielded coins for funded seed");
+	assert!(!dust.is_empty(), "expected non-empty dust UTXOs for funded seed");
+
+	// --- incremental wallet cache ---------------------------------------------------------------
+	let cache = tempfile::tempdir().expect("failed to create cache dir");
+	assert_eq!(
+		show_wallet(&indexer_url, Some(cache.path())),
+		baseline,
+		"enabling the cache must not change the first (still cold) run's answer",
+	);
+	assert_eq!(
+		show_wallet(&indexer_url, Some(cache.path())),
+		baseline,
+		"a cache-resumed sync must reproduce the full drain exactly",
+	);
+
+	// Entries are namespaced by block 1's hash, so one chain's state can never be served against
+	// another's indexer. Renaming that directory away must therefore force a full drain.
+	let chain_id = IndexerClient::new(&indexer_url)
+		.expect("failed to build indexer client")
+		.block_hash_at(1)
+		.await
+		.expect("block 1 query failed")
+		.expect("indexer has not indexed block 1");
+	let chain_dir = cache.path().join(hex::encode(chain_id));
+	assert!(chain_dir.is_dir(), "cache must be namespaced by block 1's hash, found: {chain_dir:?}");
+	std::fs::rename(&chain_dir, cache.path().join("ff".repeat(32)))
+		.expect("failed to rename chain-id directory");
+
+	assert_eq!(
+		show_wallet(&indexer_url, Some(cache.path())),
+		baseline,
+		"a cache entry under another chain id must be ignored, not served",
+	);
+	assert!(chain_dir.is_dir(), "the full-drain fallback must re-file its state under this chain");
+}
+
+/// Run `show-wallet --indexer-url …` for [`FUNDED_SEED`] and return its parsed JSON.
+///
+/// `cache_dir` enables the wallet cache under that directory; `None` disables it, which is what
+/// `--fetch-cache inmemory` means to the toolkit.
+fn show_wallet(indexer_url: &str, cache_dir: Option<&Path>) -> serde_json::Value {
+	let bin = env!("CARGO_BIN_EXE_midnight-node-toolkit");
+	let mut cmd = Command::new(bin);
+	cmd.args([
+		"show-wallet",
+		"--indexer-url",
+		indexer_url,
+		"--network",
+		NETWORK,
+		"--seed",
+		FUNDED_SEED,
+	]);
+	match cache_dir {
+		Some(dir) => {
+			cmd.arg("--ledger-state-db").arg(dir);
+			cmd.arg("--fetch-cache")
+				.arg(format!("redb:{}", dir.join("fetch_cache.db").display()));
+		},
+		None => {
+			cmd.args(["--fetch-cache", "inmemory"]);
+		},
+	}
+
+	let output = cmd.output().expect("failed to run midnight-node-toolkit");
 	assert!(
 		output.status.success(),
 		"show-wallet --indexer-url failed (status {:?})\nstdout:\n{}\nstderr:\n{}",
@@ -129,16 +192,8 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 	);
 
 	let stdout = String::from_utf8_lossy(&output.stdout);
-	let json: serde_json::Value = serde_json::from_str(&stdout)
-		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"));
-
-	let utxos = json["utxos"].as_array().expect("`utxos` should be an array");
-	let coins = json["coins"].as_object().expect("`coins` should be an object");
-	let dust = json["dust_utxos"].as_array().expect("`dust_utxos` should be an array");
-
-	assert!(!utxos.is_empty(), "expected non-empty unshielded UTXOs for funded seed");
-	assert!(!coins.is_empty(), "expected non-empty shielded coins for funded seed");
-	assert!(!dust.is_empty(), "expected non-empty dust UTXOs for funded seed");
+	serde_json::from_str(&stdout)
+		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"))
 }
 
 /// Read the node's current finalized height (used as the indexer catch-up target).

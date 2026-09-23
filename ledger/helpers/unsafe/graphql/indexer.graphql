@@ -86,3 +86,11 @@ subscription DustLedgerEvents($id: Int) {
     maxId
   }
 }
+
+# Chain identity for cache keying: block 1's hash is stable for the life of a chain and is the
+# same value the replay path uses (`SourceTransactions::chain_id`).
+query BlockAtHeight($height: Int!) {
+  block(offset: { height: $height }) {
+    hash
+  }
+}

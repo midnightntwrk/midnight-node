@@ -100,11 +100,18 @@ pub async fn show_wallet_from_indexer(
 	seed: WalletSeed,
 	debug: bool,
 	concurrency: std::num::NonZeroUsize,
-) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	resume: midnight_ledger_unsafe_helpers::WalletSyncState,
+) -> Result<
+	(ShowWalletResult, midnight_ledger_unsafe_helpers::WalletSyncState),
+	Box<dyn std::error::Error + Send + Sync>,
+> {
 	use ledger_helpers_local::{BuilderContext, IndexerContext};
 
 	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, network, concurrency)?;
-	ctx.init_wallets(std::slice::from_ref(&seed)).await?;
+	let mut synced = ctx
+		.init_wallets(std::slice::from_ref(&seed), &HashMap::from([(seed.clone(), resume)]))
+		.await?;
+	let next_resume = synced.remove(&seed).unwrap_or_default();
 
 	let (coins, dust_utxos, debug_str) = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
 		let coins = wallet
@@ -140,7 +147,7 @@ pub async fn show_wallet_from_indexer(
 		.map(|(utxo, _ctime)| utxo_to_ser(utxo))
 		.collect();
 
-	Ok(match debug_str {
+	let result = match debug_str {
 		Some(debug_str) => ShowWalletResult::Debug(debug_str, utxos),
 		// The indexer reconstructs wallet state but not the node's full `LedgerState`, so the
 		// ledger-level claimable maps are unavailable here and reported as zero.
@@ -151,7 +158,8 @@ pub async fn show_wallet_from_indexer(
 			claimable_block_rewards: 0,
 			claimable_bridge_transfers: 0,
 		}),
-	})
+	};
+	Ok((result, next_resume))
 }
 
 pub enum ShowWalletResult {

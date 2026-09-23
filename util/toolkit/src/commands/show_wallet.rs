@@ -13,6 +13,8 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "indexer-client")]
+use crate::fetcher::wallet_state_cache::{CachedWalletState, indexer_wallet_cache_key};
 use crate::source::Source;
 use crate::tx_generator::builder::{
 	WalletSchemes, build_fork_aware_context_cached_with_schemes, ensure_ecdsa_supported,
@@ -25,9 +27,9 @@ use crate::{
 };
 use clap::Args;
 #[cfg(feature = "indexer-client")]
-use midnight_ledger_unsafe_helpers::IndexerClient;
-#[cfg(feature = "indexer-client")]
 use midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY;
+#[cfg(feature = "indexer-client")]
+use midnight_ledger_unsafe_helpers::{IndexerClient, WalletSyncState};
 #[cfg(feature = "indexer-client")]
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
@@ -223,46 +225,72 @@ async fn execute_indexer(
 
 	// The per-version context re-queries this block for ledger parameters; not worth threading
 	// the first answer through just to save one cheap query.
-	let spec_version = IndexerClient::new(indexer_url)?.latest_block().await?.protocol_version;
+	let client = IndexerClient::new(indexer_url)?;
+	let block = client.latest_block().await?;
+	let spec_version = block.protocol_version;
 	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
 		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
 	})?;
 	log::info!("Indexer chain is at protocol version {spec_version} ({ledger_version:?})");
 
+	// Block 1's hash is the chain identity, matching `SourceTransactions::chain_id`. An indexer
+	// that has not indexed it yet cannot be told apart from another chain's, so caching is off.
+	let chain_id = client.block_hash_at(1).await?.map(subxt::utils::H256::from);
+	let cache = create_file_wallet_cache(&args.source.ledger_state_db, &args.source.fetch_cache);
+	// `--ledger-state-db` and `--fetch-cache` are `global = true` with non-empty defaults, so this
+	// is on by default; `--fetch-cache inmemory` is the existing off switch.
+	let cache = chain_id.zip(cache);
+	let cache_key = indexer_wallet_cache_key(&seed, ledger_version);
+
+	let mut resume = WalletSyncState::default();
+	if let Some((chain_id, cache)) = &cache
+		&& let Some(entry) = cache.get_wallet_states(*chain_id, &[cache_key]).await.pop().flatten()
+	{
+		log::info!("Resuming indexer sync from cached state at block {}", entry.block_height);
+		resume = entry.to_sync_state();
+	}
+
 	let network = args.network.clone();
-	match ledger_version {
+	let (result, next_resume) = match ledger_version {
 		LedgerVersion::Ledger9 => {
 			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
-			Ok(fork_wallet_result_v9(
-				show_wallet_from_indexer(
-					indexer_url,
-					&network,
-					seed,
-					args.debug,
-					args.indexer_concurrency,
-				)
-				.await?,
-			))
+			let (result, next) = show_wallet_from_indexer(
+				indexer_url,
+				&network,
+				seed.clone(),
+				args.debug,
+				args.indexer_concurrency,
+				resume,
+			)
+			.await?;
+			(fork_wallet_result_v9(result), next)
 		},
 		LedgerVersion::Ledger8 => {
 			use crate::commands::fork::ledger_8::show_wallet::show_wallet_from_indexer;
 			// `WalletSeed` is a per-generation type; the replay path converts the same way.
-			let seed =
+			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
-					seed,
+					seed.clone(),
 				);
-			Ok(fork_wallet_result_v8(
-				show_wallet_from_indexer(
-					indexer_url,
-					&network,
-					seed,
-					args.debug,
-					args.indexer_concurrency,
-				)
-				.await?,
-			))
+			let (result, next) = show_wallet_from_indexer(
+				indexer_url,
+				&network,
+				seed_v8,
+				args.debug,
+				args.indexer_concurrency,
+				resume,
+			)
+			.await?;
+			(fork_wallet_result_v8(result), next)
 		},
+	};
+
+	if let Some((chain_id, cache)) = &cache {
+		let entry = CachedWalletState::from_sync_state(cache_key, block.height, next_resume);
+		cache.set_wallet_states(*chain_id, &[entry]).await;
 	}
+
+	Ok(result)
 }
 
 fn fork_wallet_result_v9(

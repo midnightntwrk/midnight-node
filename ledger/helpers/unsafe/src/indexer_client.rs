@@ -72,6 +72,14 @@ pub struct LatestBlock;
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
+pub struct BlockAtHeight;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
 pub struct Connect;
 
 #[derive(GraphQLQuery)]
@@ -206,6 +214,30 @@ pub struct DustLedgerEventData {
 	pub raw: Vec<u8>,
 }
 
+/// Per-seed resume point for `IndexerContext::init_wallets`: what a sync run consumed, and what
+/// the next one can therefore skip.
+///
+/// Plain bytes and integers only. The toolkit owns the cache, but the toolkit depends on
+/// ledger-helpers and not the reverse, so the value crossing the boundary cannot mention the
+/// toolkit's `CachedWalletState`. Blobs are this chain's native *untagged* ledger encodings, so
+/// the caller must key them by chain and ledger generation; nothing here self-identifies.
+#[derive(Debug, Clone, Default)]
+pub struct WalletSyncState {
+	/// zswap `WalletState`. Its `first_free` *is* the shielded resume cursor — the two are stored
+	/// as one value so they cannot drift apart.
+	pub shielded_state: Option<Vec<u8>>,
+	/// Reconciled UTXO set: (untagged `Utxo`, ctime secs). `Utxo`/`Timestamp` have no serde impls,
+	/// and the `(intent_hash, output_no)` reconciliation key rebuilds from the `Utxo` itself.
+	pub unshielded_utxos: Vec<(Vec<u8>, u64)>,
+	/// Highest applied `transactionId`; resume is `+ 1` (the subscription's cursor is inclusive).
+	pub unshielded_tx_id: u64,
+	/// `DustLocalState` *before* `process_ttls`, which is a projection against the tip and is
+	/// re-applied on every load rather than persisted.
+	pub dust_state: Option<Vec<u8>>,
+	/// Last applied dust ledger-event `id`; resume is `+ 1`.
+	pub dust_event_id: u64,
+}
+
 /// A GraphQL client targeting one indexer `api/v4` base URL.
 pub struct IndexerClient {
 	http: reqwest::Client,
@@ -289,6 +321,25 @@ impl IndexerClient {
 			zswap_end_index: block.zswap_end_index as u64,
 			ledger_parameters: decode_hex(&block.ledger_parameters)?,
 		})
+	}
+
+	/// `block(offset: {height})` — that block's hash, or `None` if the indexer has not indexed it.
+	///
+	/// Block 1's hash is the chain identity the wallet cache keys on; `None` there means "cannot
+	/// identify this chain", which callers must treat as "do not cache".
+	pub async fn block_hash_at(&self, height: u64) -> IndexerResult<Option<[u8; 32]>> {
+		let variables = block_at_height::Variables { height: height as i64 };
+		let Some(block) = self.run_query::<BlockAtHeight>(variables).await?.block else {
+			return Ok(None);
+		};
+		let bytes = decode_hex(&block.hash)?;
+		let hash: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
+			IndexerClientError::Decode(format!(
+				"block hash: expected 32 bytes, got {}",
+				bytes.len()
+			))
+		})?;
+		Ok(Some(hash))
 	}
 
 	/// Open the `shieldedTransactions` subscription starting at zswap `index`.
