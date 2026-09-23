@@ -51,4 +51,6 @@ fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9
 # Indexer-backed `BuilderContext` (the GraphQL client + `IndexerContext`). Off by default so
 # consumers build without the indexer submodule (the typed client reads the indexer's committed
 # GraphQL schema at compile time). The toolkit enables it by default.
+# Optional because the indexer trails the node: after e.g. a ledger-version bump there is no
+# compatible indexer for a while, and a toolkit must still be shippable without it.
 indexer-client = ["dep:reqwest", "dep:graphql_client", "dep:tokio-tungstenite"]
