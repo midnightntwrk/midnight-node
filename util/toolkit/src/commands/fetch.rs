@@ -32,6 +32,7 @@ pub struct FetchArgs {
 
 pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let FetchArgs { src, seeds } = args;
+	src.reject_indexer("fetch", "it fetches and replays blocks from the node")?;
 
 	if src.src_files.is_some() {
 		panic!("error: fetch command doesn't work with '--src-files'");

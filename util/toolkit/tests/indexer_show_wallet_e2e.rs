@@ -250,6 +250,34 @@ async fn indexer_generate_txs_single_tx_reaches_destination() {
 	}
 }
 
+#[tokio::test]
+async fn indexer_dust_balance_matches_replay() {
+	if !e2e_enabled("indexer_dust_balance_matches_replay") {
+		return;
+	}
+	let env = start_env("dust").await;
+
+	let dust_balance = |source: &[&str]| -> serde_json::Value {
+		let mut args = vec!["dust-balance", "--seed", FUNDED_SEED, "--fetch-cache", "inmemory"];
+		args.extend(source);
+		let stdout = run_toolkit(&args);
+		serde_json::from_str(&stdout)
+			.unwrap_or_else(|e| panic!("failed to parse dust-balance JSON ({e}):\n{stdout}"))
+	};
+	let replay = dust_balance(&["--src-url", &env.node_ws]);
+	let indexer = dust_balance(&["--indexer-url", &env.indexer_url, "--network", NETWORK]);
+
+	assert!(
+		!replay["generation_infos"].as_array().expect("array").is_empty(),
+		"funded seed must have dust outputs"
+	);
+	// `total` and `source` are evaluated at wall-clock time, so they differ between the two runs.
+	for field in ["generation_infos", "capacity"] {
+		assert_eq!(indexer[field], replay[field], "`{field}` differs between indexer and replay");
+	}
+	assert_ne!(indexer["total"], serde_json::json!(0), "indexer dust total must be non-zero");
+}
+
 /// Run the toolkit binary with `args`, panicking with its output on failure; returns stdout.
 fn run_toolkit(args: &[&str]) -> String {
 	let output = Command::new(env!("CARGO_BIN_EXE_midnight-node-toolkit"))

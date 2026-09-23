@@ -110,6 +110,13 @@ pub async fn fetch_zswap_state(
 	let ledger_state_db = source.ledger_state_db.clone();
 	let fetch_cache = source.fetch_cache.clone();
 	let replay_checkpoint_interval = source.replay_checkpoint_interval;
+	#[cfg(not(feature = "indexer-client"))]
+	source.reject_indexer(
+		"generate-intent circuit",
+		crate::tx_generator::source::NO_INDEXER_CLIENT,
+	)?;
+	#[cfg(feature = "indexer-client")]
+	let indexer_source = source.clone();
 	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
 		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
@@ -118,6 +125,45 @@ pub async fn fetch_zswap_state(
 			WalletState::<DefaultDB>::default(),
 			coin_public,
 		));
+	}
+
+	#[cfg(feature = "indexer-client")]
+	if let Some(indexer_url) = indexer_source.indexer_url.as_deref() {
+		use crate::tx_generator::builder::builders::ledger_8::type_convert::{
+			convert_coin_public_key, convert_wallet_seed,
+		};
+		use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
+
+		let schemes = [(
+			wallet_seed.clone(),
+			midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
+		)]
+		.into();
+		let synced = sync_indexer(
+			&indexer_source,
+			indexer_url,
+			std::slice::from_ref(&wallet_seed),
+			&schemes,
+		)
+		.await?;
+		let state = match &synced.context {
+			IndexerLedgerContext::Ledger8(ctx) => {
+				crate::commands::fork::ledger_8::generate_intent::fetch_zswap_state_from_context(
+					ctx.as_ref(),
+					convert_wallet_seed(wallet_seed),
+					convert_coin_public_key(coin_public),
+				)
+			},
+			IndexerLedgerContext::Ledger9(ctx) => {
+				crate::commands::fork::ledger_9::generate_intent::fetch_zswap_state_from_context(
+					ctx.as_ref(),
+					wallet_seed,
+					coin_public,
+				)
+			},
+		};
+		synced.save_cache().await;
+		return Ok(state);
 	}
 
 	let received_tx = source.get_txs().await?;

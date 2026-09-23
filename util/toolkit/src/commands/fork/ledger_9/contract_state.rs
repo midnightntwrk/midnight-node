@@ -1,16 +1,19 @@
-use ledger_helpers_local::{ContractAddress, DefaultDB, HashOutput, serialize, serialize_untagged};
+use ledger_helpers_local::{
+	BuilderContext, ContractAddress, DefaultDB, HashOutput, serialize, serialize_untagged,
+};
 use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
-pub fn get_contract_state(
-	context: &ledger_helpers_local::context::LedgerContext<DefaultDB>,
+pub async fn get_contract_state<C: BuilderContext<DefaultDB>>(
+	context: &C,
 	contract_address: midnight_ledger_unsafe_helpers::ContractAddress,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
 	// ContractAddress is a HashOutput newtype in both coin-structure 2.x and 3.x;
 	// identity in the ledger-9 copy.
 	let contract_address = ContractAddress(HashOutput(contract_address.0.0));
 	let state = context
-		.with_ledger_state(|ledger_state| ledger_state.index(contract_address))
-		.expect("contract state for address does not exist");
+		.contract_state(contract_address)
+		.await
+		.ok_or("contract state for address does not exist")?;
 
 	log::info!("Contract address: {}", hex::encode(serialize_untagged(&contract_address)?));
 	for operation in state.operations.keys() {

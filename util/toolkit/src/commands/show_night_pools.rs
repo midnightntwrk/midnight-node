@@ -51,6 +51,10 @@ fn night(stars: u128) -> String {
 pub async fn execute(
 	args: ShowNightPoolsArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	args.source.reject_indexer(
+		"show-night-pools",
+		"the NIGHT pools are chain-wide ledger state the indexer does not serve",
+	)?;
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;

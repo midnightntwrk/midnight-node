@@ -150,7 +150,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::GenerateSampleIntent(args) => {
-			generate_sample_intent::execute(args).await;
+			generate_sample_intent::execute(args).await?;
 			Ok(())
 		},
 		Commands::SendIntent(args) => {
@@ -307,5 +307,59 @@ mod tests {
 	#[test]
 	fn cli_definition_is_consistent() {
 		Cli::command().debug_assert();
+	}
+
+	/// Every command that accepts `--indexer-url` (via `Source`) must honour it or reject it,
+	/// never silently replay. A new `Source` command fails here until it is classified.
+	#[test]
+	fn every_indexer_url_command_is_classified() {
+		const HONOURS: &[&str] = &[
+			"contract-state",
+			"dust-balance",
+			"generate-intent circuit",
+			"generate-sample-intent",
+			"generate-txs",
+			"send-intent",
+			"show-wallet",
+		];
+		const REJECTS: &[&str] = &["fetch", "show-night-pools"];
+
+		fn collect(cmd: &clap::Command, path: &mut Vec<String>, out: &mut Vec<String>) {
+			for sub in cmd.get_subcommands() {
+				path.push(sub.get_name().to_string());
+				if sub.get_arguments().any(|a| a.get_id() == "indexer_url") {
+					out.push(path.join(" "));
+				} else {
+					collect(sub, path, out);
+				}
+				path.pop();
+			}
+		}
+
+		let mut found = Vec::new();
+		collect(&Cli::command(), &mut Vec::new(), &mut found);
+		found.sort();
+		let mut expected: Vec<String> =
+			HONOURS.iter().chain(REJECTS).map(|s| s.to_string()).collect();
+		expected.sort();
+		assert_eq!(found, expected);
+	}
+
+	#[tokio::test]
+	async fn replay_only_commands_reject_indexer_url() {
+		use clap::Parser;
+		for cmd in ["fetch", "show-night-pools"] {
+			let cli = Cli::try_parse_from([
+				"toolkit",
+				cmd,
+				"--indexer-url",
+				"http://127.0.0.1:1/api/v4",
+				"--fetch-cache",
+				"inmemory",
+			])
+			.unwrap();
+			let err = super::run_command(cli.command).await.unwrap_err().to_string();
+			assert!(err.contains("does not support --indexer-url"), "{cmd}: {err}");
+		}
 	}
 }

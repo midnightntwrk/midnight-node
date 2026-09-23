@@ -109,7 +109,10 @@ pub async fn execute_many(
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
-	let src = TxGenerator::source(args.source, args.dry_run).await?;
+	#[cfg(not(feature = "indexer-client"))]
+	args.source
+		.reject_indexer("dust-balance", crate::tx_generator::source::NO_INDEXER_CLIENT)?;
+	let src = TxGenerator::source(args.source.clone(), args.dry_run).await?;
 
 	if args.dry_run {
 		log::info!("Dry-run: fetching wallet state for {} seed(s)", args.seeds.len());
@@ -118,6 +121,11 @@ pub async fn execute_many(
 			.into_iter()
 			.map(|(seed, _)| (seed, DustBalanceResult::DryRun(())))
 			.collect());
+	}
+
+	#[cfg(feature = "indexer-client")]
+	if let Some(indexer_url) = args.source.indexer_url.as_deref() {
+		return execute_many_indexer(&args.source, indexer_url, args.seeds).await;
 	}
 
 	let source_blocks = src.get_txs().await?;
@@ -163,6 +171,42 @@ pub async fn execute_many(
 				.collect::<Result<Vec<_>, _>>()
 		}
 	)?;
+
+	Ok(seeds
+		.into_iter()
+		.zip(jsons)
+		.map(|(seed, json)| (seed, DustBalanceResult::Json(json)))
+		.collect())
+}
+
+/// Every field comes from the wallet's own `DustLocalState`, which the indexer path syncs, so the
+/// output matches the replay path's.
+#[cfg(feature = "indexer-client")]
+async fn execute_many_indexer(
+	source: &Source,
+	indexer_url: &str,
+	seeds: Vec<(WalletSeed, UnshieldedSignatureScheme)>,
+) -> Result<Vec<(WalletSeed, DustBalanceResult)>, Box<dyn std::error::Error + Send + Sync>> {
+	use crate::commands::fork::{ledger_8, ledger_9};
+	use crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed;
+	use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
+
+	let schemes: WalletSchemes = seeds.iter().cloned().collect();
+	let seeds: Vec<WalletSeed> = seeds.into_iter().map(|(seed, _)| seed).collect();
+	let synced = sync_indexer(source, indexer_url, &seeds, &schemes).await?;
+	let jsons = seeds
+		.iter()
+		.map(|seed| match &synced.context {
+			IndexerLedgerContext::Ledger8(ctx) => ledger_8::dust_balance::dust_balance(
+				ctx.as_ref(),
+				convert_wallet_seed(seed.clone()),
+			),
+			IndexerLedgerContext::Ledger9(ctx) => {
+				ledger_9::dust_balance::dust_balance(ctx.as_ref(), seed.clone())
+			},
+		})
+		.collect::<Result<Vec<_>, _>>()?;
+	synced.save_cache().await;
 
 	Ok(seeds
 		.into_iter()

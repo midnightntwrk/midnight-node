@@ -40,9 +40,16 @@ pub struct GenerateSampleIntentArgs {
 	pub dry_run: bool,
 }
 
-pub async fn execute(args: GenerateSampleIntentArgs) {
+pub async fn execute(
+	args: GenerateSampleIntentArgs,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	log::info!("Generate a contract and save to file");
 
+	#[cfg(not(feature = "indexer-client"))]
+	args.source
+		.reject_indexer("generate-sample-intent", crate::tx_generator::source::NO_INDEXER_CLIENT)?;
+	#[cfg(feature = "indexer-client")]
+	let indexer_source = args.source.clone();
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
@@ -54,11 +61,8 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	if args.dry_run {
 		log::info!("Dry-run: generate intent for contract call {:?}", args.contract_call);
 		log::info!("Dry-run: write files to directory {:?}", args.dest_dir);
-		return ();
+		return Ok(());
 	}
-
-	let received_txs = source.get_txs().await.expect("should receive txs");
-	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
 	// Build the context + prover, then construct the appropriate builder
 	let funding_seed_str = match &args.contract_call {
@@ -69,6 +73,37 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let seeds = vec![midnight_ledger_unsafe_helpers::Wallet::<
 		midnight_ledger_unsafe_helpers::DefaultDB,
 	>::wallet_seed_decode(funding_seed_str)];
+
+	if matches!(prover_config, ProverConfig::Remote(_)) {
+		panic!("remote prover is not supported for intent generation");
+	}
+
+	#[cfg(feature = "indexer-client")]
+	if let Some(indexer_url) = indexer_source.indexer_url.as_deref() {
+		use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
+
+		let schemes = contract_call_wallet_schemes(&args.contract_call)?;
+		let synced = sync_indexer(&indexer_source, indexer_url, &seeds, &schemes).await?;
+		match &synced.context {
+			IndexerLedgerContext::Ledger9(ctx) => {
+				let prover =
+					Arc::new(midnight_ledger_unsafe_helpers::ledger_9::LocalProofServer::new());
+				execute_with_builders_v9(args.contract_call, ctx.clone(), prover, &args.dest_dir)
+					.await;
+			},
+			IndexerLedgerContext::Ledger8(ctx) => {
+				let prover =
+					Arc::new(midnight_ledger_unsafe_helpers::ledger_8::LocalProofServer::new());
+				execute_with_builders_v8(args.contract_call, ctx.clone(), prover, &args.dest_dir)
+					.await;
+			},
+		}
+		synced.save_cache().await;
+		return Ok(());
+	}
+
+	let received_txs = source.get_txs().await.expect("should receive txs");
+	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
 	let fork_ctx = build_fork_aware_context_cached(
 		&seeds,
@@ -84,10 +119,6 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let schemes = contract_call_wallet_schemes(&args.contract_call)
 		.expect("failed to resolve wallet schemes");
 	ensure_ecdsa_supported(version, &schemes).expect("ECDSA committee unsupported on this ledger");
-
-	if matches!(prover_config, ProverConfig::Remote(_)) {
-		panic!("remote prover is not supported for intent generation");
-	}
 
 	match version {
 		LedgerVersion::Ledger9 => {
@@ -111,15 +142,16 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 			execute_with_builders_v8(args.contract_call, context, prover, &args.dest_dir).await;
 		},
 	}
+	Ok(())
 }
 
-async fn execute_with_builders_v9(
-	contract_call: ContractCall,
-	context: Arc<
-		midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<
+async fn execute_with_builders_v9<
+	C: midnight_ledger_unsafe_helpers::ledger_9::BuilderContext<
 			midnight_ledger_unsafe_helpers::ledger_9::DefaultDB,
 		>,
-	>,
+>(
+	contract_call: ContractCall,
+	context: Arc<C>,
 	prover: Arc<
 		dyn midnight_ledger_unsafe_helpers::ledger_9::ProofProvider<
 				midnight_ledger_unsafe_helpers::ledger_9::DefaultDB,
@@ -130,10 +162,7 @@ async fn execute_with_builders_v9(
 	use crate::tx_generator::builder::builders::ledger_9::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
-	type Ctx = midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<
-		midnight_ledger_unsafe_helpers::ledger_9::DefaultDB,
-	>;
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<C> + Send>, &str) =
 		match contract_call {
 			ContractCall::Deploy(a) => {
 				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
@@ -150,13 +179,13 @@ async fn execute_with_builders_v9(
 		.expect("failed to generate intent file");
 }
 
-async fn execute_with_builders_v8(
-	contract_call: ContractCall,
-	context: Arc<
-		midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
+async fn execute_with_builders_v8<
+	C: midnight_ledger_unsafe_helpers::ledger_8::BuilderContext<
 			midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 		>,
-	>,
+>(
+	contract_call: ContractCall,
+	context: Arc<C>,
 	prover: Arc<
 		dyn midnight_ledger_unsafe_helpers::ledger_8::ProofProvider<
 				midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
@@ -167,10 +196,7 @@ async fn execute_with_builders_v8(
 	use crate::tx_generator::builder::builders::ledger_8::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
-	type Ctx = midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
-		midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
-	>;
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<C> + Send>, &str) =
 		match contract_call {
 			ContractCall::Deploy(a) => {
 				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
@@ -259,7 +285,7 @@ mod test {
 			dry_run: false,
 		};
 
-		execute(args).await;
+		execute(args).await.expect("generate sample intent");
 
 		let path = "1_deploy_intent.mn";
 

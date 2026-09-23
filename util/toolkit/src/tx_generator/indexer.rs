@@ -17,7 +17,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use midnight_ledger_unsafe_helpers::{
-	IndexerClient, UnshieldedSignatureScheme, WalletSeed, WalletSyncState, ledger_8, ledger_9,
+	IndexerClient, UnshieldedSignatureScheme, WalletSeed, WalletSyncState,
+	indexer_client::BlockInfo, ledger_8, ledger_9,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use subxt::utils::H256;
@@ -37,6 +38,15 @@ pub enum IndexerLedgerContext {
 	Ledger9(Arc<ledger_9::IndexerContext<ledger_9::DefaultDB>>),
 }
 
+impl IndexerLedgerContext {
+	pub fn version(&self) -> LedgerVersion {
+		match self {
+			Self::Ledger8(_) => LedgerVersion::Ledger8,
+			Self::Ledger9(_) => LedgerVersion::Ledger9,
+		}
+	}
+}
+
 /// A context whose wallets are synced to the indexer's tip, plus the cache entries to persist.
 pub struct SyncedIndexer {
 	pub context: IndexerLedgerContext,
@@ -53,11 +63,37 @@ impl SyncedIndexer {
 	}
 }
 
-/// Pick the context matching the indexer chain's ledger generation and sync `seeds` to its tip,
-/// resuming each seed from the wallet cache where possible.
+/// Build a context for the ledger generation of the chain the indexer serves, with no wallets
+/// synced. Also returns the tip block the generation was read from.
 ///
 /// The indexer carries both ledger generations and serves each chain in its own encodings, so the
 /// generation is read off the chain rather than assumed.
+pub async fn connect_indexer(
+	source: &Source,
+	indexer_url: &str,
+) -> Result<(IndexerLedgerContext, BlockInfo), BoxError> {
+	let block = IndexerClient::new(indexer_url)?.latest_block().await?;
+	let spec_version = block.protocol_version;
+	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
+		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
+	})?;
+	log::info!("Indexer chain is at protocol version {spec_version} ({ledger_version:?})");
+
+	let network = source.network.as_str();
+	let concurrency = source.indexer_concurrency;
+	let context = match ledger_version {
+		LedgerVersion::Ledger9 => IndexerLedgerContext::Ledger9(Arc::new(
+			ledger_9::IndexerContext::new(indexer_url, network, concurrency)?,
+		)),
+		LedgerVersion::Ledger8 => IndexerLedgerContext::Ledger8(Arc::new(
+			ledger_8::IndexerContext::new(indexer_url, network, concurrency)?,
+		)),
+	};
+	Ok((context, block))
+}
+
+/// Pick the context matching the indexer chain's ledger generation and sync `seeds` to its tip,
+/// resuming each seed from the wallet cache where possible.
 pub async fn sync_indexer(
 	source: &Source,
 	indexer_url: &str,
@@ -72,13 +108,9 @@ pub async fn sync_indexer(
 			.into());
 	}
 
+	let (context, block) = connect_indexer(source, indexer_url).await?;
+	let ledger_version = context.version();
 	let client = IndexerClient::new(indexer_url)?;
-	let block = client.latest_block().await?;
-	let spec_version = block.protocol_version;
-	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
-		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
-	})?;
-	log::info!("Indexer chain is at protocol version {spec_version} ({ledger_version:?})");
 
 	// Block 1's hash is the chain identity, matching `SourceTransactions::chain_id`. An indexer
 	// that has not indexed it yet cannot be told apart from another chain's, so caching is off.
@@ -105,15 +137,9 @@ pub async fn sync_indexer(
 		}
 	}
 
-	let network = source.network.as_str();
-	let concurrency = source.indexer_concurrency;
-	let (context, mut synced) = match ledger_version {
-		LedgerVersion::Ledger9 => {
-			let ctx = ledger_9::IndexerContext::new(indexer_url, network, concurrency)?;
-			let synced = ctx.init_wallets(seeds, &resume).await?;
-			(IndexerLedgerContext::Ledger9(Arc::new(ctx)), synced)
-		},
-		LedgerVersion::Ledger8 => {
+	let mut synced = match &context {
+		IndexerLedgerContext::Ledger9(ctx) => ctx.init_wallets(seeds, &resume).await?,
+		IndexerLedgerContext::Ledger8(ctx) => {
 			// `WalletSeed` is a per-generation type; the replay path converts the same way.
 			let seeds_v8: Vec<_> = seeds.iter().cloned().map(convert_wallet_seed).collect();
 			let resume_v8 = seeds
@@ -121,14 +147,12 @@ pub async fn sync_indexer(
 				.zip(&seeds_v8)
 				.filter_map(|(seed, seed_v8)| Some((seed_v8.clone(), resume.get(seed)?.clone())))
 				.collect();
-			let ctx = ledger_8::IndexerContext::new(indexer_url, network, concurrency)?;
 			let synced_v8 = ctx.init_wallets(&seeds_v8, &resume_v8).await?;
-			let synced = seeds
+			seeds
 				.iter()
 				.zip(&seeds_v8)
 				.filter_map(|(seed, seed_v8)| Some((seed.clone(), synced_v8.get(seed_v8)?.clone())))
-				.collect();
-			(IndexerLedgerContext::Ledger8(Arc::new(ctx)), synced)
+				.collect()
 		},
 	};
 
