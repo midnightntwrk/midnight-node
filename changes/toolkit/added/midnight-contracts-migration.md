@@ -8,5 +8,5 @@ Ports Battleship, Election, and Shielded Pool contract E2Es from
 The tests compile, prove, submit, and verify the contracts on a running node,
 covering private witnesses, shielded coins, Merkle trees, and nested arguments.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2140
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1772
