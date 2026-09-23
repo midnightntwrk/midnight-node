@@ -211,10 +211,9 @@ pub struct DustLedgerEventData {
 /// Per-seed resume point for `IndexerContext::init_wallets`: what a sync run consumed, and what
 /// the next one can therefore skip.
 ///
-/// Plain bytes and integers only. The toolkit owns the cache, but the toolkit depends on
-/// ledger-helpers and not the reverse, so the value crossing the boundary cannot mention the
-/// toolkit's `CachedWalletState`. Blobs are this chain's native *untagged* ledger encodings, so
-/// the caller must key them by chain and ledger generation; nothing here self-identifies.
+/// Plain bytes and integers only: the toolkit owns the cache, and ledger-helpers cannot depend on
+/// its `CachedWalletState`. Blobs are this chain's native *untagged* ledger encodings, so the
+/// caller must key them by chain and ledger generation; nothing here self-identifies.
 #[derive(Debug, Clone, Default)]
 pub struct WalletSyncState {
 	/// zswap `WalletState`. Its `first_free` *is* the shielded resume cursor — the two are stored

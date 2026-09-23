@@ -237,9 +237,8 @@ impl IndexerContext<DefaultDB> {
 	/// outputs get applied onto the tree twice. The live drain tolerates the gap because the next
 	/// transaction's collapsed update realigns the tree; a persisted cursor has no such rescue.
 	//
-	// ponytail: skip-persist on misalignment; add a
-	// zswapMerkleTreeCollapsedUpdate(first_free, last_end_index - 1) realign call if
-	// PartialSuccess tails turn out to be common.
+	// ponytail: skip-persist on misalignment. If PartialSuccess tails turn out to be common,
+	// realign with `zswapMerkleTreeCollapsedUpdate(first_free, last_end_index - 1)`.
 	async fn drain_shielded(
 		&self,
 		shielded: &mut ShieldedWallet<DefaultDB>,
