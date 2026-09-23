@@ -89,7 +89,10 @@ pub async fn sync_indexer(
 		chain_id.zip(create_file_wallet_cache(&source.ledger_state_db, &source.fetch_cache));
 	let keys: Vec<H256> = seeds
 		.iter()
-		.map(|seed| indexer_wallet_cache_key(seed, ledger_version))
+		.map(|seed| {
+			let scheme = schemes.get(seed).copied().unwrap_or_default();
+			indexer_wallet_cache_key(seed, scheme, ledger_version)
+		})
 		.collect();
 
 	let mut resume: HashMap<WalletSeed, WalletSyncState> = HashMap::new();
