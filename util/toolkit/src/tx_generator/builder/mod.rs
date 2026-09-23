@@ -526,6 +526,8 @@ pub enum BuilderConstructionError {
 	NoContext,
 	#[error("internal error: version mismatch in fork context")]
 	VersionMismatch,
+	#[error("`{0}` is not yet supported with --indexer-url")]
+	UnsupportedWithIndexer(&'static str),
 }
 
 impl From<BuilderConstructionError> for DynamicError {
@@ -769,17 +771,47 @@ impl Builder {
 				ctx.dispatch(
 					|context| {
 						let prover = Self::make_prover_v8(prover_config);
-						Ok(self_clone.clone().to_builder_v8(Arc::new(context), prover))
+						self_clone.clone().to_builder_v8(Arc::new(context), prover)
 					},
 					|context| {
 						let prover = Self::make_prover(prover_config);
-						Ok(self.to_builder_v9(Arc::new(context), prover))
+						self.to_builder_v9(Arc::new(context), prover)
 					},
 				)
 			},
 			None => {
 				// Pass-through builder (Send) doesn't need context
 				Ok(self.to_builder_passthrough())
+			},
+		}
+	}
+
+	/// Reject builders the indexer backend cannot serve yet, before any wallet sync.
+	pub fn ensure_indexer_supported(&self) -> Result<(), BuilderConstructionError> {
+		match self {
+			Builder::Batches(_) => Err(BuilderConstructionError::UnsupportedWithIndexer("batches")),
+			// There are no source blocks to forward on the indexer path.
+			Builder::Send => Err(BuilderConstructionError::UnsupportedWithIndexer("send")),
+			_ => Ok(()),
+		}
+	}
+
+	/// Construct a builder over a synced indexer context.
+	#[cfg(feature = "indexer-client")]
+	pub fn to_indexer_builder(
+		self,
+		ctx: &crate::tx_generator::indexer::IndexerLedgerContext,
+		prover_config: &ProverConfig,
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
+		use crate::tx_generator::indexer::IndexerLedgerContext;
+
+		self.ensure_indexer_supported()?;
+		match ctx {
+			IndexerLedgerContext::Ledger8(ctx) => {
+				self.to_builder_v8(ctx.clone(), Self::make_prover_v8(prover_config))
+			},
+			IndexerLedgerContext::Ledger9(ctx) => {
+				self.to_builder_v9(ctx.clone(), Self::make_prover(prover_config))
 			},
 		}
 	}
@@ -810,11 +842,11 @@ impl Builder {
 		}
 	}
 
-	fn to_builder_v9(
+	fn to_builder_v9<C: BuilderContext<DefaultDB>>(
 		self,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Box<dyn BuildTxs<Error = DynamicError>> {
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -823,8 +855,10 @@ impl Builder {
 
 		use builders::ledger_9 as v9;
 
-		match self {
-			Builder::Batches(args) => constr(v9::BatchesBuilder::new(args, context, prover)),
+		Ok(match self {
+			Builder::Batches(args) => {
+				constr(v9::BatchesBuilder::new(args, replay_context(context)?, prover))
+			},
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
 					constr(v9::ContractDeployBuilder::new(args, context, prover))
@@ -855,22 +889,22 @@ impl Builder {
 				constr(v9::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v9::DoNothingBuilder::new()),
-		}
+		})
 	}
 
-	fn to_builder_v8(
-		self,
-		context: Arc<
-			midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
+	fn to_builder_v8<
+		C: midnight_ledger_unsafe_helpers::ledger_8::BuilderContext<
 				midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 			>,
-		>,
+	>(
+		self,
+		context: Arc<C>,
 		prover: Arc<
 			dyn midnight_ledger_unsafe_helpers::ledger_8::ProofProvider<
 					midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 				>,
 		>,
-	) -> Box<dyn BuildTxs<Error = DynamicError>> {
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -879,8 +913,10 @@ impl Builder {
 
 		use builders::ledger_8 as v8;
 
-		match self {
-			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
+		Ok(match self {
+			Builder::Batches(args) => {
+				constr(v8::BatchesBuilder::new(args, replay_context(context)?, prover))
+			},
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
 					constr(v8::ContractDeployBuilder::new(args, context, prover))
@@ -911,7 +947,7 @@ impl Builder {
 				constr(v8::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v8::DoNothingBuilder::new()),
-		}
+		})
 	}
 
 	fn to_builder_passthrough(self) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -926,6 +962,16 @@ impl Builder {
 			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}
+}
+
+/// `BatchesBuilder` still takes the replay `LedgerContext` itself rather than any `BuilderContext`.
+// TODO: drop once `BatchesBuilder` is generic over `BuilderContext`.
+fn replay_context<C: Send + Sync + 'static, L: Send + Sync + 'static>(
+	context: Arc<C>,
+) -> Result<Arc<L>, BuilderConstructionError> {
+	(context as Arc<dyn std::any::Any + Send + Sync>)
+		.downcast()
+		.map_err(|_| BuilderConstructionError::UnsupportedWithIndexer("batches"))
 }
 
 #[async_trait]
@@ -1808,6 +1854,15 @@ pub fn build_fork_aware_context(
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	/// Replay `batches` must still get its `LedgerContext`; any other context must error, not panic.
+	#[test]
+	fn replay_context_downcasts_only_the_replay_context() {
+		let replay: Result<Arc<u8>, _> = replay_context(Arc::new(7u8));
+		assert_eq!(*replay.unwrap(), 7);
+		let other: Result<Arc<u16>, _> = replay_context(Arc::new(7u8));
+		assert!(matches!(other, Err(BuilderConstructionError::UnsupportedWithIndexer("batches"))));
+	}
 
 	fn ecdsa_schemes() -> WalletSchemes {
 		WalletSchemes::from([(WalletSeed::Short([7u8; 16]), UnshieldedSignatureScheme::Ecdsa)])

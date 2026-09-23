@@ -38,6 +38,10 @@ pub enum TxGeneratorError {
 	SourceError(#[from] SourceError),
 	#[error("invalid destination: {0}")]
 	DestinationError(#[from] DestinationError),
+	#[error(
+		"this toolkit was built without the `indexer-client` feature; rebuild with it enabled to use --indexer-url"
+	)]
+	IndexerClientDisabled,
 }
 
 #[derive(Debug, Error)]
@@ -55,6 +59,8 @@ pub struct TxGenerator {
 	pub fetch_cache_config: FetchCacheConfig,
 	pub ledger_state_db: String,
 	pub replay_checkpoint_interval: u64,
+	/// Set when `--indexer-url` is: wallets are then synced from the indexer, not block replay.
+	pub indexer_source: Option<Source>,
 	pub dry_run: bool,
 }
 
@@ -69,7 +75,20 @@ impl TxGenerator {
 		let fetch_cache_config = src.fetch_cache.clone();
 		let ledger_state_db = src.ledger_state_db.clone();
 		let replay_checkpoint_interval = src.replay_checkpoint_interval;
-		let source = Self::source(src, dry_run).await?;
+		let indexer_source = src.indexer_url.is_some().then(|| src.clone());
+		let source: Box<dyn GetTxs> = match &indexer_source {
+			#[cfg(not(feature = "indexer-client"))]
+			Some(_) => return Err(TxGeneratorError::IndexerClientDisabled),
+			#[cfg(feature = "indexer-client")]
+			Some(src) => {
+				if dry_run {
+					log::info!("Dry-run: Source wallets from indexer: {:?}", &src.indexer_url);
+				}
+				// No source blocks: the indexer path reads wallet state, never replays.
+				Box::new(())
+			},
+			None => Self::source(src, dry_run).await?,
+		};
 		let destinations = Self::destinations(dest, dry_run).await?;
 		if dry_run {
 			log::info!("Dry-run: Builder type: {:?}", &builder);
@@ -84,6 +103,7 @@ impl TxGenerator {
 			fetch_cache_config,
 			ledger_state_db,
 			replay_checkpoint_interval,
+			indexer_source,
 			dry_run,
 		})
 	}
@@ -204,6 +224,23 @@ impl TxGenerator {
 			.builder_config
 			.relevant_wallet_schemes()
 			.map_err(|e| DynamicError { error: e.into() })?;
+
+		#[cfg(feature = "indexer-client")]
+		if let Some(source) = &self.indexer_source
+			&& let Some(indexer_url) = source.indexer_url.as_deref()
+		{
+			self.builder_config.ensure_indexer_supported()?;
+			let synced = indexer::sync_indexer(source, indexer_url, &seeds, &schemes)
+				.await
+				.map_err(|error| DynamicError { error })?;
+			let builder = self
+				.builder_config
+				.clone()
+				.to_indexer_builder(&synced.context, &self.prover_config)?;
+			let result = builder.build_txs_from(received_txs.clone()).await;
+			synced.save_cache().await;
+			return result;
+		}
 
 		// Guard: ECDSA unshielded identities are only representable from ledger 9. Reject early with
 		// a clear CLI error instead of letting the loud panic fire deep in context construction.

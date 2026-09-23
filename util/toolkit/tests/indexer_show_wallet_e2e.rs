@@ -16,12 +16,13 @@
 // Only built when the toolkit is compiled with the `indexer-client` feature (the default).
 #![cfg(feature = "indexer-client")]
 
-//! End-to-end test for indexer-backed `show-wallet` (issue #1186).
+//! End-to-end tests for the indexer backend (`--indexer-url`, issue #1186).
 //!
-//! Spawns a dev `midnight-node` and an `indexer-standalone` on a shared Docker network (so the
-//! indexer reaches the node at `ws://<node>:9944`), waits for the node to finalize and the indexer
-//! to catch up, then runs `show-wallet --indexer-url …` for a funded genesis seed and asserts the
-//! reconstructed wallet reports non-empty shielded coins, unshielded UTXOs and dust UTXOs.
+//! Each test spawns a dev `midnight-node` and an `indexer-standalone` on a shared Docker network
+//! (so the indexer reaches the node at `ws://<node>:9944`) and waits for the node to finalize and
+//! the indexer to catch up. `show-wallet` then runs for a funded genesis seed and must report
+//! non-empty shielded coins, unshielded UTXOs and dust UTXOs; `generate-txs single-tx` builds from
+//! indexer state and its transfer must show up in the destination's `show-wallet`.
 //!
 //! An uncached run is also the oracle for the incremental wallet cache: a cache-resumed sync must
 //! reproduce it exactly, and an entry filed under another chain must never be served.
@@ -34,7 +35,9 @@ mod common;
 
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_ledger_unsafe_helpers::IndexerClient;
-use midnight_ledger_unsafe_helpers::ledger_9::{BuilderContext, DefaultDB, IndexerContext};
+use midnight_ledger_unsafe_helpers::ledger_9::{
+	BuilderContext, DefaultDB, IndexerContext, IntoWalletAddress, UnshieldedWallet, WalletSeed,
+};
 use midnight_node_toolkit::client::MidnightNodeClient;
 use parity_scale_codec::Decode;
 use std::num::NonZeroUsize;
@@ -44,7 +47,7 @@ use std::time::{Duration, Instant};
 use subxt::rpcs::methods::legacy::BlockNumber;
 use subxt::utils::H256;
 use testcontainers::{
-	GenericImage, ImageExt,
+	ContainerAsync, GenericImage, ImageExt,
 	core::{ContainerPort, WaitFor},
 	runners::AsyncRunner,
 };
@@ -52,6 +55,8 @@ use testcontainers::{
 /// Genesis seed funded with NIGHT/DUST in the `dev` (undeployed) preset — the same seed the
 /// `show_wallet` unit tests assert is funded.
 const FUNDED_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+/// Unfunded in the `dev` preset, so any UTXO it shows came from the test's transfer.
+const UNFUNDED_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000005";
 const NETWORK: &str = "undeployed";
 /// 32-byte (64 hex char) secret the indexer uses to encrypt its wallet session store. Any valid
 /// hex works for a throwaway standalone instance, but it MUST contain a non-digit hex char: the
@@ -59,20 +64,32 @@ const NETWORK: &str = "undeployed";
 /// coerced to an integer and rejected ("expected a string for key INFRA.SECRET").
 const INDEXER_SECRET: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-#[tokio::test]
-async fn indexer_show_wallet_reports_genesis_balances() {
-	// Opt-in via `MN_RUN_INDEXER_E2E=1`: the `indexer-standalone` image is not yet published and
-	// pinned in CI (issue #1186 follow-up).
-	if std::env::var_os("MN_RUN_INDEXER_E2E").is_none() {
+/// A dev node plus an indexer that has caught up to the node's finalized tip. The containers stop
+/// when this is dropped.
+struct Env {
+	_node: ContainerAsync<GenericImage>,
+	_indexer: ContainerAsync<GenericImage>,
+	node_ws: String,
+	indexer_url: String,
+}
+
+/// Opt-in via `MN_RUN_INDEXER_E2E=1`: the `indexer-standalone` image is not yet published and
+/// pinned in CI (issue #1186 follow-up).
+fn e2e_enabled(test: &str) -> bool {
+	let enabled = std::env::var_os("MN_RUN_INDEXER_E2E").is_some();
+	if !enabled {
 		eprintln!(
-			"skipping indexer_show_wallet_e2e: set MN_RUN_INDEXER_E2E=1 to run \
+			"skipping {test}: set MN_RUN_INDEXER_E2E=1 to run \
 			 (requires Docker plus the midnight-node and indexer-standalone images)"
 		);
-		return;
 	}
+	enabled
+}
 
+/// `tag` keeps container names distinct between tests of this process run in parallel.
+async fn start_env(tag: &str) -> Env {
 	// Unique names so concurrent runs don't collide on the shared network / container names.
-	let suffix = std::process::id();
+	let suffix = format!("{}-{tag}", std::process::id());
 	let network = format!("mn-indexer-e2e-{suffix}");
 	let node_name = format!("mn-node-{suffix}");
 
@@ -114,11 +131,22 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 	// Wait until the indexer has caught up to the node's finalized tip, else balances read short.
 	wait_for_indexer_height(&indexer_url, node_height, Duration::from_secs(180)).await;
 
-	assert_context_reads_match_node(&indexer_url, &node_ws).await;
+	Env { _node: node, _indexer: indexer, node_ws, indexer_url }
+}
+
+#[tokio::test]
+async fn indexer_show_wallet_reports_genesis_balances() {
+	if !e2e_enabled("indexer_show_wallet_reports_genesis_balances") {
+		return;
+	}
+	let env = start_env("show").await;
+	let (node_ws, indexer_url) = (env.node_ws.as_str(), env.indexer_url.as_str());
+
+	assert_context_reads_match_node(indexer_url, node_ws).await;
 
 	// --- run show-wallet against the indexer --------------------------------------------------
 	// Baseline: caching disabled, so every stream drains from the origin.
-	let baseline = show_wallet(&indexer_url, None);
+	let baseline = show_wallet(indexer_url, FUNDED_SEED, None);
 
 	let utxos = baseline["utxos"].as_array().expect("`utxos` should be an array");
 	let coins = baseline["coins"].as_object().expect("`coins` should be an object");
@@ -131,19 +159,19 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 	// --- incremental wallet cache ---------------------------------------------------------------
 	let cache = tempfile::tempdir().expect("failed to create cache dir");
 	assert_eq!(
-		show_wallet(&indexer_url, Some(cache.path())),
+		show_wallet(indexer_url, FUNDED_SEED, Some(cache.path())),
 		baseline,
 		"enabling the cache must not change the first (still cold) run's answer",
 	);
 	assert_eq!(
-		show_wallet(&indexer_url, Some(cache.path())),
+		show_wallet(indexer_url, FUNDED_SEED, Some(cache.path())),
 		baseline,
 		"a cache-resumed sync must reproduce the full drain exactly",
 	);
 
 	// Entries are namespaced by block 1's hash, so one chain's state can never be served against
 	// another's indexer. Renaming that directory away must therefore force a full drain.
-	let chain_id = IndexerClient::new(&indexer_url)
+	let chain_id = IndexerClient::new(indexer_url)
 		.expect("failed to build indexer client")
 		.block_hash_at(1)
 		.await
@@ -155,50 +183,115 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 		.expect("failed to rename chain-id directory");
 
 	assert_eq!(
-		show_wallet(&indexer_url, Some(cache.path())),
+		show_wallet(indexer_url, FUNDED_SEED, Some(cache.path())),
 		baseline,
 		"a cache entry under another chain id must be ignored, not served",
 	);
 	assert!(chain_dir.is_dir(), "the full-drain fallback must re-file its state under this chain");
 }
 
-/// Run `show-wallet --indexer-url …` for [`FUNDED_SEED`] and return its parsed JSON.
-///
-/// `cache_dir` enables the wallet cache under that directory; `None` disables it, which is what
-/// `--fetch-cache inmemory` means to the toolkit.
-fn show_wallet(indexer_url: &str, cache_dir: Option<&Path>) -> serde_json::Value {
-	let bin = env!("CARGO_BIN_EXE_midnight-node-toolkit");
-	let mut cmd = Command::new(bin);
-	cmd.args([
-		"show-wallet",
+#[tokio::test]
+async fn indexer_generate_txs_single_tx_reaches_destination() {
+	if !e2e_enabled("indexer_generate_txs_single_tx_reaches_destination") {
+		return;
+	}
+	const AMOUNT: u64 = 1_000_000;
+	let env = start_env("gen").await;
+
+	let unshielded_values = |wallet: serde_json::Value| -> Vec<u64> {
+		wallet["utxos"]
+			.as_array()
+			.expect("`utxos` should be an array")
+			.iter()
+			.map(|u| u["value"].as_u64().expect("utxo `value` should be a u64"))
+			.collect()
+	};
+	assert!(
+		unshielded_values(show_wallet(&env.indexer_url, UNFUNDED_SEED, None)).is_empty(),
+		"the destination seed must start unfunded"
+	);
+
+	let destination =
+		UnshieldedWallet::default(WalletSeed::try_from_hex_str(UNFUNDED_SEED).unwrap())
+			.address(NETWORK)
+			.to_bech32();
+	let amount = AMOUNT.to_string();
+	run_toolkit(&[
+		"generate-txs",
 		"--indexer-url",
-		indexer_url,
+		&env.indexer_url,
 		"--network",
 		NETWORK,
-		"--seed",
+		"--fetch-cache",
+		"inmemory",
+		"--dest-url",
+		&env.node_ws,
+		"single-tx",
+		"--source-seed",
 		FUNDED_SEED,
+		"--unshielded-amount",
+		&amount,
+		"--destination-address",
+		&destination,
 	]);
-	match cache_dir {
-		Some(dir) => {
-			cmd.arg("--ledger-state-db").arg(dir);
-			cmd.arg("--fetch-cache")
-				.arg(format!("redb:{}", dir.join("fetch_cache.db").display()));
-		},
-		None => {
-			cmd.args(["--fetch-cache", "inmemory"]);
-		},
-	}
 
-	let output = cmd.output().expect("failed to run midnight-node-toolkit");
+	// The indexer serves finalized blocks only, so poll until the transfer is indexed.
+	let start = Instant::now();
+	loop {
+		let values = unshielded_values(show_wallet(&env.indexer_url, UNFUNDED_SEED, None));
+		if values.contains(&AMOUNT) {
+			break;
+		}
+		assert!(
+			start.elapsed() < Duration::from_secs(180),
+			"destination never received the {AMOUNT} transfer; its UTXOs: {values:?}"
+		);
+		tokio::time::sleep(Duration::from_secs(3)).await;
+	}
+}
+
+/// Run the toolkit binary with `args`, panicking with its output on failure; returns stdout.
+fn run_toolkit(args: &[&str]) -> String {
+	let output = Command::new(env!("CARGO_BIN_EXE_midnight-node-toolkit"))
+		.args(args)
+		.output()
+		.expect("failed to run midnight-node-toolkit");
 	assert!(
 		output.status.success(),
-		"show-wallet --indexer-url failed (status {:?})\nstdout:\n{}\nstderr:\n{}",
+		"midnight-node-toolkit {args:?} failed (status {:?})\nstdout:\n{}\nstderr:\n{}",
 		output.status.code(),
 		String::from_utf8_lossy(&output.stdout),
 		String::from_utf8_lossy(&output.stderr),
 	);
+	String::from_utf8_lossy(&output.stdout).into_owned()
+}
 
-	let stdout = String::from_utf8_lossy(&output.stdout);
+/// Run `show-wallet --indexer-url …` for `seed` and return its parsed JSON.
+///
+/// `cache_dir` enables the wallet cache under that directory; `None` disables it, which is what
+/// `--fetch-cache inmemory` means to the toolkit.
+fn show_wallet(indexer_url: &str, seed: &str, cache_dir: Option<&Path>) -> serde_json::Value {
+	let mut args = vec![
+		"show-wallet".to_string(),
+		"--indexer-url".to_string(),
+		indexer_url.to_string(),
+		"--network".to_string(),
+		NETWORK.to_string(),
+		"--seed".to_string(),
+		seed.to_string(),
+	];
+	match cache_dir {
+		Some(dir) => args.extend([
+			"--ledger-state-db".to_string(),
+			dir.display().to_string(),
+			"--fetch-cache".to_string(),
+			format!("redb:{}", dir.join("fetch_cache.db").display()),
+		]),
+		None => args.extend(["--fetch-cache".to_string(), "inmemory".to_string()]),
+	}
+
+	let args: Vec<&str> = args.iter().map(String::as_str).collect();
+	let stdout = run_toolkit(&args);
 	serde_json::from_str(&stdout)
 		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"))
 }
