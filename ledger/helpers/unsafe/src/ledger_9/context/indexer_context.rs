@@ -39,10 +39,10 @@ use crate::ledger_9::{
 	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustLocalState,
 	DustWallet, Event, HashOutput, IntentHash, IntoWalletAddress, LedgerParameters, LedgerState,
 	MerkleTreeCollapsedUpdate, Offer, PedersenDowngradeable, ProofKind, ProofMarker,
-	PureGeneratorPedersen, Resolver, Serializable, ShieldedWallet, Signature, SignatureKind, Sp,
-	Storable, Tagged, Timestamp, Transaction, UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet,
-	WalletSeed, WalletState, ZswapChainState, deserialize, deserialize_untagged,
-	make_block_context, serialize_untagged,
+	PureGeneratorPedersen, Resolver, SerdeTransaction, Serializable, ShieldedWallet, Signature,
+	SignatureKind, Sp, Storable, Tagged, Timestamp, Transaction, UnshieldedTokenType,
+	UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState, deserialize,
+	deserialize_untagged, make_block_context, serialize_untagged,
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -106,6 +106,55 @@ impl<D: DB + Clone> IndexerContext<D> {
 		}
 	}
 
+	/// Serve `wallet` and its unshielded `utxos` for `seed`, as synced state.
+	pub fn insert_wallet(
+		&self,
+		seed: WalletSeed,
+		wallet: Wallet<D>,
+		utxos: Vec<(Utxo, Timestamp)>,
+	) {
+		let mut wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
+		let mut unshielded =
+			self.unshielded.lock().expect("IndexerContext unshielded lock poisoned");
+		wallets.insert(seed.clone(), wallet);
+		unshielded.insert(seed, utxos);
+	}
+
+	/// Bring every wallet's zswap tree to one common chain index, at least the tip's.
+	///
+	/// A drain only fills a wallet's tree up to its last relevant transaction, so without this a
+	/// pending tx's outputs would land at indices the chain will not give them, and a coin received
+	/// that way could never be spent. Only the first call queries: after it every tree absorbs the
+	/// same pending outputs, so none lags again.
+	async fn fast_forward_shielded(&self) -> Result<(), BoxError> {
+		let tip_end = self.tip().await.zswap_end_index;
+		let starts: Vec<u64> = {
+			let wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
+			wallets.values().map(|w| w.shielded.state.first_free).collect()
+		};
+		let target = starts.iter().copied().fold(tip_end, u64::max);
+		let mut updates = HashMap::new();
+		for start in starts.into_iter().filter(|start| *start < target) {
+			if let std::collections::hash_map::Entry::Vacant(entry) = updates.entry(start) {
+				let bytes = self.client.zswap_collapsed_update(start, target - 1).await?;
+				let update: MerkleTreeCollapsedUpdate = deserialize(&bytes[..])?;
+				entry.insert(update);
+			}
+		}
+
+		let mut wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
+		for wallet in wallets.values_mut() {
+			if let Some(update) = updates.get(&wallet.shielded.state.first_free) {
+				wallet.shielded.state = wallet
+					.shielded
+					.state
+					.apply_collapsed_update(update)
+					.map_err(|e| format!("apply zswap collapsed update: {e:?}"))?;
+			}
+		}
+		Ok(())
+	}
+
 	/// Get or panic on a missing wallet within an existing lock (mirrors `LedgerContext`).
 	fn wallet_for_seed<'a>(
 		wallets: &'a mut HashMap<WalletSeed, Wallet<D>>,
@@ -159,13 +208,9 @@ impl IndexerContext<DefaultDB> {
 		};
 
 		// Locks are taken only for the quick inserts, never held across the network work above.
-		let mut wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
-		let mut unshielded =
-			self.unshielded.lock().expect("IndexerContext unshielded lock poisoned");
 		let mut next_resume = HashMap::with_capacity(synced.len());
 		for (seed, wallet, utxos, sync_state) in synced {
-			wallets.insert(seed.clone(), wallet);
-			unshielded.insert(seed.clone(), utxos);
+			self.insert_wallet(seed.clone(), wallet, utxos);
 			next_resume.insert(seed, sync_state);
 		}
 
@@ -498,13 +543,14 @@ type MnTx = Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB
 /// fallible offers are applied; on `PartialSuccess` only the guaranteed offer is applied (the
 /// indexer's union does not carry per-segment success here, and the next transaction's collapsed
 /// update re-aligns the merkle index regardless); on `Failure` nothing is applied.
-fn relevant_offers<S, P>(
-	tx: &Transaction<S, P, PureGeneratorPedersen, DefaultDB>,
+fn relevant_offers<S, P, D>(
+	tx: &Transaction<S, P, PureGeneratorPedersen, D>,
 	result: TransactionResultKind,
-) -> Vec<Offer<P::LatestProof, DefaultDB>>
+) -> Vec<Offer<P::LatestProof, D>>
 where
-	S: SignatureKind<DefaultDB>,
-	P: ProofKind<DefaultDB>,
+	S: SignatureKind<D>,
+	P: ProofKind<D>,
+	D: DB,
 {
 	if matches!(result, TransactionResultKind::Failure) {
 		return vec![];
@@ -643,6 +689,80 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
 	{
 		// No full ledger state to validate against; the node validates on submit.
+		Ok(())
+	}
+
+	/// Applies the tx's shielded offers and unshielded spends/outputs as if it fully succeeds.
+	/// Dust needs nothing here: building the tx already marked its dust spends on the fee payer's
+	/// wallet, and the change and new generation it creates need chain dust state to replay.
+	async fn apply_pending_tx<S, P>(
+		&self,
+		tx: &SerdeTransaction<S, P, D>,
+		block_context: &BlockContext,
+	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
+	where
+		S: SignatureKind<D>,
+		P: ProofKind<D> + std::fmt::Debug,
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		let SerdeTransaction::Midnight(tx) = tx else {
+			return Ok(());
+		};
+		let offers = relevant_offers(tx, TransactionResultKind::Success);
+		if !offers.is_empty() {
+			self.fast_forward_shielded().await?;
+			let mut wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
+			for wallet in wallets.values_mut() {
+				wallet.shielded.apply_offers(&offers);
+			}
+		}
+		let Transaction::Standard(stx) = tx else {
+			return Ok(());
+		};
+		let owners: HashMap<_, _> = self
+			.wallets
+			.lock()
+			.expect("IndexerContext wallets lock poisoned")
+			.iter()
+			.map(|(seed, w)| (w.unshielded.user_address, seed.clone()))
+			.collect();
+
+		let mut unshielded =
+			self.unshielded.lock().expect("IndexerContext unshielded lock poisoned");
+		for entry in stx.intents.iter() {
+			let (segment, intent) = (*entry.0, &entry.1);
+			let spent: Vec<Utxo> = intent
+				.guaranteed_inputs()
+				.into_iter()
+				.chain(intent.fallible_inputs())
+				.map(Utxo::from)
+				.collect();
+			for utxos in unshielded.values_mut() {
+				utxos.retain(|(utxo, _)| !spent.contains(utxo));
+			}
+
+			// The ledger hashes a guaranteed offer's outputs under segment 0, whatever the
+			// intent's own segment.
+			let erased = intent.erase_proofs().erase_signatures();
+			let offers = [(0, intent.guaranteed_outputs()), (segment, intent.fallible_outputs())];
+			for (hash_segment, outputs) in offers {
+				let intent_hash = erased.intent_hash(hash_segment);
+				for (output_no, output) in outputs.into_iter().enumerate() {
+					let Some(utxos) = owners.get(&output.owner).and_then(|s| unshielded.get_mut(s))
+					else {
+						continue;
+					};
+					let utxo = Utxo {
+						value: output.value,
+						owner: output.owner,
+						type_: output.type_,
+						intent_hash,
+						output_no: output_no as u32,
+					};
+					utxos.push((utxo, block_context.tblock));
+				}
+			}
+		}
 		Ok(())
 	}
 }

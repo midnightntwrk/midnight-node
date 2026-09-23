@@ -789,7 +789,6 @@ impl Builder {
 	/// Reject builders the indexer backend cannot serve yet, before any wallet sync.
 	pub fn ensure_indexer_supported(&self) -> Result<(), BuilderConstructionError> {
 		match self {
-			Builder::Batches(_) => Err(BuilderConstructionError::UnsupportedWithIndexer("batches")),
 			// There are no source blocks to forward on the indexer path.
 			Builder::Send => Err(BuilderConstructionError::UnsupportedWithIndexer("send")),
 			_ => Ok(()),
@@ -856,9 +855,7 @@ impl Builder {
 		use builders::ledger_9 as v9;
 
 		Ok(match self {
-			Builder::Batches(args) => {
-				constr(v9::BatchesBuilder::new(args, replay_context(context)?, prover))
-			},
+			Builder::Batches(args) => constr(v9::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
 					constr(v9::ContractDeployBuilder::new(args, context, prover))
@@ -914,9 +911,7 @@ impl Builder {
 		use builders::ledger_8 as v8;
 
 		Ok(match self {
-			Builder::Batches(args) => {
-				constr(v8::BatchesBuilder::new(args, replay_context(context)?, prover))
-			},
+			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
 					constr(v8::ContractDeployBuilder::new(args, context, prover))
@@ -962,16 +957,6 @@ impl Builder {
 			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}
-}
-
-/// `BatchesBuilder` still takes the replay `LedgerContext` itself rather than any `BuilderContext`.
-// TODO: drop once `BatchesBuilder` is generic over `BuilderContext`.
-fn replay_context<C: Send + Sync + 'static, L: Send + Sync + 'static>(
-	context: Arc<C>,
-) -> Result<Arc<L>, BuilderConstructionError> {
-	(context as Arc<dyn std::any::Any + Send + Sync>)
-		.downcast()
-		.map_err(|_| BuilderConstructionError::UnsupportedWithIndexer("batches"))
 }
 
 #[async_trait]
@@ -1854,15 +1839,6 @@ pub fn build_fork_aware_context(
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	/// Replay `batches` must still get its `LedgerContext`; any other context must error, not panic.
-	#[test]
-	fn replay_context_downcasts_only_the_replay_context() {
-		let replay: Result<Arc<u8>, _> = replay_context(Arc::new(7u8));
-		assert_eq!(*replay.unwrap(), 7);
-		let other: Result<Arc<u16>, _> = replay_context(Arc::new(7u8));
-		assert!(matches!(other, Err(BuilderConstructionError::UnsupportedWithIndexer("batches"))));
-	}
 
 	fn ecdsa_schemes() -> WalletSchemes {
 		WalletSchemes::from([(WalletSeed::Short([7u8; 16]), UnshieldedSignatureScheme::Ecdsa)])

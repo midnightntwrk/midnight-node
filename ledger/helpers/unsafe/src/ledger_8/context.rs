@@ -737,6 +737,20 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 		tx.well_formed(&*ref_state, WellFormedStrictness::default(), now)?;
 		Ok(())
 	}
+
+	async fn apply_pending_tx<S, P>(
+		&self,
+		tx: &SerdeTransaction<S, P, D>,
+		block_context: &BlockContext,
+	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
+	where
+		S: SignatureKind<D>,
+		P: ProofKind<D> + std::fmt::Debug,
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		self.update_from_tx(tx, block_context)?;
+		Ok(())
+	}
 }
 
 #[cfg(test)]

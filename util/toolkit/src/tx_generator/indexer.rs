@@ -142,3 +142,131 @@ pub async fn sync_indexer(
 
 	Ok(SyncedIndexer { context, cache, entries })
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::fetcher::fetch_storage::file_backend::FileBackend;
+	use ledger_9::{
+		BuilderContext, DefaultDB, DustWallet, HashMapStorage, HashOutput, INITIAL_PARAMETERS,
+		Intent, IntentHash, SeedableRng, SerdeTransaction, ShieldedWallet, Signature, StdRng,
+		Timestamp, Transaction, UnshieldedOffer, UnshieldedTokenType, UnshieldedWallet, Utxo,
+		UtxoOutput, UtxoSpend, Wallet, make_block_context, serialize_untagged,
+	};
+	use std::num::NonZeroUsize;
+
+	fn wallet(seed: &ledger_9::WalletSeed) -> Wallet<DefaultDB> {
+		Wallet {
+			root_seed: Some(seed.clone()),
+			shielded: ShieldedWallet::default(seed.clone()),
+			unshielded: UnshieldedWallet::default(seed.clone()),
+			dust: DustWallet::default(seed.clone(), Some(&INITIAL_PARAMETERS)),
+		}
+	}
+
+	/// A built tx moves the context's UTXOs, but the cache still gets the indexer-confirmed state.
+	#[tokio::test]
+	async fn pending_tx_changes_the_context_but_not_the_cache() {
+		let (alice, bob) =
+			(ledger_9::WalletSeed::Short([1; 16]), ledger_9::WalletSeed::Short([2; 16]));
+		let (alice_wallet, bob_wallet) = (wallet(&alice), wallet(&bob));
+		let token = UnshieldedTokenType(HashOutput([0; 32]));
+		let coin = Utxo {
+			value: 100,
+			owner: alice_wallet.unshielded.user_address,
+			type_: token,
+			intent_hash: IntentHash(HashOutput([7; 32])),
+			output_no: 3,
+		};
+		let spend = UtxoSpend {
+			value: coin.value,
+			owner: alice_wallet.unshielded.verifying_key(),
+			type_: token,
+			intent_hash: coin.intent_hash,
+			output_no: coin.output_no,
+		};
+		let bob_address = bob_wallet.unshielded.user_address;
+
+		// Unroutable: any indexer query fails the test.
+		let ctx = ledger_9::IndexerContext::<DefaultDB>::new(
+			"http://127.0.0.1:1/api/v4",
+			"undeployed",
+			NonZeroUsize::MIN,
+		)
+		.unwrap();
+		ctx.insert_wallet(
+			alice.clone(),
+			alice_wallet,
+			vec![(coin.clone(), Timestamp::from_secs(1))],
+		);
+		ctx.insert_wallet(bob.clone(), bob_wallet, vec![]);
+
+		let dir = tempfile::tempdir().unwrap();
+		let chain_id = H256::repeat_byte(0xAB);
+		let key = indexer_wallet_cache_key(&alice, LedgerVersion::Ledger9);
+		let entry = CachedWalletState::from_sync_state(
+			key,
+			5,
+			WalletSyncState {
+				shielded_state: None,
+				unshielded_utxos: vec![(serialize_untagged(&coin).unwrap(), 1)],
+				unshielded_tx_id: 9,
+				dust_state: None,
+				dust_event_id: 0,
+			},
+		);
+		let synced = SyncedIndexer {
+			context: IndexerLedgerContext::Ledger9(Arc::new(ctx)),
+			cache: Some((chain_id, Box::new(FileBackend::new(dir.path())))),
+			entries: vec![entry.clone()],
+		};
+		let IndexerLedgerContext::Ledger9(ctx) = &synced.context else { unreachable!() };
+
+		let mut rng = StdRng::seed_from_u64(0);
+		let offer = UnshieldedOffer {
+			inputs: vec![spend].into(),
+			outputs: vec![UtxoOutput { value: coin.value, owner: bob_address, type_: token }]
+				.into(),
+			signatures: vec![].into(),
+		};
+		let intent = Intent::<Signature, _, _, DefaultDB>::new(
+			&mut rng,
+			Some(offer),
+			None,
+			vec![],
+			vec![],
+			vec![],
+			None,
+			Timestamp::from_secs(1_000),
+		);
+		let tx = Transaction::new(
+			"undeployed",
+			HashMapStorage::new().insert(1, intent),
+			None,
+			HashMapStorage::new(),
+		)
+		.seal(rng);
+		let Transaction::Standard(stx) = &tx else { unreachable!() };
+		// A guaranteed offer's outputs are keyed by segment 0, not their intent's segment.
+		let intent_hash =
+			stx.intents.get(&1).unwrap().erase_proofs().erase_signatures().intent_hash(0);
+		let block_context = make_block_context(
+			Timestamp::from_secs(20),
+			HashOutput([0; 32]),
+			Timestamp::from_secs(14),
+		);
+
+		ctx.apply_pending_tx(&SerdeTransaction::Midnight(tx), &block_context)
+			.await
+			.unwrap();
+
+		assert!(ctx.unshielded_utxos(alice).await.is_empty(), "the spent UTXO must be gone");
+		let received =
+			Utxo { value: coin.value, owner: bob_address, type_: token, intent_hash, output_no: 0 };
+		assert_eq!(ctx.unshielded_utxos(bob).await, vec![(received, block_context.tblock)]);
+
+		synced.save_cache().await;
+		let saved = FileBackend::new(dir.path()).get_wallet_states(chain_id, &[key]).await;
+		assert_eq!(saved, vec![Some(entry)], "the cache must hold only indexer-confirmed state");
+	}
+}

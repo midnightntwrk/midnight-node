@@ -121,6 +121,14 @@ pub struct DustLedgerEvents;
 )]
 pub struct ContractActionState;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct ZswapCollapsedUpdate;
+
 #[derive(Debug, Error)]
 pub enum IndexerClientError {
 	#[error("http transport error: {0}")]
@@ -334,6 +342,14 @@ impl IndexerClient {
 		let variables = contract_action_state::Variables { address: hex::encode(address) };
 		let data = self.run_query::<ContractActionState>(variables).await?;
 		data.contract_action.map(|action| decode_hex(&action.state)).transpose()
+	}
+
+	/// `zswapMerkleTreeCollapsedUpdate` — the tagged zswap tree update over `start..=end`.
+	pub async fn zswap_collapsed_update(&self, start: u64, end: u64) -> IndexerResult<Vec<u8>> {
+		let variables =
+			zswap_collapsed_update::Variables { start_index: start as i64, end_index: end as i64 };
+		let data = self.run_query::<ZswapCollapsedUpdate>(variables).await?;
+		decode_hex(&data.zswap_merkle_tree_collapsed_update.update)
 	}
 
 	/// `block(offset: {height})` — that block's hash, or `None` if the indexer has not indexed it.

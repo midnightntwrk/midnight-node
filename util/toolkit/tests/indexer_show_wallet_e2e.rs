@@ -22,7 +22,8 @@
 //! (so the indexer reaches the node at `ws://<node>:9944`) and waits for the node to finalize and
 //! the indexer to catch up. `show-wallet` then runs for a funded genesis seed and must report
 //! non-empty shielded coins, unshielded UTXOs and dust UTXOs; `generate-txs single-tx` builds from
-//! indexer state and its transfer must show up in the destination's `show-wallet`.
+//! indexer state and its transfer must show up in the destination's `show-wallet`, and
+//! `generate-txs batches` must land txs that spend outputs of txs built earlier in the same run.
 //!
 //! An uncached run is also the oracle for the incremental wallet cache: a cache-resumed sync must
 //! reproduce it exactly, and an entry filed under another chain must never be served.
@@ -198,14 +199,6 @@ async fn indexer_generate_txs_single_tx_reaches_destination() {
 	const AMOUNT: u64 = 1_000_000;
 	let env = start_env("gen").await;
 
-	let unshielded_values = |wallet: serde_json::Value| -> Vec<u64> {
-		wallet["utxos"]
-			.as_array()
-			.expect("`utxos` should be an array")
-			.iter()
-			.map(|u| u["value"].as_u64().expect("utxo `value` should be a u64"))
-			.collect()
-	};
 	assert!(
 		unshielded_values(show_wallet(&env.indexer_url, UNFUNDED_SEED, None)).is_empty(),
 		"the destination seed must start unfunded"
@@ -248,6 +241,77 @@ async fn indexer_generate_txs_single_tx_reaches_destination() {
 		);
 		tokio::time::sleep(Duration::from_secs(3)).await;
 	}
+}
+
+/// `batches` chains txs within one run: batch 1 spends UTXOs that the run's own initial tx created,
+/// so it only balances if the indexer context tracks the txs it has built.
+#[tokio::test]
+async fn indexer_generate_txs_batches_chain_within_a_run() {
+	if !e2e_enabled("indexer_generate_txs_batches_chain_within_a_run") {
+		return;
+	}
+	const TOTAL: u64 = 10_000;
+	// Batch 0 pays the first two wallets, batch 1 moves their funds on to the last two.
+	// `batches` counts its seeds up from `…10` in *binary* (`Wallet::increment_seed`).
+	const BATCH_SEEDS: [&str; 4] = [
+		"0000000000000000000000000000000000000000000000000000000000000010",
+		"0000000000000000000000000000000000000000000000000000000000000011",
+		"0000000000000000000000000000000000000000000000000000000000000100",
+		"0000000000000000000000000000000000000000000000000000000000000101",
+	];
+	let env = start_env("batches").await;
+
+	let total = TOTAL.to_string();
+	run_toolkit(&[
+		"generate-txs",
+		"--indexer-url",
+		&env.indexer_url,
+		"--network",
+		NETWORK,
+		"--fetch-cache",
+		"inmemory",
+		"--dest-url",
+		&env.node_ws,
+		"batches",
+		"--funding-seed",
+		FUNDED_SEED,
+		"--num-txs-per-batch",
+		"2",
+		// Concurrent builds select the shared fee payer's DUST without a lock, so they can pick
+		// the same output and the node rejects one. The replay path fails the same way.
+		"--concurrency",
+		"1",
+		"--num-batches",
+		"1",
+		"--initial-unshielded-intent-value",
+		&total,
+	]);
+
+	let expected = [vec![], vec![], vec![TOTAL / 2], vec![TOTAL / 2]];
+	let start = Instant::now();
+	loop {
+		let values: Vec<Vec<u64>> = BATCH_SEEDS
+			.iter()
+			.map(|seed| unshielded_values(show_wallet(&env.indexer_url, seed, None)))
+			.collect();
+		if values == expected {
+			break;
+		}
+		assert!(
+			start.elapsed() < Duration::from_secs(180),
+			"batch wallets never settled on {expected:?}; their UTXOs: {values:?}"
+		);
+		tokio::time::sleep(Duration::from_secs(3)).await;
+	}
+}
+
+fn unshielded_values(wallet: serde_json::Value) -> Vec<u64> {
+	wallet["utxos"]
+		.as_array()
+		.expect("`utxos` should be an array")
+		.iter()
+		.map(|u| u["value"].as_u64().expect("utxo `value` should be a u64"))
+		.collect()
 }
 
 /// Run the toolkit binary with `args`, panicking with its output on failure; returns stdout.

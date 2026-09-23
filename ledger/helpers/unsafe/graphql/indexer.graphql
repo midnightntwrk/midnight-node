@@ -105,3 +105,10 @@ query ContractActionState($address: HexEncoded!) {
     state
   }
 }
+
+# `endIndex` is inclusive.
+query ZswapCollapsedUpdate($startIndex: Int!, $endIndex: Int!) {
+  zswapMerkleTreeCollapsedUpdate(startIndex: $startIndex, endIndex: $endIndex) {
+    update
+  }
+}

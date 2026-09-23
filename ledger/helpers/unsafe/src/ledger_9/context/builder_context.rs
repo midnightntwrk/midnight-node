@@ -15,8 +15,9 @@ use async_trait::async_trait;
 
 use crate::ledger_9::{
 	BindingKind, BlockContext, ContractAddress, ContractState, DB, LedgerParameters,
-	PedersenDowngradeable, ProofKind, Resolver, Serializable, SignatureKind, Storable, Tagged,
-	Timestamp, Transaction, Utxo, Wallet, WalletSeed, ZswapChainState,
+	PedersenDowngradeable, ProofKind, PureGeneratorPedersen, Resolver, SerdeTransaction,
+	Serializable, SignatureKind, Storable, Tagged, Timestamp, Transaction, Utxo, Wallet,
+	WalletSeed, ZswapChainState,
 };
 
 type BuildResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -80,4 +81,16 @@ pub trait BuilderContext<D: DB + Clone>: Send + Sync + 'static {
 		S: SignatureKind<D>,
 		P: ProofKind<D> + Storable<D>,
 		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged;
+
+	/// Apply a built, not yet submitted `tx` to this context's wallets, so the next transaction
+	/// built in the same run does not reuse its inputs and can spend its outputs.
+	async fn apply_pending_tx<S, P>(
+		&self,
+		tx: &SerdeTransaction<S, P, D>,
+		block_context: &BlockContext,
+	) -> BuildResult<()>
+	where
+		S: SignatureKind<D>,
+		P: ProofKind<D> + std::fmt::Debug,
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged;
 }
