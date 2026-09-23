@@ -240,7 +240,7 @@ async fn execute_indexer(
 	// `--ledger-state-db` and `--fetch-cache` are `global = true` with non-empty defaults, so this
 	// is on by default; `--fetch-cache inmemory` is the existing off switch.
 	let cache = chain_id.zip(cache);
-	let cache_key = indexer_wallet_cache_key(&seed, ledger_version);
+	let cache_key = indexer_wallet_cache_key(&seed, scheme, ledger_version);
 
 	let mut resume = WalletSyncState::default();
 	if let Some((chain_id, cache)) = &cache
