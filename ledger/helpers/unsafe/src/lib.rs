@@ -27,10 +27,9 @@ pub mod extract_tx_with_context;
 /// Typed GraphQL/WebSocket client for the Midnight indexer, plus the sync-progress accounting and
 /// concurrency/timeout policy layered over its subscriptions.
 ///
-/// Version-independent (it deals in hex blobs, not ledger types), so it lives at the crate root
-/// and both `ledger_8` and `ledger_9` share the one copy — see `CoinSelectionStrategy` below for
-/// the same reasoning. Decoding those blobs into wallet updates is the part that is genuinely
-/// per-generation, and that is all each `ledger_N::context::indexer_context` still holds.
+/// Version-independent (hex blobs, not ledger types), so `ledger_8` and `ledger_9` share it, as
+/// with `CoinSelectionStrategy` below. Only decoding the blobs into wallet updates is
+/// per-generation, in each `ledger_N::context::indexer_context`.
 #[cfg(feature = "indexer-client")]
 pub mod indexer_client;
 #[cfg(feature = "indexer-client")]
