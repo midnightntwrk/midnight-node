@@ -105,3 +105,11 @@ query ContractActionState($address: HexEncoded!) {
     state
   }
 }
+
+# The latest block's post-block state, so the root is in the ledger's past-roots window.
+# `ContractAction.zswapState` is taken mid-block, after the action's transaction.
+query ContractZswapState($address: HexEncoded!) {
+  block {
+    contractZswapState(address: $address)
+  }
+}
