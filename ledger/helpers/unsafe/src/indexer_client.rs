@@ -41,6 +41,8 @@ use tokio_tungstenite::{
 	tungstenite::{Message, client::IntoClientRequest},
 };
 
+use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
+
 // Custom GraphQL scalars, resolved by name from this module scope by the `GraphQLQuery` derives
 // below. `HexEncoded` blobs are kept as hex strings and decoded to bytes here; `Unit` is the
 // indexer's void scalar (JSON `null`).
@@ -218,15 +220,15 @@ pub struct DustLedgerEventData {
 pub struct WalletSyncState {
 	/// zswap `WalletState`. Its `first_free` *is* the shielded resume cursor — the two are stored
 	/// as one value so they cannot drift apart.
-	pub shielded_state: Option<Vec<u8>>,
-	/// Reconciled UTXO set: (untagged `Utxo`, ctime secs). `Utxo`/`Timestamp` have no serde impls,
-	/// and the `(intent_hash, output_no)` reconciliation key rebuilds from the `Utxo` itself.
-	pub unshielded_utxos: Vec<(Vec<u8>, u64)>,
+	pub shielded_state: Option<ZswapWalletStateRaw>,
+	/// Reconciled UTXO set. `Utxo`/`Timestamp` have no serde impls, and the
+	/// `(intent_hash, output_no)` reconciliation key rebuilds from the `Utxo` itself.
+	pub unshielded_utxos: Vec<UnshieldedUtxoRaw>,
 	/// Highest applied `transactionId`; resume is `+ 1` (the subscription's cursor is inclusive).
 	pub unshielded_tx_id: u64,
 	/// `DustLocalState` *before* `process_ttls`, which is a projection against the tip and is
 	/// re-applied on every load rather than persisted.
-	pub dust_state: Option<Vec<u8>>,
+	pub dust_state: Option<DustLocalStateRaw>,
 	/// Last applied dust ledger-event `id`; resume is `+ 1`.
 	pub dust_event_id: u64,
 }
