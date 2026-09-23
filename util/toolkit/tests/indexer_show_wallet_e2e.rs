@@ -130,7 +130,9 @@ async fn start_env(tag: &str) -> Env {
 	let indexer_url = format!("http://127.0.0.1:{indexer_port}/api/v4");
 
 	// Wait until the indexer has caught up to the node's finalized tip, else balances read short.
-	wait_for_indexer_height(&indexer_url, node_height, Duration::from_secs(180)).await;
+	// At least height 2: genesis has no `Timestamp::Now` in storage for the block-context check
+	// to compare a parent against.
+	wait_for_indexer_height(&indexer_url, node_height.max(2), Duration::from_secs(180)).await;
 
 	Env { _node: node, _indexer: indexer, node_ws, indexer_url }
 }
