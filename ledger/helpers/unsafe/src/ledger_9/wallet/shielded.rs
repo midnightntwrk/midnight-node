@@ -106,9 +106,8 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 	}
 
 	/// Apply a batch of relevant zswap offers to this wallet's local state, spending/receiving coins
-	/// under its secret keys. Lives here (rather than on [`super::Wallet`]) so callers that only hold
-	/// a `&mut` to the shielded sub-wallet — e.g. the indexer sync draining the three sub-wallets
-	/// concurrently — can drive it without borrowing the whole `Wallet`.
+	/// under its secret keys. On the sub-wallet, not [`super::Wallet`], so the indexer sync can
+	/// drive it while the other sub-wallets are borrowed concurrently.
 	pub fn apply_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
 		let secret_keys = self.secret_keys().clone();
 		for offer in offers {
