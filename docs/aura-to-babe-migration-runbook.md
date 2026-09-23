@@ -69,17 +69,6 @@ migration code.
      `62616265` prefix. Do **not** trust `author_hasKey` /
      `author_hasSessionKeys` — they answer through an AURA fallback.
 
-> **HARD INVARIANT — session keys must be unique across all candidates.
-> Delivering duplicated keys breaks the chain.** No session key (`babe`,
-> `aura`, or `grandpa`) may ever appear on more than one candidate in the
-> published list. A duplicate delivered on chain is rejected log-only
-> (`Could not set_keys for <account>, error: … DuplicatedKey`), no event
-> fires, and the chain is left in **undefined behavior with no fix**.
-> Prevention is the only protection: audit the candidate list for
-> duplicates before every change and at the Phase 2.1 gate. Key ownership
-> is never purged, so a key once used by a *past* candidate conflicts
-> forever.
-
 ### 0.2 Verify the network you are upgrading from
 
 - [ ] `sessionCommitteeManagement` on-chain storage version is **1** (the
