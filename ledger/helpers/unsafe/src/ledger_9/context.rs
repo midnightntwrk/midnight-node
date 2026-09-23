@@ -703,8 +703,12 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 		})
 	}
 
-	async fn zswap_state(&self) -> ZswapChainState<D> {
-		self.with_ledger_state(|ledger_state| (*ledger_state.zswap).clone())
+	async fn contract_zswap_state(&self, address: ContractAddress) -> ZswapChainState<D> {
+		self.with_ledger_state(|ledger_state| {
+			let mut state = ZswapChainState::new();
+			state.coin_coms = ledger_state.zswap.filter(&[address]);
+			state
+		})
 	}
 
 	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {
@@ -888,5 +892,54 @@ mod tests {
 			std::slice::from_ref(&seed_a),
 		);
 		ctx.with_wallets_from_seeds(seed_a, seed_b, |_, _| ());
+	}
+
+	#[tokio::test]
+	async fn contract_zswap_state_keeps_root_and_contract_coin_paths() {
+		use crate::ledger_9::{CoinInfo, Delta, Input, Offer, Output, ProofPreimage};
+		use rand::{Rng, SeedableRng, rngs::StdRng};
+
+		let mut rng = StdRng::seed_from_u64(7);
+		let (a, b): (ContractAddress, ContractAddress) = (rng.r#gen(), rng.r#gen());
+		let mut zswap = ZswapChainState::<TestDB>::new();
+		let mut coins = Vec::new();
+		for owner in [a, b, a, b] {
+			let coin: CoinInfo = rng.r#gen();
+			let offer: Offer<ProofPreimage, TestDB> = Offer {
+				inputs: vec![].into(),
+				outputs: vec![Output::new_contract_owned(&mut rng, &coin, None, owner).unwrap()]
+					.into(),
+				transient: vec![].into(),
+				deltas: vec![Delta { token_type: coin.type_, value: -(coin.value as i128) }].into(),
+			};
+			coins.push((owner, coin.qualify(zswap.first_free)));
+			zswap = zswap.try_apply(&offer, None).unwrap().0;
+		}
+		let zswap = zswap
+			.post_block_update(Timestamp::from_secs(0), crate::ledger_9::Duration::from_secs(3600));
+
+		let ctx: LedgerContext<TestDB> = LedgerContext::new("test-net");
+		ctx.with_ledger_state(|ls| {
+			let mut state = (**ls).clone();
+			state.zswap = Sp::new(zswap.clone());
+			*ls = Sp::new(state);
+		});
+		let filtered = ctx.contract_zswap_state(a).await;
+
+		assert_eq!(filtered.coin_coms.root(), zswap.coin_coms.root());
+		for (_, coin) in coins.iter().filter(|(owner, _)| *owner == a) {
+			assert_eq!(
+				filtered.coin_coms.path_for_leaf(coin.mt_index, ()).unwrap().root(),
+				zswap.coin_coms.path_for_leaf(coin.mt_index, ()).unwrap().root()
+			);
+			Input::<ProofPreimage, TestDB>::new_contract_owned(
+				&mut rng,
+				coin,
+				None,
+				a,
+				&filtered.coin_coms,
+			)
+			.unwrap();
+		}
 	}
 }

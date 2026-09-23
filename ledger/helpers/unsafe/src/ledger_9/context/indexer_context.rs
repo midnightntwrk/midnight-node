@@ -17,7 +17,7 @@
 //!
 //! [`IndexerContext::init_wallets`] drains the shielded / unshielded / dust subscriptions to the
 //! chain tip, and the wallet methods serve that synced state. Block context, ledger parameters and
-//! contract state are queried from the indexer per call. [`BuilderContext::zswap_state`] and
+//! contract state are queried from the indexer per call. [`BuilderContext::contract_zswap_state`] and
 //! [`BuilderContext::backs_dust_generation`] are still `todo!()`.
 
 use std::collections::HashMap;
@@ -588,8 +588,8 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		todo!("indexer: dust generation status for a UTXO")
 	}
 
-	async fn zswap_state(&self) -> ZswapChainState<D> {
-		todo!("indexer: R4 — merkle update stream (PR #2, transaction building)")
+	async fn contract_zswap_state(&self, _address: ContractAddress) -> ZswapChainState<D> {
+		todo!("indexer: contract zswap state")
 	}
 
 	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {

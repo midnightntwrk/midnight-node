@@ -439,7 +439,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 				let contract_address = contract_intent
 					.find_contract_address()
 					.expect("Contract address should be set");
-				let chain_zswap_state = context.zswap_state().await;
+				let chain_zswap_state = context.contract_zswap_state(contract_address).await;
 				for encoded_input in zswap_state.inputs.into_iter() {
 					let coin_info: CoinInfo = (&encoded_input).into();
 
