@@ -357,7 +357,10 @@ impl IndexerContext<DefaultDB> {
 				},
 				_ = sleep_until(stall_at) => {
 					// Past the 30s progress heartbeat: the connection is stalled, not drained.
-					log::warn!("indexer: shielded subscription stalled (no progress heartbeat)");
+					log::warn!(
+						"indexer: shielded subscription stalled (no progress heartbeat); shielded \
+						 coins may be incomplete"
+					);
 					break;
 				},
 			};
@@ -451,7 +454,10 @@ impl IndexerContext<DefaultDB> {
 				Ok(None) => break,
 				Err(_) => {
 					// Past the 30s progress heartbeat: the connection is stalled, not drained.
-					log::warn!("indexer: unshielded subscription stalled (no progress heartbeat)");
+					log::warn!(
+						"indexer: unshielded subscription stalled (no progress heartbeat); \
+						 unshielded UTXOs may be incomplete"
+					);
 					break;
 				},
 			};
@@ -684,11 +690,13 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	}
 
 	async fn backs_dust_generation(&self, _utxo: &Utxo) -> bool {
-		todo!("indexer: dust generation status for a UTXO")
+		todo!("indexer: dust generation status (ozgb-toolkit-indexer-dust-gen-flag)")
 	}
 
 	async fn zswap_state(&self) -> ZswapChainState<D> {
-		todo!("indexer: R4 — merkle update stream (PR #2, transaction building)")
+		// The indexer can't serve the chain-wide zswap state; the only caller needs one contract's,
+		// so `ozgb-toolkit-indexer-contract-zswap` replaces this with `contract_zswap_state`.
+		todo!("indexer: no chain-wide zswap state")
 	}
 
 	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {
@@ -722,7 +730,9 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		P: ProofKind<D> + Storable<D>,
 		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
 	{
-		// No full ledger state to validate against; the node validates on submit.
+		// The indexer keeps a full ledger state but exposes no way to validate against it, so the
+		// node's check on submit is the only one; a node dry-run API (midnight-node#867) would
+		// allow a pre-submit check.
 		Ok(())
 	}
 
