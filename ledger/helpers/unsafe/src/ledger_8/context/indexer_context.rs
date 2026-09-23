@@ -98,7 +98,8 @@ impl IndexerContext<DefaultDB> {
 	/// Seeds sync `wallet_sync_concurrency` at a time, and each seed's shielded / unshielded / dust
 	/// subscriptions drain concurrently, each on its own WebSocket.
 	///
-	/// No toolkit-side cache: each call re-drains to tip.
+	/// No toolkit-side cache yet (added in `ozgb-toolkit-indexer-wallet-cache`): each call re-drains
+	/// to tip.
 	pub async fn init_wallets(&self, seeds: &[WalletSeed]) -> Result<(), BoxError> {
 		let block = self.client.latest_block().await?;
 		// Fall back to network defaults if the blob won't decode, so dust syncing still proceeds.
@@ -235,7 +236,10 @@ impl IndexerContext<DefaultDB> {
 				},
 				_ = sleep_until(stall_at) => {
 					// Past the 30s progress heartbeat: the connection is stalled, not drained.
-					log::warn!("indexer: shielded subscription stalled (no progress heartbeat)");
+					log::warn!(
+						"indexer: shielded subscription stalled (no progress heartbeat); shielded \
+						 coins may be incomplete"
+					);
 					break;
 				},
 			};
@@ -309,7 +313,10 @@ impl IndexerContext<DefaultDB> {
 				Ok(None) => break,
 				Err(_) => {
 					// Past the 30s progress heartbeat: the connection is stalled, not drained.
-					log::warn!("indexer: unshielded subscription stalled (no progress heartbeat)");
+					log::warn!(
+						"indexer: unshielded subscription stalled (no progress heartbeat); \
+						 unshielded UTXOs may be incomplete"
+					);
 					break;
 				},
 			};
@@ -480,11 +487,11 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	}
 
 	async fn latest_block_context(&self) -> BlockContext {
-		todo!("indexer: R6 — block() query (PR #2, transaction building)")
+		todo!("indexer: block context (ozgb-toolkit-indexer-read-methods)")
 	}
 
 	async fn ledger_parameters(&self) -> LedgerParameters {
-		todo!("indexer: R1 — Block.ledgerParameters blob (PR #2, transaction building)")
+		todo!("indexer: ledger parameters (ozgb-toolkit-indexer-read-methods)")
 	}
 
 	async fn network_id(&self) -> String {
@@ -503,23 +510,25 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	}
 
 	async fn backs_dust_generation(&self, _utxo: &Utxo) -> bool {
-		todo!("indexer: dust generation status for a UTXO")
+		todo!("indexer: dust generation status (ozgb-toolkit-indexer-dust-gen-flag)")
 	}
 
 	async fn zswap_state(&self) -> ZswapChainState<D> {
-		todo!("indexer: R4 — merkle update stream (PR #2, transaction building)")
+		// The indexer can't serve the chain-wide zswap state; the only caller needs one contract's,
+		// so `ozgb-toolkit-indexer-contract-zswap` replaces this with `contract_zswap_state`.
+		todo!("indexer: no chain-wide zswap state")
 	}
 
 	async fn contract_state(&self, _address: ContractAddress) -> Option<ContractState<D>> {
-		todo!("indexer: R5 — contractAction(address).state blob (PR #2, transaction building)")
+		todo!("indexer: contract state (ozgb-toolkit-indexer-read-methods)")
 	}
 
 	async fn resolver(&self) -> &'static Resolver {
-		todo!("indexer: client-side resolver (PR #2, transaction building)")
+		todo!("indexer: client-side resolver (ozgb-toolkit-indexer-read-methods)")
 	}
 
 	async fn update_resolver(&self, _resolver: &'static Resolver) {
-		todo!("indexer: client-side resolver (PR #2, transaction building)")
+		todo!("indexer: client-side resolver (ozgb-toolkit-indexer-read-methods)")
 	}
 
 	fn well_formed<S, P, B>(
@@ -532,8 +541,9 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		P: ProofKind<D> + Storable<D>,
 		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
 	{
-		// An indexer has no full LedgerState to validate against; the node re-validates on
-		// submission, so the builder treats the tx as well-formed here.
-		todo!("indexer: R7 — no local state; node re-validates on submit (PR #2)")
+		// The indexer keeps a full ledger state but exposes no way to validate against it, so the
+		// node's check on submit is the only one; a node dry-run API (midnight-node#867) would
+		// allow a pre-submit check.
+		todo!("indexer: well_formed (ozgb-toolkit-indexer-read-methods)")
 	}
 }

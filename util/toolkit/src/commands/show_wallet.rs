@@ -75,8 +75,8 @@ pub struct ShowWalletArgs {
 	/// Requires `--seed`. The ledger generation is taken from the chain the indexer serves.
 	#[arg(long, env = "MN_INDEXER_URL")]
 	pub indexer_url: Option<String>,
-	// TODO: make `--network` optional once the indexer exposes its network id. It has no GraphQL
-	// field for it today, so the value must be supplied to build the bech32 HRPs
+	// TODO: make `--network` optional once the indexer exposes its network id (midnight-indexer#1539).
+	// Until then it must be supplied to build the bech32 HRPs
 	// (`mn_shield-esk_<network>`, `mn_addr_<network>`) the indexer validates exactly.
 	/// Network id used to derive the viewing key / address for the indexer path.
 	#[arg(long, default_value = "undeployed")]
