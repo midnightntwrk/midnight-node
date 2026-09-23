@@ -171,7 +171,10 @@
       },
       "errors": [
         {
-          "$ref": "#/components/errors/LedgerStatsError"
+          "$ref": "#/components/errors/LedgerStatsInvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/LedgerStatsInternalError"
         }
       ]
     },
@@ -1494,7 +1497,7 @@
       "LedgerStats": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "LedgerStats",
-        "description": "Collection sizes held at the ledger-state root.\n\n`u64` counts serialize as JSON numbers; `unshieldedUtxoNight` is a `u128` of atomic Stars, which exceeds `Number.MAX_SAFE_INTEGER`, so it is serialized as a decimal string to survive a JavaScript client.",
+        "description": "Collection sizes held at the ledger-state root.\n\nThe `u64` counts serialize as JSON numbers: the UTXO set would have to reach 9e15 entries to strain a double, which it cannot.\n\n`unshieldedUtxoStars` is a `u128` and is serialized as a decimal string. JSON itself imposes no bound on integer literals, so a number here would be perfectly legal — but `JSON.parse` maps every number onto a double, and NIGHT in Stars genuinely exceeds `Number.MAX_SAFE_INTEGER` (the 24e9 NIGHT max supply is 2.4e16 Stars, against a 9.007e15 ceiling). A client would have to opt into a BigInt-aware parser to read it losslessly, and one that did not would be silently wrong rather than loudly broken. A string makes the precision requirement explicit; `pattern` below keeps it machine-checkable.",
         "type": "object",
         "required": [
           "contractCount",
@@ -1502,7 +1505,7 @@
           "dustLiveNoteCount",
           "dustNullifierCount",
           "unshieldedUtxoCount",
-          "unshieldedUtxoNight",
+          "unshieldedUtxoStars",
           "zswapCommitmentCount",
           "zswapLiveNoteCount",
           "zswapNullifierCount"
@@ -1538,9 +1541,10 @@
             "format": "uint64",
             "minimum": 0.0
           },
-          "unshieldedUtxoNight": {
+          "unshieldedUtxoStars": {
             "description": "NIGHT held across those UTXOs, in atomic Stars (1 NIGHT = 1e6 Stars), as a decimal string.",
-            "type": "string"
+            "type": "string",
+            "pattern": "^[0-9]+$"
           },
           "zswapCommitmentCount": {
             "description": "Zswap note commitments ever created.",
@@ -1803,11 +1807,18 @@
           "description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
         }
       },
-      "LedgerStatsError": {
+      "LedgerStatsInvalidParams": {
+        "code": -32602,
+        "message": "Invalid params",
+        "data": {
+          "description": "Variants: UnknownBlock (the requested block hash is not known to this node), NoStateKey (the pallet holds no StateKey at that block)"
+        }
+      },
+      "LedgerStatsInternalError": {
         "code": -32603,
         "message": "Internal error",
         "data": {
-          "description": "Variants: UnknownBlock and NoStateKey (both -32602 Invalid params), StateKeyUnavailable and LedgerUnavailable (-32603 Internal error). StateKeyUnavailable is the expected result for a block outside a pruned node's retained state window."
+          "description": "Variants: StateKeyUnavailable (reading the ledger StateKey from the trie failed — the expected result for a block outside a pruned node's retained state window), LedgerUnavailable (the arena could not resolve the state the StateKey points at)"
         }
       },
       "SystemParametersRpcError": {

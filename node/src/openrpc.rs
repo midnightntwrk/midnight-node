@@ -208,7 +208,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				schema_ref("BlockHash"),
 			)],
 			result("stats", "Ledger-state collection sizes", schema_ref("LedgerStats")),
-			&[error_ref("LedgerStatsError")],
+			&[error_ref("LedgerStatsInvalidParams"), error_ref("LedgerStatsInternalError")],
 		),
 		"midnight_apiVersions" => method_entry(
 			name,
@@ -707,11 +707,18 @@ fn build_error_components() -> Value {
 				"description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
 			}
 		},
-		"LedgerStatsError": {
+		"LedgerStatsInvalidParams": {
+			"code": -32602,
+			"message": "Invalid params",
+			"data": {
+				"description": "Variants: UnknownBlock (the requested block hash is not known to this node), NoStateKey (the pallet holds no StateKey at that block)"
+			}
+		},
+		"LedgerStatsInternalError": {
 			"code": -32603,
 			"message": "Internal error",
 			"data": {
-				"description": "Variants: UnknownBlock and NoStateKey (both -32602 Invalid params), StateKeyUnavailable and LedgerUnavailable (-32603 Internal error). StateKeyUnavailable is the expected result for a block outside a pruned node's retained state window."
+				"description": "Variants: StateKeyUnavailable (reading the ledger StateKey from the trie failed — the expected result for a block outside a pruned node's retained state window), LedgerUnavailable (the arena could not resolve the state the StateKey points at)"
 			}
 		},
 		"SystemParametersRpcError": {

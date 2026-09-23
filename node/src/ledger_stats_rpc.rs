@@ -45,9 +45,17 @@ use crate::warp_ledger_sync::read_state_key;
 
 /// Collection sizes held at the ledger-state root.
 ///
-/// `u64` counts serialize as JSON numbers; `unshieldedUtxoNight` is a `u128` of
-/// atomic Stars, which exceeds `Number.MAX_SAFE_INTEGER`, so it is serialized as
-/// a decimal string to survive a JavaScript client.
+/// The `u64` counts serialize as JSON numbers: the UTXO set would have to reach
+/// 9e15 entries to strain a double, which it cannot.
+///
+/// `unshieldedUtxoStars` is a `u128` and is serialized as a decimal string.
+/// JSON itself imposes no bound on integer literals, so a number here would be
+/// perfectly legal — but `JSON.parse` maps every number onto a double, and NIGHT
+/// in Stars genuinely exceeds `Number.MAX_SAFE_INTEGER` (the 24e9 NIGHT max
+/// supply is 2.4e16 Stars, against a 9.007e15 ceiling). A client would have to
+/// opt into a BigInt-aware parser to read it losslessly, and one that did not
+/// would be silently wrong rather than loudly broken. A string makes the
+/// precision requirement explicit; `pattern` below keeps it machine-checkable.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LedgerStats {
@@ -55,7 +63,8 @@ pub struct LedgerStats {
 	pub unshielded_utxo_count: u64,
 	/// NIGHT held across those UTXOs, in atomic Stars (1 NIGHT = 1e6 Stars), as a
 	/// decimal string.
-	pub unshielded_utxo_night: String,
+	#[schemars(regex(pattern = r"^[0-9]+$"))]
+	pub unshielded_utxo_stars: String,
 	/// Zswap note commitments ever created.
 	pub zswap_commitment_count: u64,
 	/// Zswap nullifiers, i.e. shielded notes ever spent.
@@ -76,7 +85,7 @@ impl From<InnerLedgerStats> for LedgerStats {
 	fn from(s: InnerLedgerStats) -> Self {
 		LedgerStats {
 			unshielded_utxo_count: s.unshielded_utxo_count,
-			unshielded_utxo_night: s.unshielded_utxo_night.to_string(),
+			unshielded_utxo_stars: s.unshielded_utxo_stars.to_string(),
 			zswap_commitment_count: s.zswap_commitment_count,
 			zswap_nullifier_count: s.zswap_nullifier_count,
 			zswap_live_note_count: s.zswap_commitment_count.saturating_sub(s.zswap_nullifier_count),
@@ -163,6 +172,34 @@ impl<C, Block: BlockT, BE> LedgerStatsRpc<C, Block, BE> {
 	}
 }
 
+impl<C, Block, BE> LedgerStatsRpc<C, Block, BE>
+where
+	Block: BlockT,
+	BE: Backend<Block> + Send + Sync + 'static,
+	C: HeaderBackend<Block> + StorageProvider<Block, BE> + Send + Sync + 'static,
+{
+	/// Resolve the stats for `at` from the arena. Split out so the memo lock can be
+	/// held across the whole fill without the locking dance obscuring the read.
+	fn read_stats(&self, at: Block::Hash) -> Result<LedgerStats, LedgerStatsError> {
+		if self
+			.client
+			.header(at)
+			.map_err(|e| LedgerStatsError::StateKeyUnavailable(e.to_string()))?
+			.is_none()
+		{
+			return Err(LedgerStatsError::UnknownBlock);
+		}
+
+		let state_key = read_state_key::<Block, C, BE>(&self.client, at)
+			.map_err(|e| LedgerStatsError::StateKeyUnavailable(e.to_string()))?
+			.ok_or(LedgerStatsError::NoStateKey)?;
+
+		Ok(midnight_node_ledger::ledger_stats(self.unified, &state_key)
+			.map_err(LedgerStatsError::LedgerUnavailable)?
+			.into())
+	}
+}
+
 impl<C, Block, BE> LedgerStatsApiServer<Block::Hash> for LedgerStatsRpc<C, Block, BE>
 where
 	Block: BlockT,
@@ -172,33 +209,32 @@ where
 	fn ledger_stats(&self, at: Option<Block::Hash>) -> RpcResult<LedgerStats> {
 		let at = at.unwrap_or_else(|| self.client.info().best_hash);
 
-		// Serve from the memo before taking any arena lock.
-		if let Ok(cache) = self.cache.lock()
-			&& let Some((hash, stats)) = cache.as_ref()
+		// The memo lock is held across the *fill*, not just the lookup. Releasing it
+		// between observing a miss and storing the result would let every concurrent
+		// caller see the same miss and pile onto the arena's process-global locks
+		// together — precisely the contention this memo exists to avoid, and worst
+		// exactly when it matters, as clients poll a newly produced block. Serialising
+		// on this mutex instead means one caller reads the arena and the rest wake to
+		// a hit. The read is O(1), so the wait it imposes is bounded.
+		let mut cache = match self.cache.lock() {
+			Ok(guard) => Some(guard),
+			// A panic during an earlier fill poisons the mutex. Losing the memo is
+			// survivable; refusing every later call is not, so fall through to an
+			// uncached read rather than propagating the poison.
+			Err(_) => None,
+		};
+
+		if let Some(guard) = cache.as_ref()
+			&& let Some((hash, stats)) = guard.as_ref()
 			&& *hash == at
 		{
 			return Ok(stats.clone());
 		}
 
-		if self
-			.client
-			.header(at)
-			.map_err(|e| LedgerStatsError::StateKeyUnavailable(e.to_string()))?
-			.is_none()
-		{
-			return Err(LedgerStatsError::UnknownBlock.into());
-		}
+		let stats = self.read_stats(at)?;
 
-		let state_key = read_state_key::<Block, C, BE>(&self.client, at)
-			.map_err(|e| LedgerStatsError::StateKeyUnavailable(e.to_string()))?
-			.ok_or(LedgerStatsError::NoStateKey)?;
-
-		let stats: LedgerStats = midnight_node_ledger::ledger_stats(self.unified, &state_key)
-			.map_err(LedgerStatsError::LedgerUnavailable)?
-			.into();
-
-		if let Ok(mut cache) = self.cache.lock() {
-			*cache = Some((at, stats.clone()));
+		if let Some(guard) = cache.as_mut() {
+			**guard = Some((at, stats.clone()));
 		}
 
 		Ok(stats)

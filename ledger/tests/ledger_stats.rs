@@ -46,7 +46,7 @@ fn stats_match_the_state_they_were_read_from() {
 
 	let utxo_ann = state.utxo.utxos.ann();
 	assert_eq!(stats.unshielded_utxo_count, utxo_ann.size, "unshielded UTXO count");
-	assert_eq!(stats.unshielded_utxo_night, utxo_ann.value, "NIGHT held in UTXOs");
+	assert_eq!(stats.unshielded_utxo_stars, utxo_ann.value, "NIGHT held in UTXOs");
 	assert_eq!(stats.zswap_commitment_count, state.zswap.first_free, "zswap commitments");
 	assert_eq!(
 		stats.zswap_nullifier_count,
@@ -72,7 +72,7 @@ fn stats_match_the_state_they_were_read_from() {
 		"annotation count must equal the actual number of UTXOs"
 	);
 	assert_eq!(
-		stats.unshielded_utxo_night,
+		stats.unshielded_utxo_stars,
 		state.utxo.utxos.iter().map(|kv| kv.0.value).sum::<u128>(),
 		"annotation value must equal the summed UTXO values"
 	);

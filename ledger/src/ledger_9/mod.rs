@@ -918,7 +918,7 @@ where
 
 		Ok(LedgerStats {
 			unshielded_utxo_count: utxo_ann.size,
-			unshielded_utxo_night: utxo_ann.value,
+			unshielded_utxo_stars: utxo_ann.value,
 			zswap_commitment_count: st.zswap.first_free,
 			zswap_nullifier_count: st.zswap.nullifiers.size() as u64,
 			dust_commitment_count: st.dust.utxo.commitments_first_free,

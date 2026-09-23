@@ -289,7 +289,7 @@ pub struct LedgerStats {
 	/// Live unshielded UTXOs — the UTXO set size.
 	pub unshielded_utxo_count: u64,
 	/// NIGHT held across those UTXOs, in atomic Stars (1 NIGHT = 1e6 Stars).
-	pub unshielded_utxo_night: u128,
+	pub unshielded_utxo_stars: u128,
 	/// Zswap note commitments ever inserted into the tree (`first_free`), i.e.
 	/// every shielded output the chain has ever produced.
 	pub zswap_commitment_count: u64,
