@@ -26,8 +26,11 @@
 use cargo_metadata::MetadataCommand;
 
 /// Workspace dependency alias (as cargo normalises it: hyphens → underscores) → env var name.
-const LEDGER_ALIASES: [(&str, &str); 2] =
-	[("mn_ledger_8", "LEDGER_8_VERSION"), ("mn_ledger_9", "LEDGER_9_VERSION")];
+const LEDGER_ALIASES: [(&str, &str); 3] = [
+	("mn_ledger_8", "LEDGER_8_VERSION"),
+	("mn_ledger_9", "LEDGER_9_VERSION"),
+	("mn_ledger_10", "LEDGER_10_VERSION"),
+];
 
 fn main() {
 	let meta = MetadataCommand::new()
@@ -47,10 +50,16 @@ fn main() {
 		.expect("helpers package absent from resolve graph");
 
 	for (alias, env_var) in LEDGER_ALIASES {
-		let dep =
-			helpers.deps.iter().find(|d| d.name == alias).unwrap_or_else(|| {
-				panic!("dependency alias `{alias}` not found - was it renamed?")
-			});
+		let Some(dep) = helpers.deps.iter().find(|d| d.name == alias) else {
+			// Ledger 8/9 are optional (`legacy-ledgers` feature); a missing alias leaves the
+			// env var unset and `find_dependency_version` reports `None` for that generation.
+			// The latest generation must always resolve.
+			assert!(
+				alias != "mn_ledger_10",
+				"dependency alias `{alias}` not found - was it renamed?"
+			);
+			continue;
+		};
 		let pkg = &meta[&dep.pkg];
 		let source = pkg.source.as_ref().map(|s| s.repr.as_str());
 		println!("cargo:rustc-env={env_var}={}", format_version(&pkg.version.to_string(), source));

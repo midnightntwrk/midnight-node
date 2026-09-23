@@ -16,8 +16,12 @@ use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand, ValueEnum};
 pub use midnight_ledger_unsafe_helpers::CoinSelectionStrategy;
 use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
-	ForkAwareLedgerContext, apply_block_8, apply_block_9, block_context_from_raw_8,
-	block_context_from_raw_9, fork_context_8_to_9,
+	ForkAwareLedgerContext, apply_block_10, block_context_from_raw_10,
+};
+#[cfg(feature = "legacy-ledgers")]
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
+	apply_block_8, apply_block_9, block_context_from_raw_8, block_context_from_raw_9,
+	fork_context_8_to_9, fork_context_9_to_10,
 };
 use midnight_ledger_unsafe_helpers::*;
 use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
@@ -756,6 +760,8 @@ impl Builder {
 	///
 	/// Dispatches on `fork_ctx.version()`:
 	/// - Ledger8 → builds with ledger_8 types
+	/// - Ledger9 → builds with ledger_9 types
+	/// - Ledger10 → builds with ledger_10 (latest) types
 	/// - None (pass-through builders) → defaults to ledger_8
 	pub fn to_versioned_builder(
 		self,
@@ -764,18 +770,21 @@ impl Builder {
 		_dry_run: bool,
 	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		match fork_ctx {
-			Some(ctx) => {
-				let self_clone = self.clone();
-				ctx.dispatch(
-					|context| {
-						let prover = Self::make_prover_v8(prover_config);
-						Ok(self_clone.clone().to_builder_v8(Arc::new(context), prover))
-					},
-					|context| {
-						let prover = Self::make_prover(prover_config);
-						Ok(self.to_builder_v9(Arc::new(context), prover))
-					},
-				)
+			Some(ctx) => match ctx {
+				#[cfg(feature = "legacy-ledgers")]
+				ForkAwareLedgerContext::Ledger8(context) => {
+					let prover = Self::make_prover_v8(prover_config);
+					Ok(self.to_builder_v8(Arc::new(context), prover))
+				},
+				#[cfg(feature = "legacy-ledgers")]
+				ForkAwareLedgerContext::Ledger9(context) => {
+					let prover = Self::make_prover_v9(prover_config);
+					Ok(self.to_builder_v9(Arc::new(context), prover))
+				},
+				ForkAwareLedgerContext::Ledger10(context) => {
+					let prover = Self::make_prover(prover_config);
+					Ok(self.to_builder_v10(Arc::new(context), prover))
+				},
 			},
 			None => {
 				// Pass-through builder (Send) doesn't need context
@@ -784,6 +793,7 @@ impl Builder {
 		}
 	}
 
+	#[cfg(feature = "legacy-ledgers")]
 	fn make_prover_v8(
 		config: &ProverConfig,
 	) -> Arc<
@@ -801,6 +811,24 @@ impl Builder {
 		}
 	}
 
+	#[cfg(feature = "legacy-ledgers")]
+	fn make_prover_v9(
+		config: &ProverConfig,
+	) -> Arc<
+		dyn midnight_ledger_unsafe_helpers::ledger_9::ProofProvider<
+				midnight_ledger_unsafe_helpers::ledger_9::DefaultDB,
+			>,
+	> {
+		match config {
+			ProverConfig::Local => {
+				Arc::new(midnight_ledger_unsafe_helpers::ledger_9::LocalProofServer::new())
+			},
+			ProverConfig::Remote(url) => {
+				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
+			},
+		}
+	}
+
 	fn make_prover(config: &ProverConfig) -> Arc<dyn ProofProvider<DefaultDB>> {
 		match config {
 			ProverConfig::Local => Arc::new(LocalProofServer::new()),
@@ -810,10 +838,67 @@ impl Builder {
 		}
 	}
 
-	fn to_builder_v9(
+	fn to_builder_v10(
 		self,
 		context: Arc<LedgerContext<DefaultDB>>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Box<dyn BuildTxs<Error = DynamicError>> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
+		) -> Box<dyn BuildTxs<Error = DynamicError>> {
+			Box::new(DynamicTransactionBuilder { builder })
+		}
+
+		use builders::ledger_10 as v10;
+
+		match self {
+			Builder::Batches(args) => constr(v10::BatchesBuilder::new(args, context, prover)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					constr(v10::ContractDeployBuilder::new(args, context, prover))
+				},
+				ContractCall::Call(args) => {
+					constr(v10::ContractCallBuilder::new(args, context, prover))
+				},
+				ContractCall::Maintenance(args) => {
+					constr(v10::ContractMaintenanceBuilder::new(args, context, prover))
+				},
+			},
+			Builder::ContractCustom(args) => {
+				constr(v10::CustomContractBuilder::new(args, context, prover))
+			},
+			Builder::ClaimRewards(args) => {
+				constr(v10::ClaimRewardsBuilder::new(args, context, prover))
+			},
+			Builder::SingleTx(args) => {
+				constr(v10::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
+			Builder::RegisterDustAddress(args) => {
+				constr(v10::RegisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::DeregisterDustAddress(args) => {
+				constr(v10::DeregisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::BatchSingleTx(args) => {
+				constr(v10::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
+			},
+			Builder::Send => constr(v10::DoNothingBuilder::new()),
+		}
+	}
+
+	#[cfg(feature = "legacy-ledgers")]
+	fn to_builder_v9(
+		self,
+		context: Arc<
+			midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<
+				midnight_ledger_unsafe_helpers::ledger_9::DefaultDB,
+			>,
+		>,
+		prover: Arc<
+			dyn midnight_ledger_unsafe_helpers::ledger_9::ProofProvider<
+					midnight_ledger_unsafe_helpers::ledger_9::DefaultDB,
+				>,
+		>,
 	) -> Box<dyn BuildTxs<Error = DynamicError>> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
@@ -858,6 +943,7 @@ impl Builder {
 		}
 	}
 
+	#[cfg(feature = "legacy-ledgers")]
 	fn to_builder_v8(
 		self,
 		context: Arc<
@@ -1010,7 +1096,8 @@ pub fn contract_call_wallet_schemes(call: &ContractCall) -> Result<WalletSchemes
 
 /// Reject ECDSA seeds on a pre-ledger-9 source with a clear CLI error, rather than letting the
 /// loud panic fire deep in [`ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes`]. Returns
-/// `Ok(())` when no ECDSA seed is present, or when the source has already reached ledger 9.
+/// `Ok(())` when no ECDSA seed is present, or when the source has already reached ledger 9 or
+/// later.
 ///
 /// Callers must pass the source's *initial* ledger version (`SourceTransactions::ledger_version()`)
 /// — the same version the cold-path context is built at, which is where the ledger-level guard
@@ -1019,7 +1106,7 @@ pub fn ensure_ecdsa_supported(
 	ledger_version: LedgerVersion,
 	schemes: &WalletSchemes,
 ) -> Result<(), BuilderConstructionError> {
-	if ledger_version != LedgerVersion::Ledger9
+	if ledger_version == LedgerVersion::Ledger8
 		&& schemes.values().any(|scheme| *scheme == UnshieldedSignatureScheme::Ecdsa)
 	{
 		return Err(BuilderConstructionError::EcdsaNotSupportedForLedger(ledger_version));
@@ -1077,6 +1164,27 @@ fn inject_cached_wallets(
 	}
 }
 
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 twin of [`inject_cached_wallets`].
+fn inject_cached_wallets_9(
+	ctx: &midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<Db9>,
+	wallets: &[(WalletSeed, CachedWalletState)],
+	ledger_state: &midnight_ledger_unsafe_helpers::ledger_9::LedgerState<Db9>,
+	at_height: u64,
+	schemes: &WalletSchemes,
+) {
+	for (seed, state) in wallets {
+		let scheme = scheme_of(schemes, seed);
+		wallet_state_cache::inject_wallet_from_cache_9(ctx, state, seed, scheme, ledger_state)
+			.unwrap_or_else(|e| {
+				panic!(
+					"failed to inject wallet at height {}: {} — clear caches and retry",
+					at_height, e
+				)
+			});
+	}
+}
+
 /// Create the initial fork-aware context, either cold (genesis) or warm (snapshot restore).
 /// A ledger-8 restore injects and drains `cached` here (no mid-replay injection on ledger 8).
 async fn initialize_context(
@@ -1088,6 +1196,9 @@ async fn initialize_context(
 	schemes: &WalletSchemes,
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
 ) -> ForkAwareLedgerContext {
+	// Only a ledger-8 restore drains `cached` here (see the doc comment).
+	#[cfg(not(feature = "legacy-ledgers"))]
+	let _ = &cached;
 	let Some(start_height) = restore_height else {
 		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
 			.iter()
@@ -1116,6 +1227,7 @@ async fn initialize_context(
 	);
 
 	match snapshot.ledger_version {
+		#[cfg(feature = "legacy-ledgers")]
 		LedgerVersion::Ledger8 => {
 			let (ctx, ledger_state, _) = timed!(
 				"restore_context_from_ledger_snapshot_8",
@@ -1144,7 +1256,21 @@ async fn initialize_context(
 			}
 			ForkAwareLedgerContext::Ledger8(ctx)
 		},
+		#[cfg(feature = "legacy-ledgers")]
 		LedgerVersion::Ledger9 => {
+			let (ctx, _, _) = timed!(
+				"restore_context_from_ledger_snapshot_9",
+				wallet_state_cache::restore_context_from_ledger_snapshot_9(&snapshot)
+			)
+			.unwrap_or_else(|e| {
+				panic!(
+					"failed to restore ledger snapshot at height {}: {} — clear caches and retry",
+					start_height, e
+				)
+			});
+			ForkAwareLedgerContext::Ledger9(ctx)
+		},
+		LedgerVersion::Ledger10 => {
 			let (ctx, _, _) = timed!(
 				"restore_context_from_ledger_snapshot",
 				wallet_state_cache::restore_context_from_ledger_snapshot(&snapshot)
@@ -1155,14 +1281,21 @@ async fn initialize_context(
 					start_height, e
 				)
 			});
-			ForkAwareLedgerContext::Ledger9(ctx)
+			ForkAwareLedgerContext::Ledger10(ctx)
 		},
+		#[cfg(not(feature = "legacy-ledgers"))]
+		LedgerVersion::Ledger8 | LedgerVersion::Ledger9 => panic!(
+			"ledger snapshot at height {start_height} is {:?}, which this build cannot restore \
+			 (built without `legacy-ledgers`) — clear caches and retry",
+			snapshot.ledger_version
+		),
 	}
 }
 
 /// The one place deciding which cache entries a replay can consume; the rest are
 /// dropped and their seeds replayed from genesis. An entry's generation is that of
-/// the block at its height. Ledger-9 entries inject mid-replay at any height;
+/// the block at its height. Ledger-9 and ledger-10 entries inject mid-replay at any
+/// height (each into the replay of its own generation, see `replay_blocks`);
 /// ledger-8 entries only at a ledger-8 snapshot restore, which needs every seed
 /// cached at one height on a chain still on ledger 8 - anything else would splice
 /// the entry into a later ledger-9 state and silently skip the blocks in between.
@@ -1175,10 +1308,14 @@ fn discard_unusable_cache(
 		let i = blocks.partition_point(|b| b.number <= height);
 		i.checked_sub(1).map(|i| blocks[i].ledger_version())
 	};
-	let is_ledger9 =
-		|ws: &CachedWalletState| version_at(ws.block_height) == Some(LedgerVersion::Ledger9);
+	let is_ledger9_or_later = |ws: &CachedWalletState| {
+		matches!(
+			version_at(ws.block_height),
+			Some(LedgerVersion::Ledger9 | LedgerVersion::Ledger10)
+		)
+	};
 
-	let ledger8_entries = cached.iter().filter(|(_, ws)| !is_ledger9(ws)).count();
+	let ledger8_entries = cached.iter().filter(|(_, ws)| !is_ledger9_or_later(ws)).count();
 	if ledger8_entries == 0 {
 		return;
 	}
@@ -1186,7 +1323,7 @@ fn discard_unusable_cache(
 	let tip_version = blocks.last().map(|b| b.ledger_version());
 	let restore_height = cached.first().map(|(_, ws)| ws.block_height);
 	let reason = if tip_version != Some(LedgerVersion::Ledger8) {
-		"the chain has moved on to ledger 9"
+		"the chain has moved on from ledger 8"
 	} else if !uncached_seeds.is_empty() {
 		"some requested seeds have no cache entry"
 	} else if ledger8_entries == cached.len()
@@ -1202,13 +1339,16 @@ fn discard_unusable_cache(
 		cached.len(),
 	);
 	let (keep, dropped): (Vec<_>, Vec<_>) =
-		std::mem::take(cached).into_iter().partition(|(_, ws)| is_ledger9(ws));
+		std::mem::take(cached).into_iter().partition(|(_, ws)| is_ledger9_or_later(ws));
 	*cached = keep;
 	uncached_seeds.extend(dropped.into_iter().map(|(seed, _)| seed));
 }
 
+#[cfg(feature = "legacy-ledgers")]
 type Db8 = midnight_ledger_unsafe_helpers::ledger_8::DefaultDB;
+#[cfg(feature = "legacy-ledgers")]
 type Db9 = midnight_ledger_unsafe_helpers::ledger_9::DefaultDB;
+type Db10 = midnight_ledger_unsafe_helpers::ledger_10::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
@@ -1234,6 +1374,7 @@ fn log_replay_progress(done: usize, total: usize) {
 	);
 }
 
+#[cfg(feature = "legacy-ledgers")]
 fn replay_blocks_8(
 	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
@@ -1266,6 +1407,7 @@ fn replay_blocks_8(
 	}
 }
 
+#[cfg(feature = "legacy-ledgers")]
 fn replay_blocks_9(
 	ctx: &midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<Db9>,
 	blocks_sorted_by_height: &[RawBlockData],
@@ -1286,7 +1428,7 @@ fn replay_blocks_9(
 				events.clear();
 			}
 			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
-			inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
+			inject_cached_wallets_9(ctx, to_inject, &ls, block.number, schemes);
 			remaining = rest;
 		}
 
@@ -1313,7 +1455,7 @@ fn replay_blocks_9(
 	if !remaining.is_empty() {
 		let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
 		let height = blocks_sorted_by_height.last().map(|b| b.number).unwrap_or(0);
-		inject_cached_wallets(ctx, remaining, &ls, height, schemes);
+		inject_cached_wallets_9(ctx, remaining, &ls, height, schemes);
 	}
 
 	if let Some(block) = blocks_sorted_by_height.last() {
@@ -1321,27 +1463,121 @@ fn replay_blocks_9(
 	}
 }
 
-/// Fork a ledger-8 context to ledger 9 (real state translation) and replay the
-/// ledger-9 blocks, if any. Returns the ledger-8 context unchanged when there are
-/// no ledger-9 blocks.
-fn fork_8_to_9_if_needed(
-	ctx8: midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
-	l9_blocks: &[RawBlockData],
-	cached: &[(WalletSeed, CachedWalletState)],
+fn replay_blocks_10(
+	ctx: &midnight_ledger_unsafe_helpers::ledger_10::context::LedgerContext<Db10>,
+	blocks_sorted_by_height: &[RawBlockData],
+	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
-) -> ForkAwareLedgerContext {
-	if l9_blocks.is_empty() {
-		ForkAwareLedgerContext::Ledger8(ctx8)
-	} else {
-		let ctx9 =
-			timed!("fork_context_8_to_9", fork_context_8_to_9(ctx8)).expect("fork 8 to 9 failed");
-		replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
-		ForkAwareLedgerContext::Ledger9(ctx9)
+) {
+	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_10::Event<Db10>> = Vec::new();
+	let mut remaining = wallets_sorted_by_height;
+	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
+
+	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
+		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
+		if n > 0 {
+			let (to_inject, rest) = remaining.split_at(n);
+			if !events.is_empty() {
+				ctx.update_dust_from_events(events.as_slice());
+				events.clear();
+			}
+			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
+			inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
+			remaining = rest;
+		}
+
+		events.extend(apply_block_10(ctx, block));
+
+		let is_last = i + 1 == total;
+		if events.len() >= DUST_BATCH_SIZE || is_last {
+			ctx.update_dust_from_events(events.as_slice());
+			events.clear();
+			log::debug!("[perf] replay_blocks_10 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// See note in `replay_blocks_8`: heartbeat must be evaluated every
+		// iteration, not gated on the event-flush condition, so sparse
+		// chains still get a "still alive" signal at the 30 s cadence.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log_replay_progress(i + 1, total);
+			last_info_at = std::time::Instant::now();
+		}
+	}
+
+	// Inject remaining wallets at the last replayed block height.
+	// This handles the case where some wallets are cached at the tip with no new blocks.
+	if !remaining.is_empty() {
+		let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
+		let height = blocks_sorted_by_height.last().map(|b| b.number).unwrap_or(0);
+		inject_cached_wallets(ctx, remaining, &ls, height, schemes);
+	}
+
+	if let Some(block) = blocks_sorted_by_height.last() {
+		ctx.update_dust_from_block(&block_context_from_raw_10(block));
 	}
 }
 
-/// Replays blocks across a potential Ledger8->Ledger9 fork boundary,
-/// injecting cached wallets at their saved height.
+#[cfg(feature = "legacy-ledgers")]
+/// Fork a ledger-8 context to ledger 9 (real state translation) and replay the
+/// ledger-9 blocks, then on to ledger 10 as needed. Returns the ledger-8 context
+/// unchanged when there are no later blocks.
+fn fork_8_to_9_if_needed(
+	ctx8: midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
+	l9_blocks: &[RawBlockData],
+	l10_blocks: &[RawBlockData],
+	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
+	if l9_blocks.is_empty() && l10_blocks.is_empty() {
+		return ForkAwareLedgerContext::Ledger8(ctx8);
+	}
+	let ctx9 =
+		timed!("fork_context_8_to_9", fork_context_8_to_9(ctx8)).expect("fork 8 to 9 failed");
+	let (cached_9, cached_10) = split_cached_at_fork(cached, l10_blocks);
+	replay_blocks_9(&ctx9, l9_blocks, cached_9, schemes);
+	fork_9_to_10_if_needed(ctx9, l10_blocks, cached_10, schemes)
+}
+
+#[cfg(feature = "legacy-ledgers")]
+/// Fork a ledger-9 context to ledger 10 (a re-typed arena root: same state format)
+/// and replay the ledger-10 blocks, if any. Returns the ledger-9 context unchanged
+/// when there are no ledger-10 blocks.
+fn fork_9_to_10_if_needed(
+	ctx9: midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<Db9>,
+	l10_blocks: &[RawBlockData],
+	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
+	if l10_blocks.is_empty() {
+		ForkAwareLedgerContext::Ledger9(ctx9)
+	} else {
+		let ctx10 = timed!("fork_context_9_to_10", fork_context_9_to_10(ctx9))
+			.expect("fork 9 to 10 failed");
+		replay_blocks_10(&ctx10, l10_blocks, cached, schemes);
+		ForkAwareLedgerContext::Ledger10(ctx10)
+	}
+}
+
+#[cfg(feature = "legacy-ledgers")]
+/// Split `cached` (sorted by height) into the entries the ledger-9 replay may inject
+/// and those belonging to the ledger-10 blocks. `replay_blocks_N` injects every
+/// leftover of the slice it is given at the end of its range, so a ledger-10-height
+/// entry handed to the ledger-9 replay would be spliced into the pre-fork state.
+fn split_cached_at_fork<'a>(
+	cached: &'a [(WalletSeed, CachedWalletState)],
+	l10_blocks: &[RawBlockData],
+) -> (&'a [(WalletSeed, CachedWalletState)], &'a [(WalletSeed, CachedWalletState)]) {
+	match l10_blocks.first() {
+		Some(first_l10) => {
+			cached.split_at(cached.partition_point(|(_, ws)| ws.block_height < first_l10.number))
+		},
+		None => (cached, &[]),
+	}
+}
+
+/// Replays blocks across the Ledger8->Ledger9 and Ledger9->Ledger10 fork
+/// boundaries, injecting cached wallets at their saved height.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
 	blocks: &[RawBlockData],
@@ -1359,21 +1595,39 @@ pub(crate) fn replay_blocks(
 	let t_replay = std::time::Instant::now();
 
 	let fork_8_to_9_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
-	let (l8_blocks, l9_blocks) = blocks.split_at(fork_8_to_9_idx);
+	let (l8_blocks, later_blocks) = blocks.split_at(fork_8_to_9_idx);
+	let fork_9_to_10_idx =
+		later_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger9);
+	let (l9_blocks, l10_blocks) = later_blocks.split_at(fork_9_to_10_idx);
+	debug_assert!(
+		l10_blocks.iter().all(|b| b.ledger_version() == LedgerVersion::Ledger10),
+		"blocks must be sorted by ledger generation"
+	);
 
 	// Replay each version's blocks in order, forking the context across the
-	// 8->9 boundary as needed. The fork performs a real state
-	// translation (see `fork_context_8_to_9`) so post-hardfork transactions are
-	// built at ledger 9, matching the upgraded chain.
+	// 8->9 and 9->10 boundaries as needed. The 8->9 fork performs a real state
+	// translation (see `fork_context_8_to_9`); 9->10 re-types the same arena root.
+	// Either way post-hardfork transactions are built at the upgraded chain's ledger.
 	let result = match fork_ctx {
+		#[cfg(feature = "legacy-ledgers")]
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			replay_blocks_8(&ctx8, l8_blocks);
-			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes)
+			fork_8_to_9_if_needed(ctx8, l9_blocks, l10_blocks, cached, schemes)
 		},
+		#[cfg(feature = "legacy-ledgers")]
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
-			replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
-			ForkAwareLedgerContext::Ledger9(ctx9)
+			let (cached_9, cached_10) = split_cached_at_fork(cached, l10_blocks);
+			replay_blocks_9(&ctx9, l9_blocks, cached_9, schemes);
+			fork_9_to_10_if_needed(ctx9, l10_blocks, cached_10, schemes)
+		},
+		ForkAwareLedgerContext::Ledger10(ctx10) => {
+			assert!(
+				l8_blocks.is_empty() && l9_blocks.is_empty(),
+				"pre-Ledger10 blocks with Ledger10 context"
+			);
+			replay_blocks_10(&ctx10, l10_blocks, cached, schemes);
+			ForkAwareLedgerContext::Ledger10(ctx10)
 		},
 	};
 
@@ -1582,10 +1836,16 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	// event vec on a tx-less block.
 	if let Some(synthetic) = synthetic_dust_warp {
 		match &fork_ctx {
+			ForkAwareLedgerContext::Ledger10(ctx10) => {
+				let _events = apply_block_10(ctx10, synthetic);
+				ctx10.update_dust_from_block(&block_context_from_raw_10(synthetic));
+			},
+			#[cfg(feature = "legacy-ledgers")]
 			ForkAwareLedgerContext::Ledger9(ctx9) => {
 				let _events = apply_block_9(ctx9, synthetic);
 				ctx9.update_dust_from_block(&block_context_from_raw_9(synthetic));
 			},
+			#[cfg(feature = "legacy-ledgers")]
 			ForkAwareLedgerContext::Ledger8(ctx8) => {
 				let _events = apply_block_8(ctx8, synthetic);
 				ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
@@ -1606,16 +1866,22 @@ async fn try_save_cache_v2(
 	schemes: &WalletSchemes,
 ) {
 	match fork_ctx {
+		ForkAwareLedgerContext::Ledger10(ctx) => {
+			save_cache_ledger10(ctx, wallet_seeds, chain_id, block_height, storage, schemes).await
+		},
+		#[cfg(feature = "legacy-ledgers")]
 		ForkAwareLedgerContext::Ledger9(ctx) => {
 			save_cache_ledger9(ctx, wallet_seeds, chain_id, block_height, storage, schemes).await
 		},
+		#[cfg(feature = "legacy-ledgers")]
 		ForkAwareLedgerContext::Ledger8(ctx) => {
 			save_cache_ledger8(ctx, wallet_seeds, chain_id, block_height, storage, schemes).await
 		},
 	}
 }
 
-/// Ledger-8 twin of [`save_cache_ledger9`].
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-8 twin of [`save_cache_ledger10`].
 async fn save_cache_ledger8(
 	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	wallet_seeds: &[WalletSeed],
@@ -1673,7 +1939,7 @@ async fn save_cache_ledger8(
 }
 
 /// Persist the ledger snapshot + per-wallet states at `block_height`.
-async fn save_cache_ledger9(
+async fn save_cache_ledger10(
 	ctx: &LedgerContext<DefaultDB>,
 	wallet_seeds: &[WalletSeed],
 	chain_id: H256,
@@ -1745,6 +2011,80 @@ async fn save_cache_ledger9(
 	);
 }
 
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 twin of [`save_cache_ledger10`].
+async fn save_cache_ledger9(
+	ctx: &midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<Db9>,
+	wallet_seeds: &[WalletSeed],
+	chain_id: H256,
+	block_height: u64,
+	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
+) {
+	// Save ledger snapshot
+	let t = std::time::Instant::now();
+	let snapshot = match wallet_state_cache::create_ledger_snapshot_9(ctx, block_height) {
+		Ok(s) => s,
+		Err(e) => {
+			log::warn!("Failed to create ledger snapshot: {}", e);
+			return;
+		},
+	};
+	log::debug!("[perf] create_ledger_snapshot_9 took {:?}", t.elapsed());
+
+	let t = std::time::Instant::now();
+	storage.set_ledger_snapshot(chain_id, snapshot).await;
+	log::debug!("[perf] storage.set_ledger_snapshot took {:?}", t.elapsed());
+
+	// Save individual wallet snapshots
+	let t = std::time::Instant::now();
+	let wallet_snapshots: Vec<_> = wallet_seeds
+		.iter()
+		.filter_map(|seed| {
+			match wallet_state_cache::create_wallet_snapshot_9(
+				ctx,
+				seed,
+				scheme_of(schemes, seed),
+				block_height,
+			) {
+				Ok(ws) => Some(ws),
+				Err(e) => {
+					log::warn!("Failed to create wallet snapshot: {}", e);
+					None
+				},
+			}
+		})
+		.collect();
+	log::debug!(
+		"[perf] create wallet snapshots: {} wallets in {:?}",
+		wallet_snapshots.len(),
+		t.elapsed()
+	);
+
+	if !wallet_snapshots.is_empty() {
+		let t = std::time::Instant::now();
+		storage.set_wallet_states(chain_id, &wallet_snapshots).await;
+		log::debug!("[perf] storage.set_wallet_states took {:?}", t.elapsed());
+	}
+
+	// GC: keep heights referenced by all cached wallets (cross-process safe)
+	let t = std::time::Instant::now();
+	let mut keep_heights = storage.get_all_cached_wallet_heights(chain_id).await;
+	log::debug!("[perf] storage.get_all_cached_wallet_heights took {:?}", t.elapsed());
+	if !keep_heights.contains(&block_height) {
+		keep_heights.push(block_height);
+	}
+	let t = std::time::Instant::now();
+	storage.gc_ledger_snapshots(chain_id, &keep_heights).await;
+	log::debug!("[perf] storage.gc_ledger_snapshots took {:?}", t.elapsed());
+
+	log::info!(
+		"Saved per-wallet cache at block {} ({} wallets, 1 ledger snapshot)",
+		block_height,
+		wallet_snapshots.len()
+	);
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("chain has not reached ledger 8 (final version: {0:?})")]
 pub struct ContextNotLedger8Error(pub LedgerVersion);
@@ -1752,6 +2092,10 @@ pub struct ContextNotLedger8Error(pub LedgerVersion);
 #[derive(Debug, thiserror::Error)]
 #[error("chain has not reached ledger 9 (final version: {0:?})")]
 pub struct ContextNotLedger9Error(pub LedgerVersion);
+
+#[derive(Debug, thiserror::Error)]
+#[error("chain has not reached ledger 10 (final version: {0:?})")]
+pub struct ContextNotLedger10Error(pub LedgerVersion);
 
 /// Build a fork-aware context from source transactions, returning the raw
 /// `ForkAwareLedgerContext` without extracting a specific version.
@@ -1774,7 +2118,7 @@ pub fn build_fork_aware_context_raw_with_schemes(
 		.blocks
 		.first()
 		.map(|b| b.ledger_version())
-		.unwrap_or(LedgerVersion::Ledger9);
+		.unwrap_or(LedgerVersion::Ledger10);
 
 	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
 		.iter()
@@ -1792,17 +2136,17 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	replay_blocks(ctx, &received_tx.blocks, &[], schemes)
 }
 
-/// Build a fork-aware context from source transactions, returning a ledger 9 context.
+/// Build a fork-aware context from source transactions, returning a ledger 10 context.
 ///
-/// This handles chains that may have forked to ledger 9 by using
+/// This handles chains that may have forked to ledger 9 and 10 by using
 /// `ForkAwareLedgerContext` to process blocks across version boundaries.
 pub fn build_fork_aware_context(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
-) -> Result<LedgerContext<DefaultDB>, ContextNotLedger9Error> {
+) -> Result<LedgerContext<DefaultDB>, ContextNotLedger10Error> {
 	let ctx = build_fork_aware_context_raw(received_tx, wallet_seeds);
 	let final_version = ctx.version();
-	ctx.into_ledger9().ok_or(ContextNotLedger9Error(final_version))
+	ctx.into_ledger10().ok_or(ContextNotLedger10Error(final_version))
 }
 
 #[cfg(test)]

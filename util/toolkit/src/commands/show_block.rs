@@ -154,16 +154,31 @@ pub fn deserialize_transactions(
 		.iter()
 		.enumerate()
 		.map(|(i, raw)| match block.ledger_version {
+			LedgerVersion::Ledger10 => {
+				use crate::commands::fork::ledger_10::show_transaction::ShowTransaction;
+				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
+				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
+			},
+			#[cfg(feature = "legacy-ledgers")]
 			LedgerVersion::Ledger9 => {
 				use crate::commands::fork::ledger_9::show_transaction::ShowTransaction;
 				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
 				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
 			},
+			#[cfg(feature = "legacy-ledgers")]
 			LedgerVersion::Ledger8 => {
 				use crate::commands::fork::ledger_8::show_transaction::ShowTransaction;
 				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
 				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
 			},
+			#[cfg(not(feature = "legacy-ledgers"))]
+			LedgerVersion::Ledger8 | LedgerVersion::Ledger9 => Err(std::io::Error::new(
+				std::io::ErrorKind::Unsupported,
+				format!(
+					"block is {:?}; this build only decodes ledger 10 (built without `legacy-ledgers`)",
+					block.ledger_version
+				),
+			)),
 		})
 		.collect()
 }

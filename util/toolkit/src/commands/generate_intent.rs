@@ -18,6 +18,7 @@ use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::{Source, create_file_wallet_cache};
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 use midnight_ledger_unsafe_helpers::{
 	CoinPublicKey, DefaultDB, LedgerParameters, WalletSeed, WalletState, deserialize, serialize,
 };
@@ -130,8 +131,9 @@ pub async fn fetch_zswap_state(
 	)
 	.await;
 
-	Ok(fork_ctx.dispatch(
-		|ctx| {
+	Ok(match fork_ctx {
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger8(ctx) => {
 			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
 					wallet_seed.clone(),
@@ -144,14 +146,28 @@ pub async fn fetch_zswap_state(
 				&ctx, seed_v8, cpk_v8,
 			)
 		},
-		|ctx| {
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger9(ctx) => {
+			let seed_v9 =
+				crate::tx_generator::builder::builders::ledger_9::type_convert::convert_wallet_seed(
+					wallet_seed.clone(),
+				);
+			let cpk_v9 =
+				crate::tx_generator::builder::builders::ledger_9::type_convert::convert_coin_public_key(
+					coin_public,
+				);
 			crate::commands::fork::ledger_9::generate_intent::fetch_zswap_state_from_context(
+				&ctx, seed_v9, cpk_v9,
+			)
+		},
+		ForkAwareLedgerContext::Ledger10(ctx) => {
+			crate::commands::fork::ledger_10::generate_intent::fetch_zswap_state_from_context(
 				&ctx,
 				wallet_seed.clone(),
 				coin_public,
 			)
 		},
-	))
+	})
 }
 
 #[derive(Debug, thiserror::Error)]

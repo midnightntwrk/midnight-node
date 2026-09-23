@@ -24,6 +24,7 @@
 
 use super::protocol::{ChunkAssembler, build_response, compress_snapshot, decompress_snapshot};
 
+#[cfg(feature = "legacy-ledgers")]
 /// Compress + page `blob` end-to-end the way the client would, with a deliberately small chunk size
 /// to force multiple ranges, and return the decompressed reassembled bytes.
 fn compress_page_reassemble_decompress(blob: &[u8], chunk: u32) -> Vec<u8> {
@@ -43,11 +44,12 @@ fn compress_page_reassemble_decompress(blob: &[u8], chunk: u32) -> Vec<u8> {
 	decompress_snapshot(&reassembled, raw_total_len).expect("decompress snapshot")
 }
 
+/// Exercises the `ledger_8` dispatch path with a v13 fixture, so it needs ledger 8 compiled in.
 #[test]
 fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	let dir = tempfile::tempdir().expect("tempdir");
 	// Use a bundled v13 fixture to exercise the `ledger_8` dispatch path; the local undeployed
-	// fixture is v18 (`ledger_9`).
+	// fixture is v18 (`ledger_10`).
 	let genesis_state = include_bytes!("../../../res/genesis/genesis_state_preview.mn");
 
 	// Initialize the arena from genesis in Separate mode. This sets the process-global

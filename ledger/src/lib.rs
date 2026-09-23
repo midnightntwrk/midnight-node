@@ -13,9 +13,9 @@
 
 //! The Ledger crate provides host functions for the Node runtime.
 //!
-//! One module per ledger generation ([`ledger_8`], [`ledger_9`]), each a
-//! self-contained copy bound to its own ledger crates. The two directories
-//! deliberately duplicate each other: `diff -r src/ledger_8 src/ledger_9` shows
+//! One module per ledger generation ([`ledger_8`], [`ledger_9`], [`ledger_10`]), each a
+//! self-contained copy bound to its own ledger crates. The directories
+//! deliberately duplicate each other: `diff -r src/ledger_9 src/ledger_10` shows
 //! exactly where the generations diverge, and an edit to one cannot leak into
 //! the other. Genuinely version-independent code lives in [`boundary`] (the
 //! SCALE types crossing the runtime/client interface) and is compiled once.
@@ -31,10 +31,13 @@ mod utils;
 
 pub mod host_api;
 
+pub mod ledger_10;
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_8;
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_9;
 
-pub use ledger_9 as latest;
+pub use ledger_10 as latest;
 
 #[cfg(feature = "std")]
 /// Drops all versioned default ledger storages.
@@ -43,13 +46,17 @@ pub use ledger_9 as latest;
 /// example after Tokio/node shutdown completes) to ensure DB-backed storage is
 /// released deterministically.
 pub fn drop_all_default_storage() {
+	#[cfg(feature = "legacy-ledgers")]
 	ledger_8::storage::drop_default_storage_if_exists();
+	#[cfg(feature = "legacy-ledgers")]
 	ledger_9::storage::drop_default_storage_if_exists();
+	ledger_10::storage::drop_default_storage_if_exists();
 }
 
 /// Parse the `vNN` from a `ledger-state[vNN]` tag embedded in a tagged blob (a `StateKey` or a
 /// genesis_state). Used to dispatch warp serialize/import (and genesis-init) to the ledger module
-/// whose `LedgerState` serialization matches: **v13 → `ledger_8`, v16/v17/v18 → `ledger_9`**.
+/// whose `LedgerState` serialization matches: **v13 → `ledger_8`, v16/v17 → `ledger_9`,
+/// v18 → `ledger_10`** (ledger 10 kept v18 unchanged, so the newest reader serves it).
 /// A warp-syncing node can target a chain governed by an *older* ledger version than this build's
 /// latest (e.g. a real devnet whose arena is still v13), so the version is read from the data, not
 /// assumed to be the tip's.
@@ -63,7 +70,8 @@ pub fn ledger_state_tag_version(tagged: &[u8]) -> Option<u32> {
 }
 
 /// Expand to the `(DbSeparate, DbUnified)`-parameterized call of a `Bridge` arena method on the given
-/// ledger version module (`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
+/// ledger version module (`ledger_8`/`ledger_9`/`ledger_10`), picking the DB instantiation by
+/// `unified`.
 #[cfg(feature = "std")]
 macro_rules! bridge_arena_call {
 	($ver:ident, $unified:expr, $method:ident ( $($arg:expr),* )) => {{
@@ -93,10 +101,14 @@ macro_rules! bridge_arena_call {
 #[cfg(feature = "std")]
 pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
 	match ledger_state_tag_version(state_key) {
-		Some(16..=18) => {
-			bridge_arena_call!(ledger_9, unified, serialize_ledger_snapshot(state_key))
-				.map_err(|e| format!("{e:?}"))
-		},
+		// `ledger-state[v18]` is shared by ledger 9 and 10 (10 changed no on-chain tag); the
+		// newest generation that reads a format serves it.
+		Some(18) => bridge_arena_call!(ledger_10, unified, serialize_ledger_snapshot(state_key))
+			.map_err(|e| format!("{e:?}")),
+		#[cfg(feature = "legacy-ledgers")]
+		Some(16..=17) => bridge_arena_call!(ledger_9, unified, serialize_ledger_snapshot(state_key))
+			.map_err(|e| format!("{e:?}")),
+		#[cfg(feature = "legacy-ledgers")]
 		Some(13) => bridge_arena_call!(ledger_8, unified, serialize_ledger_snapshot(state_key))
 			.map_err(|e| format!("{e:?}")),
 		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
@@ -114,9 +126,12 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 #[cfg(feature = "std")]
 pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 	match ledger_state_tag_version(state_key) {
-		Some(16..=18) => {
-			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
+		Some(18) => {
+			bridge_arena_call!(ledger_10, unified, get_ledger_state_root(state_key)).is_ok()
 		},
+		#[cfg(feature = "legacy-ledgers")]
+		Some(16..=17) => bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok(),
+		#[cfg(feature = "legacy-ledgers")]
 		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
 		_ => false,
 	}
@@ -174,13 +189,22 @@ pub fn import_verified_ledger_snapshot(
 	// Dispatch on the `StateKey`'s ledger-state version (the underlying method returns the shared
 	// `SnapshotImportError` for every version, so no error mapping is needed).
 	match ledger_state_tag_version(expected_state_key) {
-		Some(16..=18) => {
+		Some(18) => {
+			bridge_arena_call!(
+				ledger_10,
+				unified,
+				import_verified_ledger_snapshot(blob, expected_state_key)
+			)
+		},
+		#[cfg(feature = "legacy-ledgers")]
+		Some(16..=17) => {
 			bridge_arena_call!(
 				ledger_9,
 				unified,
 				import_verified_ledger_snapshot(blob, expected_state_key)
 			)
 		},
+		#[cfg(feature = "legacy-ledgers")]
 		Some(13) => {
 			bridge_arena_call!(
 				ledger_8,
@@ -204,18 +228,19 @@ pub fn import_verified_ledger_snapshot(
 /// block runs under the old WASM and expects the old-format arena root), not the
 /// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
 /// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
-/// latest version (`ledger_9`), preserving the prior default behaviour.
+/// latest version (`ledger_10`, whose `ledger-state[v18]` is byte-identical to v9's),
+/// preserving the prior default behaviour.
 #[cfg(feature = "std")]
 pub fn init_ledger_storage_separate<P: AsRef<std::path::Path>>(
 	dir: P,
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> alloc::vec::Vec<u8> {
+	#[cfg(feature = "legacy-ledgers")]
 	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
-		ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
-	} else {
-		ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+		return ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
 	}
+	ledger_10::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
 }
 
 /// Unified-DB counterpart of [`init_ledger_storage_separate`].
@@ -228,24 +253,24 @@ pub fn init_ledger_storage_unified<
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> alloc::vec::Vec<u8> {
+	#[cfg(feature = "legacy-ledgers")]
 	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
-		ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+		return ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
 			db_instance,
 			genesis_state,
 			cache_size,
-		)
-	} else {
-		ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-			db_instance,
-			genesis_state,
-			cache_size,
-		)
+		);
 	}
+	ledger_10::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+		db_instance,
+		genesis_state,
+		cache_size,
+	)
 }
 
 /// Returns true if `state_key` is a ledger-8 arena root, i.e. a tagged-serialized
 /// `TypedArenaKey<ledger_8::api::Ledger<_>, _>`.
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "legacy-ledgers"))]
 pub(crate) fn is_ledger_8_state_key(state_key: &[u8]) -> bool {
 	use ledger_storage_ledger_8::{DefaultDB, arena::TypedArenaKey, db::DB};
 	use midnight_serialize::Tagged;
@@ -264,14 +289,14 @@ mod boundary;
 pub mod types {
 	pub use super::boundary::types::*;
 
-	pub use super::host_api::ledger_9::ledger_9_bridge as active_ledger_bridge;
+	pub use super::host_api::ledger_10::ledger_10_bridge as active_ledger_bridge;
 	pub use super::latest::types as active_version;
 }
 
 #[cfg(test)]
 mod tests {
 	use frame_support::assert_ok;
-	use ledger_storage_ledger_8::{
+	use ledger_storage_ledger_10::{
 		Storage,
 		db::ParityDb,
 		storage::{set_default_storage, try_get_default_storage, unsafe_drop_default_storage},
@@ -307,6 +332,7 @@ mod tests {
 	/// `set_code` block of the 8->9 hardfork, whose `StateKey` is one version behind
 	/// its `:code` (GH #1959). It has to tell a ledger-8 arena root from a ledger-9
 	/// one from the header tag alone.
+	#[cfg(feature = "legacy-ledgers")]
 	#[test]
 	fn ledger_8_state_key_tag_is_recognised() {
 		use ledger_storage_ledger_8::DefaultDB;
@@ -320,10 +346,15 @@ mod tests {
 		}
 		let v8 = header::<mn_ledger_8::structure::LedgerState<DefaultDB>>();
 		let v9 = header::<mn_ledger_9::structure::LedgerState<DefaultDB>>();
+		let v10 = header::<mn_ledger_10::structure::LedgerState<DefaultDB>>();
 		assert_ne!(v8, v9, "v8 and v9 ledger states must not share a tag");
+		// Ledger 10 changed no on-chain tag: a v9 root is read as-is by ledger 10, which is
+		// why the 9->10 switch needs no state migration (and cannot be told apart by tag).
+		assert_eq!(v9, v10, "v9 and v10 ledger states share `ledger-state[v18]`");
 
 		assert!(super::is_ledger_8_state_key(&v8));
 		assert!(!super::is_ledger_8_state_key(&v9));
+		assert!(!super::is_ledger_8_state_key(&v10));
 
 		// An unset `StateKey`, or anything else untagged, is not a ledger-8 root: the
 		// host API must take its ordinary ledger-9 path rather than guess.

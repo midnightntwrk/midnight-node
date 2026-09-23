@@ -6,27 +6,21 @@ license-file.workspace = true
 
 [dependencies]
 base-crypto = { workspace = true, optional = true }
-coin-structure = { workspace = true, optional = true }
 midnight-serialize = { workspace = true, optional = true }
 midnight-storage-core = { workspace = true, optional = true }
 parity-db = { workspace = true, optional = true }
 transient-crypto = { workspace = true, optional = true }
 
-mn-ledger-8 = { workspace = true, features = ["proving"], optional = true }
-onchain-runtime-ledger-8 = { workspace = true, optional = true }
-onchain-state-ledger-8 = { workspace = true, optional = true }
-ledger-storage-ledger-8 = { workspace = true, optional = true }
-zswap-ledger-8 = { workspace = true, optional = true }
 
-mn-ledger-9 = { workspace = true, features = ["proving"], optional = true }
-onchain-runtime-ledger-9 = { workspace = true, optional = true }
-onchain-state-ledger-9 = { workspace = true, optional = true }
-zswap-ledger-9 = { workspace = true, optional = true }
-coin-structure-ledger-9 = { workspace = true, optional = true }
-transient-crypto-ledger-9 = { workspace = true, optional = true }
 
-# v8->v9 state translation table, driven by `host_api::migration_8_to_9` (std-only).
-v8-to-v9-state-translation = { workspace = true, optional = true }
+mn-ledger-10 = { workspace = true, features = ["proving"], optional = true }
+onchain-runtime-ledger-10 = { workspace = true, optional = true }
+onchain-state-ledger-10 = { workspace = true, optional = true }
+zswap-ledger-10 = { workspace = true, optional = true }
+coin-structure-ledger-10 = { workspace = true, optional = true }
+transient-crypto-ledger-10 = { workspace = true, optional = true }
+ledger-storage-ledger-10 = { workspace = true, optional = true }
+
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
@@ -53,6 +47,10 @@ midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
 midnight-ledger-unsafe-helpers = { workspace = true }
 
 [features]
+# Ledger 8 and 9 support. Cannot currently be enabled: their rc.5 crates and the ledger-10
+# alpha's path-dep tree cannot coexist in one graph (see the workspace Cargo.toml). Kept as the
+# cfg the gated code is written against, so re-enabling is a Cargo.toml change, not a rewrite.
+legacy-ledgers = []
 default = [
     "std",
     "test-utils"
@@ -72,23 +70,17 @@ std = [
     "lazy_static",
     "moka",
     "base-crypto",
-    "coin-structure",
     "midnight-serialize",
     "midnight-storage-core",
     "parity-db",
     "transient-crypto",
-    "mn-ledger-8",
-    "onchain-runtime-ledger-8",
-    "onchain-state-ledger-8",
-    "ledger-storage-ledger-8",
-    "zswap-ledger-8",
-    "mn-ledger-9",
-    "onchain-runtime-ledger-9",
-    "onchain-state-ledger-9",
-    "zswap-ledger-9",
-    "coin-structure-ledger-9",
-    "transient-crypto-ledger-9",
-    "v8-to-v9-state-translation",
+    "mn-ledger-10",
+    "onchain-runtime-ledger-10",
+    "onchain-state-ledger-10",
+    "zswap-ledger-10",
+    "coin-structure-ledger-10",
+    "transient-crypto-ledger-10",
+    "ledger-storage-ledger-10",
     "sha2",
     "midnight-node-ledger-helpers",
     "derive-where"

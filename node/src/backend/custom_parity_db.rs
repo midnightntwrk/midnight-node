@@ -91,7 +91,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	// Set init options for ParityDb backend
 	if storage_config.separation == StorageSeparation::Separate {
-		midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
+		midnight_node_ledger::latest::storage::set_init_options_paritydb(
 			&mut config,
 			NUM_COLUMNS_POLKADOT,
 			true,

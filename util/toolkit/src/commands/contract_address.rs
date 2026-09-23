@@ -72,14 +72,24 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 		return Err(ContractAddressError::TransactionIsSystemTransaction);
 	};
 
-	// Try ledger_9 first, fall back to ledger_8
-	let both = crate::commands::fork::ledger_9::contract_address::extract_contract_address(
+	// Newest first: ledger_10, then ledger_9, then ledger_8
+	let both = crate::commands::fork::ledger_10::contract_address::extract_contract_address(
 		tx_bytes.as_slice(),
 	)
-	.or_else(|_| {
-		crate::commands::fork::ledger_8::contract_address::extract_contract_address(
-			tx_bytes.as_slice(),
-		)
+	.or_else(|e| {
+		#[cfg(feature = "legacy-ledgers")]
+		{
+			crate::commands::fork::ledger_9::contract_address::extract_contract_address(
+				tx_bytes.as_slice(),
+			)
+			.or_else(|_| {
+				crate::commands::fork::ledger_8::contract_address::extract_contract_address(
+					tx_bytes.as_slice(),
+				)
+			})
+		}
+		#[cfg(not(feature = "legacy-ledgers"))]
+		Err(e)
 	})?;
 
 	if args.untagged {

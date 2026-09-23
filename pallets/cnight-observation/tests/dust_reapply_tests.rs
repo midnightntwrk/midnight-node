@@ -13,6 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The pre-fork state these tests seed is a ledger-8 arena; without `legacy-ledgers` there is
+// no ledger 8 to seed it with.
+#![cfg(feature = "legacy-ledgers")]
+
 //! v1 -> v2 dust generation replay tests, against a **real** ledger.
 //!
 //! The mock wires the real `pallet-midnight`/`pallet-midnight-system` over a
