@@ -12,5 +12,8 @@ Both proved that they have key (signatures are verified before), we can't tell w
 Also registered candidate is removed if his keys are present in permissioned candidates list.
 Reasoning is that we can't have duplicates downstream and it is a choice of using permissioned over registered.
 
+Note: permissionless registrations are not considered finished, we know that the process as in current sources does
+not check for session keys ownership. There is a separate issue tracking it and will be fixed separately.
+
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2192
 PR: https://github.com/midnightntwrk/midnight-node/pull/2193

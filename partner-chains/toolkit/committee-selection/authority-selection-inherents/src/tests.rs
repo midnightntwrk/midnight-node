@@ -223,10 +223,12 @@ fn ariadne_all_permissioned_test() {
 		&registered_validators,
 		d_parameter,
 	);
-	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	);
 	assert!(calculated_committee.is_some());
 
@@ -255,10 +257,12 @@ fn ariadne_only_permissioned_candidates_are_present_test() {
 		&registered_validators,
 		d_parameter,
 	);
-	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	);
 	assert!(calculated_committee.is_some());
 
@@ -287,10 +291,12 @@ fn ariadne_3_to_2_test() {
 		&registered_validators,
 		d_parameter,
 	);
-	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	);
 	assert!(calculated_committee.is_some());
 
@@ -318,10 +324,12 @@ fn ariadne_3_to_2_with_more_available_candidates_test() {
 		&registered_validators,
 		d_parameter,
 	);
-	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	);
 	assert!(calculated_committee.is_some());
 
@@ -356,10 +364,12 @@ fn ariadne_4_to_7_test() {
 		&registered_validators,
 		d_parameter,
 	);
-	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	);
 	assert!(calculated_committee.is_some());
 
@@ -383,10 +393,12 @@ fn ariadne_does_not_return_empty_committee() {
 		&[],
 		DParameter { num_permissioned_candidates: 1, num_registered_candidates: 1 },
 	);
-	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let calculated_committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	);
 	assert_eq!(calculated_committee, None);
 }
@@ -399,10 +411,12 @@ fn candidates_with_duplicated_keys_are_removed() {
 		DParameter { num_permissioned_candidates: 4, num_registered_candidates: 28 },
 	);
 
-	let committee = select_authorities::<AccountId, AccountKeys, MaxValidators>(
+	let committee = select_authorities::<AccountId, AccountKeys, MaxValidators, _>(
 		UtxoId::default(),
 		authority_selection_inputs,
 		ScEpochNumber::zero(),
+		|id: &AccountId| id.clone(),
+		|_, _| None,
 	)
 	.unwrap();
 	let committee_names = committee

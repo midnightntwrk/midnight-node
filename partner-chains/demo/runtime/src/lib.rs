@@ -406,10 +406,12 @@ impl pallet_session_validator_management::Config for Runtime {
 		input: AuthoritySelectionInputs,
 		sidechain_epoch: ScEpochNumber,
 	) -> Option<BoundedVec<Self::CommitteeMember, Self::MaxValidators>> {
-		select_authorities::<opaque::cross_chain_app::Public, SessionKeys, MaxValidators>(
+		select_authorities::<opaque::cross_chain_app::Public, SessionKeys, MaxValidators, _>(
 			Sidechain::genesis_utxo(),
 			input,
 			sidechain_epoch,
+			|id: &opaque::cross_chain_app::Public| AccountId::from(id.clone()),
+			pallet_session::Pallet::<Runtime>::key_owner,
 		)
 	}
 
