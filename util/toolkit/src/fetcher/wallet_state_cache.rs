@@ -213,21 +213,23 @@ pub fn wallet_cache_key(seed: &WalletSeed, scheme: UnshieldedSignatureScheme) ->
 
 /// Cache key for an indexer-path wallet entry.
 ///
-/// The `0xFF` source byte sits where [`wallet_cache_key`] puts `scheme_discriminant` (0 or 1), so
-/// replay and indexer entries can never collide — their `block_height` and cursor semantics are
-/// incompatible, and the indexer path writes no [`LedgerSnapshot`]. That missing snapshot is also
-/// why the ledger generation is folded in here: the replay path gets its generation check from
-/// `restore_context_from_ledger_snapshot`, and the v8→v9 hardfork rewrites state, so a pre-fork
-/// cursor is meaningless afterwards.
+/// The `indexer` domain tag keeps these disjoint from [`wallet_cache_key`]: their `block_height`
+/// and cursor semantics are incompatible, and the indexer path writes no [`LedgerSnapshot`]. That
+/// missing snapshot is also why the ledger generation is folded in here: the replay path gets its
+/// generation check from `restore_context_from_ledger_snapshot`, and the v8→v9 hardfork rewrites
+/// state, so a pre-fork cursor is meaningless afterwards. The scheme is folded in because each
+/// identity has its own unshielded address.
 ///
 /// The chain itself is the existing `chain_id` directory namespace (block 1's hash).
-///
-/// No scheme byte: the indexer path serves only the Schnorr NIGHT identity.
 #[cfg(feature = "indexer-client")]
-pub fn indexer_wallet_cache_key(seed: &WalletSeed, ledger_version: LedgerVersion) -> H256 {
-	const INDEXER_SOURCE: u8 = 0xFF;
+pub fn indexer_wallet_cache_key(
+	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
+	ledger_version: LedgerVersion,
+) -> H256 {
 	let mut hasher = Sha256::new();
-	hasher.update([WALLET_CACHE_FORMAT_VERSION, INDEXER_SOURCE, ledger_version as u8]);
+	hasher.update(b"indexer");
+	hasher.update([WALLET_CACHE_FORMAT_VERSION, scheme_discriminant(scheme), ledger_version as u8]);
 	hasher.update(seed.as_bytes());
 	H256::from_slice(&hasher.finalize())
 }
@@ -931,14 +933,20 @@ mod tests {
 		)
 		.unwrap();
 
-		let v9 = indexer_wallet_cache_key(&seed, LedgerVersion::Ledger9);
-		let v8 = indexer_wallet_cache_key(&seed, LedgerVersion::Ledger8);
+		let key = |scheme, version| indexer_wallet_cache_key(&seed, scheme, version);
+		let v9 = key(UnshieldedSignatureScheme::Schnorr, LedgerVersion::Ledger9);
+		let v8 = key(UnshieldedSignatureScheme::Schnorr, LedgerVersion::Ledger8);
 		assert_ne!(v8, v9, "a v8 cursor must not be served to a v9 sync");
+		assert_ne!(
+			v9,
+			key(UnshieldedSignatureScheme::Ecdsa, LedgerVersion::Ledger9),
+			"each identity has its own unshielded address"
+		);
 
 		for scheme in [UnshieldedSignatureScheme::Schnorr, UnshieldedSignatureScheme::Ecdsa] {
 			let replay = wallet_cache_key(&seed, scheme);
-			assert_ne!(replay, v8);
-			assert_ne!(replay, v9);
+			assert_ne!(replay, key(scheme, LedgerVersion::Ledger8));
+			assert_ne!(replay, key(scheme, LedgerVersion::Ledger9));
 		}
 	}
 
