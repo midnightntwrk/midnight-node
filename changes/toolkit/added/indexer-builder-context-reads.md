@@ -7,9 +7,5 @@ The indexer-backed `IndexerContext` (ledger 8 and 9) now answers `ledger_paramet
 indexer has no full ledger state, and the node validates on submit. `zswap_state` and
 `backs_dust_generation` remain unimplemented.
 
-Also fixes the indexer block timestamp unit: `Block.timestamp` is milliseconds, and was being
-read as seconds, which put the dust TTL projection in `show-wallet --indexer-url` far in the
-future.
-
 PR: <link to PR>
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
