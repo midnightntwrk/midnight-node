@@ -1,7 +1,6 @@
-# GraphQL operations for the indexer-backed `BuilderContext` (feature `indexer-client`).
-# Typed against the indexer's committed schema (`indexer/indexer-api/graphql/schema-v4.graphql`)
-# at compile time via `graphql_client`. Only the operations the read-only `show-wallet` path
-# needs are defined here (see issue #1186).
+# GraphQL operations for the indexer-backed `BuilderContext` (feature `indexer-client`), typed at
+# compile time against the indexer's committed schema
+# (`indexer/indexer-api/graphql/schema-v4.graphql`) via `graphql_client`.
 
 query LatestBlock {
   block {

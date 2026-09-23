@@ -881,10 +881,10 @@ prep:
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-    # Indexer GraphQL schema for the typed `indexer-client` feature (read at compile time by
-    # `graphql_client`). `--if-exists` so prep still builds when the `indexer` submodule isn't
-    # checked out: only targets that compile the toolkit (build*, check*, *-toolkit, *-fixtures)
-    # need it, and they fail clearly at the macro if it's missing. `+test` excludes the toolkit.
+    # Indexer GraphQL schema, read at compile time by the toolkit's `indexer-client`. `--if-exists`
+    # so prep builds without the `indexer` submodule: only targets that compile the toolkit (build*,
+    # check*, *-toolkit, *-fixtures) need it, and they fail clearly at the macro. `+test` excludes
+    # the toolkit.
     COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     RUN rustup show

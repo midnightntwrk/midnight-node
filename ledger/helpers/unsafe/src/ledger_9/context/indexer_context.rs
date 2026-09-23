@@ -63,11 +63,10 @@ pub struct IndexerContext<D: DB + Clone> {
 }
 
 impl<D: DB + Clone> IndexerContext<D> {
-	/// Build a context targeting `indexer_url` (an `api/v4` base, e.g.
-	/// `http://127.0.0.1:8088/api/v4`). `network_id` (e.g. `undeployed`) is used for viewing-key
-	/// and address derivation. `wallet_sync_concurrency` caps the per-seed fan-out in
-	/// [`init_wallets`](Self::init_wallets); see
-	/// [`DEFAULT_WALLET_SYNC_CONCURRENCY`](crate::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY).
+	/// Build a context targeting `indexer_url`, an `api/v4` base such as
+	/// `http://127.0.0.1:8088/api/v4`. `network_id` (e.g. `undeployed`) derives viewing keys and
+	/// addresses; `wallet_sync_concurrency` caps the seed fan-out in
+	/// [`init_wallets`](Self::init_wallets).
 	pub fn new(
 		indexer_url: &str,
 		network_id: impl Into<String>,
@@ -96,10 +95,8 @@ impl<D: DB + Clone> IndexerContext<D> {
 impl IndexerContext<DefaultDB> {
 	/// Connect to the indexer and sync each seed's wallet to the chain tip.
 	///
-	/// Seeds sync `wallet_sync_concurrency` at a time, and within each seed the shielded /
-	/// unshielded / dust subscriptions drain concurrently too: the work is network-bound, and
-	/// `IndexerClient` supports the overlap — every method takes `&self` and opens a fresh
-	/// independent WebSocket per subscription.
+	/// Seeds sync `wallet_sync_concurrency` at a time, and each seed's shielded / unshielded / dust
+	/// subscriptions drain concurrently, each on its own WebSocket.
 	///
 	/// No toolkit-side cache: each call re-drains to tip.
 	pub async fn init_wallets(&self, seeds: &[WalletSeed]) -> Result<(), BoxError> {
@@ -141,11 +138,6 @@ impl IndexerContext<DefaultDB> {
 	}
 
 	/// Build the wallet for `seed` and sync its shielded / unshielded / dust streams concurrently.
-	///
-	/// The three sub-syncs borrow disjoint fields of the freshly-built [`Wallet`]
-	/// (`&mut shielded`, `&unshielded`, `&mut dust`), so [`tokio::try_join!`] can overlap their
-	/// network waits on this single task. Returns the seed, the synced wallet, and its reconciled
-	/// unshielded UTXOs for the caller to store.
 	async fn sync_wallet(
 		&self,
 		seed: &WalletSeed,
@@ -304,10 +296,9 @@ impl IndexerContext<DefaultDB> {
 
 		// Keyed by (intent_hash, output_index) so a later spend removes the matching created UTXO.
 		let mut utxos: HashMap<(Vec<u8>, u32), (Utxo, Timestamp)> = HashMap::new();
-		// The progress heartbeat's first tick is immediate, so a sentinel (carrying
-		// `highest_transaction_id`) usually arrives *before* the backlog finishes streaming. Stop
-		// once the highest applied id reaches that target, checked in both arms below. Ids are
-		// 1-based, so an address with no transactions reports 0 and stops on the first progress.
+		// The heartbeat's first tick is immediate, so its `highest_transaction_id` usually arrives
+		// *before* the backlog finishes. Stop once the highest applied id reaches it (checked in
+		// both arms). Ids are 1-based: an address with no transactions reports 0.
 		let mut highest_applied_transaction_id = 0u64;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;

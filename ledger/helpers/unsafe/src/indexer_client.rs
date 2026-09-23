@@ -22,15 +22,10 @@
 //! It speaks GraphQL over HTTP (queries/mutations) and over the `graphql-transport-ws` WebSocket
 //! sub-protocol (subscriptions) — the WS framing mirrors the indexer's own reference client in
 //! `indexer/indexer-tests/src/graphql_ws_client.rs`. The `HexEncoded` scalar is decoded to raw
-//! bytes here; turning them into ledger types is each version's `IndexerContext`, which is why
-//! this client sits at the crate root rather than inside one generation.
+//! bytes here; turning them into ledger types is each version's `IndexerContext`.
 //!
-//! Only the operations needed by the read-only `show-wallet` path are defined (see issue #1186):
-//! `connect`/`disconnect`, the latest `block`, and the shielded/unshielded/dust subscriptions.
-//!
-//! The stream-drain policy that sits on top of those subscriptions — idle timeouts, the wallet
-//! fan-out ceiling, and the [`SyncProgress`] counters — is version-independent too, so it lives
-//! here rather than being duplicated in each generation's `IndexerContext`.
+//! The version-independent stream-drain policy also lives here: idle timeouts, the wallet fan-out
+//! ceiling, and the [`SyncProgress`] counters.
 
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -47,8 +42,8 @@ use tokio_tungstenite::{
 };
 
 // Custom GraphQL scalars, resolved by name from this module scope by the `GraphQLQuery` derives
-// below (the indexer's own client does the same). `HexEncoded` blobs are kept as hex strings and
-// decoded to bytes here; `Unit` is the indexer's void scalar (JSON `null`).
+// below. `HexEncoded` blobs are kept as hex strings and decoded to bytes here; `Unit` is the
+// indexer's void scalar (JSON `null`).
 #[allow(non_camel_case_types)]
 type HexEncoded = String;
 #[allow(non_camel_case_types)]
@@ -134,9 +129,8 @@ pub enum TransactionResultKind {
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
 	pub height: u64,
-	/// The block's node spec version (e.g. `1_000_000`). The indexer serves each chain in its own
-	/// ledger encodings, so callers map this via `LedgerVersion::from_spec_version` to pick a
-	/// matching `IndexerContext`.
+	/// Node spec version (e.g. `1_000_000`). The indexer serves each chain in its own encodings,
+	/// so map it via `LedgerVersion::from_spec_version` to pick the matching `IndexerContext`.
 	pub protocol_version: u32,
 	/// Block timestamp in unix seconds.
 	pub timestamp: u64,
@@ -186,8 +180,8 @@ pub struct UnshieldedUtxoData {
 #[derive(Debug, Clone)]
 pub enum UnshieldedEvent {
 	Transaction {
-		/// The indexer's transaction id, compared against `Progress::highest_transaction_id` to
-		/// detect catch-up (the same id space `make_progress_update` reports).
+		/// Same id space as `Progress::highest_transaction_id`, which it is compared against to
+		/// detect catch-up.
 		transaction_id: u64,
 		created: Vec<UnshieldedUtxoData>,
 		spent: Vec<UnshieldedUtxoData>,
@@ -596,10 +590,9 @@ fn decode_hex(s: &str) -> IndexerResult<Vec<u8>> {
 
 /// Dead-connection backstop for the progress-bearing subscriptions (shielded, unshielded).
 ///
-/// These streams signal catch-up with a progress heartbeat, not with silence — every 30s
-/// server-side (`progress_update_interval` in the indexer's `config.yaml`), even for a wallet with
-/// no relevant transactions. Must stay comfortably above that interval: set it equal and the local
-/// timer beats the heartbeat across the network, and a sparse-but-live wallet reads as drained.
+/// These streams heartbeat progress every 30s (the indexer's `progress_update_interval`), even for
+/// a wallet with no relevant transactions. Keep this comfortably above 30s: at equal values the
+/// local timer beats the heartbeat across the network and a sparse-but-live wallet reads drained.
 pub const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// How long [`ShieldedCatchUp`] waits after a progress tick before probing for a fresh one.
@@ -668,12 +661,10 @@ pub const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// sync run drains the subscriptions.
 const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Default ceiling on wallets drained at once by one sync run; overridable per run (the toolkit
-/// exposes it as `show-wallet --indexer-concurrency` / `MN_INDEXER_CONCURRENCY`).
+/// Default ceiling on wallets drained at once by one sync run.
 ///
 /// Each wallet holds three concurrent subscriptions, so the indexer sees up to three times this
-/// many open WebSockets — and as many server-side scans — from a single run. Unbounded fan-out
-/// over the seed list would instead scale that with the caller's seed count.
+/// many open WebSockets, and as many server-side scans, from a single run.
 ///
 /// [`NonZeroUsize`] because the value reaches `StreamExt::buffer_unordered`, which polls nothing
 /// and hangs on a limit of zero rather than rejecting it.
@@ -707,8 +698,7 @@ impl StreamProgress {
 	/// Fold a newly-observed scanned frontier into the shared total.
 	///
 	/// `last` is this stream's previously-contributed value; only the positive delta `now - *last`
-	/// is added, so repeated reports and concurrent seeds sum correctly and never double-count.
-	/// Non-increasing values are ignored (the frontiers are monotonic).
+	/// is added, so repeated reports and concurrent seeds never double-count.
 	pub fn advance_scanned(&self, last: &mut u64, now: u64) {
 		if now > *last {
 			self.scanned.fetch_add(now - *last, Ordering::Relaxed);

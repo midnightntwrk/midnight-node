@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Only built when the toolkit is compiled with the `indexer-client` feature (the default).
 #![cfg(feature = "indexer-client")]
 
 //! End-to-end test for indexer-backed `show-wallet` (issue #1186).
