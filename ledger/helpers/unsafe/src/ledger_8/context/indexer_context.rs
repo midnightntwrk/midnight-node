@@ -44,6 +44,7 @@ use crate::ledger_8::{
 	UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState, deserialize,
 	deserialize_untagged, make_block_context, serialize_untagged,
 };
+use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -243,7 +244,12 @@ impl IndexerContext<DefaultDB> {
 
 		let utxo_blobs = unshielded_utxos
 			.iter()
-			.map(|(utxo, ctime)| Ok((serialize_untagged(utxo)?, ctime.to_secs())))
+			.map(|(utxo, ctime)| {
+				Ok(UnshieldedUtxoRaw {
+					utxo: serialize_untagged(utxo)?,
+					ctime_secs: ctime.to_secs(),
+				})
+			})
 			.collect::<Result<Vec<_>, std::io::Error>>()?;
 
 		let next = WalletSyncState {
@@ -267,8 +273,8 @@ impl IndexerContext<DefaultDB> {
 		shielded: &mut ShieldedWallet<DefaultDB>,
 		resume: Option<&WalletSyncState>,
 		progress: &SyncProgress,
-	) -> Result<Option<Vec<u8>>, BoxError> {
-		if let Some(bytes) = resume.and_then(|r| r.shielded_state.as_ref()) {
+	) -> Result<Option<ZswapWalletStateRaw>, BoxError> {
+		if let Some(ZswapWalletStateRaw(bytes)) = resume.and_then(|r| r.shielded_state.as_ref()) {
 			shielded.state = deserialize_untagged::<WalletState<DefaultDB>>(&bytes[..])?;
 		}
 		let viewing_key = shielded.viewing_key(&self.network_id);
@@ -289,7 +295,7 @@ impl IndexerContext<DefaultDB> {
 			log::debug!("indexer: shielded tail misaligned; not caching this wallet's zswap state");
 			return Ok(None);
 		}
-		Ok(Some(serialize_untagged(&shielded.state)?))
+		Ok(Some(ZswapWalletStateRaw(serialize_untagged(&shielded.state)?)))
 	}
 
 	/// Stops per [`ShieldedCatchUp`], probing for fresh progress while the heartbeat is too slow.
@@ -431,10 +437,10 @@ impl IndexerContext<DefaultDB> {
 		// both arms). Ids are 1-based: an address with no transactions reports 0.
 		let mut highest_applied_transaction_id = 0u64;
 		if let Some(r) = resume {
-			for (blob, ctime) in &r.unshielded_utxos {
-				let utxo: Utxo = deserialize_untagged(&blob[..])?;
+			for UnshieldedUtxoRaw { utxo, ctime_secs } in &r.unshielded_utxos {
+				let utxo: Utxo = deserialize_untagged(&utxo[..])?;
 				let key = (utxo.intent_hash.0.0.to_vec(), utxo.output_no);
-				utxos.insert(key, (utxo, Timestamp::from_secs(*ctime)));
+				utxos.insert(key, (utxo, Timestamp::from_secs(*ctime_secs)));
 			}
 			highest_applied_transaction_id = r.unshielded_tx_id;
 		}
@@ -512,10 +518,10 @@ impl IndexerContext<DefaultDB> {
 		resume: Option<&WalletSyncState>,
 		tip_time: Timestamp,
 		progress: &SyncProgress,
-	) -> Result<(Option<Vec<u8>>, u64), BoxError> {
+	) -> Result<(Option<DustLocalStateRaw>, u64), BoxError> {
 		let mut resume_id = 0u64;
 		if let Some(r) = resume
-			&& let Some(bytes) = &r.dust_state
+			&& let Some(DustLocalStateRaw(bytes)) = &r.dust_state
 		{
 			let state = deserialize_untagged::<DustLocalState<DefaultDB>>(&bytes[..])?;
 			dust.dust_local_state = Some(Sp::new(state));
@@ -554,8 +560,11 @@ impl IndexerContext<DefaultDB> {
 		dust.replay_events(&events).map_err(|e| format!("replay dust events: {e:?}"))?;
 		// Snapshot before the TTL projection: `process_ttls` expires UTXOs against *this* tip, so
 		// persisting its output and resuming from it would expire against two different tips.
-		let dust_state =
-			dust.dust_local_state.as_ref().map(|s| serialize_untagged(&**s)).transpose()?;
+		let dust_state = dust
+			.dust_local_state
+			.as_ref()
+			.map(|s| serialize_untagged(&**s).map(DustLocalStateRaw))
+			.transpose()?;
 		dust.process_ttls(tip_time);
 		progress.dust.finish();
 		Ok((dust_state, applied_id))

@@ -156,6 +156,7 @@ mod tests {
 		Timestamp, Transaction, UnshieldedOffer, UnshieldedTokenType, UnshieldedWallet, Utxo,
 		UtxoOutput, UtxoSpend, Wallet, make_block_context, serialize_untagged,
 	};
+	use midnight_ledger_unsafe_helpers::UnshieldedUtxoRaw;
 	use std::num::NonZeroUsize;
 
 	fn wallet(seed: &ledger_9::WalletSeed) -> Wallet<DefaultDB> {
@@ -216,7 +217,10 @@ mod tests {
 			5,
 			WalletSyncState {
 				shielded_state: None,
-				unshielded_utxos: vec![(serialize_untagged(&coin).unwrap(), 1)],
+				unshielded_utxos: vec![UnshieldedUtxoRaw {
+					utxo: serialize_untagged(&coin).unwrap(),
+					ctime_secs: 1,
+				}],
 				unshielded_tx_id: 9,
 				dust_state: None,
 				dust_event_id: 0,
