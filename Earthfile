@@ -678,7 +678,7 @@ node-ci-image-single-platform:
     LET COMPACT_SUBMODULE_VERSION = "$(scripts/compact-submodule-version.sh)"
     LET COMPACTC_VERSION = "$(cat COMPACTC_VERSION)"
     ARG NATIVEARCH
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 
     # Install build dependencies. No `microdnf update`: AL2023 locks $releasever to the
     # snapshot baked into the FROM digest above (system-release(releasever)), so these
@@ -1650,7 +1650,7 @@ audit-rust:
 audit-npm:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 
     # Install dependencies for Node.js (curl-minimal already in base image)
     RUN microdnf -y install tar gzip xz && \
@@ -1686,7 +1686,7 @@ audit-npm:
 audit-yarn:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 
     # Install dependencies for Node.js (curl-minimal already in base image)
     RUN microdnf -y install tar gzip xz && \
@@ -1735,7 +1735,7 @@ audit:
 # fix-lock-npm regenerates a single npm package-lock.json inside a container
 fix-lock-npm:
     ARG DIRECTORY
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
