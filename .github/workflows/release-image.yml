@@ -44,30 +44,6 @@ on:
         description: "Skip srtool runtime WASM build?"
         required: false
         default: false
-      archive-changes:
-        type: boolean
-        description: 'Archive changes for this release on the main branch'
-        required: true
-        default: true
-      archive-mode:
-        type: choice
-        options:
-          - move
-          - copy
-          - delete
-        description: 'Archive changes for this release on the main branch'
-        required: true
-        default: move
-      bump-version:
-        type: boolean
-        description: 'Bump components version on main'
-        required: true
-        default: false
-      reset-changes:
-        type: boolean
-        description: 'Reset `changes/` to the change template'
-        required: true
-        default: true
 
 env:
   # Registry the images built here are pushed to and pulled from. Derived from the repo owner
@@ -601,28 +577,6 @@ jobs:
               -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
               || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
           fi
-
-  archive-changes:
-    needs: [validate-inputs, prepare-release, finalize-release]
-    if: ${{ !cancelled() && !failure() }}
-    # Caps the called workflow's GITHUB_TOKEN — archive-and-bump opens a PR
-    # with a signed commit, so it needs contents + pull-requests write.
-    permissions:
-      contents: write
-      pull-requests: write
-    uses: ./.github/workflows/archive-changes.yml
-    with:
-      ref: ${{ inputs.ref }}
-      release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
-      archive-changes: ${{ inputs.archive-changes }}
-      archive-mode: ${{ inputs.archive-mode }}
-      reset-changes: ${{ inputs.reset-changes }}
-      bump-version: ${{ inputs.bump-version }}
-      skip-node: ${{ inputs.skip-node }}
-      skip-toolkit: ${{ inputs.skip-toolkit }}
-      skip-runtime: ${{ inputs.skip-runtime }}
-    secrets:
-      MIDNIGHTCI_PACKAGES_READ: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
   create-release-assets:
     permissions:

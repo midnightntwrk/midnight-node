@@ -28,7 +28,7 @@ use ledger_helpers_local::{
 	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
 	UtxoId, UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletSeed,
 };
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 use crate::{
 	progress::Spin,
