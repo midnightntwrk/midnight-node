@@ -285,7 +285,8 @@ impl IndexerClient {
 		Ok(BlockInfo {
 			height: block.height as u64,
 			protocol_version: block.protocol_version as u32,
-			timestamp: block.timestamp as u64,
+			// The indexer serves the raw `pallet_timestamp` value, which is milliseconds.
+			timestamp: block.timestamp as u64 / 1000,
 			zswap_end_index: block.zswap_end_index as u64,
 			ledger_parameters: decode_hex(&block.ledger_parameters)?,
 		})
