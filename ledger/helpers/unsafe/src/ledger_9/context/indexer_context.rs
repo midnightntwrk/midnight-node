@@ -47,8 +47,12 @@ use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// A synced unshielded UTXO: creation time, and whether it backs dust generation.
-type SyncedUtxo = (Utxo, Timestamp, bool);
+/// A synced unshielded UTXO.
+struct SyncedUtxo {
+	utxo: Utxo,
+	ctime: Timestamp,
+	backs_dust_generation: bool,
+}
 
 /// An indexer-backed [`BuilderContext`].
 ///
@@ -180,11 +184,11 @@ impl IndexerContext<DefaultDB> {
 
 		let utxo_blobs = unshielded_utxos
 			.iter()
-			.map(|(utxo, ctime, backs)| {
+			.map(|u| {
 				Ok(UnshieldedUtxoRaw {
-					utxo: serialize_untagged(utxo)?,
-					ctime_secs: ctime.to_secs(),
-					backs_dust_generation: *backs,
+					utxo: serialize_untagged(&u.utxo)?,
+					ctime_secs: u.ctime.to_secs(),
+					backs_dust_generation: u.backs_dust_generation,
 				})
 			})
 			.collect::<Result<Vec<_>, std::io::Error>>()?;
@@ -374,12 +378,12 @@ impl IndexerContext<DefaultDB> {
 		// both arms). Ids are 1-based: an address with no transactions reports 0.
 		let mut highest_applied_transaction_id = 0u64;
 		if let Some(r) = resume {
-			for UnshieldedUtxoRaw { utxo, ctime_secs, backs_dust_generation } in &r.unshielded_utxos
-			{
-				let utxo: Utxo = deserialize_untagged(&utxo[..])?;
+			for raw in &r.unshielded_utxos {
+				let utxo: Utxo = deserialize_untagged(&raw.utxo[..])?;
 				let key = (utxo.intent_hash.0.0.to_vec(), utxo.output_no);
-				utxos
-					.insert(key, (utxo, Timestamp::from_secs(*ctime_secs), *backs_dust_generation));
+				let ctime = Timestamp::from_secs(raw.ctime_secs);
+				let backs_dust_generation = raw.backs_dust_generation;
+				utxos.insert(key, SyncedUtxo { utxo, ctime, backs_dust_generation });
 			}
 			highest_applied_transaction_id = r.unshielded_tx_id;
 		}
@@ -419,7 +423,11 @@ impl IndexerContext<DefaultDB> {
 						let ctime = Timestamp::from_secs(u.ctime.unwrap_or(0));
 						utxos.insert(
 							(u.intent_hash.clone(), u.output_index),
-							(utxo, ctime, u.registered_for_dust_generation),
+							SyncedUtxo {
+								utxo,
+								ctime,
+								backs_dust_generation: u.registered_for_dust_generation,
+							},
 						);
 					}
 					for u in &spent {
@@ -442,7 +450,7 @@ impl IndexerContext<DefaultDB> {
 		}
 
 		let mut utxos: Vec<_> = utxos.into_values().collect();
-		utxos.sort_by(|a, b| a.0.cmp(&b.0));
+		utxos.sort_by(|a, b| a.utxo.cmp(&b.utxo));
 		progress.unshielded.finish();
 		Ok((utxos, highest_applied_transaction_id))
 	}
@@ -645,7 +653,7 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 				panic!("Unshielded UTXOs for seed {seed:?} not synced in the `IndexerContext`")
 			})
 			.iter()
-			.map(|(utxo, ctime, _)| (utxo.clone(), *ctime))
+			.map(|u| (u.utxo.clone(), u.ctime))
 			.collect()
 	}
 
@@ -653,13 +661,12 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	/// it, so the cached flag is exactly what a re-query would return. An unsynced UTXO answers
 	/// `false`, as the replay path's `night_indices` lookup does for a nonce it does not track.
 	async fn backs_dust_generation(&self, utxo: &Utxo) -> bool {
-		// ponytail: linear scan over all synced UTXOs; index by initial nonce if wallets get large.
 		self.unshielded
 			.lock()
 			.expect("IndexerContext unshielded lock poisoned")
 			.values()
 			.flatten()
-			.any(|(u, _, backs)| *backs && u == utxo)
+			.any(|u| u.backs_dust_generation && u.utxo == *utxo)
 	}
 
 	async fn zswap_state(&self) -> ZswapChainState<D> {
@@ -765,8 +772,16 @@ mod tests {
 		ctx.unshielded.lock().unwrap().insert(
 			WalletSeed::from([0u8; 32]),
 			vec![
-				(utxo(0), Timestamp::from_secs(0), true),
-				(utxo(1), Timestamp::from_secs(0), false),
+				SyncedUtxo {
+					utxo: utxo(0),
+					ctime: Timestamp::from_secs(0),
+					backs_dust_generation: true,
+				},
+				SyncedUtxo {
+					utxo: utxo(1),
+					ctime: Timestamp::from_secs(0),
+					backs_dust_generation: false,
+				},
 			],
 		);
 		assert!(ctx.backs_dust_generation(&utxo(0)).await);
