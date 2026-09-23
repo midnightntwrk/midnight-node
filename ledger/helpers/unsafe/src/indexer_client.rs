@@ -305,6 +305,23 @@ impl IndexerClient {
 		Ok(ShieldedStream(self.open_subscription::<ShieldedTransactions>(variables).await?))
 	}
 
+	/// Take one fresh progress tick for `session_id` from a short-lived extra subscription, which
+	/// the server answers with an immediate tick. `index` should be at or past the chain's highest
+	/// end index so the extra subscription streams no backlog. `None` if it closes first.
+	pub async fn shielded_progress(
+		&self,
+		session_id: &str,
+		index: u64,
+	) -> IndexerResult<Option<ShieldedEvent>> {
+		let mut stream = self.shielded_transactions(session_id, index).await?;
+		while let Some(event) = stream.next().await {
+			if let event @ ShieldedEvent::Progress { .. } = event? {
+				return Ok(Some(event));
+			}
+		}
+		Ok(None)
+	}
+
 	/// Open the `unshieldedTransactions` subscription for `address`.
 	pub async fn unshielded_transactions(
 		&self,
@@ -585,6 +602,64 @@ fn decode_hex(s: &str) -> IndexerResult<Vec<u8>> {
 /// timer beats the heartbeat across the network, and a sparse-but-live wallet reads as drained.
 pub const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// How long [`ShieldedCatchUp`] waits after a progress tick before probing for a fresh one.
+///
+/// Must exceed the indexer's progress-cache TTL (`progress_cache.time_to_live`, 5s), so a probe
+/// always misses the cache, and its per-session subscription refill (10/min, one per 6s), so
+/// probing can continue indefinitely.
+pub const SHIELDED_PROGRESS_PROBE_INTERVAL: Duration = Duration::from_secs(7);
+
+/// Decides when a `shieldedTransactions` drain has received every relevant transaction.
+///
+/// The indexer's progress tick cannot be trusted on its own:
+/// - it is emitted immediately on subscribe, so it can precede the backlog of relevant
+///   transactions it counts;
+/// - `highestCheckedZswapEndIndex` is the maximum over *all* wallets, not this one;
+/// - it is served from a progress cache keyed by wallet (TTL 5s) that survives reconnects, so the
+///   first tick of a session can be a previous session's, taken before this wallet was indexed
+///   (`highestRelevantZswapEndIndex: 0` although relevant transactions exist).
+///
+/// So the drain is done once a tick says checking reached the first tick's `highestZswapEndIndex`,
+/// every transaction up to its `highestRelevantZswapEndIndex` has been received, and that tick
+/// is either past the cache TTL ("fresh") or reports a relevant transaction. A possibly cached
+/// `relevant > 0` misses at most what was indexed within the TTL. Correct whenever this wallet is
+/// the indexer's furthest-checked wallet; a first-time wallet on an indexer where another wallet
+/// is further ahead is only correct if it is fully indexed by the tick the drain stops on.
+#[derive(Debug)]
+pub struct ShieldedCatchUp {
+	target: Option<u64>,
+	received_end_index: u64,
+	tick: Option<(u64, u64, bool)>,
+}
+
+impl ShieldedCatchUp {
+	/// `start_index` is the index the subscription was opened at.
+	pub fn new(start_index: u64) -> Self {
+		Self { target: None, received_end_index: start_index, tick: None }
+	}
+
+	/// Record a progress tick; `fresh` means it was queried after the progress-cache TTL. Returns
+	/// whether the drain is done.
+	pub fn progress(&mut self, highest: u64, checked: u64, relevant: u64, fresh: bool) -> bool {
+		self.target.get_or_insert(highest);
+		self.tick = Some((checked, relevant, fresh));
+		self.done()
+	}
+
+	/// Record a received relevant transaction. Returns whether the drain is done.
+	pub fn relevant(&mut self, zswap_end_index: u64) -> bool {
+		self.received_end_index = self.received_end_index.max(zswap_end_index);
+		self.done()
+	}
+
+	fn done(&self) -> bool {
+		let (Some(target), Some((checked, relevant, fresh))) = (self.target, self.tick) else {
+			return false;
+		};
+		checked >= target && self.received_end_index >= relevant && (fresh || relevant > 0)
+	}
+}
+
 /// Idle timeout for the dust ledger-events subscription, which has no progress heartbeat: here
 /// silence genuinely means "no more events", so it needs no margin over the server's interval.
 pub const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -774,6 +849,41 @@ mod tests {
 			},
 			_ => panic!("expected progress"),
 		}
+	}
+
+	#[test]
+	fn catch_up_waits_for_backlog_after_early_progress() {
+		let mut c = ShieldedCatchUp::new(0);
+		assert!(!c.progress(28, 28, 28, false), "tick arrived before the transaction it counts");
+		assert!(!c.relevant(12));
+		assert!(c.relevant(28));
+	}
+
+	#[test]
+	fn catch_up_distrusts_unfresh_zero_relevant() {
+		let mut c = ShieldedCatchUp::new(0);
+		assert!(!c.progress(28, 28, 0, false), "may be a cached pre-index tick");
+		assert!(!c.relevant(28));
+		assert!(c.progress(28, 28, 28, true));
+
+		let mut empty = ShieldedCatchUp::new(0);
+		assert!(!empty.progress(28, 28, 0, false));
+		assert!(empty.progress(28, 28, 0, true), "a fresh tick settles a wallet with no txs");
+	}
+
+	#[test]
+	fn catch_up_waits_for_checking_to_reach_first_target() {
+		let mut c = ShieldedCatchUp::new(0);
+		assert!(!c.progress(28, 0, 0, false));
+		assert!(!c.progress(40, 20, 0, true), "checking has not reached the first target");
+		assert!(!c.relevant(20));
+		assert!(c.progress(40, 28, 20, true), "the target stays at the first tick's highest");
+	}
+
+	#[test]
+	fn catch_up_counts_from_the_start_index() {
+		let mut c = ShieldedCatchUp::new(30);
+		assert!(c.progress(40, 40, 28, false));
 	}
 
 	#[test]

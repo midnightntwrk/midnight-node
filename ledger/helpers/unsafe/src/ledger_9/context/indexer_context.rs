@@ -26,12 +26,13 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use futures::stream::{self, StreamExt, TryStreamExt};
-use tokio::time::timeout;
+use tokio::time::{Instant, sleep_until, timeout};
 
 use super::BuilderContext;
 use crate::indexer_client::{
-	DUST_IDLE_TIMEOUT, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT, ShieldedEvent,
-	SyncProgress, TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData,
+	DUST_IDLE_TIMEOUT, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT,
+	SHIELDED_PROGRESS_PROBE_INTERVAL, ShieldedCatchUp, ShieldedEvent, SyncProgress,
+	TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData,
 };
 use crate::ledger_9::{
 	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustWallet, Event,
@@ -191,29 +192,70 @@ impl IndexerContext<DefaultDB> {
 		Ok(())
 	}
 
+	/// Stops per [`ShieldedCatchUp`], probing for fresh progress while the heartbeat is too slow.
 	async fn drain_shielded(
 		&self,
 		shielded: &mut ShieldedWallet<DefaultDB>,
 		session_id: &str,
 		progress: &SyncProgress,
 	) -> Result<(), BoxError> {
-		let mut stream = self.client.shielded_transactions(session_id, 0).await?;
+		let start_index = 0;
+		let mut stream = self.client.shielded_transactions(session_id, start_index).await?;
+		let mut catch_up = ShieldedCatchUp::new(start_index);
+		let mut first_tick = true;
+		let mut highest = start_index;
+		let mut next_probe = Instant::now() + SHIELDED_PROGRESS_PROBE_INTERVAL;
+		let mut stall_at = Instant::now() + PROGRESS_IDLE_TIMEOUT;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
 		loop {
-			let event = match timeout(PROGRESS_IDLE_TIMEOUT, stream.next()).await {
-				Ok(Some(Ok(event))) => event,
-				Ok(Some(Err(e))) => return Err(e.into()),
-				Ok(None) => break,
-				Err(_) => {
+			// The indexer caches progress per wallet across sessions, so only the subscription's
+			// first tick can predate this session; later ticks and probes are past the cache TTL.
+			let (event, fresh) = tokio::select! {
+				event = stream.next() => match event {
+					Some(Ok(event)) => {
+						stall_at = Instant::now() + PROGRESS_IDLE_TIMEOUT;
+						let fresh = !(matches!(event, ShieldedEvent::Progress { .. })
+							&& std::mem::take(&mut first_tick));
+						(event, fresh)
+					},
+					Some(Err(e)) => return Err(e.into()),
+					None => break,
+				},
+				_ = sleep_until(next_probe) => {
+					next_probe = Instant::now() + SHIELDED_PROGRESS_PROBE_INTERVAL;
+					let probe = timeout(
+						SHIELDED_PROGRESS_PROBE_INTERVAL,
+						self.client.shielded_progress(session_id, highest),
+					);
+					match probe.await {
+						Ok(Ok(Some(event))) => (event, true),
+						Ok(Ok(None)) => continue,
+						Ok(Err(e)) => {
+							log::debug!("indexer: shielded progress probe failed: {e}");
+							continue;
+						},
+						Err(_) => {
+							log::debug!("indexer: shielded progress probe timed out");
+							continue;
+						},
+					}
+				},
+				_ = sleep_until(stall_at) => {
 					// Past the 30s progress heartbeat: the connection is stalled, not drained.
 					log::warn!("indexer: shielded subscription stalled (no progress heartbeat)");
 					break;
 				},
 			};
 
-			match event {
-				ShieldedEvent::Relevant { raw_transaction, result, collapsed_update, .. } => {
+			let done = match event {
+				ShieldedEvent::Relevant {
+					raw_transaction,
+					result,
+					zswap_end_index,
+					collapsed_update,
+					..
+				} => {
 					if let Some(update_bytes) = collapsed_update {
 						let update: MerkleTreeCollapsedUpdate = deserialize(&update_bytes[..])?;
 						shielded.state = shielded
@@ -225,17 +267,27 @@ impl IndexerContext<DefaultDB> {
 					let tx: MnTx = deserialize(&raw_transaction[..])?;
 					let offers = relevant_offers(&tx, result);
 					shielded.apply_offers(&offers);
+					catch_up.relevant(zswap_end_index)
 				},
 				ShieldedEvent::Progress {
-					highest_end_index, highest_checked_end_index, ..
+					highest_end_index,
+					highest_checked_end_index,
+					highest_relevant_end_index,
 				} => {
+					highest = highest.max(highest_end_index);
+					next_probe = Instant::now() + SHIELDED_PROGRESS_PROBE_INTERVAL;
 					progress.shielded.advance_scanned(&mut last_scanned, highest_checked_end_index);
 					progress.shielded.advance_target(&mut last_target, highest_end_index);
-					// Caught up once the indexer has checked every known output for relevance.
-					if highest_checked_end_index >= highest_end_index {
-						break;
-					}
+					catch_up.progress(
+						highest_end_index,
+						highest_checked_end_index,
+						highest_relevant_end_index,
+						fresh,
+					)
 				},
+			};
+			if done {
+				break;
 			}
 		}
 		Ok(())
@@ -254,9 +306,8 @@ impl IndexerContext<DefaultDB> {
 		let mut utxos: HashMap<(Vec<u8>, u32), (Utxo, Timestamp)> = HashMap::new();
 		// The progress heartbeat's first tick is immediate, so a sentinel (carrying
 		// `highest_transaction_id`) usually arrives *before* the backlog finishes streaming. Stop
-		// once the highest applied id reaches that target, checked in both arms below; mirrors the
-		// shielded `highest_checked >= highest` guard. Ids are 1-based, so an address with no
-		// transactions reports 0 and stops on the first progress.
+		// once the highest applied id reaches that target, checked in both arms below. Ids are
+		// 1-based, so an address with no transactions reports 0 and stops on the first progress.
 		let mut highest_applied_transaction_id = 0u64;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
