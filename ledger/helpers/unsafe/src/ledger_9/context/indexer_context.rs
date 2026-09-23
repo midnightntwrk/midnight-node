@@ -15,10 +15,10 @@
 //! GraphQL API instead of replaying every block into a local [`crate::ledger_9::LedgerState`]
 //! (see issue #1186).
 //!
-//! Only the read-only `show-wallet` path is implemented: [`IndexerContext::init_wallets`] drains
-//! the shielded / unshielded / dust subscriptions to the chain tip, and the three
-//! [`BuilderContext`] methods that reads need serve that synced state. The methods used only when
-//! *building* transactions are `todo!()`.
+//! [`IndexerContext::init_wallets`] drains the shielded / unshielded / dust subscriptions to the
+//! chain tip, and the wallet methods serve that synced state. Block context, ledger parameters and
+//! contract state are queried from the indexer per call. [`BuilderContext::zswap_state`] and
+//! [`BuilderContext::backs_dust_generation`] are still `todo!()`.
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -28,10 +28,11 @@ use async_trait::async_trait;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use tokio::time::timeout;
 
-use super::BuilderContext;
+use super::{BuilderContext, DEFAULT_RESOLVER};
 use crate::indexer_client::{
-	DUST_IDLE_TIMEOUT, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT, ShieldedEvent,
-	SyncProgress, TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData, WalletSyncState,
+	BlockInfo, DUST_IDLE_TIMEOUT, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT,
+	ShieldedEvent, SyncProgress, TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData,
+	WalletSyncState,
 };
 use crate::ledger_9::{
 	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustLocalState,
@@ -40,7 +41,7 @@ use crate::ledger_9::{
 	PureGeneratorPedersen, Resolver, Serializable, ShieldedWallet, Signature, SignatureKind, Sp,
 	Storable, Tagged, Timestamp, Transaction, UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet,
 	WalletSeed, WalletState, ZswapChainState, deserialize, deserialize_untagged,
-	serialize_untagged,
+	make_block_context, serialize_untagged,
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -60,6 +61,7 @@ pub struct IndexerContext<D: DB + Clone> {
 	wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	/// Synced unshielded UTXOs per seed (created-minus-spent), with creation time.
 	unshielded: Mutex<HashMap<WalletSeed, Vec<(Utxo, Timestamp)>>>,
+	resolver: Mutex<&'static Resolver>,
 }
 
 impl<D: DB + Clone> IndexerContext<D> {
@@ -79,6 +81,7 @@ impl<D: DB + Clone> IndexerContext<D> {
 			wallet_sync_concurrency,
 			wallets: Mutex::new(HashMap::new()),
 			unshielded: Mutex::new(HashMap::new()),
+			resolver: Mutex::new(&DEFAULT_RESOLVER),
 		})
 	}
 
@@ -112,11 +115,10 @@ impl IndexerContext<DefaultDB> {
 	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
 		let block = self.client.latest_block().await?;
 		// Fall back to network defaults if the blob won't decode, so dust syncing still proceeds.
-		let params: LedgerParameters =
-			deserialize(&block.ledger_parameters[..]).unwrap_or_else(|e| {
-				log::warn!("indexer: could not decode ledger parameters ({e}); using defaults");
-				(*LedgerState::<DefaultDB>::new(self.network_id.clone()).parameters).clone()
-			});
+		let params = decode_ledger_parameters(&block).unwrap_or_else(|e| {
+			log::warn!("indexer: could not decode ledger parameters ({e}); using defaults");
+			(*LedgerState::<DefaultDB>::new(self.network_id.clone()).parameters).clone()
+		});
 		let tip_time = Timestamp::from_secs(block.timestamp);
 
 		let progress = SyncProgress { wallets: seeds.len(), ..Default::default() };
@@ -454,6 +456,18 @@ impl IndexerContext<DefaultDB> {
 	}
 }
 
+fn decode_ledger_parameters(block: &BlockInfo) -> Result<LedgerParameters, std::io::Error> {
+	deserialize(&block.ledger_parameters[..])
+}
+
+fn block_context(block: &BlockInfo) -> BlockContext {
+	make_block_context(
+		Timestamp::from_secs(block.timestamp),
+		HashOutput(block.parent_hash),
+		Timestamp::from_secs(block.last_block_time),
+	)
+}
+
 /// The midnight transaction for this ledger generation, matching `fork::apply_block_9`.
 type MnTx = Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
 
@@ -546,11 +560,13 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	}
 
 	async fn latest_block_context(&self) -> BlockContext {
-		todo!("indexer: R6 — block() query (PR #2, transaction building)")
+		let block = self.client.latest_block().await.expect("indexer: query latest block");
+		block_context(&block)
 	}
 
 	async fn ledger_parameters(&self) -> LedgerParameters {
-		todo!("indexer: R1 — Block.ledgerParameters blob (PR #2, transaction building)")
+		let block = self.client.latest_block().await.expect("indexer: query latest block");
+		decode_ledger_parameters(&block).expect("indexer: decode ledger parameters")
 	}
 
 	async fn network_id(&self) -> String {
@@ -576,16 +592,25 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		todo!("indexer: R4 — merkle update stream (PR #2, transaction building)")
 	}
 
-	async fn contract_state(&self, _address: ContractAddress) -> Option<ContractState<D>> {
-		todo!("indexer: R5 — contractAction(address).state blob (PR #2, transaction building)")
+	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {
+		let address_bytes = serialize_untagged(&address).expect("serialize contract address");
+		let state = self
+			.client
+			.contract_state(&address_bytes)
+			.await
+			.unwrap_or_else(|e| panic!("indexer: query contract state for {address:?}: {e}"))?;
+		Some(
+			deserialize(&state[..])
+				.unwrap_or_else(|e| panic!("indexer: decode contract state for {address:?}: {e}")),
+		)
 	}
 
 	async fn resolver(&self) -> &'static Resolver {
-		todo!("indexer: client-side resolver (PR #2, transaction building)")
+		*self.resolver.lock().expect("IndexerContext resolver lock poisoned")
 	}
 
-	async fn update_resolver(&self, _resolver: &'static Resolver) {
-		todo!("indexer: client-side resolver (PR #2, transaction building)")
+	async fn update_resolver(&self, resolver: &'static Resolver) {
+		*self.resolver.lock().expect("IndexerContext resolver lock poisoned") = resolver;
 	}
 
 	fn well_formed<S, P, B>(
@@ -598,8 +623,46 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		P: ProofKind<D> + Storable<D>,
 		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
 	{
-		// An indexer has no full LedgerState to validate against; the node re-validates on
-		// submission, so the builder treats the tx as well-formed here.
-		todo!("indexer: R7 — no local state; node re-validates on submit (PR #2)")
+		// No full ledger state to validate against; the node validates on submit.
+		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::ledger_9::{INITIAL_PARAMETERS, serialize};
+
+	fn block_info(ledger_parameters: Vec<u8>) -> BlockInfo {
+		BlockInfo {
+			height: 2,
+			protocol_version: 0,
+			timestamp: 1_700_000_006,
+			parent_hash: [0x11; 32],
+			last_block_time: 1_700_000_000,
+			zswap_end_index: 0,
+			ledger_parameters,
+		}
+	}
+
+	/// The indexer serves tagged `LedgerParameters`; an untagged decode would fail here.
+	#[test]
+	fn decodes_tagged_ledger_parameters() {
+		let block = block_info(serialize(&INITIAL_PARAMETERS).unwrap());
+		assert_eq!(decode_ledger_parameters(&block).unwrap(), INITIAL_PARAMETERS);
+	}
+
+	#[test]
+	fn block_context_matches_replay_construction() {
+		let ctx = block_context(&block_info(vec![]));
+		let expected = make_block_context(
+			Timestamp::from_secs(1_700_000_006),
+			HashOutput([0x11; 32]),
+			Timestamp::from_secs(1_700_000_000),
+		);
+		assert_eq!(ctx.tblock, expected.tblock);
+		assert_eq!(ctx.tblock_err, expected.tblock_err);
+		assert_eq!(ctx.parent_block_hash, expected.parent_block_hash);
+		assert_eq!(ctx.last_block_time, expected.last_block_time);
 	}
 }

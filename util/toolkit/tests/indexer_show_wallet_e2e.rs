@@ -34,10 +34,15 @@ mod common;
 
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_ledger_unsafe_helpers::IndexerClient;
+use midnight_ledger_unsafe_helpers::ledger_9::{BuilderContext, DefaultDB, IndexerContext};
 use midnight_node_toolkit::client::MidnightNodeClient;
+use parity_scale_codec::Decode;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
+use subxt::rpcs::methods::legacy::BlockNumber;
+use subxt::utils::H256;
 use testcontainers::{
 	GenericImage, ImageExt,
 	core::{ContainerPort, WaitFor},
@@ -108,6 +113,8 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 
 	// Wait until the indexer has caught up to the node's finalized tip, else balances read short.
 	wait_for_indexer_height(&indexer_url, node_height, Duration::from_secs(180)).await;
+
+	assert_context_reads_match_node(&indexer_url, &node_ws).await;
 
 	// --- run show-wallet against the indexer --------------------------------------------------
 	// Baseline: caching disabled, so every stream drains from the origin.
@@ -194,6 +201,59 @@ fn show_wallet(indexer_url: &str, cache_dir: Option<&Path>) -> serde_json::Value
 	let stdout = String::from_utf8_lossy(&output.stdout);
 	serde_json::from_str(&stdout)
 		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"))
+}
+
+/// `IndexerContext::ledger_parameters` / `latest_block_context` must agree with the node. Uses
+/// the ledger-9 context: the pinned node image tracks main.
+///
+/// The block context is checked against the node block its own `parent_block_hash` names, so the
+/// chain advancing between the two reads cannot race the comparison.
+async fn assert_context_reads_match_node(indexer_url: &str, node_ws: &str) {
+	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, NETWORK, NonZeroUsize::MIN)
+		.expect("failed to build indexer context");
+	let node = MidnightNodeClient::new(node_ws, Some(Duration::from_secs(30)))
+		.await
+		.expect("failed to connect to node");
+
+	assert_eq!(
+		ctx.ledger_parameters().await,
+		node.get_ledger_parameters().await.expect("node ledger parameters"),
+		"indexer ledger parameters must match the node's",
+	);
+
+	let block_ctx = ctx.latest_block_context().await;
+	let parent_hash = H256(block_ctx.parent_block_hash.0);
+	let parent = node
+		.rpc
+		.chain_get_header(Some(parent_hash))
+		.await
+		.expect("parent header query")
+		.expect("node does not know the indexer's parent block");
+	let child_hash = node
+		.rpc
+		.chain_get_block_hash(Some(BlockNumber::Number(parent.number + 1)))
+		.await
+		.expect("block hash query")
+		.expect("node has no block after the indexer's parent");
+
+	assert_eq!(block_ctx.last_block_time.to_secs(), node_timestamp_secs(&node, parent_hash).await);
+	assert_eq!(block_ctx.tblock.to_secs(), node_timestamp_secs(&node, child_hash).await);
+}
+
+/// `Timestamp::Now` at `hash`, read raw so it holds across runtime versions.
+async fn node_timestamp_secs(node: &MidnightNodeClient, hash: H256) -> u64 {
+	let key =
+		[sp_crypto_hashing::twox_128(b"Timestamp"), sp_crypto_hashing::twox_128(b"Now")].concat();
+	let raw = node
+		.api
+		.at_block(hash)
+		.await
+		.expect("node at_block")
+		.storage()
+		.fetch_raw(key)
+		.await
+		.expect("Timestamp::Now");
+	u64::decode(&mut &raw[..]).expect("decode Timestamp::Now") / 1000
 }
 
 /// Read the node's current finalized height (used as the indexer catch-up target).

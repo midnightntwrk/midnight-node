@@ -25,8 +25,7 @@
 //! bytes here; turning them into ledger types is each version's `IndexerContext`, which is why
 //! this client sits at the crate root rather than inside one generation.
 //!
-//! Only the operations needed by the read-only `show-wallet` path are defined (see issue #1186):
-//! `connect`/`disconnect`, the latest `block`, and the shielded/unshielded/dust subscriptions.
+//! Only the operations the indexer-backed `BuilderContext` needs are defined (see issue #1186).
 //!
 //! The stream-drain policy that sits on top of those subscriptions — idle timeouts, the wallet
 //! fan-out ceiling, and the [`SyncProgress`] counters — is version-independent too, so it lives
@@ -114,6 +113,14 @@ pub struct UnshieldedTransactions;
 )]
 pub struct DustLedgerEvents;
 
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct ContractActionState;
+
 #[derive(Debug, Error)]
 pub enum IndexerClientError {
 	#[error("http transport error: {0}")]
@@ -148,6 +155,10 @@ pub struct BlockInfo {
 	pub protocol_version: u32,
 	/// Block timestamp in unix seconds.
 	pub timestamp: u64,
+	/// Parent block hash; zero at genesis.
+	pub parent_hash: [u8; 32],
+	/// Parent block timestamp in unix seconds; the block's own at genesis, as in the replay path.
+	pub last_block_time: u64,
 	/// Exclusive end index into the global zswap merkle tree at this block.
 	pub zswap_end_index: u64,
 	/// Tagged-serialized `LedgerParameters` blob.
@@ -314,13 +325,15 @@ impl IndexerClient {
 		let block = data
 			.block
 			.ok_or_else(|| IndexerClientError::Malformed("no block returned".into()))?;
-		Ok(BlockInfo {
-			height: block.height as u64,
-			protocol_version: block.protocol_version as u32,
-			timestamp: block.timestamp as u64,
-			zswap_end_index: block.zswap_end_index as u64,
-			ledger_parameters: decode_hex(&block.ledger_parameters)?,
-		})
+		map_latest_block(block)
+	}
+
+	/// `contractAction(address) { state }` — the contract's latest tagged `ContractState` blob,
+	/// or `None` if it has no action. `address` is the untagged `ContractAddress` encoding.
+	pub async fn contract_state(&self, address: &[u8]) -> IndexerResult<Option<Vec<u8>>> {
+		let variables = contract_action_state::Variables { address: hex::encode(address) };
+		let data = self.run_query::<ContractActionState>(variables).await?;
+		data.contract_action.map(|action| decode_hex(&action.state)).transpose()
 	}
 
 	/// `block(offset: {height})` — that block's hash, or `None` if the indexer has not indexed it.
@@ -332,14 +345,7 @@ impl IndexerClient {
 		let Some(block) = self.run_query::<BlockAtHeight>(variables).await?.block else {
 			return Ok(None);
 		};
-		let bytes = decode_hex(&block.hash)?;
-		let hash: [u8; 32] = bytes.as_slice().try_into().map_err(|_| {
-			IndexerClientError::Decode(format!(
-				"block hash: expected 32 bytes, got {}",
-				bytes.len()
-			))
-		})?;
-		Ok(Some(hash))
+		Ok(Some(decode_hash(&block.hash)?))
 	}
 
 	/// Open the `shieldedTransactions` subscription starting at zswap `index`.
@@ -549,6 +555,24 @@ impl DustStream {
 	}
 }
 
+fn map_latest_block(block: latest_block::LatestBlockBlock) -> IndexerResult<BlockInfo> {
+	// The indexer serves the raw `pallet_timestamp` value, which is milliseconds.
+	let timestamp = block.timestamp as u64 / 1000;
+	let (parent_hash, last_block_time) = match block.parent {
+		Some(parent) => (decode_hash(&parent.hash)?, parent.timestamp as u64 / 1000),
+		None => ([0; 32], timestamp),
+	};
+	Ok(BlockInfo {
+		height: block.height as u64,
+		protocol_version: block.protocol_version as u32,
+		timestamp,
+		parent_hash,
+		last_block_time,
+		zswap_end_index: block.zswap_end_index as u64,
+		ledger_parameters: decode_hex(&block.ledger_parameters)?,
+	})
+}
+
 fn map_shielded(
 	node: shielded_transactions::ShieldedTransactionsShieldedTransactions,
 ) -> IndexerResult<ShieldedEvent> {
@@ -625,6 +649,13 @@ fn map_unshielded_utxo(
 fn decode_hex(s: &str) -> IndexerResult<Vec<u8>> {
 	let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
 	hex::decode(s).map_err(|e| IndexerClientError::Decode(format!("hex: {e}")))
+}
+
+fn decode_hash(s: &str) -> IndexerResult<[u8; 32]> {
+	let bytes = decode_hex(s)?;
+	bytes.as_slice().try_into().map_err(|_| {
+		IndexerClientError::Decode(format!("block hash: expected 32 bytes, got {}", bytes.len()))
+	})
 }
 
 /// Dead-connection backstop for the progress-bearing subscriptions (shielded, unshielded).
@@ -802,6 +833,55 @@ mod tests {
 		let block = resp.block.expect("block");
 		// 1_000_000 is a ledger-8 chain; the mapping itself lives in `LedgerVersion::from_spec_version`.
 		assert_eq!(block.protocol_version, 1_000_000);
+	}
+
+	#[test]
+	fn map_latest_block_converts_ms_and_reads_parent() {
+		let v = json!({
+			"block": {
+				"height": 2,
+				"protocolVersion": 3_000_000,
+				"timestamp": 1_700_000_006_500u64,
+				"zswapEndIndex": 7,
+				"ledgerParameters": "0x00",
+				"parent": { "hash": "11".repeat(32), "timestamp": 1_700_000_000_000u64 },
+			}
+		});
+		let resp: latest_block::ResponseData = serde_json::from_value(v).unwrap();
+		let block = map_latest_block(resp.block.unwrap()).unwrap();
+		assert_eq!(block.timestamp, 1_700_000_006);
+		assert_eq!(block.last_block_time, 1_700_000_000);
+		assert_eq!(block.parent_hash, [0x11; 32]);
+	}
+
+	#[test]
+	fn map_latest_block_genesis_has_no_parent() {
+		let v = json!({
+			"block": {
+				"height": 0,
+				"protocolVersion": 3_000_000,
+				"timestamp": 1_700_000_000_000u64,
+				"zswapEndIndex": 0,
+				"ledgerParameters": "00",
+				"parent": null,
+			}
+		});
+		let resp: latest_block::ResponseData = serde_json::from_value(v).unwrap();
+		let block = map_latest_block(resp.block.unwrap()).unwrap();
+		assert_eq!(block.parent_hash, [0; 32]);
+		assert_eq!(block.last_block_time, block.timestamp);
+	}
+
+	#[test]
+	fn contract_action_state_absent_is_none() {
+		let resp: contract_action_state::ResponseData =
+			serde_json::from_value(json!({ "contractAction": null })).unwrap();
+		assert!(resp.contract_action.is_none());
+		let resp: contract_action_state::ResponseData = serde_json::from_value(json!({
+			"contractAction": { "__typename": "ContractCall", "state": "0102" }
+		}))
+		.unwrap();
+		assert_eq!(decode_hex(&resp.contract_action.unwrap().state).unwrap(), vec![1, 2]);
 	}
 
 	/// Maps a `ShieldedTransactionsProgress` JSON payload through the generated types, pinning the
