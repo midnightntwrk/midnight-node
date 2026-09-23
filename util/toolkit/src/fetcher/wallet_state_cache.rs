@@ -36,7 +36,8 @@ use subxt::utils::H256;
 ///     wallet entries written against untagged (implicitly ledger-9) snapshots miss cleanly.
 /// v4: carries the indexer path's stream cursors (see [`indexer_wallet_cache_key`]), which changes
 ///     the postcard body layout. Costs existing replay caches one re-replay.
-pub const WALLET_CACHE_FORMAT_VERSION: u8 = 4;
+/// v5: each indexer-path unshielded UTXO also carries its `registeredForDustGeneration` flag.
+pub const WALLET_CACHE_FORMAT_VERSION: u8 = 5;
 
 /// On-disk format version for a [`LedgerSnapshot`] value, prefixed before the
 /// zstd-compressed postcard body.
@@ -119,8 +120,9 @@ pub struct CachedWalletState {
 	pub shielded_state_bytes: Vec<u8>,
 	#[serde(with = "serde_opt_bytes")]
 	pub dust_local_state_bytes: Option<Vec<u8>>,
-	/// Indexer path only: reconciled UTXO set as (untagged `Utxo`, ctime secs).
-	pub unshielded_utxos: Vec<(Vec<u8>, u64)>,
+	/// Indexer path only: reconciled UTXO set as (untagged `Utxo`, ctime secs, backs dust
+	/// generation).
+	pub unshielded_utxos: Vec<(Vec<u8>, u64, bool)>,
 	/// Indexer path only: highest applied `transactionId` / dust ledger-event `id`.
 	pub unshielded_tx_id: u64,
 	pub dust_event_id: u64,
@@ -947,7 +949,10 @@ mod tests {
 
 		let sync = WalletSyncState {
 			shielded_state: Some(vec![0x11; 64]),
-			unshielded_utxos: vec![(vec![0x22; 48], 1_700_000_000), (vec![0x33; 48], 0)],
+			unshielded_utxos: vec![
+				(vec![0x22; 48], 1_700_000_000, true),
+				(vec![0x33; 48], 0, false),
+			],
 			unshielded_tx_id: 4321,
 			dust_state: Some(vec![0x44; 32]),
 			dust_event_id: 9876,
@@ -978,6 +983,18 @@ mod tests {
 		let entry = CachedWalletState::from_sync_state(H256::zero(), 1, sync);
 		assert!(entry.shielded_state_bytes.is_empty());
 		assert!(entry.to_sync_state().shielded_state.is_none());
+	}
+
+	/// A v4 indexer entry's UTXOs lack the dust-generation flag; postcard could misread them.
+	#[test]
+	fn v4_wallet_value_is_a_miss() {
+		let seed_hash = H256::from([8u8; 32]);
+		let mut bytes = CachedWalletState { block_height: 5, ..Default::default() }
+			.to_value_bytes()
+			.expect("serialize");
+		bytes[0] = 4;
+		assert!(CachedWalletState::from_value_bytes(&bytes, seed_hash).is_err());
+		assert_eq!(CachedWalletState::block_height_from_header(&bytes), None);
 	}
 
 	#[test]
