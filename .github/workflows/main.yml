@@ -88,7 +88,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d #v2.87.0
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab #v2.87.13
         with:
           tool: just
 
