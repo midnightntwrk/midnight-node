@@ -244,6 +244,11 @@ mod test {
 			fetch_cache: FetchCacheConfig::InMemory,
 			ledger_state_db: String::new(),
 			replay_checkpoint_interval: 0,
+			indexer_url: None,
+			network: "undeployed".to_string(),
+			#[cfg(feature = "indexer-client")]
+			indexer_concurrency:
+				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		let args = GenerateSampleIntentArgs {

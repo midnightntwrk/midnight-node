@@ -151,6 +151,31 @@ pub struct Source {
 	/// (`--ledger-state-db`) to be enabled.
 	#[arg(long, global = true, default_value = "0", env = "MN_REPLAY_CHECKPOINT_INTERVAL")]
 	pub replay_checkpoint_interval: u64,
+
+	/// Reconstruct wallet state from a Midnight indexer (`api/v4` base URL, e.g.
+	/// `http://127.0.0.1:8088/api/v4`) instead of replaying every block from the node.
+	/// The ledger generation is taken from the chain the indexer serves.
+	#[arg(long, env = "MN_INDEXER_URL", global = true)]
+	pub indexer_url: Option<String>,
+	// TODO: make `--network` optional once the indexer exposes its network id. It has no GraphQL
+	// field for it today, so the value must be supplied to build the bech32 HRPs
+	// (`mn_shield-esk_<network>`, `mn_addr_<network>`) the indexer validates exactly.
+	/// Network id. Derives the viewing key / address on the `--indexer-url` path, and is the
+	/// target network of `generate-intent circuit`.
+	#[arg(long, default_value = "undeployed", global = true)]
+	pub network: String,
+	/// Indexer path only: how many wallets to sync at once. Each one holds three concurrent
+	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
+	/// for a large seed set against an indexer that can take the load; lower it if the indexer
+	/// starts dropping connections.
+	#[cfg(feature = "indexer-client")]
+	#[arg(
+		long,
+		env = "MN_INDEXER_CONCURRENCY",
+		default_value_t = midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+		global = true
+	)]
+	pub indexer_concurrency: std::num::NonZeroUsize,
 }
 
 #[derive(Error, Debug)]

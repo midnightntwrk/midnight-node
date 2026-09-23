@@ -13,8 +13,6 @@
 
 use std::collections::HashMap;
 
-#[cfg(feature = "indexer-client")]
-use crate::fetcher::wallet_state_cache::{CachedWalletState, indexer_wallet_cache_key};
 use crate::source::Source;
 use crate::tx_generator::builder::{
 	WalletSchemes, build_fork_aware_context_cached_with_schemes, ensure_ecdsa_supported,
@@ -26,12 +24,6 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
-#[cfg(feature = "indexer-client")]
-use midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY;
-#[cfg(feature = "indexer-client")]
-use midnight_ledger_unsafe_helpers::{IndexerClient, WalletSyncState};
-#[cfg(feature = "indexer-client")]
-use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -72,30 +64,12 @@ pub struct ShowWalletArgs {
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
 	pub dry_run: bool,
-	/// Reconstruct wallet state from a Midnight indexer (`api/v4` base URL, e.g.
-	/// `http://127.0.0.1:8088/api/v4`) instead of replaying every block from the node.
-	/// Requires `--seed`. The ledger generation is taken from the chain the indexer serves.
-	#[arg(long, env = "MN_INDEXER_URL")]
-	pub indexer_url: Option<String>,
-	// TODO: make `--network` optional once the indexer exposes its network id. It has no GraphQL
-	// field for it today, so the value must be supplied to build the bech32 HRPs
-	// (`mn_shield-esk_<network>`, `mn_addr_<network>`) the indexer validates exactly.
-	/// Network id used to derive the viewing key / address for the indexer path.
-	#[arg(long, default_value = "undeployed")]
-	pub network: String,
-	/// Indexer path only: how many wallets to sync at once. Each one holds three concurrent
-	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
-	/// for a large seed set against an indexer that can take the load; lower it if the indexer
-	/// starts dropping connections.
-	#[cfg(feature = "indexer-client")]
-	#[arg(long, env = "MN_INDEXER_CONCURRENCY", default_value_t = DEFAULT_WALLET_SYNC_CONCURRENCY)]
-	pub indexer_concurrency: std::num::NonZeroUsize,
 }
 
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
-	if let Some(indexer_url) = args.indexer_url.clone() {
+	if let Some(indexer_url) = args.source.indexer_url.clone() {
 		#[cfg(feature = "indexer-client")]
 		return execute_indexer(args, &indexer_url).await;
 		#[cfg(not(feature = "indexer-client"))]
@@ -195,14 +169,13 @@ pub async fn execute(
 }
 /// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
 /// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
-///
-/// The indexer carries both ledger generations and serves each chain in its own encodings, so the
-/// generation is read off the chain rather than assumed.
 #[cfg(feature = "indexer-client")]
 async fn execute_indexer(
 	args: ShowWalletArgs,
 	indexer_url: &str,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
+
 	let Some(scheme_seed) = args.seed.clone() else {
 		return Err("indexer-backed show-wallet requires --seed \
 		            (the --address path needs local ledger state)"
@@ -215,80 +188,24 @@ async fn execute_indexer(
 		return Ok(ShowWalletResult::DryRun(()));
 	}
 
-	// Only the Schnorr unshielded identity is derivable from the seed here, so an ECDSA seed would
-	// silently report the wrong address. The replay path handles ECDSA via `ensure_ecdsa_supported`.
-	if !matches!(scheme, midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr) {
-		return Err("indexer-backed show-wallet only supports the Schnorr NIGHT identity; \
-		            an `ecdsa:` seed requires the block-replay path (omit --indexer-url)"
-			.into());
-	}
-
-	// The per-version context re-queries this block for ledger parameters; not worth threading
-	// the first answer through just to save one cheap query.
-	let client = IndexerClient::new(indexer_url)?;
-	let block = client.latest_block().await?;
-	let spec_version = block.protocol_version;
-	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
-		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
-	})?;
-	log::info!("Indexer chain is at protocol version {spec_version} ({ledger_version:?})");
-
-	// Block 1's hash is the chain identity, matching `SourceTransactions::chain_id`. An indexer
-	// that has not indexed it yet cannot be told apart from another chain's, so caching is off.
-	let chain_id = client.block_hash_at(1).await?.map(subxt::utils::H256::from);
-	let cache = create_file_wallet_cache(&args.source.ledger_state_db, &args.source.fetch_cache);
-	// `--ledger-state-db` and `--fetch-cache` are `global = true` with non-empty defaults, so this
-	// is on by default; `--fetch-cache inmemory` is the existing off switch.
-	let cache = chain_id.zip(cache);
-	let cache_key = indexer_wallet_cache_key(&seed, ledger_version);
-
-	let mut resume = WalletSyncState::default();
-	if let Some((chain_id, cache)) = &cache
-		&& let Some(entry) = cache.get_wallet_states(*chain_id, &[cache_key]).await.pop().flatten()
-	{
-		log::info!("Resuming indexer sync from cached state at block {}", entry.block_height);
-		resume = entry.to_sync_state();
-	}
-
-	let network = args.network.clone();
-	let (result, next_resume) = match ledger_version {
-		LedgerVersion::Ledger9 => {
+	let schemes = WalletSchemes::from([(seed.clone(), scheme)]);
+	let synced =
+		sync_indexer(&args.source, indexer_url, std::slice::from_ref(&seed), &schemes).await?;
+	let result = match &synced.context {
+		IndexerLedgerContext::Ledger9(ctx) => {
 			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
-			let (result, next) = show_wallet_from_indexer(
-				indexer_url,
-				&network,
-				seed.clone(),
-				args.debug,
-				args.indexer_concurrency,
-				resume,
-			)
-			.await?;
-			(fork_wallet_result_v9(result), next)
+			fork_wallet_result_v9(show_wallet_from_indexer(ctx, seed, args.debug).await)
 		},
-		LedgerVersion::Ledger8 => {
+		IndexerLedgerContext::Ledger8(ctx) => {
 			use crate::commands::fork::ledger_8::show_wallet::show_wallet_from_indexer;
-			// `WalletSeed` is a per-generation type; the replay path converts the same way.
 			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
-					seed.clone(),
+					seed,
 				);
-			let (result, next) = show_wallet_from_indexer(
-				indexer_url,
-				&network,
-				seed_v8,
-				args.debug,
-				args.indexer_concurrency,
-				resume,
-			)
-			.await?;
-			(fork_wallet_result_v8(result), next)
+			fork_wallet_result_v8(show_wallet_from_indexer(ctx, seed_v8, args.debug).await)
 		},
 	};
-
-	if let Some((chain_id, cache)) = &cache {
-		let entry = CachedWalletState::from_sync_state(cache_key, block.height, next_resume);
-		cache.set_wallet_states(*chain_id, &[entry]).await;
-	}
+	synced.save_cache().await;
 
 	Ok(result)
 }
@@ -357,15 +274,16 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				#[cfg(feature = "indexer-client")]
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
 			debug: false,
 			dry_run: false,
-			indexer_url: None,
-			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
-			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		super::execute(args).await
@@ -413,6 +331,11 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				#[cfg(feature = "indexer-client")]
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -421,10 +344,6 @@ mod tests {
 			address: None,
 			debug: false,
 			dry_run: false,
-			indexer_url: None,
-			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
-			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		super::execute(args).await
@@ -458,6 +377,11 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				#[cfg(feature = "indexer-client")]
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -466,10 +390,6 @@ mod tests {
 			address: None,
 			debug: false,
 			dry_run: false,
-			indexer_url: None,
-			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
-			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		let res = super::execute(args)
@@ -500,6 +420,6 @@ mod tests {
 		};
 
 		assert!(parse("0").is_err(), "--indexer-concurrency 0 would hang the drain");
-		assert_eq!(parse("8").unwrap().args.indexer_concurrency.get(), 8);
+		assert_eq!(parse("8").unwrap().args.source.indexer_concurrency.get(), 8);
 	}
 }

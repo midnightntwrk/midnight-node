@@ -196,6 +196,11 @@ mod tests {
 			fetch_cache: FetchCacheConfig::InMemory,
 			ledger_state_db: String::new(),
 			replay_checkpoint_interval: 0,
+			indexer_url: None,
+			network: "undeployed".to_string(),
+			#[cfg(feature = "indexer-client")]
+			indexer_concurrency:
+				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 		}
 	}
 
@@ -360,6 +365,11 @@ mod tests {
 			fetch_cache: fetch_cache_cfg.clone(),
 			ledger_state_db: ledger_state_db_str.clone(),
 			replay_checkpoint_interval: 0,
+			indexer_url: None,
+			network: "undeployed".to_string(),
+			#[cfg(feature = "indexer-client")]
+			indexer_concurrency:
+				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 		let src = TxGenerator::source(source, false).await.expect("build source");
 		let mut source_blocks = src.get_txs().await.expect("get_txs");

@@ -18,6 +18,8 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub mod builder;
 pub mod destination;
+#[cfg(feature = "indexer-client")]
+pub mod indexer;
 pub mod source;
 
 use builder::{

@@ -245,6 +245,7 @@ pub async fn execute(
 
 			let command = toolkit_js::Command::Circuit {
 				args: args.circuit_call,
+				network: args.source.network,
 				input_zswap_state,
 				ledger_parameters: ledger_parameters_path,
 			};

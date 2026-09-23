@@ -91,27 +91,14 @@ pub fn show_wallet_from_address(
 /// Indexer-backed wallet reconstruction for this ledger generation.
 ///
 /// The indexer's blobs are the chain's native ledger encodings, so they decode with this
-/// generation's codecs; `show_wallet::execute` picks the copy matching the chain's protocol
-/// version.
+/// generation's codecs; `sync_indexer` picks the copy matching the chain's protocol version.
 #[cfg(feature = "indexer-client")]
 pub async fn show_wallet_from_indexer(
-	indexer_url: &str,
-	network: &str,
+	ctx: &ledger_helpers_local::IndexerContext<DefaultDB>,
 	seed: WalletSeed,
 	debug: bool,
-	concurrency: std::num::NonZeroUsize,
-	resume: midnight_ledger_unsafe_helpers::WalletSyncState,
-) -> Result<
-	(ShowWalletResult, midnight_ledger_unsafe_helpers::WalletSyncState),
-	Box<dyn std::error::Error + Send + Sync>,
-> {
-	use ledger_helpers_local::{BuilderContext, IndexerContext};
-
-	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, network, concurrency)?;
-	let mut synced = ctx
-		.init_wallets(std::slice::from_ref(&seed), &HashMap::from([(seed.clone(), resume)]))
-		.await?;
-	let next_resume = synced.remove(&seed).unwrap_or_default();
+) -> ShowWalletResult {
+	use ledger_helpers_local::BuilderContext;
 
 	let (coins, dust_utxos, debug_str) = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
 		let coins = wallet
@@ -159,7 +146,7 @@ pub async fn show_wallet_from_indexer(
 			claimable_bridge_transfers: 0,
 		}),
 	};
-	Ok((result, next_resume))
+	result
 }
 
 pub enum ShowWalletResult {

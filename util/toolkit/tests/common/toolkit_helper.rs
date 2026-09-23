@@ -85,6 +85,11 @@ fn default_source() -> Source {
 		fetch_cache: FetchCacheConfig::InMemory,
 		ledger_state_db: String::new(),
 		replay_checkpoint_interval: 0,
+		indexer_url: None,
+		network: "undeployed".to_string(),
+		#[cfg(feature = "indexer-client")]
+		indexer_concurrency:
+			midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 	}
 }
 
@@ -396,14 +401,13 @@ impl ToolkitTestHelper {
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Circuit(CircuitCommandArgs {
-				source: self.source_from_url(),
+				source: Source { network: self.network.clone(), ..self.source_from_url() },
 				wallet_seed: None,
 				toolkit_js: self.toolkit_js(),
 				circuit_call: CircuitArgs {
 					config: RelativePath(config_file.to_path_buf()),
 					contract_address: cli_parsers::contract_address_decode(contract_address)
 						.expect("invalid contract address"),
-					network: self.network.clone(),
 					coin_public: cli_parsers::coin_public_decode(coin_public)
 						.expect("invalid coin public key"),
 					input_onchain_state: RelativePath(onchain_state.to_path_buf()),

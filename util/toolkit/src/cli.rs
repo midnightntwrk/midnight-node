@@ -296,3 +296,16 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		Commands::BridgeTransfer(args) => bridge_transfer::execute(args).await,
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::Cli;
+	use clap::CommandFactory;
+
+	/// `Source` args are flattened (many `global`) into most commands, so a flag it adds can clash
+	/// with a command's own; clap only reports that at runtime.
+	#[test]
+	fn cli_definition_is_consistent() {
+		Cli::command().debug_assert();
+	}
+}
