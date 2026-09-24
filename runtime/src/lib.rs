@@ -595,7 +595,13 @@ fn select_authorities_optionally_overriding(
 	input.d_parameter.num_permissioned_candidates = d_parameter.num_permissioned_candidates;
 	input.d_parameter.num_registered_candidates = d_parameter.num_registered_candidates;
 	log_if_d_param_below_permissioned_candidates(&d_parameter, &input.permissioned_candidates);
-	select_authorities(Sidechain::genesis_utxo(), input, sidechain_epoch)
+	select_authorities(
+		Sidechain::genesis_utxo(),
+		input,
+		sidechain_epoch,
+		|id: &CrossChainPublic| AccountId::from(id.clone()),
+		pallet_session::Pallet::<Runtime>::key_owner,
+	)
 }
 
 /// Log an error when the D-parameter's permissioned slots are fewer than the available
