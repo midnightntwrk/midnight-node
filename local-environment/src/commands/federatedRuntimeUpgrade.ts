@@ -16,6 +16,7 @@ import type { ApiPromise, WsProvider } from "@polkadot/api";
 import { FederatedRuntimeUpgradeOptions } from "../lib/types";
 import {
   disconnectApi,
+  getSpecVersion,
   hasEvent,
   signAndWait,
 } from "../lib/runtimeUpgradeUtils";
@@ -53,6 +54,14 @@ export async function federatedRuntimeUpgrade(
 
     await executeFederatedMotion(api, authorizeUpgradeCall, signers);
 
+    // Capture the runtime spec_version before applying, so we can confirm the
+    // upgrade by the version actually changing rather than by decoding the
+    // applying block's events. At the upgrade block, events are encoded by the
+    // parent (pre-upgrade) runtime, but clients resolve metadata at the block's
+    // own (post-upgrade) hash, so `System.CodeUpdated` can fail to decode there
+    // and read as absent even though the upgrade executed (see #1960).
+    const specVersionBefore = await getSpecVersion(api);
+
     console.log("Applying authorized upgrade...");
     const applyResult = await signAndWait(
       api.tx.system.applyAuthorizedUpgrade(wasm.hex),
@@ -60,13 +69,30 @@ export async function federatedRuntimeUpgrade(
       "system.applyAuthorizedUpgrade",
     );
 
-    if (!hasEvent(applyResult, "system", "CodeUpdated")) {
+    const appliedBlockHash = applyResult.status.asInBlock;
+    const specVersionAfter = await getSpecVersion(api, appliedBlockHash);
+
+    if (specVersionAfter !== specVersionBefore) {
+      console.log(
+        `Runtime upgrade completed successfully ` +
+          `(spec_version ${specVersionBefore} -> ${specVersionAfter}).`,
+      );
+    } else if (hasEvent(applyResult, "system", "CodeUpdated")) {
+      // spec_version did not change (e.g. --allow-same-version, or a code change
+      // that does not bump spec_version). The event shape is unchanged in that
+      // case, so decoding the applying block's events is reliable here and
+      // System.CodeUpdated is a valid confirmation.
+      console.log(
+        `Runtime upgrade completed successfully ` +
+          `(System.CodeUpdated at spec_version ${specVersionAfter}).`,
+      );
+    } else {
       throw new Error(
-        "Runtime upgrade executed but System.CodeUpdated event not found.",
+        `Runtime upgrade executed but could not be confirmed: spec_version did ` +
+          `not change (still ${specVersionAfter}) and System.CodeUpdated was not ` +
+          `found in block ${appliedBlockHash.toHex()}.`,
       );
     }
-
-    console.log("Runtime upgrade completed successfully.");
   } finally {
     await disconnectApi(api, provider);
   }
