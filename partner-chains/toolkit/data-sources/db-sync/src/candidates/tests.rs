@@ -5,7 +5,8 @@ use crate::tests::normalize_tx_out_addresses;
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use db_sync_sqlx::{
 	DbSyncAddressMode, DbSyncQueryConfig, DbSyncSchemaMode, DbSyncTxInputMode,
-	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
+	IDX_MA_TX_OUT_IDENT_SPEC, ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig,
+	ResolvedDbSyncTxInputMode, has_compatible_index,
 };
 use hex_literal::hex;
 use sidechain_domain::*;
@@ -175,7 +176,7 @@ with_migration_versions! {
 		assert!(!index_exists_unsafe(&pool, "idx_ma_tx_out_ident").await);
 		assert!(!index_exists_unsafe(&pool, "idx_tx_out_address").await);
 		CandidatesDataSourceImpl::new(pool.clone(), None).await.unwrap();
-		assert!(index_exists_unsafe(&pool, "idx_ma_tx_out_ident").await);
+		assert!(has_compatible_index(&pool, &IDX_MA_TX_OUT_IDENT_SPEC).await.unwrap());
 		assert!(index_exists_unsafe(&pool, "idx_tx_out_address").await);
 	}
 }

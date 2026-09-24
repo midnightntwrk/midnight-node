@@ -19,7 +19,7 @@ pub use configuration::{
 	DbSyncAddressMode, DbSyncQueryConfig, DbSyncSchemaMode, DbSyncTxInputMode,
 	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
 };
-pub use schema::{DbSyncIndexSpec, candidate_index_specs, manage_indexes};
+pub use schema::*;
 
 use num_traits::ToPrimitive;
 use sidechain_domain::*;

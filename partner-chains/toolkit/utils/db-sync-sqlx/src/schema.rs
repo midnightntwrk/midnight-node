@@ -32,16 +32,18 @@ pub struct DbSyncIndexSpec {
 	pub create_sql: &'static str,
 }
 
+pub const IDX_MA_TX_OUT_IDENT_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_ma_tx_out_ident",
+	relation: "ma_tx_out",
+	access_methods: &["btree"],
+	keys: &["ident"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)",
+};
+
 /// Indexes used by candidate and Ariadne-parameter queries.
 pub fn candidate_index_specs(config: ResolvedDbSyncQueryConfig) -> Vec<DbSyncIndexSpec> {
 	let mut indexes = vec![
-		DbSyncIndexSpec {
-			name: "idx_ma_tx_out_ident",
-			relation: "ma_tx_out",
-			access_methods: &["btree"],
-			keys: &["ident"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)",
-		},
+		IDX_MA_TX_OUT_IDENT_SPEC,
 		DbSyncIndexSpec {
 			name: "idx_ma_tx_out_id_ident",
 			relation: "ma_tx_out",
@@ -176,7 +178,7 @@ struct IndexDefinition {
 	keys: Vec<String>,
 }
 
-async fn has_compatible_index(
+pub async fn has_compatible_index(
 	pool: &Pool<Postgres>,
 	spec: &DbSyncIndexSpec,
 ) -> Result<bool, sqlx::Error> {
