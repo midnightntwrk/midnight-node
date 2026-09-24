@@ -37,7 +37,12 @@ impl TryFrom<u32> for RuntimeVersion {
 			000_021_000 => Ok(Self::V0_21_0),
 			000_022_000 => Ok(Self::V0_22_0),
 			001_000_000 => Ok(Self::V1_0_0),
-			001_000_003 => Ok(Self::V1_0_3),
+			// devnet ran spec 001_000_300 ("1.0.300") on the 1.0.x line, alongside the
+			// 001_000_003 ("1.0.3") releases. The two runtimes' metadata differ only in the
+			// spec_version constant itself, and both are ledger-8 era — `LedgerVersion::
+			// from_spec_version` classifies the whole 000_022_000..=001_999_999 range as
+			// Ledger8 — so they share a decoder and mapping them to one variant is exact.
+			001_000_003 | 001_000_300 => Ok(Self::V1_0_3),
 			002_000_000 => Ok(Self::V2_0_0),
 			002_001_000 => Ok(Self::V2_1_0),
 			003_000_000 => Ok(Self::V3_0_0),
@@ -184,3 +189,33 @@ impl_midnight_metadata!(
 	mn_meta_3_0_0,
 	midnight_node_metadata::midnight_metadata_3_0_0
 );
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
+
+	/// devnet's pre-2.1.0 history carries spec 001_000_300. It must decode, and it
+	/// must round-trip to the same ledger version the node itself assigns it.
+	#[test]
+	fn spec_1_0_300_maps_to_ledger8() {
+		let version = RuntimeVersion::try_from(001_000_300u32).expect("1.0.300 must be supported");
+		assert_eq!(
+			LedgerVersion::from_spec_version(version.to_spec_version()),
+			LedgerVersion::from_spec_version(001_000_300),
+		);
+	}
+
+	/// Every variant the dispatcher accepts must have a ledger version, or `extract_data`
+	/// fails with `LedgerVersionMissing` mid-replay. V0_21_0 is the deliberate exception:
+	/// it predates ledger 8, which `from_spec_version` no longer supports.
+	#[test]
+	fn supported_variants_have_a_ledger_version() {
+		for version in RuntimeVersion::iter().filter(|v| *v != RuntimeVersion::V0_21_0) {
+			assert!(
+				LedgerVersion::from_spec_version(version.to_spec_version()).is_some(),
+				"{version:?} has no LedgerVersion",
+			);
+		}
+	}
+}
