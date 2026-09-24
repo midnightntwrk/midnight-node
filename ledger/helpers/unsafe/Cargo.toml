@@ -23,7 +23,7 @@ mn-ledger-9 = { workspace = true, features = ["proving"] }
 # v8->v9 state translation table, used by the fork boundary (`fork::fork_8_to_9`).
 v8-to-v9-state-translation = { workspace = true }
 
-rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
+rand = { version = "0.10.0", features = ["small_rng", "getrandom"] }
 rayon.workspace = true
 log.workspace = true
 lazy_static.workspace = true
