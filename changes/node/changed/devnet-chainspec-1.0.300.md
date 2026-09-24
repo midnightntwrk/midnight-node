@@ -8,5 +8,3 @@ Genesis runtime is now `spec_version` 1000300; `Throttle` starts at storage vers
 The ledger genesis state (`res/genesis/genesis_state_devnet.mn`) is unchanged.
 
 New devnet genesis hash: `0xe50ea0ab2997fab2ea6fce3c198f4ff34e6c4f3e7747c133746053a0e82b60e5`
-
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/37

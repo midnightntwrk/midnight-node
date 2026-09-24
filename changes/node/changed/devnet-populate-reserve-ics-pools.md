@@ -12,4 +12,3 @@ IDs are unchanged.
 The genesis must be regenerated for this to take effect, and devnet reset onto it.
 
 Closes: #2159
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/38
