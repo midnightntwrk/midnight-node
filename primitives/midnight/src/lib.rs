@@ -145,12 +145,10 @@ pub mod bridge {
 
 		/// Builds a recipient from bytes, requiring exactly [`BRIDGE_RECIPIENT_BYTES`] of them.
 		fn from_exact_bytes(bytes: Vec<u8>) -> Result<Self, BridgeRecipientError> {
-			if bytes.len() < BRIDGE_RECIPIENT_BYTES as usize {
+			if bytes.len() < BoundedVec::<u8, BridgeRecipientMaxLen>::bound() {
 				return Err(BridgeRecipientError::TooShort);
 			}
-			BoundedVec::<u8, BridgeRecipientMaxLen>::try_from(bytes)
-				.map(BridgeRecipient)
-				.map_err(|_| BridgeRecipientError::TooLong)
+			BoundedVec::try_from(bytes).map(Self).map_err(|_| BridgeRecipientError::TooLong)
 		}
 	}
 
