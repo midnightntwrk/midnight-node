@@ -25,7 +25,11 @@ use midnight_node_toolkit::{
 	fetcher::fetch_storage::{WalletStateCaching, file_backend::FileBackend},
 	serde_def::SourceTransactions,
 	tx_generator::{
-		builder::{build_fork_aware_context_cached, build_fork_aware_context_raw},
+		builder::{
+			WalletSchemes, build_fork_aware_context_cached,
+			build_fork_aware_context_cached_with_schemes, build_fork_aware_context_raw,
+			build_fork_aware_context_raw_with_schemes,
+		},
 		source::GetTxsFromFile,
 	},
 };
@@ -314,6 +318,100 @@ async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
 		assert_contexts_equal("crossed chain", &cached, &raw, &seeds);
 		verify_cache_state(&backend, chain_id, crossed.blocks.len(), seeds).await;
 	}
+}
+
+/// GH #2180: every cached path agrees with the raw replay for an ECDSA wallet across the fork.
+#[tokio::test]
+async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
+	let source = synthetic_source(6, 4);
+	let (schnorr, ecdsa) = (wallet_seed(0x01), wallet_seed(0x02));
+	let seeds = vec![schnorr.clone(), ecdsa.clone()];
+	let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
+	let chain_id = source.chain_id().unwrap();
+
+	let raw = build_fork_aware_context_raw_with_schemes(&source, &seeds, &schemes)
+		.into_ledger9()
+		.expect("raw: ledger 9");
+
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+	let cold =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend), &schemes, 0)
+			.await
+			.into_ledger9()
+			.expect("cold: ledger 9");
+	assert_contexts_equal("ecdsa cold", &cold, &raw, &seeds);
+	let cached_keys: Vec<H256> = seeds
+		.iter()
+		.map(|s| wallet_cache_key(s, schemes.get(s).copied().unwrap_or_default()))
+		.collect();
+	let cached_states = backend.get_wallet_states(chain_id, &cached_keys).await;
+	assert!(cached_states.iter().all(Option::is_some), "both wallets must be cached at the tip");
+
+	let warm =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend), &schemes, 0)
+			.await
+			.into_ledger9()
+			.expect("warm: ledger 9");
+	assert_contexts_equal("ecdsa warm restore", &warm, &raw, &seeds);
+
+	// Only the Schnorr wallet cached: the ECDSA seed forces a cold replay from ledger-8 genesis
+	// with the Schnorr wallet injected mid-replay.
+	let tmp2 = tempfile::TempDir::new().unwrap();
+	let backend2 = FileBackend::new(tmp2.path());
+	let _ = build_fork_aware_context_cached(&[schnorr.clone()], &source, Some(&backend2), 0).await;
+	let mixed =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend2), &schemes, 0)
+			.await
+			.into_ledger9()
+			.expect("mixed: ledger 9");
+	assert_contexts_equal("ecdsa mixed cache", &mixed, &raw, &seeds);
+
+	// Checkpoints every 2 blocks: the first ones are saved while still on ledger 8.
+	let tmp3 = tempfile::TempDir::new().unwrap();
+	let backend3 = FileBackend::new(tmp3.path());
+	let chunked =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend3), &schemes, 2)
+			.await
+			.into_ledger9()
+			.expect("chunked: ledger 9");
+	assert_contexts_equal("ecdsa chunked", &chunked, &raw, &seeds);
+}
+
+/// A checkpointing run on a ledger-8 chain caches the seed before the guard fires; the retry must
+/// still be refused, so the guard cannot depend on which seeds are cached.
+#[tokio::test]
+#[should_panic(expected = "only supported from ledger 9")]
+async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
+	let source = synthetic_source(6, 0);
+	let ecdsa = wallet_seed(0x02);
+	let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
+	let chain_id = source.chain_id().unwrap();
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	// Plant the entry such a run leaves behind, keyed under the ECDSA identity.
+	let _ = build_fork_aware_context_cached(&[ecdsa.clone()], &source, Some(&backend), 0).await;
+	let mut planted = backend
+		.get_wallet_states(
+			chain_id,
+			&[wallet_cache_key(&ecdsa, UnshieldedSignatureScheme::Schnorr)],
+		)
+		.await
+		.pop()
+		.flatten()
+		.expect("the Schnorr replay must have cached the seed");
+	planted.seed_hash = wallet_cache_key(&ecdsa, UnshieldedSignatureScheme::Ecdsa);
+	backend.set_wallet_states(chain_id, &[planted]).await;
+
+	let _ = build_fork_aware_context_cached_with_schemes(
+		&[ecdsa],
+		&source,
+		Some(&backend),
+		&schemes,
+		2,
+	)
+	.await;
 }
 
 #[tokio::test]
