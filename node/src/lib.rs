@@ -40,5 +40,7 @@ pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
+#[cfg(feature = "try-runtime")]
+pub mod try_runtime;
 mod util;
 pub mod warp_ledger_sync;
