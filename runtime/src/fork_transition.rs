@@ -48,7 +48,8 @@
 //! ```
 //!
 //! Both come from the `fork-bundle.json` that `mock-authorities convert`
-//! writes.
+//! writes. Built without them, every hook below is a no-op and the runtime
+//! behaves exactly like the stock one.
 //!
 //! ## The failure mode to know about
 //!
@@ -60,8 +61,7 @@
 //! applies. Nothing reports a misconfiguration; instead `authorities()` falls
 //! through to the real on-chain set and the fork block is rejected with
 //! "Bad signature", which looks like a broken seal rather than a wrong build.
-//! Check the chain's `state_getRuntimeVersion` before building. Built without them, every hook below is a no-op and the runtime
-//! behaves exactly like the stock one.
+//! Check the chain's `state_getRuntimeVersion` before building.
 //!
 //! Nothing here touches the runtime's pallet set, call enum, or metadata. The
 //! delta travels as an opaque block-body blob rather than a dispatchable, so a
@@ -179,15 +179,10 @@ pub fn execute_fork_block(block: &<crate::Block as sp_runtime::traits::Block>::L
 	);
 }
 
-/// Parse a decimal `u32` without `str::parse`, which is not available in the
-/// const-adjacent context this is used from and pulls in formatting machinery.
+/// Parse a decimal block number. An empty value is `None`, not height 0, so a
+/// build with `MIDNIGHT_FORK_HEIGHT=` set but blank stays inert.
 fn parse_u32(raw: &str) -> Option<BlockNumber> {
-	let mut value: BlockNumber = 0;
-	for byte in raw.trim().as_bytes() {
-		let digit = byte.checked_sub(b'0').filter(|d| *d <= 9)?;
-		value = value.checked_mul(10)?.checked_add(digit as BlockNumber)?;
-	}
-	Some(value)
+	raw.trim().parse().ok()
 }
 
 /// Parse `0x`-prefixed (or bare) 32-byte hex.
@@ -239,7 +234,8 @@ mod tests {
 		assert_eq!(parse_u32("0"), Some(0));
 		assert_eq!(parse_u32(" 1866778 "), Some(1_866_778));
 		assert_eq!(parse_u32("12a"), None);
-		assert_eq!(parse_u32(""), Some(0));
+		assert_eq!(parse_u32(""), None);
+		assert_eq!(parse_u32("  "), None);
 	}
 
 	#[test]
