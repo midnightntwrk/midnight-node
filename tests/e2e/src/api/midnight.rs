@@ -66,6 +66,9 @@ pub struct AriadneParametersResponse {
 /// C-to-M bridge data from all `Bridge::handle_transfers` calls of one block.
 #[derive(Debug)]
 pub struct C2MBridgePalletCalls {
+    /// Number of the block these calls and events were observed in. Lets callers
+    /// resume a scan at the next block without risking skipping one.
+    pub block_number: u64,
     /// `C2MBridge` pallet specific events emitted in the block.
     pub c2m_bridge_events: Vec<mn_meta::c2m_bridge::Event>,
     /// Transfers passed as argument to the `Bridge::handle_transfers` calls.
@@ -765,6 +768,7 @@ impl MidnightClient {
                 }
 
                 let result = C2MBridgePalletCalls {
+                    block_number,
                     c2m_bridge_events,
                     transfers,
                     system_transactions_applied,

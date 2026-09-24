@@ -1890,7 +1890,7 @@ pub struct SignedBridgeTransaction {
 }
 
 pub enum BridgeTransferRecipient {
-    Address([u8; 32]),
+    Address(Vec<u8>),
     /// For testing handling of transfers with invalid recipient
     Invalid,
 }
