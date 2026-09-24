@@ -138,7 +138,7 @@ pub async fn generate_reserve_genesis(
 
 	log::info!(
 		"Querying reserve UTxOs at address {} for block {}",
-		&addresses.reserve_validator_address,
+		addresses.reserve_validator_address,
 		hex::encode(cardano_tip.0)
 	);
 

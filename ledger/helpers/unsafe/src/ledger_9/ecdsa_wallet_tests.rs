@@ -105,3 +105,34 @@ fn ecdsa_address_mip0003_conformance() {
 		assert_eq!(actual, expected, "uniform bytes {uniform_bytes:02x?}");
 	}
 }
+
+/// GH #2180: installing keys at the fork keeps the replayed shielded state and the watched address.
+#[test]
+fn install_unshielded_keys_keeps_shielded_history() {
+	use super::{DefaultDB, LedgerContext, UnshieldedSignatureScheme};
+
+	let ctx = LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed()]);
+
+	// Pre-fork stand-in: some replayed shielded state and a watch-only ECDSA identity.
+	let watched = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address;
+	{
+		let mut wallets = ctx.wallets.lock().unwrap();
+		let wallet = wallets.get_mut(&seed()).unwrap();
+		wallet.shielded.state.first_free = 7;
+		wallet.unshielded = UnshieldedWallet::from(watched);
+	}
+
+	ctx.install_unshielded_keys(&seed(), UnshieldedSignatureScheme::Ecdsa);
+
+	let wallets = ctx.wallets.lock().unwrap();
+	let wallet = wallets.get(&seed()).expect("wallet survives the key install");
+	assert_eq!(wallet.shielded.state.first_free, 7, "shielded history must survive the install");
+	assert_eq!(
+		wallet.unshielded.user_address, watched,
+		"installing keys must not move the identity off the address it was watching",
+	);
+	assert!(
+		wallet.unshielded.maintenance_verifying_key().is_some(),
+		"the identity must now hold key material",
+	);
+}

@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::api::cardano::CardanoClient;
 use crate::config::{NodeClientSettings, OgmiosClientSettings};
 use blake2::digest::{Update, VariableOutput};
@@ -66,6 +79,9 @@ pub struct AriadneParametersResponse {
 /// C-to-M bridge data from all `Bridge::handle_transfers` calls of one block.
 #[derive(Debug)]
 pub struct C2MBridgePalletCalls {
+    /// Number of the block these calls and events were observed in. Lets callers
+    /// resume a scan at the next block without risking skipping one.
+    pub block_number: u64,
     /// `C2MBridge` pallet specific events emitted in the block.
     pub c2m_bridge_events: Vec<mn_meta::c2m_bridge::Event>,
     /// Transfers passed as argument to the `Bridge::handle_transfers` calls.
@@ -765,6 +781,7 @@ impl MidnightClient {
                 }
 
                 let result = C2MBridgePalletCalls {
+                    block_number,
                     c2m_bridge_events,
                     transfers,
                     system_transactions_applied,
