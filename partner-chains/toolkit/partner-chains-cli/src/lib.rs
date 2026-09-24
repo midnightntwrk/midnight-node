@@ -27,7 +27,7 @@ use clap::Parser;
 pub use create_chain_spec::CreateChainSpecConfig;
 pub use io::DefaultCmdRunContext;
 use io::*;
-pub use keystore::{AURA, CROSS_CHAIN, GRANDPA, KeyDefinition};
+pub use keystore::{AURA, BABE, CROSS_CHAIN, GRANDPA, KeyDefinition};
 use partner_chains_cardano_offchain::await_tx::FixedDelayRetries;
 pub use permissioned_candidates::ParsedPermissionedCandidatesKeys;
 pub use runtime_bindings::PartnerChainRuntime;
