@@ -1487,6 +1487,11 @@ try-runtime-dry-run:
     ARG NATIVEARCH
     ARG --required NETWORK
     ARG --required URI
+    # With --FAIL_FAST=false the dry-run's exit code only goes to $NETWORK.status.
+    # CI needs that: earthly cancels sibling BUILDs on the first failure and then
+    # discards every local output, so one failing network would hide the others'
+    # results and the snapshots. The workflow fails on the status files instead.
+    ARG FAIL_FAST=true
 
     COPY +try-runtime-cli/try-runtime /usr/local/bin/try-runtime
 
@@ -1497,17 +1502,22 @@ try-runtime-dry-run:
     RUN /artifacts-try-runtime-$NATIVEARCH/midnight-node try-runtime \
             --snap "$NETWORK.snap" \
             --runtime "/artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm" \
-            --checks all
+            --checks all; \
+        echo $? > "$NETWORK.status"; \
+        echo "try-runtime $NETWORK: exit $(cat "$NETWORK.status")"; \
+        [ "$FAIL_FAST" != true ] || [ "$(cat "$NETWORK.status")" = 0 ]
 
     SAVE ARTIFACT "$NETWORK.snap" AS LOCAL "artifacts-try-runtime/$NETWORK.snap"
+    SAVE ARTIFACT "$NETWORK.status" AS LOCAL "artifacts-try-runtime/$NETWORK.status"
 
 # Dry-run against several networks off one +try-runtime-build; earthly schedules
 # the BUILDs in parallel. FOR needs a shell to expand $NETWORKS, hence the FROM.
 try-runtime-dry-run-all:
     FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     ARG NETWORKS="preview preprod mainnet"
+    ARG FAIL_FAST=true
     FOR network IN $NETWORKS
-        BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network
+        BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network --FAIL_FAST=$FAIL_FAST
     END
 
 try-runtime-dry-run-preview:

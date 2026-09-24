@@ -52,6 +52,9 @@ jobs:
           use-cache: false
 
       # One build; earthly then schedules the per-network dry-runs in parallel.
+      # --FAIL_FAST=false so every network runs to the end and the snapshots are
+      # output (earthly drops all outputs if any target fails); the next step
+      # fails the job from the per-network status files.
       - name: Dry-run on-runtime-upgrade
         env:
           PREVIEW: ${{ inputs.preview }}
@@ -66,7 +69,24 @@ jobs:
             echo "::error::no network selected"
             exit 1
           fi
-          . ./.envrc && earthly --ci -P +try-runtime-dry-run-all --NETWORKS="${networks# }"
+          . ./.envrc && earthly --ci --output -P +try-runtime-dry-run-all \
+            --NETWORKS="${networks# }" --FAIL_FAST=false
+
+      - name: Report per-network results
+        run: |
+          failed=0
+          for f in artifacts-try-runtime/*.status; do
+            [ -e "$f" ] || { echo "::error::no status files produced"; exit 1; }
+            network=$(basename "$f" .status)
+            status=$(cat "$f")
+            if [ "$status" = 0 ]; then
+              echo "::notice::$network: dry-run passed"
+            else
+              echo "::error::$network: dry-run failed (exit $status), see the earthly log above"
+              failed=1
+            fi
+          done
+          exit "$failed"
 
       # So a failure can be re-run locally against the exact same state.
       - name: Upload snapshots
