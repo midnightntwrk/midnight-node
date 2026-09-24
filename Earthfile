@@ -1499,16 +1499,18 @@ try-runtime-dry-run:
     # positional snapshot path is not consumed as another URI.
     RUN --no-cache try-runtime create-snapshot --uri="$URI" "$NETWORK.snap"
 
-    RUN /artifacts-try-runtime-$NATIVEARCH/midnight-node try-runtime \
+    # The log is kept so the workflow can report why a network stopped.
+    RUN { /artifacts-try-runtime-$NATIVEARCH/midnight-node try-runtime \
             --snap "$NETWORK.snap" \
             --runtime "/artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm" \
-            --checks all; \
-        echo $? > "$NETWORK.status"; \
+            --checks all 2>&1; \
+          echo $? > "$NETWORK.status"; } | tee "$NETWORK.log"; \
         echo "try-runtime $NETWORK: exit $(cat "$NETWORK.status")"; \
         [ "$FAIL_FAST" != true ] || [ "$(cat "$NETWORK.status")" = 0 ]
 
     SAVE ARTIFACT "$NETWORK.snap" AS LOCAL "artifacts-try-runtime/$NETWORK.snap"
     SAVE ARTIFACT "$NETWORK.status" AS LOCAL "artifacts-try-runtime/$NETWORK.status"
+    SAVE ARTIFACT "$NETWORK.log" AS LOCAL "artifacts-try-runtime/$NETWORK.log"
 
 # Dry-run against several networks off one +try-runtime-build; earthly schedules
 # the BUILDs in parallel. FOR needs a shell to expand $NETWORKS, hence the FROM.

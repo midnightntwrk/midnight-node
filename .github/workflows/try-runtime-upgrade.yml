@@ -72,19 +72,36 @@ jobs:
           . ./.envrc && earthly --ci --output -P +try-runtime-dry-run-all \
             --NETWORKS="${networks# }" --FAIL_FAST=false
 
+      # One annotation per network saying why it stopped, the tail of each log,
+      # and a table in the job summary.
       - name: Report per-network results
         run: |
           failed=0
+          {
+            echo "| network | result |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
           for f in artifacts-try-runtime/*.status; do
             [ -e "$f" ] || { echo "::error::no status files produced"; exit 1; }
             network=$(basename "$f" .status)
+            log="artifacts-try-runtime/$network.log"
             status=$(cat "$f")
             if [ "$status" = 0 ]; then
-              echo "::notice::$network: dry-run passed"
+              result="passed: migrations, MBMs, state decode and try-state all ran"
+              echo "::notice::$network: $result"
+            elif grep -q "empty scratch arena does not have" "$log"; then
+              result="stopped at the ledger translation (pallet-midnight v1->v2): substrate migrations before it applied, the rest needs --ledger-db (docs/fork-testing.md)"
+              echo "::error::$network: $result"
+              failed=1
             else
-              echo "::error::$network: dry-run failed (exit $status), see the earthly log above"
+              result="failed (exit $status), see the log tail below"
+              echo "::error::$network: $result"
               failed=1
             fi
+            echo "| $network | $result |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::group::$network dry-run log (last 40 lines)"
+            tail -n 40 "$log" 2>/dev/null || echo "(no log)"
+            echo "::endgroup::"
           done
           exit "$failed"
 
