@@ -102,8 +102,8 @@ use {
 };
 
 use crate::boundary::types::{
-	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
-	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerStats,
+	Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
 	WrappedHash,
 };
 
@@ -899,6 +899,32 @@ where
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ledger_state = default_storage::<D>().arena.alloc(ledger.state.clone());
 		api.serialize(&ledger_state.as_typed_key())
+	}
+
+	/// Collection sizes held at the `LedgerState` root (`midnight_ledgerStats`).
+	///
+	/// Every value is O(1). The counts are read off annotations maintained at each
+	/// storage trie root — `NightAnn { size, value }` for the UTXO and contract
+	/// maps, `SizeAnn` for the nullifier sets — and the commitment totals are
+	/// scalar `first_free` fields. Nothing iterates, so the cost is independent of
+	/// how large the state has grown; the only work is forcing the handful of root
+	/// nodes that are not already resident.
+	pub fn ledger_stats(state_key: &[u8]) -> Result<LedgerStats, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let st = &ledger.state;
+
+		let utxo_ann = st.utxo.utxos.ann();
+
+		Ok(LedgerStats {
+			unshielded_utxo_count: utxo_ann.size,
+			unshielded_utxo_stars: utxo_ann.value,
+			zswap_commitment_count: st.zswap.first_free,
+			zswap_nullifier_count: st.zswap.nullifiers.size() as u64,
+			dust_commitment_count: st.dust.utxo.commitments_first_free,
+			dust_nullifier_count: st.dust.utxo.nullifiers.size() as u64,
+			contract_count: st.contract.ann().size,
+		})
 	}
 
 	/// Serialize the full ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted
