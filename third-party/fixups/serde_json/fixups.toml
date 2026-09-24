@@ -1,0 +1,5 @@
+# Preserves shared buildscript.run + adds wasm32 omit for the no_std runtime.
+buildscript.run = true
+
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]

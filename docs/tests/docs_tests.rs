@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
+
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -23,8 +25,29 @@ struct Package {
 	version: String,
 }
 
+/// Workspace root, resolved independently of the test's working directory:
+/// cargo runs from the crate dir (`docs/`), buck2 from the workspace root. Walk
+/// up until `res/cfg/default.toml` is found: the anchor both layouts share.
+fn root() -> PathBuf {
+	// buck2 runs tests from the project root in a hermetic sandbox lacking the repo
+	// tree; MN_WORKSPACE_ROOT points at a staged fixtures root (see the buck2 test
+	// target's resources). Unset under cargo, so the upward walk is the default.
+	if let Some(root) = std::env::var_os("MN_WORKSPACE_ROOT") {
+		return PathBuf::from(root);
+	}
+	let mut dir = std::env::current_dir().expect("cwd");
+	loop {
+		if dir.join("res/cfg/default.toml").exists() {
+			return dir;
+		}
+		if !dir.pop() {
+			panic!("could not locate workspace root (res/cfg/default.toml not found above cwd)");
+		}
+	}
+}
+
 fn get_runtime_spec_version() -> String {
-	let runtime_lib_str = std::fs::read_to_string("../runtime/src/lib.rs").unwrap();
+	let runtime_lib_str = std::fs::read_to_string(root().join("runtime/src/lib.rs")).unwrap();
 	for line in runtime_lib_str.lines() {
 		if line.trim_start().starts_with("spec_version") {
 			let v_end = line.chars().take_while(|c| *c != ',').count();
@@ -39,8 +62,8 @@ fn get_runtime_spec_version() -> String {
 
 #[test]
 fn check_doc_files_are_linked_in_readme() {
-	let readme_str = std::fs::read_to_string("../README.md").unwrap();
-	let paths = std::fs::read_dir("./").unwrap();
+	let readme_str = std::fs::read_to_string(root().join("README.md")).unwrap();
+	let paths = std::fs::read_dir(root().join("docs")).unwrap();
 
 	for path in paths {
 		let path = path.unwrap().path();
@@ -59,11 +82,12 @@ fn check_doc_files_are_linked_in_readme() {
 
 #[test]
 fn check_metadata_package_version_matches_node_version() {
-	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
+	let node_manifest_str = std::fs::read_to_string(root().join("node/Cargo.toml")).unwrap();
 	let node_manifest: Manifest =
 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
 
-	let metadata_manifest_str = std::fs::read_to_string("../metadata/Cargo.toml").unwrap();
+	let metadata_manifest_str =
+		std::fs::read_to_string(root().join("metadata/Cargo.toml")).unwrap();
 	let metadata_manifest: Manifest =
 		toml::from_str(&metadata_manifest_str).expect("Failed to parse metadata Cargo.toml");
 
@@ -72,7 +96,7 @@ fn check_metadata_package_version_matches_node_version() {
 
 #[test]
 fn check_spec_version_matches_node_version() {
-	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
+	let node_manifest_str = std::fs::read_to_string(root().join("node/Cargo.toml")).unwrap();
 	let node_manifest: Manifest =
 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
 
@@ -116,7 +140,7 @@ fn check_runtime_package_version_matches_spec_version() {
 #[test]
 fn check_toolkit_supports_new_node_version() {
 	let toolkit_runtimes_src =
-		std::fs::read_to_string("../util/toolkit/src/fetcher/runtimes.rs").unwrap();
+		std::fs::read_to_string(root().join("util/toolkit/src/fetcher/runtimes.rs")).unwrap();
 
 	assert!(
 		toolkit_runtimes_src.contains(&get_runtime_spec_version()),

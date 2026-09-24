@@ -1,0 +1,27 @@
+# aws-lc-sys builds AWS-LC (C crypto) for the rustls/aws-lc-rs backend of the
+# host node + toolkit. On Linux, force its CMAKE builder instead of the default
+# cc-rs `cc_builder`: cc_builder compiles+LINKS compiler-feature probe
+# executables (aws-lc/tests/compiler_features_tests/*.c), and buck's cc shim
+# routes every link through `--ld-path=<ld_shim>` where the shim re-drives the
+# link with `clang++`. clang (probe) adds crt1.o and clang++ (ld_shim) adds it
+# again -> `ld.lld: duplicate symbol: _start` (and _init/_fini/__data_start/…).
+# The cmake builder produces a static lib and doesn't link probe exes through
+# buck's shim. Point CC/CXX at plain clang so cmake's own try_compile checks use
+# the real driver+ld (not buck's clang++ ld_shim), sidestepping the same double.
+# Gated to Linux: macOS's ld64 tolerates the double, so cc_builder works there
+# and needs no cmake. Mirrors ../midnight-node (bazel), which builds aws-lc via
+# cmake and carries no aws-lc fixup because its cc toolchain links with a real ld.
+cargo_env = true
+
+[buildscript.run.env]
+OPT_LEVEL = "3"
+
+['cfg(target_os = "linux")'.buildscript.run.env]
+AWS_LC_SYS_CMAKE_BUILDER = "1"
+CC = "/usr/bin/clang"
+CXX = "/usr/bin/clang++"
+# The `cmake` crate reads Cargo's PROFILE/DEBUG to pick CMAKE_BUILD_TYPE and
+# panics if PROFILE is unset ("environment variable `PROFILE` not defined").
+# reindeer's cargo_env doesn't emit them, so set them explicitly.
+PROFILE = "release"
+DEBUG = "false"
