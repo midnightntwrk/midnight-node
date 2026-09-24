@@ -325,8 +325,8 @@ jobs:
         if: inputs.skip-node != true && github.repository == 'midnightntwrk/midnight-node'
         run: |
           echo "Creating node images for Docker Hub from $IMAGE_TAG_CONTENT_HASH"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
+          docker pull --platform linux/amd64 "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker pull --platform linux/arm64 "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
           echo "Tagging node images with $IMAGE_TAG_RELEASE"
           docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
@@ -349,8 +349,8 @@ jobs:
         if: inputs.skip-toolkit != true && github.repository == 'midnightntwrk/midnight-node'
         run: |
           echo "Creating toolkit images for Docker Hub from $IMAGE_TAG_CONTENT_HASH"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
+          docker pull --platform linux/amd64 "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker pull --platform linux/arm64 "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
           echo "Tagging toolkit images with $TOOLKIT_TAG_RELEASE"
           docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64"
