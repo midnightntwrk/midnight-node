@@ -107,6 +107,15 @@ substrate-wasm-builder = { workspace = true, optional = true, default-features =
 
 [features]
 default = ["std"]
+
+# Relaxes block verification at exactly one block height so a node can sync a
+# locally forked chain from true genesis. See `src/fork_transition.rs`.
+#
+# A runtime built with this feature must NEVER be released: it reports an
+# authority set that is not in state and skips inherent checks. Build it only
+# for a throwaway fork, with MIDNIGHT_FORK_HEIGHT and
+# MIDNIGHT_FORK_AURA_AUTHORITIES set from the tool's `fork-bundle.json`.
+fork-transition = []
 std = [
     "binary-merkle-tree/std",
     "authority-selection-inherents/std",

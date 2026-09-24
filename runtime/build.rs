@@ -12,6 +12,15 @@
 // limitations under the License.
 
 fn main() {
+	// `fork_transition` reads these through `option_env!`, which cargo does not
+	// track on its own: without this, changing forks and rebuilding can silently
+	// reuse a wasm built for the previous fork.
+	#[cfg(feature = "fork-transition")]
+	{
+		println!("cargo::rerun-if-env-changed=MIDNIGHT_FORK_HEIGHT");
+		println!("cargo::rerun-if-env-changed=MIDNIGHT_FORK_AURA_AUTHORITIES");
+	}
+
 	#[cfg(feature = "std")]
 	{
 		substrate_wasm_builder::WasmBuilder::new()
