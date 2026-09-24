@@ -126,8 +126,7 @@ pub async fn execute_many(
 	// independently.
 	let schemes: WalletSchemes = args.seeds.iter().cloned().collect();
 
-	// Guard: ECDSA NIGHT identities are only representable from ledger 9.
-	ensure_ecdsa_supported(source_blocks.ledger_version(), &schemes)?;
+	ensure_ecdsa_supported(source_blocks.tip_ledger_version(), &schemes)?;
 
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 	// `dispatch` consumes the context, so iterate the seeds *inside* the
