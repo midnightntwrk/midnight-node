@@ -1502,8 +1502,9 @@ try-runtime-dry-run:
     SAVE ARTIFACT "$NETWORK.snap" AS LOCAL "artifacts-try-runtime/$NETWORK.snap"
 
 # Dry-run against several networks off one +try-runtime-build; earthly schedules
-# the BUILDs in parallel.
+# the BUILDs in parallel. FOR needs a shell to expand $NETWORKS, hence the FROM.
 try-runtime-dry-run-all:
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     ARG NETWORKS="preview preprod mainnet"
     FOR network IN $NETWORKS
         BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network

@@ -21,3 +21,4 @@ database — so migrations that read ledger state need `--ledger-db` pointing at
 node's `ledger_storage`.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1523
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2128

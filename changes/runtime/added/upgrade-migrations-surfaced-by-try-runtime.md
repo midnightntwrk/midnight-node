@@ -25,3 +25,4 @@ Also enables the `try-runtime` feature for the runtime pallets that provide one 
 had it off, so their pre/post-upgrade and `try_state` hooks run in a dry-run.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1523
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2128
