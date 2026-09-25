@@ -6,9 +6,9 @@ jsonrpsee accept path that sets `TCP_NODELAY`, so Nagle's algorithm stayed enabl
 on every RPC connection and small messages such as `chainHead` notifications were
 coalesced and delayed. The fix (paritytech/polkadot-sdk#12797) is only on master,
 so all polkadot-sdk crates now come from the `stable2606` branch of
-https://github.com/shieldedtech/polkadot-sdk, which is upstream `stable2606`
-(stable2606-2) plus that commit. This also moves the node from the
-`polkadot-stable2606` tag to the stable2606-2 crate versions.
+https://github.com/shieldedtech/polkadot-sdk, which is the upstream
+`polkadot-stable2606` tag plus that single commit. Crate versions are unchanged;
+only the dependency source moves, and `Cargo.lock` pins the fork revision.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2200
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2201
