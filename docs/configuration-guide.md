@@ -164,9 +164,10 @@ statements; the node never inserts, updates, or deletes Cardano chain data.
 
 Verification is based on index structure, not index name. An existing index is accepted when it is
 valid, ready, non-partial, uses one of the listed access methods, and has the listed columns as its
-leading keys. For example, either `(tx_out_id)` or `(tx_out_id, ident)` satisfies the
-`ma_tx_out(tx_out_id)` requirement. This allows operators to retain standard db-sync indexes and
-their own index names.
+leading keys, with each required column's collation unchanged. A different collation on an
+additional, non-required key does not disqualify the index. For example, either `(tx_out_id)` or
+`(tx_out_id, ident)` satisfies the `ma_tx_out(tx_out_id)` requirement. This allows operators to
+retain standard db-sync indexes and their own index names.
 
 Layout-independent indexes in the combined runtime/candidate and cNight genesis manifests:
 

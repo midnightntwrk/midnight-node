@@ -269,9 +269,22 @@ FROM pg_catalog.pg_index AS index
 JOIN pg_catalog.pg_class AS index_class ON index_class.oid = index.indexrelid
 JOIN pg_catalog.pg_am AS access_method ON access_method.oid = index_class.relam
 WHERE index.indrelid = to_regclass($1)
+    -- Queries use each column's collation; only the required leading keys must match.
+    AND NOT EXISTS (
+        SELECT 1
+        FROM unnest(index.indkey::smallint[]) WITH ORDINALITY
+            AS key_column(attribute_number, position)
+        JOIN pg_catalog.pg_attribute AS attribute
+            ON attribute.attrelid = index.indrelid
+            AND attribute.attnum = key_column.attribute_number
+        WHERE key_column.position <= $2
+            -- indcollation is zero-based, while WITH ORDINALITY starts at one.
+            AND index.indcollation[key_column.position - 1] <> attribute.attcollation
+    )
 "#,
 	)
 	.bind(spec.relation)
+	.bind(spec.keys.len() as i64)
 	.fetch_all(pool)
 	.await?;
 
