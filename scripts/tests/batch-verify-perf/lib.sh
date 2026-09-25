@@ -239,10 +239,20 @@ host_restore_dir() {
 # The metrics carry labels
 # (e.g. `ledger_proof_verify_duration_seconds_sum{mode="inline",chain="undeployed"} 0.1`),
 # so match the name prefix, not a name-then-space.
+# Scrape the counters the report is derived from.
+#
+# Deliberately wider than the batch-verify families: proof verification is only about a quarter of
+# sync time, and the rest was invisible because this filter dropped it. `ledger_post_block_update_`
+# and `storage_flush_time` cover the work `pallet_midnight`'s `on_finalize` does on EVERY block
+# (ledger bookkeeping, then persisting the state), which is paid whether or not the block carried
+# transactions -- on a chain of mostly-empty blocks that is the prime suspect for the remainder.
+# `substrate_block_verification_and_import_time` is the import pipeline's own view, to check the
+# ledger-side numbers against the total rather than assuming they explain it.
 scrape_batch_metrics() {
   local prom_url="$1"
   curl -sf --max-time 3 "$prom_url" 2>/dev/null \
-    | grep -E '^(midnight_batch_verify_|ledger_proof_verify_)' | grep -vE '_bucket|^#' || true
+    | grep -E '^(midnight_batch_verify_|ledger_proof_verify_|ledger_post_block_update_|storage_(fetch|flush)_time|ledger_txs_(processing|validating)_time|substrate_block_verification_and_import_time)' \
+    | grep -vE '_bucket|^#' || true
 }
 
 # Sum the values of a batch-verify metric across its label sets, from a scraped

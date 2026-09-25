@@ -435,6 +435,9 @@ on_batch_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" batch)"
 on_prep_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" batch_prep)"
 on_prep_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" batch_prep)"
 on_reval_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" revalidate)"
+# Whole batch host call (not mode-labelled), the true ON ingress cost.
+on_call_sum="$(awk -F' ' '/^midnight_batch_verify_duration_seconds_sum/ {print $2; exit}' "$ON_METRICS" 2>/dev/null)"
+on_call_sum="${on_call_sum:-0}"
 on_reval_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" revalidate)"
 off_reval_sum="$(metric_mode "$OFF_METRICS" "$PV_DUR" revalidate)"
 off_reval_txs="$(metric_mode "$OFF_METRICS" "$PV_TXS" revalidate)"
@@ -462,19 +465,32 @@ awk -v ois="$off_inline_sum" -v oit="$off_inline_txs" \
 
 echo
 echo "--- total per-midnight-tx verification cost (what wall clock actually sees) ---"
+# The ON side is priced by `midnight_batch_verify_duration_seconds_sum` -- the WHOLE batch host
+# call -- not by the crypto sub-timers `ledger_proof_verify{batch,batch_prep}`. Those two cover
+# only the aggregate check and the per-proof prep; the host call also deserializes every
+# transaction, collects proof evidence and warms the caches. That remainder is real work the ON
+# path pays and the OFF path does not pay separately (OFF does its deserialize inside `inline`),
+# and pricing ON without it overstated the win by roughly 2.4x here -- 0.78s of "saving" against
+# 0.30s that Substrate's own import timer and wall clock both agree on. Same partial-budget
+# mistake this harness documents elsewhere; measure the whole call, not the part that flatters it.
 awk -v ois="$off_inline_sum" -v oit="$off_inline_txs" \
     -v ors="$off_reval_sum"  -v ort="$off_reval_txs" \
     -v obs="$on_batch_sum"   -v obt="$on_batch_txs" \
     -v ops="$on_prep_sum"    -v opt="$on_prep_txs" \
+    -v ocs="$on_call_sum" \
     -v nrs="$on_reval_sum"   -v nrt="$on_reval_txs" 'BEGIN {
   if (oit <= 0 || obt <= 0) { print "  (insufficient samples)"; exit }
   off_total = ois + ors;           # OFF: one fused well_formed per tx (+ any revalidations)
-  on_total  = obs + ops + nrs;     # ON:  ingress batch + prep, then execution revalidate
+  crypto    = obs + ops;           # ON:  the crypto sub-parts only
+  overhead  = (ocs > crypto) ? ocs - crypto : 0;   # deserialize + evidence + cache warm
+  on_total  = ((ocs > 0) ? ocs : crypto) + nrs;    # ON: whole ingress call, then revalidate
   printf "  OFF  : %7.3fs total  = %.3fs inline (%d tx)", off_total, ois, oit
   if (ort > 0) printf " + %.3fs revalidate (%d tx)", ors, ort
   printf "\n"
-  printf "  ON   : %7.3fs total  = %.3fs batch (%d tx) + %.3fs prep (%d tx) + %.3fs revalidate (%d tx)\n", \
-         on_total, obs, obt, ops, opt, nrs, nrt
+  printf "  ON   : %7.3fs total  = %.3fs batch call (%.3f crypto + %.3f prep + %.3f other) + %.3fs revalidate\n", \
+         on_total, (ocs > 0 ? ocs : crypto), obs, ops, overhead, nrs
+  if (ocs <= 0)
+    print "  ⚠️  midnight_batch_verify_duration_seconds not scraped — ON priced on crypto alone, which understates it."
   if (nrt <= 0) {
     print "  ⚠️  no revalidate samples on the ON run — the execution-side pass is unaccounted;"
     print "      the totals below understate the ON cost."

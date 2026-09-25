@@ -418,16 +418,35 @@ where
 	/// per-transaction via prevalidation, and fullness is clamped before applying), so this is
 	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
 	/// remain fallible — those represent genuine bugs rather than block-content conditions.
+	/// Runs the ledger's end-of-block maintenance and persists the result.
+	///
+	/// Called from `pallet_midnight`'s `on_finalize`, so this is paid once per block whether or
+	/// not the block carried any transactions — on a chain of mostly-empty blocks it is pure
+	/// fixed overhead, and it was previously the only per-block ledger work with no metric.
+	/// The two phases are timed separately because they fail differently: `update` is the
+	/// ledger's own bookkeeping (Dust root history insert and prune), `persist` is the write.
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let update_start = Instant::now();
 		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
+		let update_elapsed = update_start.elapsed().as_secs_f64();
+
+		let persist_start = Instant::now();
 		ledger.persist();
+		let persist_elapsed = persist_start.elapsed().as_secs_f64();
+
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			metrics.observe_post_block_update(update_elapsed, "update");
+			metrics.observe_post_block_update(persist_elapsed, "persist");
+		}
+
 		Ok(state_root)
 	}
 

@@ -40,6 +40,8 @@ pub struct LedgerMetrics {
 	pub storage_fetch_time: HistogramVec,
 	/// Storage flush time
 	pub storage_flush_time: HistogramVec,
+	/// Time spent in the per-block ledger post-block update (`on_finalize`), labelled by `phase`.
+	pub post_block_update_time: HistogramVec,
 	/// Transaction validation cache hits (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_hits: CounterVec<U64>,
 	/// Transaction validation cache misses
@@ -168,6 +170,18 @@ impl LedgerMetrics {
 					)
 					.buckets(time_buckets.clone()),
 					&["storage"],
+				)?,
+				registry,
+			)?,
+			post_block_update_time: prometheus::register(
+				HistogramVec::new(
+					HistogramOpts::new(
+						"ledger_post_block_update_seconds",
+						"Time spent in the ledger post-block update, which runs in on_finalize \
+						 for every block including empty ones",
+					)
+					.buckets(time_buckets.clone()),
+					&["phase"],
 				)?,
 				registry,
 			)?,
@@ -347,6 +361,19 @@ impl LedgerMetricsExt {
 	pub fn observe_storage_flush_time(&mut self, time: f64, label: &'static str) {
 		self.observe(|m| {
 			m.storage_flush_time.with_label_values(&[label]).observe(time);
+		});
+	}
+
+	/// Records one phase of the per-block ledger post-block update.
+	///
+	/// `apply_post_block_update` runs from `pallet_midnight`'s `on_finalize`, so it is paid once
+	/// per block whether or not the block carried any transactions. On a chain whose blocks are
+	/// mostly empty that makes it a candidate for the bulk of sync time, and until now it was the
+	/// only per-block ledger work with no metric at all. `phase` separates the ledger's own
+	/// update from persisting the resulting state.
+	pub fn observe_post_block_update(&mut self, time: f64, phase: &'static str) {
+		self.observe(|m| {
+			m.post_block_update_time.with_label_values(&[phase]).observe(time);
 		});
 	}
 
