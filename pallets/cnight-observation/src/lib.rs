@@ -49,7 +49,7 @@ pub mod weights;
 ///    been processed in full.
 ///
 /// See spec for more details:
-/// https://github.com/midnightntwrk/midnight-architecture/blob/main/specification/cardano-system-transactions.md#cmst-header
+/// https://github.com/midnightntwrk/midnight-ledger/blob/main/spec/cardano-system-transactions.md#cmst-header
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 pub struct CmstHeader {
 	/// Hash of the last processed block
