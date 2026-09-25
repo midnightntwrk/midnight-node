@@ -226,7 +226,10 @@ pub enum DataSourceError {
 #[cfg(test)]
 mod tests {
 	use ctor::{ctor, dtor};
-	use db_sync_sqlx::{DbSyncIndexSpec, DbSyncQueryConfig, DbSyncSchemaMode, manage_indexes};
+	use db_sync_sqlx::{
+		DbSyncQueryConfig, DbSyncSchemaMode, IDX_ADDRESS_ADDRESS_SPEC, IDX_TX_OUT_DATA_HASH_SPEC,
+		manage_indexes,
+	};
 	use sqlx::PgPool;
 	use std::sync::{OnceLock, mpsc};
 	use testcontainers_modules::postgres::Postgres;
@@ -284,16 +287,6 @@ ALTER TABLE tx_out
 		.unwrap();
 	}
 
-	fn address_index_spec() -> DbSyncIndexSpec {
-		DbSyncIndexSpec {
-			name: "idx_address_address",
-			relation: "address",
-			access_methods: &["hash", "btree"],
-			keys: &["address"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_address_address ON address USING hash(address)",
-		}
-	}
-
 	async fn create_address_table(pool: &PgPool) {
 		sqlx::query(
 			"CREATE TABLE address (id bigint PRIMARY KEY, address character varying NOT NULL)",
@@ -311,10 +304,10 @@ ALTER TABLE tx_out
 			.await
 			.unwrap();
 
-		manage_indexes(&pool, DbSyncSchemaMode::Verify, &[address_index_spec()])
+		manage_indexes(&pool, DbSyncSchemaMode::Verify, &[IDX_ADDRESS_ADDRESS_SPEC])
 			.await
 			.unwrap();
-		manage_indexes(&pool, DbSyncSchemaMode::Apply, &[address_index_spec()])
+		manage_indexes(&pool, DbSyncSchemaMode::Apply, &[IDX_ADDRESS_ADDRESS_SPEC])
 			.await
 			.unwrap();
 
@@ -334,7 +327,7 @@ ALTER TABLE tx_out
 			.await
 			.unwrap();
 
-		let error = manage_indexes(&pool, DbSyncSchemaMode::Verify, &[address_index_spec()])
+		let error = manage_indexes(&pool, DbSyncSchemaMode::Verify, &[IDX_ADDRESS_ADDRESS_SPEC])
 			.await
 			.expect_err("the required address key is not the leading index key");
 
@@ -348,12 +341,35 @@ ALTER TABLE tx_out
 	async fn apply_creates_an_index_that_verify_accepts(pool: PgPool) {
 		create_address_table(&pool).await;
 
-		manage_indexes(&pool, DbSyncSchemaMode::Apply, &[address_index_spec()])
+		manage_indexes(&pool, DbSyncSchemaMode::Apply, &[IDX_ADDRESS_ADDRESS_SPEC])
 			.await
 			.unwrap();
-		manage_indexes(&pool, DbSyncSchemaMode::Verify, &[address_index_spec()])
+		manage_indexes(&pool, DbSyncSchemaMode::Verify, &[IDX_ADDRESS_ADDRESS_SPEC])
 			.await
 			.unwrap();
+	}
+
+	#[sqlx::test]
+	async fn datum_index_is_required_by_verify_and_created_only_by_apply(pool: PgPool) {
+		sqlx::query("CREATE TABLE tx_out (data_hash bytea)")
+			.execute(&pool)
+			.await
+			.unwrap();
+		let indexes = &[IDX_TX_OUT_DATA_HASH_SPEC];
+
+		manage_indexes(&pool, DbSyncSchemaMode::Skip, indexes).await.unwrap();
+		let error = manage_indexes(&pool, DbSyncSchemaMode::Verify, indexes)
+			.await
+			.expect_err("the missing datum index must be reported");
+		assert!(error.to_string().contains("tx_out USING btree (data_hash)"));
+		assert!(
+			!db_sync_sqlx::has_compatible_index(&pool, &IDX_TX_OUT_DATA_HASH_SPEC)
+				.await
+				.unwrap()
+		);
+
+		manage_indexes(&pool, DbSyncSchemaMode::Apply, indexes).await.unwrap();
+		manage_indexes(&pool, DbSyncSchemaMode::Verify, indexes).await.unwrap();
 	}
 
 	#[sqlx::test]

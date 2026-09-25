@@ -21,8 +21,10 @@ use crate::db::{
 	RegistrationRow,
 };
 use db_sync_sqlx::{
-	DbSyncIndexSpec, DbSyncQueryConfig, DbSyncSchemaMode, ResolvedDbSyncAddressMode,
-	ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode, manage_indexes,
+	DbSyncIndexSpec, DbSyncQueryConfig, DbSyncSchemaMode, IDX_BLOCK_BLOCK_NO_SPEC,
+	IDX_MULTI_ASSET_POLICY_NAME_SPEC, IDX_TX_BLOCK_ID_SPEC, IDX_TX_OUT_DATA_HASH_SPEC,
+	IDX_TX_OUT_TX_ID_SPEC, ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig,
+	ResolvedDbSyncTxInputMode, candidate_index_specs, manage_indexes,
 };
 use log::{info, warn};
 use sidechain_domain::*;
@@ -284,103 +286,14 @@ fn address_query_parts(address_mode: ResolvedDbSyncAddressMode) -> (&'static str
 }
 
 fn cnight_index_specs(config: ResolvedDbSyncQueryConfig) -> Vec<DbSyncIndexSpec> {
-	let mut indexes = vec![
-		DbSyncIndexSpec {
-			name: "idx_ma_tx_out_ident",
-			relation: "ma_tx_out",
-			access_methods: &["btree"],
-			keys: &["ident"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)",
-		},
-		DbSyncIndexSpec {
-			name: "idx_multi_asset_policy_name",
-			relation: "multi_asset",
-			access_methods: &["btree"],
-			keys: &["policy", "name"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name ON multi_asset(policy, name)",
-		},
-		DbSyncIndexSpec {
-			name: "idx_ma_tx_out_id_ident",
-			relation: "ma_tx_out",
-			access_methods: &["btree"],
-			keys: &["tx_out_id"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_id_ident ON ma_tx_out(tx_out_id, ident)",
-		},
-		DbSyncIndexSpec {
-			name: "idx_block_block_no",
-			relation: "block",
-			access_methods: &["btree"],
-			keys: &["block_no"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_block_block_no ON block(block_no)",
-		},
-		DbSyncIndexSpec {
-			name: "idx_tx_block_id",
-			relation: "tx",
-			access_methods: &["btree"],
-			keys: &["block_id"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_block_id ON tx(block_id)",
-		},
-		DbSyncIndexSpec {
-			name: "idx_tx_out_tx_id",
-			relation: "tx_out",
-			access_methods: &["btree"],
-			keys: &["tx_id"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_tx_id ON tx_out(tx_id)",
-		},
-	];
-
-	match config.address_mode {
-		ResolvedDbSyncAddressMode::Inline => indexes.push(DbSyncIndexSpec {
-			name: "idx_tx_out_address",
-			relation: "tx_out",
-			access_methods: &["hash", "btree"],
-			keys: &["address"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address ON tx_out USING hash(address)",
-		}),
-		ResolvedDbSyncAddressMode::AddressTable => indexes.extend([
-			DbSyncIndexSpec {
-				name: "idx_address_address",
-				relation: "address",
-				access_methods: &["hash", "btree"],
-				keys: &["address"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_address_address ON address USING hash(address)",
-			},
-			DbSyncIndexSpec {
-				name: "idx_tx_out_address_id",
-				relation: "tx_out",
-				access_methods: &["btree"],
-				keys: &["address_id"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address_id ON tx_out(address_id)",
-			},
-		]),
-	}
-
-	match config.tx_input_mode {
-		ResolvedDbSyncTxInputMode::TxIn => indexes.extend([
-			DbSyncIndexSpec {
-				name: "idx_tx_in_tx_in_id",
-				relation: "tx_in",
-				access_methods: &["btree"],
-				keys: &["tx_in_id"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_in_id ON tx_in(tx_in_id)",
-			},
-			DbSyncIndexSpec {
-				name: "idx_tx_in_tx_out_id_tx_out_index",
-				relation: "tx_in",
-				access_methods: &["btree"],
-				keys: &["tx_out_id", "tx_out_index"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index ON tx_in(tx_out_id, tx_out_index)",
-			},
-		]),
-		ResolvedDbSyncTxInputMode::Consumed => indexes.push(DbSyncIndexSpec {
-			name: "idx_tx_out_consumed_by_tx_id",
-			relation: "tx_out",
-			access_methods: &["btree"],
-			keys: &["consumed_by_tx_id"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_consumed_by_tx_id ON tx_out(consumed_by_tx_id)",
-		}),
-	}
-
+	let mut indexes = candidate_index_specs(config);
+	indexes.extend([
+		IDX_MULTI_ASSET_POLICY_NAME_SPEC,
+		IDX_BLOCK_BLOCK_NO_SPEC,
+		IDX_TX_BLOCK_ID_SPEC,
+		IDX_TX_OUT_TX_ID_SPEC,
+		IDX_TX_OUT_DATA_HASH_SPEC,
+	]);
 	indexes
 }
 
@@ -644,6 +557,22 @@ mod tests {
 				let has_keys = |relation, keys: &[&str]| {
 					indexes.iter().any(|index| index.relation == relation && index.keys == keys)
 				};
+
+				// Preserve every layout-independent genesis index, including the datum join.
+				for (relation, keys) in [
+					("ma_tx_out", &["ident"][..]),
+					("ma_tx_out", &["tx_out_id"][..]),
+					("multi_asset", &["policy", "name"][..]),
+					("block", &["block_no"][..]),
+					("tx", &["block_id"][..]),
+					("tx_out", &["tx_id"][..]),
+					("tx_out", &["data_hash"][..]),
+				] {
+					assert!(has_keys(relation, keys), "missing index on {relation}({keys:?})");
+				}
+				let names: std::collections::BTreeSet<_> =
+					indexes.iter().map(|index| index.name).collect();
+				assert_eq!(names.len(), indexes.len(), "duplicate index specifications");
 
 				assert_eq!(
 					has_keys("tx_in", &["tx_in_id"]),

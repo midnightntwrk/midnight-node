@@ -178,6 +178,7 @@ Layout-independent indexes in the combined runtime/candidate and cNight genesis 
 | `block` | btree | `block_no` | cNight genesis |
 | `tx` | btree | `block_id` | cNight genesis |
 | `tx_out` | btree | `tx_id` | cNight genesis |
+| `tx_out` | btree | `data_hash` | cNight genesis |
 
 Additional indexes for the selected address layout:
 
@@ -220,6 +221,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_block_id
     ON tx (block_id);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_tx_id
     ON tx_out (tx_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_data_hash
+    ON tx_out (data_hash);
 ```
 
 The standard db-sync btree on `ma_tx_out(tx_out_id)` also satisfies the second requirement. Apply
