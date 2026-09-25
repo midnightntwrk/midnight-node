@@ -2,6 +2,7 @@ use super::{Cache, GovernedMapDataSourceCachedImpl, GovernedMapDataSourceImpl};
 use crate::block::{BlockDataSourceImpl, DbSyncBlockDataSourceConfig};
 use crate::db_model::{DbSyncConfigurationProvider, TxInConfiguration};
 use crate::metrics::mock::test_metrics;
+use db_sync_sqlx::DbSyncQueryConfig;
 use hex_literal::hex;
 use pretty_assertions::assert_eq;
 use sidechain_domain::byte_string::ByteString;
@@ -178,6 +179,8 @@ fn make_source(pool: PgPool, tx_in_config: TxInConfiguration) -> GovernedMapData
 		metrics_opt: Some(test_metrics()),
 		db_sync_config: DbSyncConfigurationProvider {
 			pool,
+			query_config: DbSyncQueryConfig::default(),
+			resolved_config: Arc::new(tokio::sync::Mutex::new(OnceCell::new())),
 			tx_in_config: Arc::new(tokio::sync::Mutex::new(OnceCell::from(tx_in_config))),
 		},
 	}
@@ -203,6 +206,8 @@ async fn make_cached_source(
 		)),
 		db_sync_config: DbSyncConfigurationProvider {
 			pool,
+			query_config: DbSyncQueryConfig::default(),
+			resolved_config: Arc::new(tokio::sync::Mutex::new(OnceCell::new())),
 			tx_in_config: Arc::new(tokio::sync::Mutex::new(OnceCell::from(tx_in_config))),
 		},
 	}
