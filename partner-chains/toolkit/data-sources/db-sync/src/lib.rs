@@ -338,6 +338,80 @@ ALTER TABLE tx_out
 	}
 
 	#[sqlx::test]
+	async fn verify_rejects_mismatched_collation_and_apply_creates_compatible_index(pool: PgPool) {
+		for method in ["btree", "hash"] {
+			sqlx::query(r#"CREATE TABLE address (address varchar COLLATE "C" NOT NULL)"#)
+				.execute(&pool)
+				.await
+				.unwrap();
+			sqlx::query(&format!(
+				r#"CREATE INDEX operator_address_lookup ON address USING {method}(address COLLATE "POSIX")"#
+			))
+			.execute(&pool)
+			.await
+			.unwrap();
+
+			let indexes = &[IDX_ADDRESS_ADDRESS_SPEC];
+			manage_indexes(&pool, DbSyncSchemaMode::Skip, indexes).await.unwrap();
+			let error = manage_indexes(&pool, DbSyncSchemaMode::Verify, indexes)
+				.await
+				.expect_err("a different index collation cannot serve the address lookup");
+			assert!(error.to_string().contains("address USING hash or btree (address)"));
+
+			manage_indexes(&pool, DbSyncSchemaMode::Apply, indexes).await.unwrap();
+			manage_indexes(&pool, DbSyncSchemaMode::Verify, indexes).await.unwrap();
+			let index_count: i64 = sqlx::query_scalar(
+				"SELECT count(*) FROM pg_index WHERE indrelid = 'address'::regclass",
+			)
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+			assert_eq!(
+				index_count, 2,
+				"apply adds a compatible index without removing the operator's index"
+			);
+			sqlx::query("DROP TABLE address").execute(&pool).await.unwrap();
+		}
+	}
+
+	#[sqlx::test]
+	async fn verify_checks_only_required_key_collations(pool: PgPool) {
+		sqlx::query(
+			r#"CREATE TABLE address (id bigint, address varchar COLLATE "C", extra varchar COLLATE "C")"#,
+		)
+		.execute(&pool)
+		.await
+		.unwrap();
+		sqlx::query(
+			r#"CREATE INDEX operator_address_lookup ON address(address DESC, extra COLLATE "POSIX") INCLUDE (id)"#,
+		)
+		.execute(&pool)
+		.await
+		.unwrap();
+
+		// Accept the column's own non-default collation; ignore extra keys and INCLUDE columns.
+		manage_indexes(&pool, DbSyncSchemaMode::Verify, &[IDX_ADDRESS_ADDRESS_SPEC])
+			.await
+			.unwrap();
+		manage_indexes(&pool, DbSyncSchemaMode::Apply, &[IDX_ADDRESS_ADDRESS_SPEC])
+			.await
+			.unwrap();
+		let midnight_index: Option<String> =
+			sqlx::query_scalar("SELECT to_regclass('idx_address_address')::text")
+				.fetch_one(&pool)
+				.await
+				.unwrap();
+		assert_eq!(midnight_index, None, "the operator's index is already compatible");
+
+		// If the second key is required too, its collation must also match.
+		let two_keys = db_sync_sqlx::DbSyncIndexSpec {
+			keys: &["address", "extra"],
+			..IDX_ADDRESS_ADDRESS_SPEC
+		};
+		assert!(!db_sync_sqlx::has_compatible_index(&pool, &two_keys).await.unwrap());
+	}
+
+	#[sqlx::test]
 	async fn apply_creates_an_index_that_verify_accepts(pool: PgPool) {
 		create_address_table(&pool).await;
 

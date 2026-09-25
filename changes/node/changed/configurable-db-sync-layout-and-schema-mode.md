@@ -12,6 +12,9 @@ input layouts now fail with an actionable request for explicit configuration.
 Share index specifications between runtime and genesis manifests, retaining the
 `tx_out(data_hash)` index for cNight genesis without adding it to normal node startup.
 
+Reject indexes whose required leading columns use a different collation from the underlying
+table columns, so schema verification does not accept indexes unusable by the queries.
+
 # Support configurable db-sync layouts and operator-managed indexes
 
 Partner Chains db-sync data sources now support both transaction-input representations (`tx_in`
