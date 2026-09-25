@@ -137,3 +137,24 @@ fn input_manifest_tracks_the_selected_transaction_input_layout() {
 	assert!(!consumed_names.contains("idx_tx_in_tx_in_id"));
 	assert!(!consumed_names.contains("idx_tx_in_tx_out_id_tx_out_index"))
 }
+
+#[test]
+fn runtime_manifest_does_not_require_genesis_only_indexes() {
+	for tx_input_mode in [ResolvedDbSyncTxInputMode::TxIn, ResolvedDbSyncTxInputMode::Consumed] {
+		for address_mode in
+			[ResolvedDbSyncAddressMode::Inline, ResolvedDbSyncAddressMode::AddressTable]
+		{
+			let indexes =
+				candidate_index_specs(ResolvedDbSyncQueryConfig { tx_input_mode, address_mode });
+			for name in [
+				"idx_multi_asset_policy_name",
+				"idx_block_block_no",
+				"idx_tx_block_id",
+				"idx_tx_out_tx_id",
+				"idx_tx_out_data_hash",
+			] {
+				assert!(!indexes.iter().any(|index| index.name == name), "unexpected {name}");
+			}
+		}
+	}
+}

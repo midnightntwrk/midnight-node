@@ -9,6 +9,9 @@ can verify operator-managed indexes without requiring database write privileges.
 `auto`/`inline`/`apply` behavior remains the default for initialized databases; ambiguous empty
 input layouts now fail with an actionable request for explicit configuration.
 
+Share index specifications between runtime and genesis manifests, retaining the
+`tx_out(data_hash)` index for cNight genesis without adding it to normal node startup.
+
 # Support configurable db-sync layouts and operator-managed indexes
 
 Partner Chains db-sync data sources now support both transaction-input representations (`tx_in`

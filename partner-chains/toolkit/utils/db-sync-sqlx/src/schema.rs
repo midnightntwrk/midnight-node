@@ -32,6 +32,7 @@ pub struct DbSyncIndexSpec {
 	pub create_sql: &'static str,
 }
 
+/// Lookup multi-asset outputs by asset identifier.
 pub const IDX_MA_TX_OUT_IDENT_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
 	name: "idx_ma_tx_out_ident",
 	relation: "ma_tx_out",
@@ -40,72 +41,134 @@ pub const IDX_MA_TX_OUT_IDENT_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
 	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)",
 };
 
+/// Lookup assets in an output, accepting db-sync's existing single-column index.
+pub const IDX_MA_TX_OUT_ID_IDENT_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_ma_tx_out_id_ident",
+	relation: "ma_tx_out",
+	access_methods: &["btree"],
+	// Each output has a bounded asset set. Keep the historical covering-index DDL
+	// when no tx_out_id-leading index exists.
+	keys: &["tx_out_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_id_ident ON ma_tx_out(tx_out_id, ident)",
+};
+
+/// Lookup outputs by an inline address.
+pub const IDX_TX_OUT_ADDRESS_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_out_address",
+	relation: "tx_out",
+	access_methods: &["hash", "btree"],
+	keys: &["address"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address ON tx_out USING hash(address)",
+};
+
+/// Resolve a normalized address to its identifier.
+pub const IDX_ADDRESS_ADDRESS_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_address_address",
+	relation: "address",
+	access_methods: &["hash", "btree"],
+	keys: &["address"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_address_address ON address USING hash(address)",
+};
+
+/// Lookup outputs by their normalized address identifier.
+pub const IDX_TX_OUT_ADDRESS_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_out_address_id",
+	relation: "tx_out",
+	access_methods: &["btree"],
+	keys: &["address_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address_id ON tx_out(address_id)",
+};
+
+/// Lookup inputs by the spending transaction.
+pub const IDX_TX_IN_TX_IN_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_in_tx_in_id",
+	relation: "tx_in",
+	access_methods: &["btree"],
+	keys: &["tx_in_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_in_id ON tx_in(tx_in_id)",
+};
+
+/// Lookup an output's spending input in the tx_in layout.
+pub const IDX_TX_IN_TX_OUT_ID_TX_OUT_INDEX_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_in_tx_out_id_tx_out_index",
+	relation: "tx_in",
+	access_methods: &["btree"],
+	keys: &["tx_out_id", "tx_out_index"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index ON tx_in(tx_out_id, tx_out_index)",
+};
+
+/// Lookup inputs by the spending transaction in the consumed layout.
+pub const IDX_TX_OUT_CONSUMED_BY_TX_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_out_consumed_by_tx_id",
+	relation: "tx_out",
+	access_methods: &["btree"],
+	keys: &["consumed_by_tx_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_consumed_by_tx_id ON tx_out(consumed_by_tx_id)",
+};
+
+/// Resolve an asset's policy and name for cNight observation.
+pub const IDX_MULTI_ASSET_POLICY_NAME_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_multi_asset_policy_name",
+	relation: "multi_asset",
+	access_methods: &["btree"],
+	keys: &["policy", "name"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name ON multi_asset(policy, name)",
+};
+
+/// Scan Cardano block ranges for cNight observation.
+pub const IDX_BLOCK_BLOCK_NO_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_block_block_no",
+	relation: "block",
+	access_methods: &["btree"],
+	keys: &["block_no"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_block_block_no ON block(block_no)",
+};
+
+/// Lookup transactions in a Cardano block.
+pub const IDX_TX_BLOCK_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_block_id",
+	relation: "tx",
+	access_methods: &["btree"],
+	keys: &["block_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_block_id ON tx(block_id)",
+};
+
+/// Lookup outputs created by a transaction.
+pub const IDX_TX_OUT_TX_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_out_tx_id",
+	relation: "tx_out",
+	access_methods: &["btree"],
+	keys: &["tx_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_tx_id ON tx_out(tx_id)",
+};
+
+/// Join outputs to datum hashes during cNight genesis observation.
+pub const IDX_TX_OUT_DATA_HASH_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_out_data_hash",
+	relation: "tx_out",
+	access_methods: &["btree"],
+	keys: &["data_hash"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_data_hash ON tx_out(data_hash)",
+};
+
 /// Indexes used by candidate and Ariadne-parameter queries.
 pub fn candidate_index_specs(config: ResolvedDbSyncQueryConfig) -> Vec<DbSyncIndexSpec> {
-	let mut indexes = vec![
-		IDX_MA_TX_OUT_IDENT_SPEC,
-		DbSyncIndexSpec {
-			name: "idx_ma_tx_out_id_ident",
-			relation: "ma_tx_out",
-			access_methods: &["btree"],
-			// The standard db-sync tx_out_id index is sufficient because each output has a
-			// bounded asset set. Apply keeps the historical covering-index DDL when no
-			// tx_out_id-leading index exists.
-			keys: &["tx_out_id"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_id_ident ON ma_tx_out(tx_out_id, ident)",
-		},
-	];
+	let mut indexes = vec![IDX_MA_TX_OUT_IDENT_SPEC, IDX_MA_TX_OUT_ID_IDENT_SPEC];
 
 	match config.address_mode {
-		ResolvedDbSyncAddressMode::Inline => indexes.push(DbSyncIndexSpec {
-			name: "idx_tx_out_address",
-			relation: "tx_out",
-			access_methods: &["hash", "btree"],
-			keys: &["address"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address ON tx_out USING hash(address)",
-		}),
-		ResolvedDbSyncAddressMode::AddressTable => indexes.extend([
-			DbSyncIndexSpec {
-				name: "idx_address_address",
-				relation: "address",
-				access_methods: &["hash", "btree"],
-				keys: &["address"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_address_address ON address USING hash(address)",
-			},
-			DbSyncIndexSpec {
-				name: "idx_tx_out_address_id",
-				relation: "tx_out",
-				access_methods: &["btree"],
-				keys: &["address_id"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address_id ON tx_out(address_id)",
-			},
-		]),
+		ResolvedDbSyncAddressMode::Inline => indexes.push(IDX_TX_OUT_ADDRESS_SPEC),
+		ResolvedDbSyncAddressMode::AddressTable => {
+			indexes.extend([IDX_ADDRESS_ADDRESS_SPEC, IDX_TX_OUT_ADDRESS_ID_SPEC]);
+		},
 	}
 
 	match config.tx_input_mode {
-		crate::ResolvedDbSyncTxInputMode::TxIn => indexes.extend([
-			DbSyncIndexSpec {
-				name: "idx_tx_in_tx_in_id",
-				relation: "tx_in",
-				access_methods: &["btree"],
-				keys: &["tx_in_id"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_in_id ON tx_in(tx_in_id)",
-			},
-			DbSyncIndexSpec {
-				name: "idx_tx_in_tx_out_id_tx_out_index",
-				relation: "tx_in",
-				access_methods: &["btree"],
-				keys: &["tx_out_id", "tx_out_index"],
-				create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index ON tx_in(tx_out_id, tx_out_index)",
-			},
-		]),
-		crate::ResolvedDbSyncTxInputMode::Consumed => indexes.push(DbSyncIndexSpec {
-			name: "idx_tx_out_consumed_by_tx_id",
-			relation: "tx_out",
-			access_methods: &["btree"],
-			keys: &["consumed_by_tx_id"],
-			create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_consumed_by_tx_id ON tx_out(consumed_by_tx_id)",
-		}),
+		crate::ResolvedDbSyncTxInputMode::TxIn => {
+			indexes.extend([IDX_TX_IN_TX_IN_ID_SPEC, IDX_TX_IN_TX_OUT_ID_TX_OUT_INDEX_SPEC]);
+		},
+		crate::ResolvedDbSyncTxInputMode::Consumed => {
+			indexes.push(IDX_TX_OUT_CONSUMED_BY_TX_ID_SPEC);
+		},
 	}
 
 	indexes
