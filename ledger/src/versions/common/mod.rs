@@ -1784,27 +1784,14 @@ where
 				)));
 			},
 			Some(ProofOutcome::VerifiedAt(previous_state_key)) => {
-				// Re-check against the ledger's own revalidation reference. It no-ops
-				// `stateless_check` — signature, binding-commitment and zswap structural checks,
-				// all functions of the transaction bytes alone and therefore unchanged — and
-				// re-runs the state-dependent checks only where the two states actually differ
-				// (ledger parameters, the contract's registered operation, its maintenance
-				// authority, and the Dust roots at the transaction's ctime).
+				// Re-check through the ledger's revalidation reference: it no-ops
+				// `stateless_check` and short-circuits `op_check` / `dust_spend_check`, so no
+				// proof cryptography runs while state that has moved is still caught. Do not
+				// pass `defer_proofs()` here — it clears the flags those two checks live under,
+				// skipping them along with the cryptography.
 				//
-				// The proof cryptography is skipped, but nothing else is: the reference applies
-				// `WellFormedStrictness::assume_proofs_verified` itself, via the ledger's
-				// `StateReference::adjust_strictness`. Evidence collection still runs, so
-				// `op_check` and `dust_spend_check` still catch a contract operation, verifier
-				// key or Dust root that moved since these proofs were verified.
-				//
-				// Hence the plain `strictness` below — the policy belongs to the reference, not
-				// to this call site. Do not "help" by passing `defer_proofs()`: that clears the
-				// flags gating evidence collection and would skip those state-dependent checks
-				// along with the cryptography.
-				//
-				// Reloading the previous state can fail if the arena no longer holds it (pruned,
-				// or a different process); that is a performance miss, not a correctness problem,
-				// so fall through to a full verification.
+				// Reloading the previous state can fail if the arena no longer holds it; that is
+				// a performance miss, not a correctness problem, so verify in full instead.
 				match Self::get_ledger(&api::new(), &previous_state_key) {
 					Ok(previous) => {
 						let reference = mn_ledger_local::verify::RevalidationReference {
