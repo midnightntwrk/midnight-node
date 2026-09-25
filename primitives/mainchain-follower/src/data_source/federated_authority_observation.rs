@@ -17,6 +17,9 @@ use crate::{
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
 };
 use cardano_serialization_lib::PlutusData;
+use db_sync_sqlx::{
+	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
+};
 use lru::LruCache;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
@@ -60,6 +63,7 @@ pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	cache: Arc<Mutex<LruCache<FederatedAuthorityCacheKey, FederatedAuthorityData>>>,
+	db_sync_config: ResolvedDbSyncQueryConfig,
 }
 
 impl FederatedAuthorityObservationDataSourceImpl {
@@ -68,9 +72,26 @@ impl FederatedAuthorityObservationDataSourceImpl {
 		metrics_opt: Option<MidnightDataSourceMetrics>,
 		cache_size: u16,
 	) -> Self {
+		Self::new_with_db_sync_config(
+			pool,
+			metrics_opt,
+			cache_size,
+			ResolvedDbSyncQueryConfig {
+				tx_input_mode: ResolvedDbSyncTxInputMode::TxIn,
+				address_mode: ResolvedDbSyncAddressMode::Inline,
+			},
+		)
+	}
+
+	pub fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+		db_sync_config: ResolvedDbSyncQueryConfig,
+	) -> Self {
 		let cap = NonZeroUsize::new(cache_size.max(1) as usize).unwrap();
 		let cache = Arc::new(Mutex::new(LruCache::new(cap)));
-		Self { pool, metrics_opt, cache }
+		Self { pool, metrics_opt, cache, db_sync_config }
 	}
 }
 
@@ -109,6 +130,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			&config.council.address,
 			&config.council.policy_id,
 			block_number,
+			self.db_sync_config,
 		)
 		.await?;
 		drop(_council_timer);
@@ -143,6 +165,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			&config.technical_committee.address,
 			&config.technical_committee.policy_id,
 			block_number,
+			self.db_sync_config,
 		)
 		.await?;
 		drop(_techcomm_timer);

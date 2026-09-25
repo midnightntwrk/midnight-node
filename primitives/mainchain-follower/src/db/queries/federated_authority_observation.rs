@@ -18,6 +18,7 @@
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 
 use crate::db::GovernanceBodyUtxoRow;
+use db_sync_sqlx::{ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig};
 use sidechain_domain::PolicyId;
 use sqlx::{Pool, Postgres, error::Error as SqlxError};
 
@@ -31,8 +32,16 @@ pub async fn get_governance_body_utxo(
 	script_address: &str,
 	policy_id: &PolicyId,
 	block_number: u32,
+	config: ResolvedDbSyncQueryConfig,
 ) -> Result<Option<GovernanceBodyUtxoRow>, SqlxError> {
-	sqlx::query_as::<_, GovernanceBodyUtxoRow>(
+	let (address_join, address_column) = match config.address_mode {
+		ResolvedDbSyncAddressMode::Inline => ("", "tx_out.address"),
+		ResolvedDbSyncAddressMode::AddressTable => (
+			"JOIN address tx_out_address ON tx_out_address.id = tx_out.address_id",
+			"tx_out_address.address",
+		),
+	};
+	let sql = format!(
 		r#"
 SELECT
     datum.value::jsonb AS full_datum,
@@ -42,21 +51,23 @@ SELECT
     tx.hash AS tx_hash,
     tx_out.index AS utxo_index
 FROM tx_out
+    {address_join}
     JOIN datum ON tx_out.data_hash = datum.hash
     JOIN tx ON tx.id = tx_out.tx_id
     JOIN block ON block.id = tx.block_id
     JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
-WHERE tx_out.address = $1
+WHERE {address_column} = $1
     AND ma.policy = $2
     AND block.block_no <= $3
 ORDER BY block.block_no DESC, tx.block_index DESC
 LIMIT 1
-        "#,
-	)
-	.bind(script_address)
-	.bind(policy_id.0)
-	.bind(block_number as i32)
-	.fetch_optional(pool)
-	.await
+        "#
+	);
+	sqlx::query_as::<_, GovernanceBodyUtxoRow>(&sql)
+		.bind(script_address)
+		.bind(policy_id.0)
+		.bind(block_number as i32)
+		.fetch_optional(pool)
+		.await
 }
