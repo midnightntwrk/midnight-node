@@ -34,7 +34,12 @@ use super::cfg::midnight_cfg::MidnightCfg;
 use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
-use std::{error::Error, str::FromStr as _, sync::Arc};
+use std::{
+	error::Error,
+	str::FromStr as _,
+	sync::Arc,
+	time::{Duration as StdDuration, Instant},
+};
 
 use midnight_primitives_mainchain_follower::{
 	CNightObservationDataSourceMock, FederatedAuthorityObservationDataSource,
@@ -283,6 +288,7 @@ pub async fn create_cached_data_sources(
 		db_sync_block_data_source_config.clone(),
 		&mc,
 	));
+	log_db_sync_startup_probe(sidechain_block_data_source.as_ref()).await;
 	let sidechain_rpc = SidechainRpcDataSourceImpl::new(
 		sidechain_block_data_source.clone(),
 		mc_metrics_opt.clone(),
