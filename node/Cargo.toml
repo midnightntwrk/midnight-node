@@ -125,6 +125,7 @@ sp-crypto-hashing.workspace = true
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
 partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
+db-sync-sqlx.workspace = true
 partner-chains-mock-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
 pallet-session-validator-management-rpc.workspace = true
 pallet-sidechain-rpc.workspace = true
