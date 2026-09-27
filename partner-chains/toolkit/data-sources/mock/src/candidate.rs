@@ -18,6 +18,7 @@ pub struct MockRegistration {
 	pub status: MockRegistrationStatus,
 	pub aura_pub_key: ByteString,
 	pub grandpa_pub_key: ByteString,
+	pub beefy_pub_key: ByteString,
 }
 
 impl MockRegistration {
@@ -69,6 +70,7 @@ impl From<MockRegistration> for CandidateRegistrations {
 			keys: CandidateKeys(vec![
 				AuraPublicKey(mock.aura_pub_key.0).into(),
 				GrandpaPublicKey(mock.grandpa_pub_key.0).into(),
+				beefy_key(mock.beefy_pub_key),
 			]),
 		}];
 		let stake_delegation = Some(StakeDelegation(333));
@@ -89,6 +91,7 @@ pub struct MockPermissionedCandidate {
 	sidechain_pub_key: ByteString,
 	aura_pub_key: ByteString,
 	grandpa_pub_key: ByteString,
+	beefy_pub_key: ByteString,
 }
 
 impl MockPermissionedCandidate {
@@ -108,6 +111,7 @@ impl From<MockPermissionedCandidate> for PermissionedCandidateData {
 			sidechain_pub_key,
 			aura_pub_key,
 			grandpa_pub_key,
+			beefy_pub_key,
 		}: MockPermissionedCandidate,
 	) -> Self {
 		Self {
@@ -115,9 +119,15 @@ impl From<MockPermissionedCandidate> for PermissionedCandidateData {
 			keys: CandidateKeys(vec![
 				AuraPublicKey(aura_pub_key.0).into(),
 				GrandpaPublicKey(grandpa_pub_key.0).into(),
+				beefy_key(beefy_pub_key),
 			]),
 		}
 	}
+}
+
+/// The candidate's BEEFY session key (key type `beef`).
+fn beefy_key(beefy_pub_key: ByteString) -> CandidateKey {
+	CandidateKey { id: *b"beef", bytes: beefy_pub_key.0 }
 }
 
 #[derive(Deserialize, Clone, Debug)]
