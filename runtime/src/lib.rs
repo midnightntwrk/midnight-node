@@ -1197,21 +1197,21 @@ mod runtime {
 	pub type TxPause = pallet_tx_pause::Pallet<Runtime>;
 	// SafeMode: pallet_safe_mode = 20,
 
-	// BEEFY Bridges support.
-	#[runtime::pallet_index(21)]
-	pub type Beefy = pallet_beefy::Pallet<Runtime>;
-	// MMR leaf construction must be after session in order to have a leaf's next_auth_set
-	// refer to block<N>. See issue polkadot-fellows/runtimes#160 for details.
-	#[runtime::pallet_index(22)]
-	pub type Mmr = pallet_mmr::Pallet<Runtime>;
-	#[runtime::pallet_index(23)]
-	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
-
 	#[runtime::pallet_index(32)]
 	pub type Bridge = pallet_partner_chains_bridge::Pallet<Runtime>;
 
 	#[runtime::pallet_index(33)]
 	pub type C2MBridge = pallet_c2m_bridge::Pallet<Runtime>;
+
+	// BEEFY Bridges support. Hooks run in pallet-index order, so these indices stay above
+	// Session (30): the MMR leaf of a session's first block must name the next authority
+	// set, which Session sets when it rotates (polkadot-fellows/runtimes#160).
+	#[runtime::pallet_index(34)]
+	pub type Beefy = pallet_beefy::Pallet<Runtime>;
+	#[runtime::pallet_index(35)]
+	pub type Mmr = pallet_mmr::Pallet<Runtime>;
+	#[runtime::pallet_index(36)]
+	pub type BeefyMmrLeaf = pallet_beefy_mmr::Pallet<Runtime>;
 
 	// Governance
 	#[runtime::pallet_index(40)]
@@ -2044,6 +2044,19 @@ mod tests {
 		assert!(
 			whitelist.contains("26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7")
 		);
+	}
+
+	/// `Executive` runs hooks in `AllPalletsWithSystem` order: Session must rotate the BEEFY
+	/// sets before Mmr appends the leaf that names the next set.
+	#[test]
+	fn session_hooks_run_before_the_mmr_leaf() {
+		use frame_support::traits::PalletsInfoAccess;
+		let order: Vec<&str> =
+			super::AllPalletsWithSystem::infos().iter().map(|info| info.name).collect();
+		let position = |name: &str| order.iter().position(|n| *n == name).unwrap();
+		assert!(position("Session") < position("Beefy"));
+		assert!(position("Session") < position("Mmr"));
+		assert!(position("Session") < position("BeefyMmrLeaf"));
 	}
 
 	// The set committee takes effect next session. Committee can be set for 1 session in advance.
