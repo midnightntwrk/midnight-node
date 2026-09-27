@@ -465,7 +465,7 @@ impl pallet_beefy::Config for Runtime {
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
 	type MaxSetIdSessionEntries = ConstU64<0>;
-	type OnNewValidatorSet = BeefyMmrLeaf;
+	type OnNewValidatorSet = beefy::SeatCommitments;
 	type AncestryHelper = BeefyMmrLeaf;
 	type WeightInfo = ();
 	type KeyOwnerProof = sp_core::Void;

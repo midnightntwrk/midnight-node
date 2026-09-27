@@ -1,11 +1,10 @@
 //! Extension of Custom Implementations related to Beefy and Mmr
 
 use crate::{CrossChainPublic, Runtime};
-use core::marker::PhantomData;
 
 use authority_selection_inherents::CommitteeMember;
 
-use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStakes};
+use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStakes, authority_set_commitment};
 use pallet_beefy_mmr::{Config as BeefyMmrConfig, Pallet as BeefyMmrPallet};
 use pallet_mmr::Config as MmrConfig;
 
@@ -13,7 +12,8 @@ use pallet_session_validator_management::{
 	CommitteeInfo, Config as SessionValidatorMngConfig, Pallet as SessionValidatorMngPallet,
 };
 use sp_consensus_beefy::{
-	OnNewValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId as BeefyId, mmr::BeefyAuthoritySet,
+	OnNewValidatorSet, ValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId as BeefyId,
+	mmr::BeefyAuthoritySet,
 };
 
 use alloc::vec::Vec;
@@ -87,35 +87,13 @@ pub fn compute_next_authority_set(beefy_stakes: BeefyStakes<BeefyId>) -> BeefyAu
 	compute_authority_set(id, beefy_stakes)
 }
 
-pub struct AuthoritiesProvider<T> {
-	_phantom: PhantomData<T>,
-}
+/// Caches the committee commitments of the BEEFY sets that `pallet_beefy_mmr` puts in the MMR leaf.
+pub struct SeatCommitments;
 
-impl OnNewValidatorSet<BeefyId> for AuthoritiesProvider<Runtime> {
-	fn on_new_validator_set(
-		validator_set: &sp_consensus_beefy::ValidatorSet<BeefyId>,
-		next_validator_set: &sp_consensus_beefy::ValidatorSet<BeefyId>,
-	) {
-		log::info!(target: BEEFY_LOG_TARGET, "🥩 Updating Beefy MMR Authorities....");
-
-		let curr_validators = validator_set.validators().to_vec();
-		let beefy_stakes = current_beefy_stakes(Some(curr_validators));
-		let curr_authority_set = compute_authority_set(validator_set.id(), beefy_stakes);
-
-		log::info!( target: BEEFY_LOG_TARGET, "🥩 New \"Current\" authority set: {curr_authority_set:?}");
-
-		let next_validators = next_validator_set.validators().to_vec();
-		if let Some(next_beefy_stakes) = next_beefy_stakes(Some(next_validators)) {
-			let next_authority_set =
-				compute_authority_set(next_validator_set.id(), next_beefy_stakes);
-			log::info!(target: BEEFY_LOG_TARGET, "🥩 New \"Next\" authority set: {next_authority_set:?}");
-
-			pallet_beefy_mmr::pallet::BeefyNextAuthorities::<Runtime>::put(&next_authority_set);
-		} else {
-			log::info!(target: BEEFY_LOG_TARGET, "🥩 No \"Next\" committee found. No update on `BeefyNextAuthorities`");
-		}
-
-		pallet_beefy_mmr::pallet::BeefyAuthorities::<Runtime>::put(&curr_authority_set);
+impl OnNewValidatorSet<BeefyId> for SeatCommitments {
+	fn on_new_validator_set(current: &ValidatorSet<BeefyId>, next: &ValidatorSet<BeefyId>) {
+		pallet_beefy_mmr::BeefyAuthorities::<Runtime>::put(authority_set_commitment(current));
+		pallet_beefy_mmr::BeefyNextAuthorities::<Runtime>::put(authority_set_commitment(next));
 	}
 }
 
