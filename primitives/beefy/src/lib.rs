@@ -2,34 +2,25 @@
 
 extern crate alloc;
 
-use alloc::{collections::BTreeMap, vec::Vec};
-use parity_scale_codec::{Codec, Decode};
-use sp_consensus_beefy::{
-	ValidatorSet,
-	ecdsa_crypto::AuthorityId,
-	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet},
-};
+use alloc::collections::BTreeMap;
+use sp_consensus_beefy::{ValidatorSet, ecdsa_crypto::AuthorityId, mmr::BeefyAuthoritySet};
 use sp_core::H256;
-use sp_runtime::{RuntimeAppPublic, traits::Keccak256};
+use sp_runtime::traits::Keccak256;
 
 /// The key type for inserting Beefy keys into the keystore
 pub const BEEFY_KEY_TYPE: &str = "beef";
 
 pub const BEEFY_LOG_TARGET: &str = "midnight-beefy";
 
-/// The StakeDelegation
-pub type Stake = u64;
-pub type BeefyAuthoritySetOf<Hash> = BeefyAuthoritySet<Hash>;
-
-pub type BeefyStake<AuthorityId> = (AuthorityId, Stake);
-
-/// A List of tuple (Beefy Ids, stake)
-pub type BeefyStakes<AuthorityId> = Vec<BeefyStake<AuthorityId>>;
+/// The 33-byte compressed public key of `id`.
+pub fn compressed_key(id: &AuthorityId) -> [u8; 33] {
+	id.clone().into_inner().0
+}
 
 /// Each distinct compressed key of `validators` with its seat count, ascending by key.
 pub fn seats(validators: &[AuthorityId]) -> BTreeMap<[u8; 33], u32> {
 	validators.iter().fold(BTreeMap::new(), |mut seats, validator| {
-		*seats.entry(validator.clone().into_inner().0).or_insert(0) += 1;
+		*seats.entry(compressed_key(validator)).or_insert(0) += 1;
 		seats
 	})
 }
@@ -49,41 +40,6 @@ pub fn authority_set_commitment(set: &ValidatorSet<AuthorityId>) -> BeefyAuthori
 		id: set.id(),
 		len: set.len() as u32,
 		keyset_commitment: binary_merkle_tree::merkle_root::<Keccak256, _>(leaves),
-	}
-}
-
-/// Ids to identify Beefy stakes
-pub mod known_payloads {
-	use sp_consensus_beefy::BeefyPayloadId;
-
-	pub const CURRENT_BEEFY_STAKES_ID: BeefyPayloadId = *b"cs";
-	pub const CURRENT_BEEFY_AUTHORITY_SET: BeefyPayloadId = *b"cb";
-	pub const NEXT_BEEFY_STAKES_ID: BeefyPayloadId = *b"ns";
-	pub const NEXT_BEEFY_AUTHORITY_SET: BeefyPayloadId = *b"nb";
-}
-
-// An api to be used and accessed by the Node
-sp_api::decl_runtime_apis! {
-	pub trait BeefyStakesApi<Hash, AuthorityId>
-	where
-		BeefyAuthoritySet<Hash>: Decode,
-		AuthorityId: Codec + RuntimeAppPublic
-	{
-		/// Gets the current beefy stakes
-		fn current_beefy_stakes() -> BeefyStakes<AuthorityId>;
-
-		/// Gets the next beefy stakes
-		fn next_beefy_stakes() -> Option<BeefyStakes<AuthorityId>>;
-
-		/// Returns the authority set based on the current beef stakes
-		fn compute_current_authority_set(
-			beefy_stakes: BeefyStakes<AuthorityId>,
-		) ->  BeefyAuthoritySet<Hash>;
-
-		/// Returns the authority set based on the next beef stakes
-		fn compute_next_authority_set(
-			beefy_stakes: BeefyStakes<AuthorityId>,
-		) -> BeefyNextAuthoritySet<Hash> ;
 	}
 }
 

@@ -31,18 +31,6 @@ pub enum Error {
 	#[error("Failed to create proof of authorities list")]
 	InvalidAuthoritiesProofCreation,
 
-	#[error("No \"Current\" Beefy Stakes found in the payload")]
-	MissingCurrentBeefyStakes,
-
-	#[error("No Current Beefy AuthoritySet found in the payload")]
-	MissingCurrentAuthoritySet,
-
-	#[error("No \"Next\" Beefy Stakes found in the payload")]
-	MissingNextBeefyStakes,
-
-	#[error("No \"Next\" Beefy AuthoritySet found in the payload")]
-	MissingNextAuthoritySet,
-
 	#[error("Chain did not return any validator set")]
 	EmptyValidatorSet,
 }

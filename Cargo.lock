@@ -7582,6 +7582,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "env_logger",
+ "hex-literal 1.1.0",
  "log",
  "midnight-node-metadata",
  "midnight-primitives-beefy",
@@ -8400,8 +8401,6 @@ version = "0.1.0"
 dependencies = [
  "binary-merkle-tree",
  "hex-literal 1.1.0",
- "parity-scale-codec",
- "sp-api",
  "sp-consensus-beefy",
  "sp-core",
  "sp-runtime",

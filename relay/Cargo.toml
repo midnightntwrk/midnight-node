@@ -22,3 +22,6 @@ serde = { workspace = true, default-features = true }
 serde_json = { workspace = true, default-features = true }
 thiserror = { workspace = true, default-features = true }
 tokio = { workspace = true, default-features = true, features = ["time", "rt-multi-thread"]}
+
+[dev-dependencies]
+hex-literal.workspace = true

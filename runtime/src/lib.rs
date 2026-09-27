@@ -50,7 +50,6 @@ pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
-use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
@@ -70,7 +69,7 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_beefy::{
 	OpaqueKeyOwnershipProof,
 	ecdsa_crypto::{AuthorityId as BeefyId, Signature as BeefySignature},
-	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
+	mmr::MmrLeafVersion,
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
@@ -128,11 +127,6 @@ use pallet_federated_authority::{
 #[cfg(not(feature = "runtime-benchmarks"))]
 use runtime_common::governance::AlwaysNo;
 use runtime_common::governance::{MembershipHandler, MembershipObservationHandler};
-
-use crate::beefy::{
-	compute_current_authority_set, compute_next_authority_set, current_beefy_stakes,
-	next_beefy_stakes,
-};
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -1646,33 +1640,6 @@ impl_runtime_apis! {
 			_key_owner_proof: OpaqueKeyOwnershipProof,
 		) -> Option<()> {
 			None
-		}
-	}
-
-	// Collects the (Current BeefyStakes, Next BeefyStakes)
-	impl midnight_primitives_beefy::BeefyStakesApi<Block, Hash, BeefyId> for Runtime {
-		/// Gets the current beefy stakes
-		fn current_beefy_stakes() -> BeefyStakes<BeefyId> {
-			current_beefy_stakes(None)
-		}
-
-		/// Gets the next beefy stakes
-		fn next_beefy_stakes() -> Option<BeefyStakes<BeefyId>> {
-			next_beefy_stakes(None)
-		}
-
-		/// Returns the authority set based on the current beef stakes
-		fn compute_current_authority_set(
-			beefy_stakes: BeefyStakes<BeefyId>,
-		) ->  BeefyAuthoritySet<Hash> {
-			compute_current_authority_set(beefy_stakes)
-		}
-
-		/// Returns the authority set based on the next beef stakes
-		fn compute_next_authority_set(
-			beefy_stakes: BeefyStakes<BeefyId>,
-		) -> BeefyNextAuthoritySet<Hash> {
-			compute_next_authority_set(beefy_stakes)
 		}
 	}
 
