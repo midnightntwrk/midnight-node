@@ -33,7 +33,7 @@ cardano-cli latest transaction sign --testnet-magic 42 \
   --tx-body-file /tmp/pool1-registration.raw \
   --signing-key-file /keys/funded_address.skey --out-file /tmp/pool1-registration.signed
 cardano-cli latest transaction submit --testnet-magic 42 --tx-file /tmp/pool1-registration.signed
-registration_tx=$(cardano-cli latest transaction txid --tx-file /tmp/pool1-registration.signed)
+registration_tx=$(cardano-cli latest transaction txid --tx-file /tmp/pool1-registration.signed | jq -r .txhash)
 
 until cardano-cli latest query utxo --testnet-magic 42 --address "$candidate_address" --out-file /tmp/pool1-utxos.json \
   && jq -e --arg tx "$registration_tx#0" 'has($tx)' /tmp/pool1-utxos.json > /dev/null; do
