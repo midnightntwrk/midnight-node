@@ -1,0 +1,12 @@
+{
+  "aura": "0x2efe026b22548967bf42c0de91b514cd959fdf26db849f0cd144f319ccfb5949",
+  "grandpa": "0x2df04125f0015afb47ce853aef8772094ff9498c14cb1b9e12973c2927da0fa6",
+  "beefy": "0x031195a8046dcbb8e17034bca630065e7a0982e4e36f6f7e5a8d4554e4846fcd99",
+  "cross_chain": "0x028ab6cae041834cf12edef9eee966bce3ba95135eaead3d32d78bacadf5349d55",
+  "ss58": {
+    "aura": "5D8KWuW98ZLgrUXGDqr6xjt3UcVdqcQjgax1HTwfcsdjDwLW",
+    "grandpa": "5D6wP8rZNMSCzn5GoW1ow1qq5JNGeKGpN4NwjXwdcBgnY7HN",
+    "beefy": "KW97NGhcnLLHQQk5BPN4BdMzvektVxjBBSEHqy5DSGdqxAkTQ",
+    "cross_chain": "KW64XegnRfMMQcN5NX68MGbmfCiVrPVVh9SfntEeWCMJ1KQWz"
+  }
+}

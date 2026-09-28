@@ -242,32 +242,6 @@ patch_json /res/local/c2m-bridge-config.json \
 echo "Patched c2m-bridge-config.json:"
 cat /res/local/c2m-bridge-config.json
 
-phase "Building chain-spec"
-
-# All chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
-# chainspec_* paths there are relative (res/local/..., res/genesis/...) and the image
-# workdir is /, so they resolve through the /res repo mount — build-spec reads the
-# configs patched above, and a locally regenerated genesis takes effect on the next
-# bring-up without a node-image rebuild.
-export CFG_PRESET=local
-
-./midnight-node build-spec --disable-default-bootnode > chain-spec.json
-echo "chain-spec.json file generated."
-
-echo "Amending the chain spec..."
-echo "Configuring Epoch Length..."
-jq '.genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = 5' chain-spec.json > tmp.json && mv tmp.json chain-spec.json
-
-check_json_validity chain-spec.json
-
-echo "Final chain spec"
-
-echo "Copying chain-spec.json file to /shared/chain-spec.json..."
-cp chain-spec.json /shared/chain-spec.json
-echo "chain-spec.json generation complete."
-
-echo "Partnerchain configuration is complete, and will be able to start after two mainchain epochs."
-
 phase "Awaiting activation"
 
 echo "Waiting for contracts to become active at epoch $contracts_active_epoch..."
@@ -284,4 +258,38 @@ while [ "$epoch" -lt "$contracts_active_epoch" ]; do
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
   echo "Current epoch: $epoch"
 done
-echo "DParam is now active!"
+echo "Pool1 registration and contracts are now active."
+
+phase "Building chain-spec"
+
+# All chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
+# chainspec_* paths there are relative (res/local/..., res/genesis/...) and the image
+# workdir is /, so they resolve through the /res repo mount — build-spec reads the
+# configs patched above, and a locally regenerated genesis takes effect on the next
+# bring-up without a node-image rebuild.
+export CFG_PRESET=local
+
+./midnight-node build-spec --disable-default-bootnode > chain-spec.json
+echo "chain-spec.json file generated."
+
+echo "Amending the chain spec..."
+echo "Configuring Epoch Length..."
+jq --slurpfile keys /midnight-nodes/midnight-node-6/public-keys.json \
+  --slurpfile signatures /shared/pool1-signatures.json \
+  '.genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = 5
+   | .genesis.runtimeGenesis.config.sessionCommitteeManagement.initialAuthorities += [{Registered: {
+       id: $keys[0].ss58.cross_chain,
+       keys: {aura: $keys[0].ss58.aura, grandpa: $keys[0].ss58.grandpa, beefy: $keys[0].ss58.beefy},
+       stake_pool_pub_key: $signatures[0].spo_public_key
+     }}]' chain-spec.json > tmp.json && mv tmp.json chain-spec.json
+
+check_json_validity chain-spec.json
+
+echo "Final chain spec"
+
+echo "Copying chain-spec.json file to /shared/chain-spec.json..."
+cp chain-spec.json /shared/chain-spec.json
+echo "chain-spec.json generation complete."
+
+echo "Partnerchain configuration is complete."
+

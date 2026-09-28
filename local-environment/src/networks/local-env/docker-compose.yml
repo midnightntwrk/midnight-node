@@ -498,9 +498,7 @@ services:
           cpus: ${CPU_MIDNIGHT_NODE:-}
           memory: ${MEM_MIDNIGHT_NODE:-}
 
-  # Non-validator archive node: follows the chain, keeps full state and block
-  # history for RPC inspection. Not labeled io.midnight.role: validator, so
-  # finality verification and upgrade tooling skip it.
+  # Pool1 validator also serves archive RPC on 9945.
   midnight-node-6:
     container_name: midnight-node-6
     image: ${MIDNIGHT_NODE_IMAGE}
@@ -514,11 +512,16 @@ services:
       - midnight-node-6-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-6/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-6/seeds:/seeds:ro
     environment:
+      AURA_SEED_FILE: "/seeds/aura.seed"
+      GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
+      BEEFY_SEED_FILE: "/seeds/beefy.seed"
+      CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
-      io.midnight.role: archive
+      io.midnight.role: validator
       io.midnight.rpc-port: "9945"
     ports:
       - "30338:30338"
@@ -531,6 +534,47 @@ services:
           cpus: ${CPU_MIDNIGHT_NODE:-}
           memory: ${MEM_MIDNIGHT_NODE:-}
 
+  pool1-registration-signatures:
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      mint-cnight-supply:
+        condition: service_completed_successfully
+    user: "0:0"
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - shared-volume:/shared
+      - ./runtime-values:/runtime-values
+      - ./configurations/cardano/keys/cold.skey:/keys/cold.skey:ro
+      - ./configurations/midnight-nodes/midnight-node-6/seeds:/seeds:ro
+      - ./configurations/pool1-registration:/pool1-registration:ro
+      - ../../../../res/local/pc-chain-config.json:/res/local/pc-chain-config.json:ro
+    environment:
+      - OGMIOS_PORT=${OGMIOS_PORT}
+    entrypoint: ["/bin/bash", "/pool1-registration/signatures.sh"]
+
+  pool1-registration:
+    image: ${CARDANO_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      pool1-registration-signatures:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - cardano-node-1-data:/data
+      - shared-volume:/shared
+      - ./runtime-values:/runtime-values
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey:ro
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey:ro
+      - ./configurations/midnight-nodes/midnight-node-6/public-keys.json:/public-keys.json:ro
+      - ./configurations/pool1-registration:/pool1-registration:ro
+    environment:
+      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+    entrypoint: ["/bin/bash", "/pool1-registration/register.sh"]
+
+
   midnight-setup:
     container_name: midnight-setup
     image: ${MIDNIGHT_NODE_IMAGE}
@@ -540,7 +584,7 @@ services:
         condition: service_healthy
       contract-compiler:
         condition: service_completed_successfully
-      mint-cnight-supply:
+      pool1-registration:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true

@@ -21,9 +21,9 @@ set -euxo pipefail
 
 export STORAGE_SEPARATION=unified
 
-# Non-validator archive node: no --validator, no keystore. Keeps full state and
-# block history (--state-pruning/--blocks-pruning archive) for RPC inspection.
+# Pool1 validator retains full state and block history for RPC inspection.
 ./midnight-node \
+  --validator \
   --chain=/shared/chain-spec.json \
   --node-key=0000000000000000000000000000000000000000000000000000000000000006 \
   --port=30338 \

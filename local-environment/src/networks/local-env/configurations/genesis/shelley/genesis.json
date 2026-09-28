@@ -88,7 +88,7 @@
       },
       "bcf4107cca955239a101ef4a99795bd49ba4fde68ff82c913f547a7a": {
         "cost": 0,
-        "margin": 0,
+        "margin": 0.1,
         "metadata": null,
         "owners": [],
         "pledge": 0,
