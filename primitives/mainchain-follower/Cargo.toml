@@ -8,6 +8,7 @@ license-file.workspace = true
 [dependencies]
 parity-scale-codec.workspace = true
 midnight-primitives-cnight-observation.workspace = true
+midnight-primitives-block-rewards.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 async-trait = { workspace = true, optional = true }
 sidechain-domain.workspace = true
@@ -45,6 +46,7 @@ std = [
     "sidechain-domain/std",
     "midnight-primitives-federated-authority-observation/std",
     "midnight-primitives-cnight-observation/std",
+    "midnight-primitives-block-rewards/std",
     "async-trait",
     "sp-inherents/std",
     "scale-info/std",

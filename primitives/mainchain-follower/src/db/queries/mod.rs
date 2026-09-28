@@ -15,3 +15,5 @@ pub mod cnight_observation;
 pub mod federated_authority_observation;
 
 pub use cnight_observation::*;
+
+pub mod virtual_account_observation;

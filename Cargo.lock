@@ -7855,6 +7855,7 @@ dependencies = [
  "midnight-node-runtime",
  "midnight-primitives",
  "midnight-primitives-beefy",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
@@ -8099,6 +8100,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "hex-literal 1.1.0",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
@@ -8132,6 +8134,7 @@ dependencies = [
  "midnight-node-ledger",
  "midnight-primitives",
  "midnight-primitives-beefy",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
@@ -8141,6 +8144,7 @@ dependencies = [
  "pallet-babe",
  "pallet-beefy",
  "pallet-beefy-mmr",
+ "pallet-block-rewards",
  "pallet-c2m-bridge",
  "pallet-cnight-observation",
  "pallet-collective",
@@ -8407,6 +8411,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-block-rewards"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-api",
+ "sp-inherents",
+]
+
+[[package]]
 name = "midnight-primitives-cnight-observation"
 version = "0.1.0"
 dependencies = [
@@ -8479,6 +8494,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "lru 0.18.2",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "parity-scale-codec",
@@ -10211,6 +10227,23 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-state-machine",
+]
+
+[[package]]
+name = "pallet-block-rewards"
+version = "0.1.0"
+dependencies = [
+ "binary-merkle-tree",
+ "frame-support",
+ "frame-system",
+ "midnight-primitives-block-rewards",
+ "pallet-authorship",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-inherents",
+ "sp-io",
+ "sp-runtime",
 ]
 
 [[package]]

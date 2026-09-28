@@ -1,0 +1,24 @@
+[package]
+name = "pallet-block-rewards"
+version = "0.1.0"
+edition = "2024"
+license-file.workspace = true
+
+[dependencies]
+frame-support.workspace = true
+frame-system.workspace = true
+pallet-authorship.workspace = true
+midnight-primitives-block-rewards.workspace = true
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+sp-inherents.workspace = true
+sp-runtime.workspace = true
+sp-core.workspace = true
+sp-io.workspace = true
+binary-merkle-tree.workspace = true
+
+[features]
+default = ["std"]
+std = ["frame-support/std", "frame-system/std", "pallet-authorship/std", "midnight-primitives-block-rewards/std", "parity-scale-codec/std", "scale-info/std", "sp-inherents/std", "sp-runtime/std", "sp-core/std", "sp-io/std", "binary-merkle-tree/std"]
+runtime-benchmarks = ["frame-support/runtime-benchmarks", "frame-system/runtime-benchmarks", "sp-runtime/runtime-benchmarks"]
+try-runtime = ["frame-support/try-runtime", "frame-system/try-runtime"]

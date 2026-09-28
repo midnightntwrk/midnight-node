@@ -28,3 +28,8 @@ pub use cnight_observation::{
 };
 #[cfg(feature = "std")]
 pub use federated_authority_observation::FederatedAuthorityInherentDataProvider;
+
+#[cfg(feature = "std")]
+pub mod virtual_account_observation;
+#[cfg(feature = "std")]
+pub use virtual_account_observation::VirtualAccountInherentDataProvider;

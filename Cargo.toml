@@ -6,6 +6,8 @@ members = [
     "metadata",
     "node",
     "pallets/midnight",
+    "pallets/block-rewards",
+    "primitives/block-rewards",
     "pallets/c2m-bridge",
     "pallets/consensus-engine",
     "pallets/cnight-observation",
@@ -74,6 +76,8 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 
 [workspace.dependencies]
 # Midnight dependencies
+pallet-block-rewards = { path = "pallets/block-rewards", default-features = false }
+midnight-primitives-block-rewards = { path = "primitives/block-rewards", default-features = false }
 # Shared 2.x deps (used by Ledger 8)
 coin-structure = { version = "^2.0.0", package = "midnight-coin-structure" }
 base-crypto = { version = "^1.0.0", package = "midnight-base-crypto" }

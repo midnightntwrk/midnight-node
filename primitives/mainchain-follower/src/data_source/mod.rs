@@ -88,3 +88,8 @@ mod tests {
 		);
 	}
 }
+
+pub mod virtual_account_observation;
+pub use virtual_account_observation::{
+	VirtualAccountObservationDataSourceImpl, VirtualAccountObservationDataSourceMock,
+};

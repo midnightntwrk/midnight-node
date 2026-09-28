@@ -31,7 +31,8 @@ pub use {
 	data_source::{
 		CNightObservationDataSourceMock, CandidateDataSourceCached, CandidatesDataSourceImpl,
 		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
-		MidnightCNightObservationDataSourceImpl, get_epoch_for_block_hash,
+		MidnightCNightObservationDataSourceImpl, VirtualAccountObservationDataSourceImpl,
+		VirtualAccountObservationDataSourceMock, get_epoch_for_block_hash,
 		metrics::MidnightDataSourceMetrics,
 	},
 	inherent_provider::*,
@@ -66,6 +67,18 @@ pub mod inherent_provider {
 			config: &FederatedAuthorityObservationConfig,
 			mc_block_hash: &McBlockHash,
 		) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>>;
+	}
+
+	#[async_trait::async_trait]
+	pub trait VirtualAccountObservationDataSource {
+		async fn get_reward_accounts(
+			&self,
+			policy: &[u8; 28],
+			mc_block_hash: &McBlockHash,
+		) -> Result<
+			Vec<midnight_primitives_block_rewards::RewardAccount>,
+			Box<dyn std::error::Error + Send + Sync>,
+		>;
 	}
 
 	#[derive(Clone, Debug)]
