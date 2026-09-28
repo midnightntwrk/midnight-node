@@ -168,6 +168,11 @@ const STRICT_TX_VALIDATION_CACHE_CAPACITY: u64 = 600;
 #[cfg(feature = "std")]
 const REVALIDATION_CACHE_CAPACITY: u64 = 2000;
 
+/// Deserialized transactions held for reuse within a block. One block's extrinsics is the working
+/// set; the entries are large (serialized bytes plus the decoded transaction), so this is sized to
+/// a few blocks rather than to the validation caches' horizon.
+const TX_DESERIALIZE_CACHE_CAPACITY: u64 = 256;
+
 /// Time-to-idle for transaction validation cache entries.
 /// Entries not accessed within this duration are evicted, preventing stale VerifiedTransaction
 /// objects (which contain ZK proof data and can be 50-200 KiB each) from persisting indefinitely
@@ -220,6 +225,23 @@ lazy_static! {
 	/// through the ledger's `RevalidationReference` instead of verifying its proofs again. This
 	/// cache is process-global (like the SOFT/STRICT caches) and therefore not shared across
 	/// processes.
+	/// Decoded transactions, keyed by the exact bytes they were decoded from.
+	///
+	/// A transaction is deserialized at every host-call boundary that needs it — `pre_dispatch`,
+	/// `apply_transaction`, and the batch pre-pass — so the same bytes are decoded two or three
+	/// times per block. Nothing else caches this: the STRICT cache holds post-verification
+	/// `VerifiedTransaction`s and is keyed on a state hash that moves after every extrinsic, so it
+	/// cannot serve a decode and in practice never hits during block import.
+	///
+	/// Keyed on the bytes themselves rather than a digest of them: a hash collision here would
+	/// substitute one transaction for another, and the map's equality check rules that out without
+	/// paying for a cryptographic hash on every lookup.
+	static ref TX_DESERIALIZE_CACHE: Cache<Vec<u8>, Arc<dyn Any + Send + Sync>> =
+		Cache::builder()
+			.max_capacity(TX_DESERIALIZE_CACHE_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
+
 	static ref REVALIDATION_CACHE: Cache<RevalidationKey, ProofOutcome> =
 		Cache::builder()
 			.max_capacity(REVALIDATION_CACHE_CAPACITY)
@@ -480,7 +502,12 @@ where
 			"⏱️  Deserializing tx (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let deser_start = Instant::now();
+		let tx = Self::deserialize_tx_cached(&api, tx_serialized)?;
+		let deser_elapsed = deser_start.elapsed().as_secs_f64();
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			metrics.observe_tx_deserialize(deser_elapsed, "apply");
+		}
 		let tx_hash = tx.hash();
 		log::info!(
 			target: LOG_TARGET,
@@ -825,7 +852,12 @@ where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let deser_start = Instant::now();
+		let tx = Self::deserialize_tx_cached(&api, tx_serialized)?;
+		let deser_elapsed = deser_start.elapsed().as_secs_f64();
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			metrics.observe_tx_deserialize(deser_elapsed, "pre_dispatch");
+		}
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
@@ -932,10 +964,12 @@ where
 		// has already initialized storage in this process.
 		Self::set_default_storage(externalities);
 
+		let setup_start = Instant::now();
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let state_hash: Hash = ledger.state.state_hash().0.into();
+		let setup_elapsed = setup_start.elapsed();
 
 		// Apply the same historical-sync tblock correction the per-transaction path uses, so the
 		// non-crypto `well_formed` checks below — and the `VerifiedTransaction`s they produce — match
@@ -962,7 +996,11 @@ where
 			/// Deserialization or the non-crypto `well_formed` checks failed for this tx.
 			Failed(LedgerApiError),
 			/// Passed the non-crypto checks; carries what the cache-warming step needs.
-			Ready { key: WrappedHash, tx: Transaction<S, D>, verified_tx: VerifiedTransaction<D> },
+			Ready {
+				key: WrappedHash,
+				tx: Arc<Transaction<S, D>>,
+				verified_tx: VerifiedTransaction<D>,
+			},
 		}
 
 		// Accumulate the per-tx non-crypto `well_formed` time (proofs deferred). Reported below as
@@ -971,15 +1009,22 @@ where
 		let mut prep_elapsed = std::time::Duration::ZERO;
 		let mut prep_count: u64 = 0;
 		let mut preps: Vec<Prep<S, D>> = Vec::with_capacity(txs_serialized.len());
+		let mut deser_elapsed = std::time::Duration::ZERO;
+		let mut key_elapsed = std::time::Duration::ZERO;
 		for tx_serialized in txs_serialized {
-			let tx = match api.tagged_deserialize::<Transaction<S, D>>(tx_serialized) {
+			let deser_start = Instant::now();
+			let deserialized = Self::deserialize_tx_cached(&api, tx_serialized);
+			deser_elapsed += deser_start.elapsed();
+			let tx = match deserialized {
 				Ok(tx) => tx,
 				Err(e) => {
 					preps.push(Prep::Failed(e));
 					continue;
 				},
 			};
+			let key_start = Instant::now();
 			let key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
+			key_elapsed += key_start.elapsed();
 
 			// Defer proofs: run every non-crypto check now, batch the ZK crypto below.
 			let mut strictness = mn_ledger_local::verify::WellFormedStrictness::default();
@@ -1072,6 +1117,7 @@ where
 
 		// Warm the caches for every verified transaction so downstream consumers skip the crypto, and
 		// cache `false` for the localized offender(s) so `get_verified_transaction` rejects them.
+		let warm_start = Instant::now();
 		let mut results = Vec::with_capacity(preps.len());
 		let mut ready_idx = 0usize;
 		for prep in preps {
@@ -1105,6 +1151,15 @@ where
 					}
 				},
 			}
+		}
+
+		let warm_elapsed = warm_start.elapsed();
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			metrics.observe_batch_phase(setup_elapsed.as_secs_f64(), "setup");
+			metrics.observe_batch_phase(deser_elapsed.as_secs_f64(), "deserialize");
+			metrics.observe_tx_deserialize(deser_elapsed.as_secs_f64(), "batch");
+			metrics.observe_batch_phase(key_elapsed.as_secs_f64(), "cache_key");
+			metrics.observe_batch_phase(warm_elapsed.as_secs_f64(), "warm");
 		}
 
 		log::debug!(
@@ -1621,6 +1676,46 @@ where
 
 	fn get_deserialized_ledger_parameters(state: &Ledger<D>) -> LedgerParameters {
 		state.get_parameters()
+	}
+
+	/// Whether the decode cache is active, from `LEDGER_TX_DESERIALIZE_CACHE`.
+	///
+	/// Present so the cache can be A/B-benchmarked against the pipeline without it; it defaults on
+	/// and only an explicit `false`/`0` turns it off.
+	fn tx_deserialize_cache_enabled() -> bool {
+		static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+		*ENABLED.get_or_init(|| {
+			!matches!(
+				std::env::var("LEDGER_TX_DESERIALIZE_CACHE").as_deref(),
+				Ok("false") | Ok("0")
+			)
+		})
+	}
+
+	/// Deserializes a transaction, reusing an earlier decode of the same bytes.
+	///
+	/// The decode is ~0.8 ms and is repeated at every host-call boundary within a block, so this is
+	/// the difference between paying it once and paying it two or three times. Returns an `Arc` so a
+	/// hit costs a refcount rather than a clone of the transaction.
+	fn deserialize_tx_cached(
+		api: &api::Api,
+		tx_serialized: &[u8],
+	) -> Result<Arc<Transaction<S, D>>, LedgerApiError>
+	where
+		Transaction<S, D>: Send + Sync + 'static,
+	{
+		if !Self::tx_deserialize_cache_enabled() {
+			return Ok(Arc::new(api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?));
+		}
+		if let Some(cached) = TX_DESERIALIZE_CACHE.get(tx_serialized)
+			&& let Some(tx) = cached.downcast_ref::<Arc<Transaction<S, D>>>()
+		{
+			return Ok(tx.clone());
+		}
+		let tx = Arc::new(api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?);
+		TX_DESERIALIZE_CACHE
+			.insert(tx_serialized.to_vec(), Arc::new(tx.clone()) as Arc<dyn Any + Send + Sync>);
+		Ok(tx)
 	}
 
 	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
