@@ -201,6 +201,35 @@ fn governance_rejects_every_variant_but_overwrite_parameters() {
 	});
 }
 
+/// The variant `governance_rejects_every_variant_but_overwrite_parameters` skips. Without
+/// it a predicate that rejects everything would pass the whole suite while breaking
+/// ledger-parameter updates in production.
+#[test]
+fn governance_accepts_overwrite_parameters() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let before = pallet_midnight::StateKey::<Test>::get();
+
+		assert_ok!(mock::MidnightSystem::send_mn_system_transaction(
+			RuntimeOrigin::root(),
+			overwrite_parameters_tx()
+		));
+
+		assert_ne!(
+			before,
+			pallet_midnight::StateKey::<Test>::get(),
+			"an applied system transaction must advance the ledger state key",
+		);
+		assert!(
+			mock::System::events().iter().any(|r| matches!(
+				r.event,
+				mock::RuntimeEvent::MidnightSystem(crate::Event::SystemTransactionApplied(_))
+			)),
+			"an applied system transaction must emit SystemTransactionApplied for the indexer",
+		);
+	});
+}
+
 #[test]
 fn cnight_executor_rejects_every_variant_but_cnight_generates_dust_update() {
 	mock::new_test_ext().execute_with(|| {
