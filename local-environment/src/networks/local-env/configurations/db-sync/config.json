@@ -2,6 +2,9 @@
   "EnableLogMetrics": false,
   "EnableLogging": true,
   "NetworkName": "Testnet",
+  "insert_options": {
+    "tx_cbor": "enable"
+  },
   "NodeConfigFile": "/shared/node-1-config.json",
   "ByronGenesisFile": "/shared/byron/genesis.json",
   "ShelleyGenesisFile": "/shared/shelley/genesis.json",
