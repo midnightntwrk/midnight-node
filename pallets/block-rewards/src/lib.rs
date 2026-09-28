@@ -13,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //! Block rewards; operator signatures use recoverable secp256k1 over Blake2b-256(b"midnight:rewards-operator" || skh).
+//! Pool members receive floor((S - floor(S*m)) * stake / total snapshot stake); owners' stake stands for the pledge and earns no member share.
+//! The reward account receives S minus member shares: the margin, the owners' share and rounding; zero total stake pays it all.
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 use alloc::vec::Vec;
@@ -21,6 +23,10 @@ use frame_system::pallet_prelude::*;
 use midnight_primitives_block_rewards::*;
 pub use pallet::*;
 use sp_runtime::{AccountId32, traits::Keccak256};
+
+pub trait AuthorPool {
+	fn pool_for_author(author: &AccountId32) -> Option<PoolId>;
+}
 
 /// Verify the operator's stake-key binding and derive its runtime account.
 pub fn paired_author(account: &RewardAccount) -> Option<AccountId32> {
@@ -51,7 +57,9 @@ pub fn reward_leaf(skh: StakeKeyHash, balance: u128) -> [u8; 45] {
 pub mod pallet {
 	use super::*;
 	#[pallet::config]
-	pub trait Config: frame_system::Config<AccountId = AccountId32> {}
+	pub trait Config: frame_system::Config<AccountId = AccountId32> {
+		type AuthorPool: AuthorPool;
+	}
 	#[pallet::pallet]
 	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
@@ -74,6 +82,8 @@ pub mod pallet {
 	pub type Accounts<T> = StorageValue<_, Vec<RewardAccount>, ValueQuery>;
 	#[pallet::storage]
 	pub type AuthorAccrued<T> = StorageMap<_, Blake2_128Concat, AccountId32, u128, ValueQuery>;
+	#[pallet::storage]
+	pub type PoolAccrued<T> = StorageMap<_, Blake2_128Concat, PoolId, u128, ValueQuery>;
 	#[pallet::storage]
 	pub type Balances<T> = StorageMap<_, Blake2_128Concat, StakeKeyHash, u128, ValueQuery>;
 	#[pallet::storage]
@@ -125,12 +135,12 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_: BlockNumberFor<T>) -> Weight {
-			T::DbWeight::get().reads_writes(7, 4)
+			T::DbWeight::get().reads_writes(8, 4)
 		}
 		fn on_finalize(_: BlockNumberFor<T>) {
 			if !VirtualAccountPolicy::<T>::exists() {
 				if let Some(epoch) = ClosingEpoch::<T>::take() {
-					Self::build_tree(epoch);
+					Self::build_tree(epoch, Vec::new());
 				}
 			}
 			let Some(author) = CurrentAuthor::<T>::take() else { return };
@@ -148,7 +158,11 @@ pub mod pallet {
 				.ref_time();
 			let nv = mul_div(nb - nf, normal.into(), maximum.into());
 			let na = nf + nv;
-			AuthorAccrued::<T>::mutate(author, |amount| *amount += na);
+			if let Some(pool) = T::AuthorPool::pool_for_author(&author) {
+				PoolAccrued::<T>::mutate(pool, |amount| *amount += na);
+			} else {
+				AuthorAccrued::<T>::mutate(author, |amount| *amount += na);
+			}
 			EpochTreasury::<T>::mutate(|amount| *amount += nb - na);
 			Reserve::<T>::put(reserve - nb);
 		}
@@ -177,11 +191,12 @@ pub mod pallet {
 		}
 		/// Observe the virtual accounts at the first block of an epoch.
 		#[pallet::call_index(1)]
-		#[pallet::weight((T::DbWeight::get().reads_writes(4 + accounts.len() as u64 * 2, 4 + accounts.len() as u64 * 2), DispatchClass::Mandatory))]
+		#[pallet::weight((T::DbWeight::get().reads_writes(4 + accounts.len() as u64 * 2 + pool_snapshots.iter().map(|pool| 2 + pool.delegators.len() as u64).sum::<u64>(), 4 + accounts.len() as u64 * 2 + pool_snapshots.iter().map(|pool| 2 + pool.delegators.len() as u64).sum::<u64>()), DispatchClass::Mandatory))]
 		pub fn note_reward_accounts(
 			origin: OriginFor<T>,
 			epoch: u64,
 			accounts: Vec<RewardAccount>,
+			pool_snapshots: Vec<PoolSnapshot>,
 		) -> DispatchResult {
 			ensure_none(origin)?;
 			ensure!(
@@ -192,7 +207,7 @@ pub mod pallet {
 			Accounts::<T>::put(accounts);
 			ObservedEpoch::<T>::put(epoch);
 			if let Some(closing) = ClosingEpoch::<T>::take() {
-				Self::build_tree(closing);
+				Self::build_tree(closing, pool_snapshots);
 			}
 			Ok(())
 		}
@@ -205,7 +220,11 @@ pub mod pallet {
 		fn create_inherent(data: &InherentData) -> Option<Self::Call> {
 			data.get_data::<RewardAccountsData>(&ACCOUNTS_INHERENT_IDENTIFIER)
 				.expect("valid reward observation encoding")
-				.map(|d| Call::note_reward_accounts { epoch: d.epoch, accounts: d.accounts })
+				.map(|d| Call::note_reward_accounts {
+					epoch: d.epoch,
+					accounts: d.accounts,
+					pool_snapshots: d.pool_snapshots,
+				})
 		}
 		fn is_inherent(call: &Self::Call) -> bool {
 			matches!(call, Call::note_reward_accounts { .. } | Call::submit_rewards_digest { .. })
@@ -218,12 +237,15 @@ pub mod pallet {
 		}
 		fn check_inherent(call: &Self::Call, data: &InherentData) -> Result<(), Self::Error> {
 			match call {
-				Call::note_reward_accounts { epoch, accounts } => {
+				Call::note_reward_accounts { epoch, accounts, pool_snapshots } => {
 					let expected = data
 						.get_data::<RewardAccountsData>(&ACCOUNTS_INHERENT_IDENTIFIER)
 						.map_err(|_| InherentError::DecodeFailed)?
 						.ok_or(InherentError::MissingAccounts)?;
-					if *epoch != expected.epoch || *accounts != expected.accounts {
+					if *epoch != expected.epoch
+						|| *accounts != expected.accounts
+						|| *pool_snapshots != expected.pool_snapshots
+					{
 						return Err(InherentError::AccountsMismatch);
 					}
 				},
@@ -263,7 +285,25 @@ pub mod pallet {
 			T::DbWeight::get().reads_writes(1, 1)
 		}
 		/// Select the bounded rotation and retain its sorted leaves.
-		fn build_tree(epoch: u64) {
+		fn build_tree(epoch: u64, pool_snapshots: Vec<PoolSnapshot>) {
+			for pool in pool_snapshots {
+				let accrued = PoolAccrued::<T>::take(pool.pool_id);
+				let member_total =
+					accrued - mul_div(accrued, pool.margin.into(), MARGIN_DENOMINATOR);
+				let sigma = pool.delegators.iter().map(|(_, stake)| stake).sum::<u128>();
+				let mut operator = accrued;
+				if sigma != 0 {
+					for (skh, stake) in pool.delegators {
+						if pool.owners.binary_search(&skh).is_ok() {
+							continue;
+						}
+						let share = mul_div(member_total, stake, sigma);
+						Balances::<T>::mutate(skh, |balance| *balance += share);
+						operator -= share;
+					}
+				}
+				Balances::<T>::mutate(pool.reward_account, |balance| *balance += operator);
+			}
 			let accounts = Accounts::<T>::get();
 			for account in &accounts {
 				if let Some(author) = paired_author(account) {

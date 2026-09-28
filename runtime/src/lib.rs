@@ -711,7 +711,25 @@ impl pallet_session_validator_management::Config for Runtime {
 	type BenchmarkHelper = ();
 }
 
-impl pallet_block_rewards::Config for Runtime {}
+pub struct EffectiveAuthorPool;
+impl pallet_block_rewards::AuthorPool for EffectiveAuthorPool {
+	fn pool_for_author(author: &AccountId) -> Option<midnight_primitives_block_rewards::PoolId> {
+		SessionCommitteeManagement::current_committee_storage()
+			.committee
+			.iter()
+			.find_map(|member| match member {
+				CommitteeMember::Registered { id, stake_pool_pub_key, .. }
+					if AccountId::from(id.clone()) == *author =>
+				{
+					Some(sidechain_domain::MainchainKeyHash::from_vkey(&stake_pool_pub_key.0).0)
+				},
+				_ => None,
+			})
+	}
+}
+impl pallet_block_rewards::Config for Runtime {
+	type AuthorPool = EffectiveAuthorPool;
+}
 
 pub struct CloseRewardEpoch;
 impl sp_sidechain::OnNewEpoch for CloseRewardEpoch {
@@ -1990,6 +2008,11 @@ impl_runtime_apis! {
 		fn virtual_account_policy() -> Option<[u8; 28]> {
 			BlockRewards::virtual_account_policy()
 		}
+		fn accrued_pools() -> Vec<midnight_primitives_block_rewards::PoolId> {
+			let mut pools: Vec<_> = pallet_block_rewards::PoolAccrued::<Runtime>::iter_keys().collect();
+			pools.sort_unstable();
+			pools
+		}
 	}
 
 	impl midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi<Block> for Runtime {
@@ -2083,12 +2106,16 @@ mod tests {
 			let mut data = InherentData::new();
 			data.put_data(
 				ACCOUNTS_INHERENT_IDENTIFIER,
-				&RewardAccountsData { epoch: 2, accounts: vec![] },
+				&RewardAccountsData { epoch: 2, accounts: vec![], pool_snapshots: vec![] },
 			)
 			.unwrap();
 			let observation =
 				super::UncheckedExtrinsic::new_bare(super::RuntimeCall::BlockRewards(
-					pallet_block_rewards::Call::note_reward_accounts { epoch: 2, accounts: vec![] },
+					pallet_block_rewards::Call::note_reward_accounts {
+						epoch: 2,
+						accounts: vec![],
+						pool_snapshots: vec![],
+					},
 				));
 			let digest = super::UncheckedExtrinsic::new_bare(super::RuntimeCall::BlockRewards(
 				pallet_block_rewards::Call::submit_rewards_digest {

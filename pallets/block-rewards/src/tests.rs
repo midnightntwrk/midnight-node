@@ -41,7 +41,15 @@ impl frame_system::Config for Test {
 	type Lookup = IdentityLookup<AccountId32>;
 	type BlockWeights = Weights;
 }
-impl Config for Test {}
+pub struct TestAuthorPool;
+impl AuthorPool for TestAuthorPool {
+	fn pool_for_author(author: &AccountId32) -> Option<PoolId> {
+		(*author == AccountId32::new([4; 32])).then_some([4; 28])
+	}
+}
+impl Config for Test {
+	type AuthorPool = TestAuthorPool;
+}
 fn ext() -> sp_io::TestExternalities {
 	let mut storage = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 	GenesisConfig::<Test> {
@@ -111,7 +119,12 @@ fn selection_uses_eligibility_cap_and_persistent_rotation() {
 			Balances::<Test>::insert([n; 28], 10);
 		}
 		BlockRewards::close_epoch(4);
-		assert_ok!(BlockRewards::note_reward_accounts(RuntimeOrigin::none(), 5, accounts.clone()));
+		assert_ok!(BlockRewards::note_reward_accounts(
+			RuntimeOrigin::none(),
+			5,
+			accounts.clone(),
+			vec![]
+		));
 		assert_eq!(
 			EpochLeaves::<Test>::get(4),
 			alloc::vec![reward_leaf([5; 28], 10), reward_leaf([6; 28], 10)]
@@ -120,7 +133,7 @@ fn selection_uses_eligibility_cap_and_persistent_rotation() {
 		assert_eq!(Balances::<Test>::get([4; 28]), 10);
 		assert_eq!(Balances::<Test>::get([5; 28]), 0);
 		BlockRewards::close_epoch(5);
-		assert_ok!(BlockRewards::note_reward_accounts(RuntimeOrigin::none(), 6, accounts));
+		assert_ok!(BlockRewards::note_reward_accounts(RuntimeOrigin::none(), 6, accounts, vec![]));
 		assert_eq!(EpochLeaves::<Test>::get(5), alloc::vec![reward_leaf([7; 28], 10)]);
 		assert_eq!(RotationCursor::<Test>::get(), [7; 28]);
 	});
@@ -133,7 +146,8 @@ fn zero_balance_qualifies_when_fee_and_threshold_are_zero() {
 		assert_ok!(BlockRewards::note_reward_accounts(
 			RuntimeOrigin::none(),
 			1,
-			alloc::vec![account(1)]
+			alloc::vec![account(1)],
+			vec![]
 		));
 		assert_eq!(EpochLeaves::<Test>::get(0), alloc::vec![reward_leaf([1; 28], 0)]);
 	});
@@ -215,7 +229,8 @@ fn fresh_registration_moves_author_accrual_before_selection() {
 		assert_ok!(BlockRewards::note_reward_accounts(
 			RuntimeOrigin::none(),
 			6,
-			alloc::vec![account.clone()]
+			alloc::vec![account.clone()],
+			vec![]
 		));
 		assert_eq!(EpochLeaves::<Test>::get(5), alloc::vec![reward_leaf([9; 28], 1)]);
 		assert_eq!(AuthorAccrued::<Test>::get(author), 0);
@@ -223,7 +238,8 @@ fn fresh_registration_moves_author_accrual_before_selection() {
 		assert_ok!(BlockRewards::note_reward_accounts(
 			RuntimeOrigin::none(),
 			7,
-			alloc::vec![account]
+			alloc::vec![account],
+			vec![]
 		));
 		assert!(EpochLeaves::<Test>::get(6).is_empty());
 	});
@@ -238,7 +254,7 @@ fn unbounded_threshold_and_overflowing_fee_sum_are_ineligible() {
 		Balances::<Test>::insert([1; 28], u128::MAX);
 		Balances::<Test>::insert([2; 28], u128::MAX);
 		BlockRewards::close_epoch(0);
-		assert_ok!(BlockRewards::note_reward_accounts(RuntimeOrigin::none(), 1, accounts));
+		assert_ok!(BlockRewards::note_reward_accounts(RuntimeOrigin::none(), 1, accounts, vec![]));
 		assert!(EpochLeaves::<Test>::get(0).is_empty());
 	});
 }
@@ -263,4 +279,111 @@ fn typescript_noble_signature_pairs_operator() {
 		(b"sidechain_sig".to_vec(), signature.to_vec())
 	];
 	assert_eq!(paired_author(&account), Some(AccountId32::new(sp_io::hashing::blake2_256(&key))));
+}
+
+#[test]
+fn registered_author_accrues_to_pool() {
+	ext().execute_with(|| {
+		let author = AccountId32::new([4; 32]);
+		BlockRewards::note_author(author.clone());
+		BlockRewards::on_finalize(1);
+		assert_eq!(PoolAccrued::<Test>::get([4; 28]), 6650);
+		assert_eq!(AuthorAccrued::<Test>::get(author), 0);
+	});
+}
+
+fn pool_snapshot() -> PoolSnapshot {
+	PoolSnapshot {
+		pool_id: [4; 28],
+		margin: 100_000_000,
+		reward_account: [9; 28],
+		owners: vec![[1; 28]],
+		delegators: vec![([1; 28], 20), ([2; 28], 30), ([3; 28], 50)],
+	}
+}
+
+#[test]
+fn split_excludes_owners_and_retains_margin_owner_share_and_rounding() {
+	ext().execute_with(|| {
+		PoolAccrued::<Test>::insert([4; 28], 101);
+		BlockRewards::close_epoch(3);
+		assert_ok!(BlockRewards::note_reward_accounts(
+			RuntimeOrigin::none(),
+			4,
+			vec![],
+			vec![pool_snapshot()]
+		));
+		assert_eq!(Balances::<Test>::get([1; 28]), 0);
+		assert_eq!(Balances::<Test>::get([2; 28]), 27);
+		assert_eq!(Balances::<Test>::get([3; 28]), 45);
+		assert_eq!(Balances::<Test>::get([9; 28]), 29);
+		assert!(!PoolAccrued::<Test>::contains_key([4; 28]));
+	});
+}
+
+#[test]
+fn zero_stake_pays_operator_and_missing_snapshot_retains_accrual() {
+	ext().execute_with(|| {
+		PoolAccrued::<Test>::insert([4; 28], 101);
+		PoolAccrued::<Test>::insert([5; 28], 99);
+		let mut pool = pool_snapshot();
+		pool.delegators.clear();
+		BlockRewards::close_epoch(3);
+		assert_ok!(BlockRewards::note_reward_accounts(
+			RuntimeOrigin::none(),
+			4,
+			vec![],
+			vec![pool]
+		));
+		assert_eq!(Balances::<Test>::get([9; 28]), 101);
+		assert_eq!(PoolAccrued::<Test>::get([5; 28]), 99);
+	});
+}
+
+#[test]
+fn split_uses_full_width_multiplication() {
+	ext().execute_with(|| {
+		PoolAccrued::<Test>::insert([4; 28], u128::MAX);
+		let mut pool = pool_snapshot();
+		pool.margin = 0;
+		pool.delegators = vec![([2; 28], u64::MAX.into())];
+		BlockRewards::close_epoch(3);
+		assert_ok!(BlockRewards::note_reward_accounts(
+			RuntimeOrigin::none(),
+			4,
+			vec![],
+			vec![pool]
+		));
+		assert_eq!(Balances::<Test>::get([2; 28]), u128::MAX);
+		assert_eq!(Balances::<Test>::get([9; 28]), 0);
+	});
+}
+
+#[test]
+fn inherent_rejects_changed_pool_snapshot() {
+	ext().execute_with(|| {
+		let mut data = sp_inherents::InherentData::new();
+		data.put_data(
+			ACCOUNTS_INHERENT_IDENTIFIER,
+			&RewardAccountsData {
+				epoch: 4,
+				accounts: vec![],
+				pool_snapshots: vec![pool_snapshot()],
+			},
+		)
+		.unwrap();
+		let call = BlockRewards::create_inherent(&data).unwrap();
+		assert!(BlockRewards::check_inherent(&call, &data).is_ok());
+		let mut changed = pool_snapshot();
+		changed.margin += 1;
+		let changed_call = Call::note_reward_accounts {
+			epoch: 4,
+			accounts: vec![],
+			pool_snapshots: vec![changed],
+		};
+		assert!(matches!(
+			BlockRewards::check_inherent(&changed_call, &data),
+			Err(InherentError::AccountsMismatch)
+		));
+	});
 }

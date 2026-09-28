@@ -56,3 +56,77 @@ ORDER BY ma.name
 	.fetch_all(pool)
 	.await
 }
+
+#[derive(sqlx::FromRow)]
+pub struct PoolParameters {
+	pub id: i64,
+	pub margin: f64,
+	pub reward_account: Vec<u8>,
+}
+
+/// Read the latest effective pool certificate visible at the observation block.
+pub async fn get_pool_parameters(
+	pool: &PgPool,
+	pool_id: &[u8; 28],
+	epoch: u32,
+	block_number: u32,
+) -> Result<Option<PoolParameters>, sqlx::Error> {
+	sqlx::query_as::<_, PoolParameters>(
+		r#"
+SELECT pu.id, pu.margin, sa.hash_raw AS reward_account
+FROM pool_update pu
+JOIN pool_hash ph ON ph.id = pu.hash_id
+JOIN stake_address sa ON sa.id = pu.reward_addr_id
+JOIN tx ON tx.id = pu.registered_tx_id
+JOIN block ON block.id = tx.block_id
+WHERE ph.hash_raw = $1 AND pu.active_epoch_no <= $2
+  AND (block.block_no <= $3 OR block.epoch_no IS NULL)
+ORDER BY pu.active_epoch_no DESC, tx.id DESC, pu.cert_index DESC
+LIMIT 1
+"#,
+	)
+	.bind(pool_id.as_slice())
+	.bind(i64::from(epoch))
+	.bind(block_number as i32)
+	.fetch_optional(pool)
+	.await
+}
+
+/// Read owners of the selected pool certificate in credential order.
+pub async fn get_pool_owners(pool: &PgPool, update_id: i64) -> Result<Vec<Vec<u8>>, sqlx::Error> {
+	sqlx::query_scalar(
+		r#"
+SELECT DISTINCT sa.hash_raw
+FROM pool_owner po
+JOIN stake_address sa ON sa.id = po.addr_id
+WHERE po.pool_update_id = $1
+ORDER BY sa.hash_raw
+"#,
+	)
+	.bind(update_id)
+	.fetch_all(pool)
+	.await
+}
+
+/// Read the immutable delegation snapshot used for committee selection.
+pub async fn get_pool_delegators(
+	pool: &PgPool,
+	pool_id: &[u8; 28],
+	epoch: u32,
+) -> Result<Vec<(Vec<u8>, String)>, sqlx::Error> {
+	sqlx::query_as(
+		r#"
+SELECT sa.hash_raw, SUM(es.amount)::text
+FROM epoch_stake es
+JOIN pool_hash ph ON ph.id = es.pool_id
+JOIN stake_address sa ON sa.id = es.addr_id
+WHERE ph.hash_raw = $1 AND es.epoch_no = $2
+GROUP BY sa.hash_raw
+ORDER BY sa.hash_raw
+"#,
+	)
+	.bind(pool_id.as_slice())
+	.bind(epoch as i32)
+	.fetch_all(pool)
+	.await
+}

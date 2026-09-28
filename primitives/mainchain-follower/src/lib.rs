@@ -71,6 +71,15 @@ pub mod inherent_provider {
 
 	#[async_trait::async_trait]
 	pub trait VirtualAccountObservationDataSource {
+		async fn get_pool_snapshots(
+			&self,
+			pools: &[[u8; 28]],
+			epoch: sidechain_domain::McEpochNumber,
+			mc_block_hash: &McBlockHash,
+		) -> Result<
+			Vec<midnight_primitives_block_rewards::PoolSnapshot>,
+			Box<dyn std::error::Error + Send + Sync>,
+		>;
 		async fn get_reward_accounts(
 			&self,
 			policy: &[u8; 28],

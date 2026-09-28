@@ -31,6 +31,7 @@ impl VirtualAccountInherentDataProvider {
 		mc_block_hash: &sidechain_domain::McBlockHash,
 		epoch: u64,
 		is_new_epoch: bool,
+		snapshot_epoch: Option<sidechain_domain::McEpochNumber>,
 	) -> Result<Self, Box<dyn Error + Send + Sync>>
 	where
 		Block: BlockT,
@@ -42,6 +43,18 @@ impl VirtualAccountInherentDataProvider {
 				Some(policy) => Some(RewardAccountsData {
 					epoch,
 					accounts: data_source.get_reward_accounts(&policy, mc_block_hash).await?,
+					pool_snapshots: match snapshot_epoch {
+						Some(snapshot_epoch) => {
+							data_source
+								.get_pool_snapshots(
+									&client.runtime_api().accrued_pools(parent_hash)?,
+									snapshot_epoch,
+									mc_block_hash,
+								)
+								.await?
+						},
+						None => vec![],
+					},
 				}),
 				None => None,
 			}

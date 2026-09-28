@@ -21,6 +21,18 @@ use scale_info::TypeInfo;
 
 pub const ACCOUNTS_INHERENT_IDENTIFIER: sp_inherents::InherentIdentifier = *b"brewarda";
 pub type StakeKeyHash = [u8; 28];
+pub type PoolId = [u8; 28];
+pub const MARGIN_DENOMINATOR: u128 = 1_000_000_000;
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+pub struct PoolSnapshot {
+	pub pool_id: PoolId,
+	/// Pool margin in parts per billion.
+	pub margin: u32,
+	pub reward_account: StakeKeyHash,
+	pub owners: Vec<StakeKeyHash>,
+	pub delegators: Vec<(StakeKeyHash, u128)>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 pub struct Registration {
@@ -38,6 +50,7 @@ pub struct RewardAccount {
 pub struct RewardAccountsData {
 	pub epoch: u64,
 	pub accounts: Vec<RewardAccount>,
+	pub pool_snapshots: Vec<PoolSnapshot>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 pub struct RewardsDigest {
@@ -91,5 +104,6 @@ impl sp_inherents::IsFatalError for InherentError {
 sp_api::decl_runtime_apis! {
 	pub trait BlockRewardsApi {
 		fn virtual_account_policy() -> Option<[u8; 28]>;
+		fn accrued_pools() -> Vec<PoolId>;
 	}
 }

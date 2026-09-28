@@ -13,12 +13,14 @@
 
 use crate::{
 	VirtualAccountObservationDataSource,
-	db::queries::virtual_account_observation::get_virtual_account_utxos,
+	db::queries::virtual_account_observation::{
+		get_pool_delegators, get_pool_owners, get_pool_parameters, get_virtual_account_utxos,
+	},
 };
 use cardano_serialization_lib::{PlutusData, PlutusList};
 use lru::LruCache;
-use midnight_primitives_block_rewards::{Registration, RewardAccount};
-use sidechain_domain::McBlockHash;
+use midnight_primitives_block_rewards::{PoolSnapshot, Registration, RewardAccount, StakeKeyHash};
+use sidechain_domain::{McBlockHash, McEpochNumber};
 use sqlx::PgPool;
 use std::{collections::BTreeMap, error::Error, num::NonZeroUsize, sync::Mutex};
 
@@ -38,6 +40,46 @@ impl VirtualAccountObservationDataSourceImpl {
 
 #[async_trait::async_trait]
 impl VirtualAccountObservationDataSource for VirtualAccountObservationDataSourceImpl {
+	async fn get_pool_snapshots(
+		&self,
+		pools: &[[u8; 28]],
+		epoch: McEpochNumber,
+		mc_block_hash: &McBlockHash,
+	) -> Result<Vec<PoolSnapshot>, ObservationError> {
+		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone())
+			.await?
+			.ok_or("Pool observation block not found")?;
+		let mut snapshots = Vec::new();
+		for pool_id in pools {
+			let Some(params) =
+				get_pool_parameters(&self.pool, pool_id, epoch.0, block.block_number.0).await?
+			else {
+				continue;
+			};
+			let mut owners = get_pool_owners(&self.pool, params.id)
+				.await?
+				.into_iter()
+				.map(stake_credential)
+				.collect::<Result<Vec<_>, _>>()?;
+			owners.sort_unstable();
+			owners.dedup();
+			let mut delegators = BTreeMap::<StakeKeyHash, u128>::new();
+			for (address, amount) in get_pool_delegators(&self.pool, pool_id, epoch.0).await? {
+				*delegators.entry(stake_credential(address)?).or_default() +=
+					amount.parse::<u128>()?;
+			}
+			snapshots.push(PoolSnapshot {
+				pool_id: *pool_id,
+				margin: margin_parts(params.margin)?,
+				reward_account: stake_credential(params.reward_account)?,
+				owners,
+				delegators: delegators.into_iter().collect(),
+			});
+		}
+		snapshots.sort_unstable_by_key(|snapshot| snapshot.pool_id);
+		Ok(snapshots)
+	}
+
 	async fn get_reward_accounts(
 		&self,
 		policy: &[u8; 28],
@@ -125,6 +167,15 @@ pub struct VirtualAccountObservationDataSourceMock;
 
 #[async_trait::async_trait]
 impl VirtualAccountObservationDataSource for VirtualAccountObservationDataSourceMock {
+	async fn get_pool_snapshots(
+		&self,
+		_pools: &[[u8; 28]],
+		_epoch: McEpochNumber,
+		_mc_block_hash: &McBlockHash,
+	) -> Result<Vec<PoolSnapshot>, ObservationError> {
+		Ok(vec![])
+	}
+
 	async fn get_reward_accounts(
 		&self,
 		_policy: &[u8; 28],
@@ -150,6 +201,23 @@ mod tests {
 	use cardano_serialization_lib::BigInt;
 
 	#[test]
+	fn margin_is_rounded_at_the_database_boundary() {
+		assert_eq!(margin_parts(0.1).unwrap(), 100_000_000);
+		assert_eq!(margin_parts(0.1234567896).unwrap(), 123_456_790);
+		assert_eq!(margin_parts(1.0).unwrap(), 1_000_000_000);
+		assert!(margin_parts(f64::NAN).is_err());
+		assert!(margin_parts(1.01).is_err());
+	}
+
+	#[test]
+	fn reward_address_header_is_not_part_of_the_credential() {
+		let mut address = vec![0xe0];
+		address.extend_from_slice(&[7; 28]);
+		assert_eq!(stake_credential(address).unwrap(), [7; 28]);
+		assert!(stake_credential(vec![7; 28]).is_err());
+	}
+
+	#[test]
 	fn threshold_preserves_the_balance_boundary() {
 		let datum = |value: &str| PlutusData::new_integer(&BigInt::from_str(value).unwrap());
 		assert_eq!(payout_threshold(&datum("0")).unwrap(), Some(0));
@@ -160,4 +228,18 @@ mod tests {
 		);
 		assert!(payout_threshold(&datum("-1")).is_err());
 	}
+}
+
+/// Strip the reward-address header at the database boundary.
+fn stake_credential(address: Vec<u8>) -> Result<StakeKeyHash, ObservationError> {
+	let address: [u8; 29] = address.try_into().map_err(|_| "Invalid reward address length")?;
+	Ok(address[1..].try_into()?)
+}
+
+/// Round db-sync's pool margin once to parts per billion.
+fn margin_parts(margin: f64) -> Result<u32, ObservationError> {
+	if !(0.0..=1.0).contains(&margin) {
+		return Err("Invalid pool margin".into());
+	}
+	Ok((margin * 1_000_000_000.0).round() as u32)
 }

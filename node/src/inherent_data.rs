@@ -32,7 +32,10 @@ use midnight_primitives_cnight_observation::CNightObservationApi;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
-use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
+use sidechain_domain::{
+	McBlockHash, ScEpochNumber,
+	mainchain_epoch::{MainchainEpochConfig, MainchainEpochDerivation},
+};
 use sidechain_mc_hash::McHashDataSource;
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
 use sidechain_mc_hash::McHashInherentError;
@@ -60,6 +63,26 @@ use midnight_primitives_mainchain_follower::{
 		VirtualAccountInherentDataProvider,
 	},
 };
+
+/// Use CardanoEpoch(start(E - 1)) - 2 for the closing epoch E's effective committee.
+fn pool_snapshot_epoch(
+	parent_slot: Option<Slot>,
+	sc_slot_config: &ScSlotConfig,
+	mc_epoch_config: &MainchainEpochConfig,
+) -> Result<Option<sidechain_domain::McEpochNumber>, Box<dyn Error + Send + Sync>> {
+	let Some(parent_slot) = parent_slot else { return Ok(None) };
+	let closing_epoch = sc_slot_config.epoch_number(parent_slot);
+	let selection_epoch =
+		ScEpochNumber(closing_epoch.0.checked_sub(1).ok_or("No previous committee epoch")?);
+	let timestamp = sc_slot_config
+		.epoch_start_time(selection_epoch)
+		.ok_or("Committee epoch timestamp overflow")?;
+	let mc_epoch = mc_epoch_config.timestamp_to_mainchain_epoch(timestamp)?;
+	Ok(Some(
+		sidechain_domain::offset_data_epoch(&mc_epoch)
+			.map_err(|_| "Committee snapshot precedes Cardano genesis")?,
+	))
+}
 
 /// Default [`CreateInherentDataConfig::cardano_check_backoff`]: how long block verification waits
 /// before re-checking Cardano when our local Cardano observation is lagging and cannot yet
@@ -139,7 +162,8 @@ where
 			.ok_or_else(|| format!("Missing parent header for {parent_hash:?}"))?;
 
 		let epoch = sc_slot_config.epoch_number(*slot).0;
-		let is_new_epoch = slot_from_predigest(&parent_header)?
+		let parent_slot = slot_from_predigest(&parent_header)?;
+		let is_new_epoch = parent_slot
 			.is_none_or(|parent_slot| sc_slot_config.epoch_number(parent_slot).0 != epoch);
 
 		let mc_hash = McHashIDP::new_proposal(
@@ -206,6 +230,11 @@ where
 			&mc_hash.mc_hash(),
 			epoch,
 			is_new_epoch,
+			if is_new_epoch {
+				pool_snapshot_epoch(parent_slot, sc_slot_config, mc_epoch_config)?
+			} else {
+				None
+			},
 		)
 		.await?;
 
@@ -382,6 +411,11 @@ where
 			&mc_hash,
 			epoch,
 			is_new_epoch,
+			if is_new_epoch {
+				pool_snapshot_epoch(parent_slot, sc_slot_config, mc_epoch_config)?
+			} else {
+				None
+			},
 		)
 		.await?;
 
