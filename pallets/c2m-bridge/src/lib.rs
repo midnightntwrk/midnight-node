@@ -54,7 +54,7 @@ pub mod pallet {
 	use midnight_node_ledger::types::{
 		active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
-	use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionExecutor};
+	use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionBridgeExecutor};
 	use pallet_partner_chains_bridge::TransferHandlerError;
 	use sidechain_domain::McTxHash;
 	use sp_core::hexdisplay::HexDisplay;
@@ -68,7 +68,7 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// Provides access to the Midnight system transaction executor.
-		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		type MidnightSystemTransactionExecutor: MidnightSystemTransactionBridgeExecutor;
 
 		/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
 		type MinBridgeAmountProvider: MinBridgeAmountProvider;

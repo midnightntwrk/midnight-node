@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use core::ops::Div;
 use frame_support::{
 	dispatch::DispatchResult,
@@ -15,7 +28,6 @@ use frame_support::{
 		},
 	},
 };
-use pallet_session::HoldReason;
 use sp_runtime::{DispatchError, traits::Saturating};
 
 pub struct CurrencyWaiver;
@@ -255,7 +267,7 @@ impl<AccountId: Eq> FungibleMutate<AccountId> for CurrencyWaiver {
 }
 
 impl<AccountId> FungibleInspectHold<AccountId> for CurrencyWaiver {
-	type Reason = HoldReason;
+	type Reason = crate::RuntimeHoldReason;
 	fn balance_on_hold(_: &Self::Reason, _: &AccountId) -> u128 {
 		0
 	}
@@ -274,11 +286,11 @@ impl<AccountId> FungibleInspectHold<AccountId> for CurrencyWaiver {
 }
 
 impl<AccountId> FungibleMutateHold<AccountId> for CurrencyWaiver {
-	fn hold(_: &HoldReason, _: &AccountId, _: u128) -> Result<(), DispatchError> {
+	fn hold(_: &Self::Reason, _: &AccountId, _: u128) -> Result<(), DispatchError> {
 		Ok(())
 	}
 	fn release(
-		_: &HoldReason,
+		_: &Self::Reason,
 		_: &AccountId,
 		_: u128,
 		_: Precision,

@@ -14,11 +14,15 @@
 import path from "path";
 import fs, { existsSync } from "fs";
 import { globSync } from "glob";
-import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
+import { ensureImageAvailable } from "../lib/docker";
+import { applyEnvFileOverrides } from "../lib/envFile";
 import { discoverValidators } from "../lib/discoverValidators";
-import { mockOverridePath } from "../lib/mockComposeOverride";
+import {
+  mockOverridePath,
+  readMockValidatorSelection,
+} from "../lib/mockComposeOverride";
 import { writeForkManifest } from "../lib/forkManifest";
 
 // Command functionality we can depend on
@@ -44,18 +48,10 @@ export async function imageUpgrade(
   const healthTimeoutSec = opts.healthTimeoutSec ?? 180;
   const requireHealthy = opts.requireHealthy ?? true;
 
-  let env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-  };
-
-  for (const envFilePath of opts.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  const env = applyEnvFileOverrides(
+    process.env as Record<string, string>,
+    opts.envFile,
+  );
 
   console.log(`Ensuring network is up with starting tag ${fromTag}`);
   env[imageEnvVar] = fromTag;
@@ -64,6 +60,7 @@ export async function imageUpgrade(
     profiles: opts.profiles,
     envFile: opts.envFile,
     fromSnapshot: opts.fromSnapshot,
+    numValidators: opts.numValidators,
   });
 
   const composeFile = resolveNetworkCompose(namespace);
@@ -77,7 +74,12 @@ export async function imageUpgrade(
     ? [composeFile, overridePath]
     : [composeFile];
 
-  const services = opts.services ?? (await listServices(composeFiles, env));
+  let services = opts.services ?? (await listServices(composeFiles, env));
+  const mockSelection = readMockValidatorSelection(overridePath);
+  if (mockSelection) {
+    const disabled = new Set(mockSelection.disabledValidatorServices);
+    services = services.filter((service) => !disabled.has(service));
+  }
   if (!services.length) {
     throw new Error(
       "No services discovered to roll out. Provide ImageUpgradeOptions.services explicitly or check your compose file.",
@@ -97,6 +99,8 @@ export async function imageUpgrade(
   for (const svc of services) {
     console.log(`\n Upgrading service: ${svc}`);
     env[imageEnvVar] = toTag;
+
+    await ensureImageAvailable(toTag, env);
 
     // Only re-create this one service, do not bounce dependencies.
     await dockerCompose(

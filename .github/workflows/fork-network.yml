@@ -37,9 +37,9 @@ on:
           - devnet
           - qanet
       mock_authorities_tag:
-        description: "mock-authorities image tag (>= 368fd98 required for the runtime and full upgrade modes: older tags do not rewrite Council/Technical Committee membership)"
+        description: "mock-authorities image tag. Use >= 4d8d772: it carries the GRANDPA client aux-storage rewrite (PR #77) required so forks of >=2.0.0 runtimes finalize (older tags such as 368fd98 rotate the voter via a ForcedChange digest that deadlocks GRANDPA and finality stalls), and it still includes the Council/Technical Committee membership rewrite needed for the runtime and full upgrade modes."
         required: true
-        default: "368fd98"
+        default: "4d8d772"
       node_image:
         description: "Full Docker image reference to fork from, e.g. ghcr.io/midnight-ntwrk/midnight-node:1.0.0 or a CI tag like ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-<tree-hash>-amd64 — not a git branch/sha/URL. Must match the snapshot's runtime host fns"
         required: true

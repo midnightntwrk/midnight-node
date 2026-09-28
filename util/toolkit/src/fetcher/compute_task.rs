@@ -127,7 +127,7 @@ impl ComputeTask {
 	}
 
 	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
-		let header = block.block.block_header().await?;
+		let header = &block.header;
 		let spec_version = header
 			.digest
 			.logs
@@ -221,12 +221,7 @@ impl ComputeTask {
 		// automatically resolves the correct schema for this block's spec version.
 		let extrinsics = block.block.extrinsics().from_bytes(block.raw_body.clone()).await;
 
-		let events = block
-			.block
-			.events()
-			.fetch()
-			.await
-			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
+		let events = block.block.events().from_bytes(block.events.clone());
 
 		for ext in extrinsics.iter().filter_map(Result::ok) {
 			let Ok(call) = ext.decode_call_data_as::<M::Call>() else {

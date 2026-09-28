@@ -31,6 +31,7 @@ pallet-mmr.workspace = true
 pallet-scheduler.workspace = true
 pallet-timestamp.workspace = true
 pallet-tx-pause.workspace = true
+pallet-safe-mode.workspace = true
 pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
@@ -168,6 +169,7 @@ std = [
     "pallet-session/std",
     "pallet-session-validator-management/std",
     "pallet-tx-pause/std",
+    "pallet-safe-mode/std",
     "sidechain-domain/std",
     "sidechain-slots/std",
     "sp-io/std",
@@ -196,6 +198,7 @@ runtime-benchmarks = [
     "pallet-scheduler/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
+    "pallet-safe-mode/runtime-benchmarks",
     "pallet-migrations/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",
@@ -223,6 +226,7 @@ try-runtime = [
     "pallet-scheduler/try-runtime",
     "pallet-timestamp/try-runtime",
     "pallet-tx-pause/try-runtime",
+    "pallet-safe-mode/try-runtime",
     "pallet-migrations/try-runtime",
     "pallet-membership/try-runtime",
     "pallet-collective/try-runtime",

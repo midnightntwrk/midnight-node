@@ -350,6 +350,10 @@ services:
       - shared-volume:/shared
       - midnight-node-1-data:/data
       - ./configurations/midnight-nodes/midnight-node-1/entrypoint.sh:/entrypoint.sh
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -381,6 +385,10 @@ services:
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-2/keystore:/keystore
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -412,6 +420,10 @@ services:
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-3/seeds:/seeds
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       AURA_SEED_FILE: "/seeds/aura.seed"
@@ -447,6 +459,10 @@ services:
       - ./configurations/midnight-nodes/midnight-node-4/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-4/keystore:/keystore
       - ./configurations/midnight-nodes/midnight-node-4/network:/network
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -479,6 +495,10 @@ services:
       - ./configurations/midnight-nodes/midnight-node-5/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-5/keystore:/keystore
       - ./configurations/midnight-nodes/midnight-node-5/network:/network
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -512,6 +532,10 @@ services:
       - midnight-node-6-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-6/entrypoint.sh:/entrypoint.sh
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -529,8 +553,14 @@ services:
           cpus: ${CPU_MIDNIGHT_NODE:-}
           memory: ${MEM_MIDNIGHT_NODE:-}
 
-  midnight-setup:
-    container_name: midnight-setup
+  # Chain preparation is three one-shot jobs so each step runs on the image that owns
+  # it: config patching and build-spec need the node binary, genesis needs the toolkit
+  # binary. The genesis step exists because the committed res/genesis/*.mn blobs are
+  # serialized for the ledger version of the checkout (`midnight:ledger-state[vNN]`),
+  # so feeding them to an older ${MIDNIGHT_NODE_IMAGE} fails to deserialize; building
+  # genesis here with the matching ${TOOLKIT_IMAGE} keeps any released image bootable.
+  midnight-setup-configs:
+    container_name: midnight-setup-configs
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -539,6 +569,42 @@ services:
       contract-compiler:
         condition: service_completed_successfully
       mint-cnight-supply:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    volumes:
+      - ./configurations/midnight-setup/:/midnight-setup/
+      - ../../../../res/:/res/
+      - ./runtime-values:/runtime-values
+    environment:
+      - OGMIOS_PORT=${OGMIOS_PORT}
+    entrypoint: ["/bin/bash", "/midnight-setup/patch-configs.sh"]
+
+  midnight-setup-genesis:
+    container_name: midnight-setup-genesis
+    image: ${TOOLKIT_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup-configs:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    volumes:
+      - shared-volume:/shared
+      - ./configurations/midnight-setup/:/midnight-setup/
+      - ../../../../res/:/res/:ro
+    entrypoint: ["/bin/bash", "/midnight-setup/generate-genesis.sh"]
+
+  midnight-setup:
+    container_name: midnight-setup
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      ogmios:
+        condition: service_healthy
+      midnight-setup-genesis:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
@@ -557,6 +623,10 @@ services:
       - ./configurations/midnight-nodes/:/midnight-nodes/
       - ../../../../res/:/res/
       - ./runtime-values:/runtime-values
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}

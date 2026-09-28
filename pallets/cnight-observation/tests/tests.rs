@@ -199,7 +199,7 @@ fn asset_create_should_emit_valid_event_if_registered() {
 			) = &record.event
 			{
 				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
+				println!("looking for owner: {:?}", dust_public_key);
 				let dust_public_key_deser: DustPublicKey =
 					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
@@ -267,7 +267,7 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 			) = &record.event
 			{
 				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
+				println!("looking for owner: {:?}", dust_public_key);
 				let dust_public_key_deser: DustPublicKey =
 					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
@@ -467,7 +467,7 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 			) = &record.event
 			{
 				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
+				println!("looking for owner: {:?}", dust_public_key);
 				let dust_public_key_deser: DustPublicKey =
 					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);

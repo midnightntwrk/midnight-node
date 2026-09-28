@@ -13,7 +13,7 @@ The runner user is not a passwordless sudoer and has no tty, so
 `sudo apt-get …` cannot prompt for a password. `ubuntu-latest`
 configures passwordless sudo by default; self-hosted runners do not.
 
-The job now runs inside a `rust:1.95-trixie` container — same Rust
+The job now runs inside a `rust:1.98.1-trixie` container — same Rust
 version as `rust-toolchain.toml` and the Earthfile's `build-prepare`
 stage — so apt installs happen as root with no sudo needed. The
 container shares the host's network via Docker's default bridge, so
@@ -21,7 +21,7 @@ outbound connections still SNAT to the runner's static IP and the
 toolkit-cache NLB allowlist keeps working.
 
 The `dtolnay/rust-toolchain@stable` step is dropped (the image ships
-rustup + Rust 1.95; the workspace's `rust-toolchain.toml` pulls any
+rustup + Rust 1.98.1; the workspace's `rust-toolchain.toml` pulls any
 missing components on first cargo invocation). The apt dep list adds
 `pkg-config` on top of the existing `protobuf-compiler` and
 `postgresql-client` — `libssl-dev`, `libpq-dev`, and `libsqlite3-dev`

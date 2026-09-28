@@ -524,6 +524,7 @@ pub fn new_partial(
 
 /// Builds a new service for a full client.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::result_large_err)]
 pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 	epoch_config: MainchainEpochConfig,
@@ -791,6 +792,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
 				subscription_tracker: subscription_tracker.clone(),
+				ledger_unified: warp_ledger_unified,
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}

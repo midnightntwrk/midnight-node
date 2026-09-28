@@ -293,6 +293,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			main_chain_scripts: genesis.main_chain_scripts().into(),
 		},
 		tx_pause: Default::default(),
+		safe_mode: Default::default(),
 		c_night_observation: CNightObservationConfig {
 			config: cnight_genesis,
 			_marker: Default::default(),
