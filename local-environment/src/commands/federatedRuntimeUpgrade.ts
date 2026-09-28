@@ -23,6 +23,7 @@ import {
   buildFederatedMotionSigners,
   executeFederatedMotion,
 } from "../lib/federatedMotion";
+import { isNodeVersionAtLeast } from "../lib/nodeVersion";
 import { prepareRuntimeUpgrade } from "./runtimeUpgradeShared";
 
 export async function federatedRuntimeUpgrade(
@@ -40,11 +41,11 @@ export async function federatedRuntimeUpgrade(
 
     console.log(`Loaded runtime code hash: ${wasm.hash}`);
 
-    // Pre-activation gate: confirm the connected node runs a binary able to decode
-    // the new host-response structs (the versioned ledger host function) before the
-    // authorize_upgrade motion is submitted. A lagging binary would fail to decode
-    // the new runtime's host calls during a rolling upgrade.
-    await assertValidatorBinaryCompatible(api, opts);
+    // Pre-activation gate: confirm the connected node runs a binary that provides
+    // the ledger host-function versions the new runtime imports before the
+    // authorize_upgrade motion is submitted. A lagging binary cannot instantiate
+    // the new runtime, so it stops importing blocks once the upgrade applies.
+    await assertNodeBinaryCompatible(api, opts);
 
     const signers = buildFederatedMotionSigners(opts);
 
@@ -79,40 +80,45 @@ export async function federatedRuntimeUpgrade(
 }
 
 /**
- * Verify the connected node's binary can decode the new host-response structs
- * before the upgrade motion is submitted. The node's active-runtime spec_version
- * is the operational proxy: a node still on a pre-bump runtime has not been rolled
- * to a binary that provides the new versioned ledger host function.
+ * Verify the connected node's binary provides the ledger host-function versions
+ * the new runtime imports, before the upgrade motion is submitted. The binary's
+ * own version (`system_version`) is the capability signal; the active runtime's
+ * spec_version is on-chain state and reads the same on every binary.
  *
- * Refuses (throws) by default when the node is below the required spec_version;
- * `allowLaggingBinary` downgrades this to a warning for local rehearsals.
+ * Only the node the CLI is connected to is probed. Refuses (throws) by default
+ * when its binary is older than `requiredNodeVersion`; `allowLaggingBinary`
+ * downgrades this to a warning for local rehearsals.
  */
-async function assertValidatorBinaryCompatible(
+async function assertNodeBinaryCompatible(
   api: ApiPromise,
   opts: FederatedRuntimeUpgradeOptions,
 ): Promise<void> {
   const nodeVersion = (await api.rpc.system.version()).toString();
-  const activeSpecVersion = api.runtimeVersion.specVersion.toNumber();
 
-  console.log(
-    `Validator-binary compatibility probe: node version ${nodeVersion}, ` +
-      `active runtime spec_version ${activeSpecVersion}`,
-  );
+  console.log(`Node-binary compatibility probe: node version ${nodeVersion}`);
 
-  if (opts.requiredNodeSpecVersion === undefined) {
+  if (opts.requiredNodeVersion === undefined) {
     console.warn(
-      "⚠️  No requiredNodeSpecVersion provided; skipping the validator-binary " +
-        "spec_version enforcement. Pass it to gate activation on binary capability.",
+      "⚠️  No requiredNodeVersion provided; skipping the node-binary version " +
+        "enforcement. Pass it to gate activation on binary capability.",
     );
     return;
   }
 
-  if (activeSpecVersion < opts.requiredNodeSpecVersion) {
+  const atLeast = isNodeVersionAtLeast(nodeVersion, opts.requiredNodeVersion);
+  if (atLeast === undefined) {
+    throw new Error(
+      `❌ Cannot compare node version ${nodeVersion} with required ` +
+        `${opts.requiredNodeVersion}: expected major.minor.patch.`,
+    );
+  }
+
+  if (!atLeast) {
     const message =
-      `Validator node reports active runtime spec_version ${activeSpecVersion}, ` +
-      `below the required ${opts.requiredNodeSpecVersion}: its binary may lack the ` +
-      `new ledger host-function version and would fail to decode the new runtime's ` +
-      `host calls. Roll the node binaries first, or pass --allow-lagging-binary to override.`;
+      `Connected node binary ${nodeVersion} is older than the required ` +
+      `${opts.requiredNodeVersion}: it may lack the ledger host-function versions the ` +
+      `new runtime imports and could not instantiate it. Roll the node binaries ` +
+      `first, or pass --allow-lagging-binary to override.`;
     if (opts.allowLaggingBinary) {
       console.warn(`⚠️  ${message}`);
     } else {

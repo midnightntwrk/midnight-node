@@ -116,17 +116,17 @@ export interface FederatedRuntimeUpgradeOptions
    */
   allowSameVersion?: boolean;
   /**
-   * Minimum runtime spec_version the connected node's active runtime must report
-   * for its node binary to be considered capable of decoding the new host-response
-   * structs (the versioned ledger host function). When set, the pre-activation
-   * gate refuses to submit the upgrade motion if the node is below this value.
-   * Defaults to the candidate runtime's own spec_version when omitted.
+   * Minimum node binary version (`major.minor.patch`, compared against the
+   * connected node's `system_version`) that provides the ledger host-function
+   * versions the new runtime imports. When set, the pre-activation gate refuses
+   * to submit the upgrade motion if the connected node's binary is older.
+   * When omitted, the gate logs a warning and does not enforce.
    */
-  requiredNodeSpecVersion?: number;
+  requiredNodeVersion?: string;
   /**
-   * Downgrade the validator-binary compatibility gate from refuse to warn. Intended
+   * Downgrade the node-binary compatibility gate from refuse to warn. Intended
    * for local rehearsals; production upgrades should leave this off so a lagging
-   * binary blocks activation rather than risking a mixed-binary decode failure.
+   * binary blocks activation rather than stalling once the upgrade applies.
    */
   allowLaggingBinary?: boolean;
 }
