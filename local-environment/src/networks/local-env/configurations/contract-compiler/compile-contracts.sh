@@ -96,12 +96,9 @@ toml set aiken.toml config.local.terms_and_conditions_threshold_one_shot_hash.by
 toml set aiken.toml config.local.cnight_minting_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
 toml set aiken.toml config.local.collateral_utxo_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
 
-# Reserve distinct simple-tx outputs for rewards one-shots.
-index=16
+# The rewards one-shots take simple-tx outputs 16..20 (indexes set in the contracts' [config.local]).
 for component in virtual_account rewards_batcher rewards_pool rewards_pool_staging rewards_pool_logic; do
     toml set aiken.toml "config.local.${component}_one_shot_hash.bytes" "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-    toml set aiken.toml "config.local.${component}_one_shot_index" "$index" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
-    index=$((index + 1))
 done
 
 # Debug: Show the updated local section of aiken.toml
@@ -120,7 +117,8 @@ echo "Aiken version:"
 aiken --version
 
 echo "Compiling Aiken contracts with local config..."
-just build local
+# Silent traces: at the verbose trace rewards_batcher is over the 16,384-byte transaction limit.
+just build local silent
 
 # Check if plutus.json was generated
 if [[ ! -f "${PLUTUS_JSON}" ]]; then
