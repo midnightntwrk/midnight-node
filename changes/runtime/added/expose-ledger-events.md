@@ -13,7 +13,15 @@ A `LedgerEvent` carries a SCALE routing header (`transaction_hash`,
 serialisation of the event details as opaque bytes, so the wire shape is stable
 across ledger versions. Consumers read events from `frame_system::Events` via
 `state_subscribeStorage` / `state_getStorage` instead of re-applying
-transactions. Emission is non-consensus and unpriced; see `docs/ledger-events.md`.
+transactions. System-transaction events are weighed per event; see
+`docs/ledger-events.md`.
+
+The events cross the host boundary on new host-function versions:
+`apply_transaction` v3 (ledger 8) and v2 (ledger 9), and v2 of
+`apply_governance_system_transaction`, `apply_cnight_system_transaction` and
+`apply_bridge_system_transaction`. The earlier versions keep their events-free
+return shape. Validator binaries must provide these host functions before the
+runtime is activated.
 
 Requires a metadata rebuild.
 

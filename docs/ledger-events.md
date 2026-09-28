@@ -41,7 +41,9 @@ Read the events for a block from `frame_system::Events`, either by subscribing t
 
 `frame_system::Events` is cleared at the start of each block, so it holds only the events for the block being queried. Runtime events live in the state trie, not in the gossiped block body — every full node re-derives them locally by executing the block's extrinsics.
 
-For each `LedgerEvent` record, decode `content_tagged_bytes` with the matching ledger version's `tagged_deserialize::<EventDetails>`. The tag is a self-describing byte-prefix: it identifies both the type and the ledger version that produced it (`event-details[v9]` for the v7/v8-era ledgers, `event-details[v14]` for the v9-era ledger). A version-aware consumer dispatches on the prefix and selects the matching decoder; the node applies no version logic of its own.
+For each `LedgerEvent` record, decode `content_tagged_bytes` with the matching ledger version's `tagged_deserialize::<EventDetails>`. The tag is a self-describing byte-prefix: it identifies both the type and the ledger version that produced it (`event-details[v9]` for the ledger-8 era, `event-details[v14]` for the ledger-9 era). A version-aware consumer dispatches on the prefix and selects the matching decoder; the node applies no version logic of its own.
+
+`EventDetails` derives the ledger's `Storable`, not a flat `Serializable`, so its tagged bytes are a topologically sorted arena node list rather than a struct-shaped record. The encoding is self-contained, but decoding allocates the nodes into a local arena: a consumer must link the ledger's storage crates (`midnight-storage`, `midnight-storage-core`) alongside the ledger crate, and cannot decode the payload with a SCALE codec or mirror it as a flat runtime type.
 
 ## Contract event namespacing (contract authors)
 
@@ -49,6 +51,11 @@ A contract event arrives as an `EventDetails::ContractLog` inside `content_tagge
 
 ## Pricing
 
-Event emission is deliberately left unpriced: `deposit_event` carries no per-event weight term and there is no event cap. This matches the upstream FRAME convention for `frame_system::Events` (whitelisted, unbounded storage that is excluded from weight benchmarking). Event volume is transitively bounded by the ledger's per-block synthetic-cost limits (`bytes_churned`), which the transaction fee already pays for, and midnight-node is not a parachain, so there is no proof-of-validity inflation concern.
+User-transaction events carry no per-event weight term. Their volume is transitively bounded by the ledger's per-block synthetic-cost limits (`bytes_churned`), which the transaction fee already pays for, matching the upstream FRAME convention for `frame_system::Events` (whitelisted storage excluded from weight benchmarking).
 
-The `bench_block_full_of_events` benchmark in `pallets/midnight/src/benchmarking.rs` is the guardrail for this decision: it fills a block with a worst-case event stream and measures the deposit cost against the block weight budget. If a future ledger version ever decouples event volume from state churn, the documented fallback is to add a per-event weight term to the transaction weight — a runtime-side change that does not affect the wire shape above.
+System-transaction events are weighed per event, because those paths pay no fee and so are not bounded by it:
+
+- `send_mn_system_transaction` declares `ConfigurableSystemTxWeight` plus `PER_LEDGER_EVENT_WEIGHT × MAX_SYSTEM_TX_LEDGER_EVENTS` before dispatch, and refines it to the events actually deposited after.
+- `pallet_cnight_observation::process_tokens` adds `WeightInfo::ledger_event_deposit(n)`, bounded before dispatch by the UTXO capacity and refined to the actual count after.
+
+The per-event figures are conservative placeholders. The `bench_block_full_of_events` benchmark in `pallets/midnight/src/benchmarking.rs` fills a block with worst-case-sized events up to the 50 MB `bytes_churned` ceiling and measures the deposit cost; its result replaces them.
