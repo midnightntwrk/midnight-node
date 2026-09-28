@@ -1,3 +1,4 @@
+# checkov:skip=CKV_DOCKER_2: orchestrators define their own probes; a baked-in probe would misfire during initial sync
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 
 ENV BASE_PATH=/node/chain

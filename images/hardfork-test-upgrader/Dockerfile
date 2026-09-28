@@ -1,3 +1,4 @@
+# checkov:skip=CKV_DOCKER_2: one-shot CLI image, nothing long-running to probe
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 # ntp to keep correct time
 # curl to enable compose healthchecks
