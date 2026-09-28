@@ -74,14 +74,7 @@ export async function imageUpgrade(
     ? [composeFile, overridePath]
     : [composeFile];
 
-  const discovered = opts.services ?? (await listServices(composeFiles, env));
-  // Apply the advertised --include/--exclude filters (forwarded here as
-  // includePattern/excludePattern) to the discovered service list before rollout.
-  let services = filterServices(
-    discovered,
-    opts.includePattern,
-    opts.excludePattern,
-  );
+  let services = opts.services ?? (await listServices(composeFiles, env));
   const mockSelection = readMockValidatorSelection(overridePath);
   if (mockSelection) {
     const disabled = new Set(mockSelection.disabledValidatorServices);
@@ -89,7 +82,7 @@ export async function imageUpgrade(
   }
   if (!services.length) {
     throw new Error(
-      "No services to roll out after applying include/exclude filters. Check ImageUpgradeOptions.services and the --include/--exclude patterns, or your compose file.",
+      "No services discovered to roll out. Provide ImageUpgradeOptions.services explicitly or check your compose file.",
     );
   }
 
@@ -197,19 +190,6 @@ function resolveNetworkCompose(namespace: string): string {
 
 function fileFlags(composeFiles: string[]): string[] {
   return composeFiles.flatMap((f) => ["-f", f]);
-}
-
-function filterServices(
-  services: string[],
-  includePattern?: string,
-  excludePattern?: string,
-): string[] {
-  const include = includePattern ? new RegExp(includePattern) : undefined;
-  const exclude = excludePattern ? new RegExp(excludePattern) : undefined;
-  return services.filter(
-    (svc) =>
-      (!include || include.test(svc)) && (!exclude || !exclude.test(svc)),
-  );
 }
 
 async function listServices(

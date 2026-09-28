@@ -41,6 +41,10 @@ Read the events for a block from `frame_system::Events`, either by subscribing t
 
 `frame_system::Events` is cleared at the start of each block, so it holds only the events for the block being queried. Runtime events live in the state trie, not in the gossiped block body — every full node re-derives them locally by executing the block's extrinsics.
 
+A block's events are readable only while the node keeps that block's state. A node with default state pruning retains recent blocks only; serving historical events needs an archive node (`--state-pruning archive`), which is an operator opt-in.
+
+There is no dedicated event-subscription RPC: consumers use the standard storage RPCs above. A typed `midnight_subscribeBlockEvents` wrapper is deliberate future work, to be added when a consumer that cannot decode `System.Events` through runtime metadata (a light client, a bridge, a raw JSON-RPC integrator) needs one.
+
 For each `LedgerEvent` record, decode `content_tagged_bytes` with the matching ledger version's `tagged_deserialize::<EventDetails>`. The tag is a self-describing byte-prefix: it identifies both the type and the ledger version that produced it (`event-details[v9]` for the ledger-8 era, `event-details[v14]` for the ledger-9 era). A version-aware consumer dispatches on the prefix and selects the matching decoder; the node applies no version logic of its own.
 
 `EventDetails` derives the ledger's `Storable`, not a flat `Serializable`, so its tagged bytes are a topologically sorted arena node list rather than a struct-shaped record. The encoding is self-contained, but decoding allocates the nodes into a local arena: a consumer must link the ledger's storage crates (`midnight-storage`, `midnight-storage-core`) alongside the ledger crate, and cannot decode the payload with a SCALE codec or mirror it as a flat runtime type.
