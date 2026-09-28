@@ -97,6 +97,7 @@ midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
+midnight-primitives-block-rewards = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
 midnight-primitives-system-parameters = { workspace = true, default-features = true }
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }

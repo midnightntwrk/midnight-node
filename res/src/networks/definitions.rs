@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_block_rewards::BlockRewardsConfig;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_reserve_observation::ReserveConfig;
@@ -109,6 +110,7 @@ impl MidnightNetwork for UndeployedNetwork {
 /// Used when `--chain` is not specified when running `build-spec` - it will source chain values from
 /// environment variables at runtime rather than hard-coded values at compile-time
 pub struct CustomNetwork {
+	pub block_rewards_config: BlockRewardsConfig,
 	pub name: String,
 	pub id: String,
 	pub genesis_state: Vec<u8>,
@@ -126,6 +128,10 @@ pub struct CustomNetwork {
 	pub c2m_bridge_config: C2MBridgeConfig,
 }
 impl MidnightNetwork for CustomNetwork {
+	fn block_rewards_config(&self) -> BlockRewardsConfig {
+		self.block_rewards_config.clone()
+	}
+
 	fn name(&self) -> &str {
 		&self.name
 	}

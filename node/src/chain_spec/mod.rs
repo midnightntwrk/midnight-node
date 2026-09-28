@@ -257,6 +257,10 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 	})?;
 
 	let config = RuntimeGenesisConfig {
+		block_rewards: midnight_node_runtime::BlockRewardsConfig {
+			config: genesis.block_rewards_config(),
+			..Default::default()
+		},
 		system: Default::default(),
 		aura: Default::default(),
 		babe: Default::default(),

@@ -10,6 +10,7 @@ license-file.workspace = true
 [features]
 default = ["std"]
 chain-spec = [
+    "midnight-primitives-block-rewards/std",
     "midnight-primitives-federated-authority-observation/std",
     "midnight-primitives-ics-observation/std",
     "midnight-primitives-reserve-observation/std",
@@ -34,6 +35,7 @@ sp-core = { workspace = true, optional = true }
 sc-service = { workspace = true, optional = true }
 sp-session-validator-management = { workspace = true, optional = true }
 sidechain-domain = { workspace = true, optional = true }
+midnight-primitives-block-rewards = { workspace = true, optional = true }
 midnight-primitives-federated-authority-observation = { workspace = true, optional = true }
 midnight-primitives-ics-observation = { workspace = true, optional = true }
 midnight-primitives-reserve-observation = { workspace = true, optional = true }

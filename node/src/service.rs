@@ -487,6 +487,7 @@ pub fn new_partial(
 			data_sources.authority_selection.clone(),
 			data_sources.cnight_observation.clone(),
 			data_sources.federated_authority_observation.clone(),
+			data_sources.virtual_account_observation.clone(),
 			data_sources.bridge.clone(),
 		),
 	);
@@ -876,6 +877,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 					data_sources.authority_selection.clone(),
 					data_sources.cnight_observation.clone(),
 					data_sources.federated_authority_observation.clone(),
+					data_sources.virtual_account_observation.clone(),
 					data_sources.bridge.clone(),
 				),
 				force_authoring,

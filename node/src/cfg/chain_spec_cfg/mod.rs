@@ -21,6 +21,11 @@ use serde_valid::{Validate, validation};
 #[validate(custom = all_required)]
 /// Parameters required for chainspec generation
 pub struct ChainSpecCfg {
+	/// Optional block production rewards config file.
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_block_rewards_config: Option<String>,
+
 	/// Required for generic Live network chain spec
 	/// Name of the network e.g. devnet1
 	#[serde(default)]

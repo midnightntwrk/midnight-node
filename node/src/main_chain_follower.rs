@@ -43,6 +43,8 @@ use midnight_primitives_mainchain_follower::{
 	CNightObservationDataSourceMock, FederatedAuthorityObservationDataSource,
 	FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
 	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
+	VirtualAccountObservationDataSource, VirtualAccountObservationDataSourceImpl,
+	VirtualAccountObservationDataSourceMock,
 };
 
 // TODO: Decide if it should be experimental
@@ -50,6 +52,7 @@ use midnight_primitives_mainchain_follower::{
 
 #[derive(Clone)]
 pub struct DataSources {
+	pub virtual_account_observation: Arc<dyn VirtualAccountObservationDataSource + Send + Sync>,
 	pub mc_hash: Arc<dyn McHashDataSource + Send + Sync>,
 	pub authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	pub cnight_observation: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
@@ -106,6 +109,7 @@ pub async fn create_mock_data_sources(
 		mc_hash: Arc::new(McHashDataSourceMock::new(block)),
 		authority_selection: Arc::new(authority_selection_data_source_mock),
 		cnight_observation: Arc::new(CNightObservationDataSourceMock::new()),
+		virtual_account_observation: Arc::new(VirtualAccountObservationDataSourceMock),
 		federated_authority_observation: Arc::new(
 			FederatedAuthorityObservationDataSourceMock::new(),
 		),
@@ -347,6 +351,10 @@ pub async fn create_cached_data_sources(
 		);
 		e
 	})?;
+	let virtual_account_observation = VirtualAccountObservationDataSourceImpl::new(
+		federated_authority_observation_pool.clone(),
+		std::num::NonZeroUsize::new(1000).unwrap(),
+	);
 	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
 		federated_authority_observation_pool,
 		midnight_metrics_opt,
@@ -374,6 +382,7 @@ pub async fn create_cached_data_sources(
 		cnight_observation: Arc::new(cnight_observation),
 		bridge: Arc::new(bridge),
 		federated_authority_observation: Arc::new(federated_authority_observation),
+		virtual_account_observation: Arc::new(virtual_account_observation),
 	})
 }
 

@@ -271,7 +271,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 003_000_000,
+	spec_version: 003_001_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
@@ -388,7 +388,7 @@ impl pallet_aura::Config for Runtime {
 
 impl pallet_authorship::Config for Runtime {
 	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
-	type EventHandler = ();
+	type EventHandler = BlockRewards;
 }
 
 impl pallet_babe::Config for Runtime {
@@ -711,18 +711,12 @@ impl pallet_session_validator_management::Config for Runtime {
 	type BenchmarkHelper = ();
 }
 
-pub struct LogBeneficiaries;
-impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
-	#[cfg(feature = "experimental")]
-	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
-		//let rewards = BlockRewards::get_rewards_and_clear();
-		//log::info!("Rewards accrued in epoch {old_epoch}: {rewards:?}");
+impl pallet_block_rewards::Config for Runtime {}
 
-		ParityDbWeight::get().reads_writes(1, 1)
-	}
-	#[cfg(not(feature = "experimental"))]
-	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
-		Weight::zero()
+pub struct CloseRewardEpoch;
+impl sp_sidechain::OnNewEpoch for CloseRewardEpoch {
+	fn on_new_epoch(old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
+		BlockRewards::close_epoch(old_epoch.0)
 	}
 }
 
@@ -732,7 +726,7 @@ impl pallet_sidechain::Config for Runtime {
 		// both run before Sidechain (4), so storage is already updated for this block.
 		ScSlotNumber(*ConsensusEngine::current_slot())
 	}
-	type OnNewEpoch = LogBeneficiaries;
+	type OnNewEpoch = CloseRewardEpoch;
 }
 
 pub const BLOCK_REWARD_POINTS: u128 = 500_000;
@@ -1169,11 +1163,12 @@ mod runtime {
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
-	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
+
+	#[runtime::pallet_index(12)]
+	pub type BlockRewards = pallet_block_rewards::Pallet<Runtime>;
 
 	#[runtime::pallet_index(13)]
 	pub type CNightObservation = pallet_cnight_observation::Pallet<Runtime>;
@@ -1257,6 +1252,45 @@ pub type TxExtension = (
 /// Unchecked extrinsic type as expected by this runtime.
 pub type UncheckedExtrinsic =
 	generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
+/// Require exactly one of each expected rewards inherent.
+fn check_rewards_inherents(
+	block: &<Block as BlockT>::LazyBlock,
+	data: &sp_inherents::InherentData,
+) -> Result<(), midnight_primitives_block_rewards::InherentError> {
+	use midnight_primitives_block_rewards::{
+		ACCOUNTS_INHERENT_IDENTIFIER, InherentError, RewardAccountsData,
+	};
+	use sp_runtime::traits::{ExtrinsicCall, ExtrinsicLike, LazyBlock};
+	let mut observations = 0;
+	let mut digests = 0;
+	for extrinsic in block.extrinsics() {
+		let extrinsic = extrinsic.map_err(|_| InherentError::DecodeFailed)?;
+		if !extrinsic.is_bare() {
+			continue;
+		}
+		match extrinsic.call() {
+			RuntimeCall::BlockRewards(pallet_block_rewards::Call::note_reward_accounts {
+				..
+			}) => observations += 1,
+			RuntimeCall::BlockRewards(pallet_block_rewards::Call::submit_rewards_digest {
+				..
+			}) => digests += 1,
+			_ => (),
+		}
+	}
+	let expected_observation = data
+		.get_data::<RewardAccountsData>(&ACCOUNTS_INHERENT_IDENTIFIER)
+		.map_err(|_| InherentError::DecodeFailed)?
+		.is_some();
+	if observations != usize::from(expected_observation) {
+		return Err(InherentError::MissingAccounts);
+	}
+	if digests != usize::from(pallet_block_rewards::PendingDigest::<Runtime>::exists()) {
+		return Err(InherentError::DigestMismatch);
+	}
+	Ok(())
+}
+
 /// The payload being signed in transactions.
 pub type SignedPayload = generic::SignedPayload<RuntimeCall, TxExtension>;
 /// Executive: handles dispatch to the various modules.
@@ -1527,14 +1561,34 @@ impl_runtime_apis! {
 		}
 
 		fn inherent_extrinsics(data: sp_inherents::InherentData) -> Vec<<Block as BlockT>::Extrinsic> {
-			data.create_extrinsics()
+			let mut extrinsics = data.create_extrinsics();
+			if let Some(digest) = pallet_block_rewards::PendingDigest::<Runtime>::get() {
+				extrinsics.insert(0, UncheckedExtrinsic::new_bare(RuntimeCall::BlockRewards(
+					pallet_block_rewards::Call::submit_rewards_digest {
+						epoch: digest.epoch,
+						leaf_count: digest.leaf_count,
+						root: digest.root,
+						min_key: digest.min_key,
+						max_key: digest.max_key,
+						treasury_total: digest.treasury_total,
+					},
+				)));
+			}
+			extrinsics
 		}
 
 		fn check_inherents(
 			block: <Block as BlockT>::LazyBlock,
 			data: sp_inherents::InherentData,
 		) -> sp_inherents::CheckInherentsResult {
-			data.check_extrinsics(&block)
+			let mut result = data.check_extrinsics(&block);
+			if result.ok() {
+				if let Err(error) = check_rewards_inherents(&block, &data) {
+					result.put_error(midnight_primitives_block_rewards::ACCOUNTS_INHERENT_IDENTIFIER, &error)
+						.expect("no preceding inherent errors");
+				}
+			}
+			result
 		}
 	}
 
@@ -1932,6 +1986,12 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl midnight_primitives_block_rewards::BlockRewardsApi<Block> for Runtime {
+		fn virtual_account_policy() -> Option<[u8; 28]> {
+			BlockRewards::virtual_account_policy()
+		}
+	}
+
 	impl midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi<Block> for Runtime {
 		fn get_council_address() -> MainchainAddress {
 			pallet_federated_authority_observation::MainChainCouncilAddress::<Runtime>::get()
@@ -1985,8 +2045,84 @@ mod tests {
 	};
 	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
-	use sp_runtime::traits::Zero;
+	use sp_runtime::traits::{Header as _, Zero};
 	use std::collections::HashSet;
+
+	#[test]
+	fn rewards_digest_wire_format() {
+		use parity_scale_codec::Encode;
+		let call =
+			super::RuntimeCall::BlockRewards(pallet_block_rewards::Call::submit_rewards_digest {
+				epoch: 1,
+				leaf_count: 2,
+				root: [3; 32],
+				min_key: [4; 28],
+				max_key: [5; 28],
+				treasury_total: 6,
+			});
+		let encoded = super::UncheckedExtrinsic::new_bare(call).encode();
+		assert_eq!(encoded.len(), 125);
+		assert_eq!(&encoded[..5], &[0xed, 0x01, 0x05, 0x0c, 0x00]);
+	}
+
+	#[test]
+	fn rewards_inherents_require_each_call_once() {
+		use midnight_primitives_block_rewards::{
+			ACCOUNTS_INHERENT_IDENTIFIER, RewardAccountsData, RewardsDigest,
+		};
+		sp_io::TestExternalities::default().execute_with(|| {
+			let digest = RewardsDigest {
+				epoch: 1,
+				leaf_count: 0,
+				root: [0; 32],
+				min_key: [0; 28],
+				max_key: [0; 28],
+				treasury_total: 0,
+			};
+			pallet_block_rewards::PendingDigest::<super::Runtime>::put(&digest);
+			let mut data = InherentData::new();
+			data.put_data(
+				ACCOUNTS_INHERENT_IDENTIFIER,
+				&RewardAccountsData { epoch: 2, accounts: vec![] },
+			)
+			.unwrap();
+			let observation =
+				super::UncheckedExtrinsic::new_bare(super::RuntimeCall::BlockRewards(
+					pallet_block_rewards::Call::note_reward_accounts { epoch: 2, accounts: vec![] },
+				));
+			let digest = super::UncheckedExtrinsic::new_bare(super::RuntimeCall::BlockRewards(
+				pallet_block_rewards::Call::submit_rewards_digest {
+					epoch: digest.epoch,
+					leaf_count: digest.leaf_count,
+					root: digest.root,
+					min_key: digest.min_key,
+					max_key: digest.max_key,
+					treasury_total: digest.treasury_total,
+				},
+			));
+			let check = |extrinsics| {
+				super::check_rewards_inherents(
+					&super::Block {
+						header: super::Header::new(
+							1,
+							Default::default(),
+							Default::default(),
+							Default::default(),
+							Default::default(),
+						),
+						extrinsics,
+					}
+					.into(),
+					&data,
+				)
+			};
+			assert!(check(vec![observation.clone(), digest.clone()]).is_ok());
+			assert!(check(vec![observation.clone()]).is_err());
+			assert!(check(vec![digest.clone()]).is_err());
+			assert!(check(vec![observation.clone(), observation.clone(), digest.clone()]).is_err());
+			assert!(check(vec![observation, digest.clone(), digest]).is_err());
+		});
+	}
 
 	#[test]
 	fn check_whitelist() {

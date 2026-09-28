@@ -268,7 +268,21 @@ impl SubstrateCli for Cfg {
 					serde_json::from_str(&c2m_bridge_config_str)
 						.map_err(|e| format!("failed to parse C2MBridgeConfig: {e}"))?;
 
+				let block_rewards_config =
+					if let Some(path) = &self.chain_spec_cfg.chainspec_block_rewards_config {
+						let contents = validated_file::safe_read_to_string(
+							path,
+							&Self::safe_read_opts()
+								.map_err(|e| format!("failed to read safe-read-opts: {e}"))?,
+						)?;
+						serde_json::from_str(&contents)
+							.map_err(|e| format!("failed to parse BlockRewardsConfig: {e}"))?
+					} else {
+						Default::default()
+					};
+
 				let network: CustomNetwork = CustomNetwork {
+					block_rewards_config,
 					name: self
 						.chain_spec_cfg
 						.chainspec_name

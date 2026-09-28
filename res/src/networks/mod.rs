@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_block_rewards::BlockRewardsConfig;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_reserve_observation::ReserveConfig;
@@ -186,6 +187,10 @@ impl MainChainScripts {
 }
 
 pub trait MidnightNetwork {
+	fn block_rewards_config(&self) -> BlockRewardsConfig {
+		BlockRewardsConfig::default()
+	}
+
 	fn name(&self) -> &str;
 	fn id(&self) -> &str;
 	fn genesis_state(&self) -> &[u8];

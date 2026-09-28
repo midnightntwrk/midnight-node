@@ -1,0 +1,11 @@
+{
+  "virtual_account_policy": null,
+  "reserve": 0,
+  "rn": 7,
+  "rd": 438000000,
+  "sn": 95,
+  "sd": 100,
+  "dist_fee": 1,
+  "max_leaves": 5000,
+  "funded_floor": 3000000
+}

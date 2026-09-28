@@ -27,6 +27,7 @@ use midnight_node_runtime::{
 	opaque::{Block, SessionKeys},
 };
 use midnight_primitives::BridgeRecipient;
+use midnight_primitives_block_rewards::BlockRewardsApi;
 use midnight_primitives_cnight_observation::CNightObservationApi;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
@@ -53,7 +54,11 @@ use time_source::TimeSource;
 
 use midnight_primitives_mainchain_follower::{
 	FederatedAuthorityObservationDataSource, MidnightCNightObservationDataSource,
-	idp::{FederatedAuthorityInherentDataProvider, MidnightCNightObservationInherentDataProvider},
+	VirtualAccountObservationDataSource,
+	idp::{
+		FederatedAuthorityInherentDataProvider, MidnightCNightObservationInherentDataProvider,
+		VirtualAccountInherentDataProvider,
+	},
 };
 
 /// Default [`CreateInherentDataConfig::cardano_check_backoff`]: how long block verification waits
@@ -75,6 +80,8 @@ pub(crate) struct ProposalCIDP<T> {
 	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
+	virtual_account_observation_data_source:
+		Arc<dyn VirtualAccountObservationDataSource + Send + Sync>,
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
@@ -89,6 +96,7 @@ where
 			AuthoritySelectionInputs,
 			ScEpochNumber,
 		>,
+	T::Api: BlockRewardsApi<Block>,
 	T::Api: CNightObservationApi<Block>,
 	T::Api: FederatedAuthorityObservationApi<Block>,
 	T::Api: TokenBridgeIDPRuntimeApi<Block>,
@@ -101,6 +109,7 @@ where
 		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
 		MidnightCNightObservationInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
+		VirtualAccountInherentDataProvider,
 		TokenBridgeInherentDataProvider<BridgeRecipient>,
 	);
 
@@ -116,6 +125,7 @@ where
 			authority_selection_data_source,
 			cnight_observation_data_source,
 			federated_authority_observation_data_source,
+			virtual_account_observation_data_source,
 			bridge_data_source,
 		} = self;
 
@@ -127,6 +137,10 @@ where
 		let parent_header = client
 			.header(parent_hash)?
 			.ok_or_else(|| format!("Missing parent header for {parent_hash:?}"))?;
+
+		let epoch = sc_slot_config.epoch_number(*slot).0;
+		let is_new_epoch = slot_from_predigest(&parent_header)?
+			.is_none_or(|parent_slot| sc_slot_config.epoch_number(parent_slot).0 != epoch);
 
 		let mc_hash = McHashIDP::new_proposal(
 			parent_header,
@@ -185,6 +199,16 @@ where
 			e
 		})?;
 
+		let reward_accounts = VirtualAccountInherentDataProvider::new(
+			client.clone(),
+			virtual_account_observation_data_source.as_ref(),
+			parent_hash,
+			&mc_hash.mc_hash(),
+			epoch,
+			is_new_epoch,
+		)
+		.await?;
+
 		let bridge = TokenBridgeInherentDataProvider::new(
 			client.as_ref(),
 			parent_hash,
@@ -206,6 +230,7 @@ where
 			//block_beneficiary_provider,
 			cnight_observation,
 			federated_authority,
+			reward_accounts,
 			bridge,
 		))
 	}
@@ -221,6 +246,8 @@ pub struct VerifierCIDP<T> {
 	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
+	virtual_account_observation_data_source:
+		Arc<dyn VirtualAccountObservationDataSource + Send + Sync>,
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
@@ -234,6 +261,7 @@ where
 			AuthoritySelectionInputs,
 			ScEpochNumber,
 		>,
+	T::Api: BlockRewardsApi<Block>,
 	T::Api: CNightObservationApi<Block>,
 	T::Api: FederatedAuthorityObservationApi<Block>,
 	T::Api: TokenBridgeIDPRuntimeApi<Block>,
@@ -243,6 +271,7 @@ where
 		AriadneIDP,
 		MidnightCNightObservationInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
+		VirtualAccountInherentDataProvider,
 		TokenBridgeInherentDataProvider<BridgeRecipient>,
 	);
 
@@ -258,6 +287,7 @@ where
 			authority_selection_data_source,
 			cnight_observation_data_source,
 			federated_authority_observation_data_source,
+			virtual_account_observation_data_source,
 			bridge_data_source,
 		} = self;
 
@@ -268,6 +298,9 @@ where
 		));
 		let parent_header = client.expect_header(parent_hash)?;
 		let parent_slot = slot_from_predigest(&parent_header)?;
+		let epoch = sc_slot_config.epoch_number(verified_block_slot).0;
+		let is_new_epoch = parent_slot
+			.is_none_or(|parent_slot| sc_slot_config.epoch_number(parent_slot).0 != epoch);
 		let mut cardano_check_attempts: u32 = 0;
 		let mc_state_reference = loop {
 			match McHashIDP::new_verification(
@@ -342,6 +375,16 @@ where
 			e
 		})?;
 
+		let reward_accounts = VirtualAccountInherentDataProvider::new(
+			client.clone(),
+			virtual_account_observation_data_source.as_ref(),
+			parent_hash,
+			&mc_hash,
+			epoch,
+			is_new_epoch,
+		)
+		.await?;
+
 		let bridge = TokenBridgeInherentDataProvider::new(
 			client.as_ref(),
 			parent_hash,
@@ -354,7 +397,14 @@ where
 			e
 		})?;
 
-		Ok((timestamp, ariadne_data_provider, cnight_observation, federated_authority, bridge))
+		Ok((
+			timestamp,
+			ariadne_data_provider,
+			cnight_observation,
+			federated_authority,
+			reward_accounts,
+			bridge,
+		))
 	}
 }
 
