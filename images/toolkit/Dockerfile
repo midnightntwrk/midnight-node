@@ -32,5 +32,9 @@ RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*
   rm -rf /node
 COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
+# One-shot CLI, not a service: nothing long-lived to probe. NONE states that
+# explicitly (and satisfies HEALTHCHECK-presence lints such as checkov CKV_DOCKER_2).
+HEALTHCHECK NONE
+
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]
