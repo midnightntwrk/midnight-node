@@ -42,6 +42,10 @@ pub struct LedgerMetrics {
 	pub storage_flush_time: HistogramVec,
 	/// Time spent in the per-block ledger post-block update (`on_finalize`), labelled by `phase`.
 	pub post_block_update_time: HistogramVec,
+	/// Time spent in each phase of the batch-verification host call, labelled by `phase`.
+	pub batch_phase_time: HistogramVec,
+	/// Time spent deserializing a transaction, labelled by the host call that did it.
+	pub tx_deserialize_time: HistogramVec,
 	/// Transaction validation cache hits (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_hits: CounterVec<U64>,
 	/// Transaction validation cache misses
@@ -182,6 +186,28 @@ impl LedgerMetrics {
 					)
 					.buckets(time_buckets.clone()),
 					&["phase"],
+				)?,
+				registry,
+			)?,
+			batch_phase_time: prometheus::register(
+				HistogramVec::new(
+					HistogramOpts::new(
+						"ledger_batch_phase_seconds",
+						"Time spent in each phase of the batch-verification host call",
+					)
+					.buckets(time_buckets.clone()),
+					&["phase"],
+				)?,
+				registry,
+			)?,
+			tx_deserialize_time: prometheus::register(
+				HistogramVec::new(
+					HistogramOpts::new(
+						"ledger_tx_deserialize_seconds",
+						"Time spent deserializing a transaction, by host call",
+					)
+					.buckets(time_buckets.clone()),
+					&["site"],
 				)?,
 				registry,
 			)?,
@@ -361,6 +387,27 @@ impl LedgerMetricsExt {
 	pub fn observe_storage_flush_time(&mut self, time: f64, label: &'static str) {
 		self.observe(|m| {
 			m.storage_flush_time.with_label_values(&[label]).observe(time);
+		});
+	}
+
+	/// Records one transaction deserialization, labelled by the host call that performed it.
+	///
+	/// A transaction is decoded from bytes at every host-call boundary that needs it, so the same
+	/// bytes are deserialized more than once per block. Labelling the site is what makes the
+	/// duplication countable.
+	pub fn observe_tx_deserialize(&mut self, time: f64, site: &'static str) {
+		self.observe(|m| {
+			m.tx_deserialize_time.with_label_values(&[site]).observe(time);
+		});
+	}
+
+	/// Records one phase of the batch-verification host call.
+	///
+	/// `batch` and `batch_prep` cover only the cryptography; this accounts for everything else the
+	/// call does, so the phases sum to the whole call rather than to the part that flatters it.
+	pub fn observe_batch_phase(&mut self, time: f64, phase: &'static str) {
+		self.observe(|m| {
+			m.batch_phase_time.with_label_values(&[phase]).observe(time);
 		});
 	}
 

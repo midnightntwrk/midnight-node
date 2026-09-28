@@ -251,7 +251,7 @@ host_restore_dir() {
 scrape_batch_metrics() {
   local prom_url="$1"
   curl -sf --max-time 3 "$prom_url" 2>/dev/null \
-    | grep -E '^(midnight_batch_verify_|ledger_proof_verify_|ledger_post_block_update_|storage_(fetch|flush)_time|ledger_txs_(processing|validating)_time|substrate_block_verification_and_import_time)' \
+    | grep -E '^(midnight_batch_verify_|ledger_proof_verify_|ledger_post_block_update_|ledger_batch_phase_|ledger_tx_deserialize_|ledger_tx_validation_cache_|storage_(fetch|flush)_time|ledger_txs_(processing|validating)_time|substrate_block_verification_and_import_time)' \
     | grep -vE '_bucket|^#' || true
 }
 
