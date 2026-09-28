@@ -1,9 +1,7 @@
 #runtime #ledger #security
 # Bump ledger 8 to 8.1.2 (onyx-coyote security release)
 
-Moves the ledger 8 pin from 8.1.0 + the Array signature-verification fix to the
-8.1.2 candidate on `shieldedtech/shadow-midnight-ledger`
-(`tkerber/ledger-8.1.2-prep`, rev `14b98d5a`), which carries that fix plus:
+Moves the ledger 8 pin from 8.1.1 to 8.1.2 which contains:
 
 - hardening of low-level deserialization across `serialize`, `base-crypto`,
   `storage`, `onchain-state`, `onchain-vm` and `transient-crypto` — non-canonical
@@ -25,6 +23,3 @@ Crate versions: `midnight-ledger`/`midnight-zswap` 8.1.2, `midnight-storage`
 `midnight-base-crypto` 1.0.1, `midnight-transient-crypto` 2.1.1,
 `midnight-coin-structure` 2.0.2, `midnight-zkir` 2.1.1, `midnight-serialize`
 1.1.1. The ledger 7 crates remain on their published crates.io versions.
-
-PR: <link to PR>
-JIRA: <link to JIRA ticket>
