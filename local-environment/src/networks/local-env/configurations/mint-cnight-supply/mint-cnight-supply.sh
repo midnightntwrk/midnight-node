@@ -81,6 +81,8 @@ jq '{type: "PlutusScriptV3", description: "", cborHex: (.validators[] | select(.
 POLICY_ID=$(jq -r '.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .hash' "$PLUTUS_JSON")
 [ -n "$POLICY_ID" ] && [ "$POLICY_ID" != "null" ] || { echo "ERROR: cNIGHT minting policy id not found in $PLUTUS_JSON"; exit 1; }
 echo "cNIGHT policy id: $POLICY_ID"
+# The token is POLICY_ID.NIGHT, the contracts' cnight_name; the node configs name it "NIGHT".
+CNIGHT_UNIT="$POLICY_ID.4e49474854"
 
 # The faucet / circulating address is the funded address shared with the e2e suite.
 FAUCET_ADDR=$(cardano-cli latest address build \
@@ -117,12 +119,12 @@ for attempt in {1..15}; do
       --testnet-magic "$NETWORK_MAGIC" \
       --tx-in "$TX_IN" \
       --tx-in-collateral "$COLLATERAL" \
-      --tx-out "$RESERVE_ADDR+$MIN_UTXO_LOVELACE + $RESERVE_STARS $POLICY_ID" \
+      --tx-out "$RESERVE_ADDR+$MIN_UTXO_LOVELACE + $RESERVE_STARS $CNIGHT_UNIT" \
       --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
-      --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $ICS_STARS $POLICY_ID" \
+      --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $ICS_STARS $CNIGHT_UNIT" \
       --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
-      --tx-out "$FAUCET_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_STARS $POLICY_ID" \
-      --mint "$TOTAL_MINT_STARS $POLICY_ID" \
+      --tx-out "$FAUCET_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_STARS $CNIGHT_UNIT" \
+      --mint "$TOTAL_MINT_STARS $CNIGHT_UNIT" \
       --mint-script-file "$CNIGHT_PLUTUS" \
       --mint-redeemer-value "{}" \
       --change-address "$FAUCET_ADDR" \
@@ -215,7 +217,7 @@ cardano-cli latest transaction build \
   --tx-in "$SEED_TX_ID#2" \
   --tx-in "$SEED_TX_ID#3" \
   --tx-in-collateral "$SEED_TX_ID#3" \
-  --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_TRANSFER_STARS $POLICY_ID" \
+  --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_TRANSFER_STARS $CNIGHT_UNIT" \
   --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
   --metadata-json-file /tmp/faucet-bridge-metadata.json \
   --json-metadata-detailed-schema \

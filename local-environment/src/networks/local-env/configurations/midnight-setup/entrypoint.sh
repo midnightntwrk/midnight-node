@@ -149,6 +149,8 @@ cat /res/local/cnight-config.json
 
 CNIGHT_POLICY_ID=$(jq -r '.addresses.cnight_policy_id' /res/local/cnight-config.json)
 CNIGHT_ASSET_NAME=$(jq -r '.addresses.cnight_asset_name' /res/local/cnight-config.json)
+# Ogmios keys asset names in hex.
+CNIGHT_ASSET_NAME_HEX=$(printf '%s' "$CNIGHT_ASSET_NAME" | xxd -p | tr -d '\n')
 cnight_seed_tx=$(cat /runtime-values/cnight-supply-minted 2>/dev/null || echo "")
 
 # The seed tx's cNIGHT outputs at <address>, as IcsUtxo/ReserveUtxo JSON objects.
@@ -157,7 +159,7 @@ seeded_utxos() {
   curl -s -H 'Content-Type: application/json' \
     -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "params": {"addresses": ["'"$1"'"]}, "id": 1}' \
     "$OGMIOS_URL" \
-  | jq --arg tx "$cnight_seed_tx" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
+  | jq --arg tx "$cnight_seed_tx" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME_HEX" \
       '[.result[]
         | select(.transaction.id == $tx)
         | {tx_hash: .transaction.id, output_index: .index, amount: .value[$pid][$name]}
