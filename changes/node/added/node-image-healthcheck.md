@@ -8,4 +8,4 @@ configurations use the same `RPC_PORT` value for `--rpc-port`, keeping the
 node and its liveness probe aligned while a syncing node stays healthy. A
 direct `--rpc-port` override must set `RPC_PORT` to the same value.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2210
