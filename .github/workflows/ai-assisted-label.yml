@@ -1,0 +1,24 @@
+name: Label AI-assisted PRs
+
+# Dispatcher — calls the reusable workflow in midnightntwrk/workflows.
+# Applies bot:ai-assisted when a PR carries an AI-tooling signature.
+#
+# pull_request_target (not pull_request) so fork and Dependabot PRs get a
+# writable token and are labelled too. Safe here: the reusable never checks
+# out or executes PR code; PR body/commit text is only regex-tested as data
+# inside github-script, never interpolated into shell or script source.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] label-only; no PR code checkout or execution
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-assisted-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    uses: midnightntwrk/workflows/.github/workflows/ai-assisted-label.yml@2a516da4425edff87dd8d080bfb1c4125866f727

@@ -149,7 +149,7 @@ pub async fn generate_ics_genesis(
 
 	log::info!(
 		"Querying ICS UTxOs at address {} for block {}",
-		&addresses.illiquid_circulation_supply_validator_address,
+		addresses.illiquid_circulation_supply_validator_address,
 		hex::encode(cardano_tip.0)
 	);
 

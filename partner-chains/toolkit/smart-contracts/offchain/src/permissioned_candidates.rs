@@ -104,7 +104,7 @@ fn get_current_permissioned_candidates(
 ) -> Result<Option<(OgmiosUtxo, Vec<PermissionedCandidateData>)>, anyhow::Error> {
 	let utxos_with_permissioned_candidates_token: Vec<OgmiosUtxo> = validator_utxos
 		.into_iter()
-		.filter(|utxo| utxo.value.native_tokens.get(&scripts.policy_id().0).is_some())
+		.filter(|utxo| utxo.value.native_tokens.contains_key(&scripts.policy_id().0))
 		.collect();
 
 	if utxos_with_permissioned_candidates_token.len() > 1 {

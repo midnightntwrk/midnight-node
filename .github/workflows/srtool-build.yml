@@ -108,20 +108,22 @@ jobs:
           echo "Generated checksums:"
           cat SHA256SUMS-srtool
 
+      # actions/attest needs GitHub Enterprise Cloud for a private or internal repo, so on a
+      # fork these hard-fail; release-image.yml calls this workflow from any repo.
       - name: Attest runtime WASM
-        if: inputs.release-tag != ''
+        if: inputs.release-tag != '' && github.repository == 'midnightntwrk/midnight-node'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: artifacts/srtool/${{ steps.wasm-names.outputs.wasm }}
 
       - name: Attest compact runtime WASM
-        if: inputs.release-tag != ''
+        if: inputs.release-tag != '' && github.repository == 'midnightntwrk/midnight-node'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: artifacts/srtool/${{ steps.wasm-names.outputs.compact }}
 
       - name: Attest compressed runtime WASM
-        if: inputs.release-tag != ''
+        if: inputs.release-tag != '' && github.repository == 'midnightntwrk/midnight-node'
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: artifacts/srtool/${{ steps.wasm-names.outputs.compressed }}

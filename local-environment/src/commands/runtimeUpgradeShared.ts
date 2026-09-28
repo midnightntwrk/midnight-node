@@ -20,6 +20,8 @@ import {
   loadRuntimeWasm,
   resolveRpcUrl,
 } from "../lib/runtimeUpgradeUtils";
+import { resolveRuntimeWasmPath } from "../lib/runtimeWasmImage";
+import { applyEnvFileOverrides } from "../lib/envFile";
 
 export interface NetworkConnection {
   api: ApiPromise;
@@ -40,6 +42,11 @@ export async function ensureRunningAndConnect(
   namespace: string,
   opts: RunOptions & { skipRun?: boolean; rpcUrl?: string },
 ): Promise<NetworkConnection> {
+  if (opts.skipRun && opts.numValidators !== undefined) {
+    throw new Error(
+      "--num-validators cannot be combined with --skip-run because no fork would be regenerated.",
+    );
+  }
   if (opts.skipRun) {
     console.log("Skipping docker-compose bring-up (--skip-run)");
   } else {
@@ -48,6 +55,7 @@ export async function ensureRunningAndConnect(
       profiles: opts.profiles,
       envFile: opts.envFile,
       fromSnapshot: opts.fromSnapshot,
+      numValidators: opts.numValidators,
     });
   }
 
@@ -62,7 +70,15 @@ export async function prepareRuntimeUpgrade(
   namespace: string,
   opts: RuntimeUpgradeBaseOptions,
 ): Promise<PreparedRuntimeUpgrade> {
-  const wasm = loadRuntimeWasm(opts.wasmPath);
+  const wasmPath = resolveRuntimeWasmPath({
+    wasmPath: opts.wasmPath,
+    wasmFromImage: opts.wasmFromImage,
+    env: applyEnvFileOverrides(
+      process.env as Record<string, string>,
+      opts.envFile,
+    ),
+  });
+  const wasm = loadRuntimeWasm(wasmPath);
 
   console.log(`Loaded runtime wasm from ${wasm.path} (${wasm.length} bytes)`);
   console.log(`Runtime code hash: ${wasm.hash}`);

@@ -1,4 +1,16 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 extern crate alloc;
 
@@ -7,17 +19,26 @@ use frame_system::pallet_prelude::*;
 
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
 #[frame_support::pallet]
 pub mod pallet {
 	use midnight_primitives::{
-		LedgerBlockContextProvider, LedgerStateProviderMut, MidnightSystemTransactionExecutor,
+		LedgerBlockContextProvider, LedgerStateProviderMut,
+		MidnightSystemTransactionBridgeExecutor, MidnightSystemTransactionCNightExecutor,
 	};
 
 	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
-		Hash, LedgerEvent, active_ledger_bridge as LedgerApi,
+		Hash, LedgerEvent, SystemTransactionAppliedStateRootWithEvents,
+		active_ledger_bridge as LedgerApi,
 		active_version::{
-			DeserializationError, LedgerApiError, SerializationError, TransactionError,
+			BlockContext, DeserializationError, LedgerApiError, SerializationError,
+			SystemTransactionError, TransactionError,
 		},
 	};
 
@@ -82,6 +103,10 @@ pub mod pallet {
 		ContractNotPresent,
 		#[codec(index = 14)]
 		BeneficiaryNotFound,
+		#[codec(index = 15)]
+		SystemTransactionNotAllowedForCNight,
+		#[codec(index = 16)]
+		SystemTransactionNotAllowedForBridge,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -126,6 +151,65 @@ pub mod pallet {
 	pub type ConfigurableSystemTxWeight<T> =
 		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
 
+	/// Shape shared by every `LedgerApi::apply_*_system_transaction` entry point.
+	type ApplySystemTransactionFn =
+		fn(
+			&[u8],
+			&[u8],
+			BlockContext,
+			u32,
+		) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>;
+
+	impl<T: Config> Pallet<T> {
+		/// Applies a system transaction via the given ledger entry point and, on success,
+		/// emits `SystemTransactionApplied` followed by one `LedgerEvent` per ledger event.
+		/// `apply` is one of the caller-restricted `LedgerApi::apply_*_system_transaction`
+		/// functions; `not_allowed` is the friendly error to surface when its allow-list
+		/// guard rejects the transaction. Returns the transaction hash and the number of
+		/// ledger events deposited.
+		fn apply_and_emit(
+			serialized_system_transaction: Vec<u8>,
+			apply: ApplySystemTransactionFn,
+			not_allowed: Error<T>,
+		) -> Result<(Hash, u64), DispatchError> {
+			let (hash, ledger_events) =
+				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
+					let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+					let block_context =
+						<T as Config>::LedgerBlockContextProvider::get_block_context();
+					let result = apply(
+						&state_key,
+						&serialized_system_transaction.clone(),
+						block_context,
+						runtime_version,
+					)
+					.map_err(|e| match e {
+						LedgerApiError::Transaction(TransactionError::SystemTransaction(
+							SystemTransactionError::NotAllowedForCaller,
+						)) => not_allowed,
+						other => Error::<T>::from(other),
+					})?;
+					// First tuple element is the new state key written back by
+					// `mut_ledger_state`; the tx hash and events ride out as the payload.
+					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
+						result.state_root,
+						(result.tx_hash, result.events),
+					))
+				})?;
+
+			Self::deposit_event(Event::<T>::SystemTransactionApplied(
+				super::SystemTransactionApplied { hash, serialized_system_transaction },
+			));
+
+			let ledger_event_count = ledger_events.len() as u64;
+			for ledger_event in ledger_events {
+				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
+			}
+
+			Ok((hash, ledger_event_count))
+		}
+	}
+
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
@@ -141,43 +225,11 @@ pub mod pallet {
 			midnight_system_tx: Vec<u8>,
 		) -> DispatchResultWithPostInfo {
 			ensure_root(origin)?;
-			ensure!(
-				LedgerApi::is_governance_allowed_system_tx(&midnight_system_tx),
-				Error::<T>::SystemTransactionNotAllowedForGovernance
-			);
-
-			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
-			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
-
-			let (tx_hash, ledger_events) =
-				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
-					let result = LedgerApi::apply_system_transaction(
-						&state_key,
-						&midnight_system_tx.clone(),
-						block_context,
-						runtime_version,
-					)
-					.map_err(Error::<T>::from)?;
-					// First tuple element is the new state key written back by
-					// `mut_ledger_state`; the tx hash and events ride out as the payload.
-					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
-						result.state_root,
-						(result.tx_hash, result.events),
-					))
-				})?;
-
-			Self::deposit_event(Event::<T>::SystemTransactionApplied(
-				super::SystemTransactionApplied {
-					hash: tx_hash,
-					serialized_system_transaction: midnight_system_tx,
-				},
-			));
-
-			let ledger_event_count = ledger_events.len() as u64;
-			// One runtime event per ledger event
-			for ledger_event in ledger_events {
-				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
-			}
+			let (_, ledger_event_count) = Self::apply_and_emit(
+				midnight_system_tx,
+				LedgerApi::apply_governance_system_transaction,
+				Error::<T>::SystemTransactionNotAllowedForGovernance,
+			)?;
 
 			// Refine to the base weight plus the events actually deposited.
 			let actual_weight = ConfigurableSystemTxWeight::<T>::get()
@@ -186,42 +238,37 @@ pub mod pallet {
 		}
 	}
 
-	impl<T: Config> MidnightSystemTransactionExecutor for Pallet<T> {
+	impl<T: Config> MidnightSystemTransactionCNightExecutor for Pallet<T> {
 		fn execute_system_transaction(
 			serialized_system_transaction: Vec<u8>,
 		) -> Result<Hash, DispatchError> {
-			// Apply the System transaction
-			let (tx_hash, ledger_events) =
-				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
-					let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
-					let block_context =
-						<T as Config>::LedgerBlockContextProvider::get_block_context();
-					let result = LedgerApi::apply_system_transaction(
-						&state_key,
-						&serialized_system_transaction.clone(),
-						block_context,
-						runtime_version,
-					)
-					.map_err(Error::<T>::from)?;
-					// First tuple element is the new state key written back by
-					// `mut_ledger_state`; the tx hash and events ride out as the payload.
-					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
-						result.state_root,
-						(result.tx_hash, result.events),
-					))
-				})?;
+			Self::apply_and_emit(
+				serialized_system_transaction,
+				LedgerApi::apply_cnight_system_transaction,
+				Error::<T>::SystemTransactionNotAllowedForCNight,
+			)
+			.map(|(hash, _)| hash)
+		}
 
-			// Emit System Transaction for the indexer
-			Self::deposit_event(Event::<T>::SystemTransactionApplied(
-				super::SystemTransactionApplied { hash: tx_hash, serialized_system_transaction },
-			));
+		fn is_block_limit_exceeded(err: &DispatchError) -> bool {
+			*err == Error::<T>::BlockLimitExceededError.into()
+		}
+	}
 
-			// One runtime event per ledger event
-			for ledger_event in ledger_events {
-				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
-			}
+	impl<T: Config> MidnightSystemTransactionBridgeExecutor for Pallet<T> {
+		fn execute_system_transaction(
+			serialized_system_transaction: Vec<u8>,
+		) -> Result<Hash, DispatchError> {
+			Self::apply_and_emit(
+				serialized_system_transaction,
+				LedgerApi::apply_bridge_system_transaction,
+				Error::<T>::SystemTransactionNotAllowedForBridge,
+			)
+			.map(|(hash, _)| hash)
+		}
 
-			Ok(tx_hash)
+		fn is_block_limit_exceeded(err: &DispatchError) -> bool {
+			*err == Error::<T>::BlockLimitExceededError.into()
 		}
 	}
 }

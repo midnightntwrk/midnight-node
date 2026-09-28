@@ -12,7 +12,8 @@
 // limitations under the License.
 
 use backoff::ExponentialBackoff;
-use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
+use midnight_ledger_unsafe_helpers::*;
+use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Encode;
 use std::{
@@ -197,6 +198,8 @@ impl Sender {
 
 		if self.watch_progress {
 			self.send_and_log(&tx_hash_string, tx_progress).await?;
+		} else {
+			Self::wait_for_pool_verdict(&tx_hash_string, tx_progress).await?;
 		}
 		Ok(())
 	}
@@ -303,6 +306,103 @@ impl Sender {
 		))
 	}
 
+	/// Reads the subscription only as far as the pool's first verdict. A full
+	/// pool rejects a submission asynchronously, as an `Invalid`/`Dropped` event
+	/// rather than an RPC error, so returning straight after `submit_and_watch`
+	/// would report a dropped tx as sent.
+	async fn wait_for_pool_verdict(
+		tx_hashes: &TxHashes,
+		mut progress: Progress,
+	) -> Result<(), SenderError> {
+		const POOL_VERDICT_TIMEOUT: Duration = Duration::from_secs(5);
+
+		let url = progress.url.clone();
+		let first = tokio::time::timeout(POOL_VERDICT_TIMEOUT, progress.tx_progress.next()).await;
+		let err = match first {
+			Ok(Some(Ok(TransactionStatus::Invalid { message }))) => {
+				SenderError::InvalidTransaction { message }
+			},
+			Ok(Some(Ok(TransactionStatus::Dropped { message }))) => {
+				SenderError::DroppedTransaction { message }
+			},
+			Ok(Some(Ok(TransactionStatus::Error { message }))) => {
+				SenderError::TransactionError { message }
+			},
+			Ok(Some(Err(e))) => SenderError::TransactionError { message: e.to_string() },
+			Ok(Some(Ok(status))) => {
+				log::debug!(url = url; "pool accepted tx: {}", Self::status_name(&status));
+				return Ok(());
+			},
+			// Accepted by the RPC but its fate is unknown: do not fail the send,
+			// but leave a countable trace.
+			Ok(None) => {
+				return Self::log_no_pool_verdict(
+					&url,
+					tx_hashes,
+					"subscription ended before the pool reported a status",
+				);
+			},
+			Err(_) => {
+				return Self::log_no_pool_verdict(
+					&url,
+					tx_hashes,
+					&format!("no pool status after {}s", POOL_VERDICT_TIMEOUT.as_secs()),
+				);
+			},
+		};
+		Self::log_send_failure(&url, tx_hashes, &err);
+		Err(err)
+	}
+
+	fn log_no_pool_verdict(
+		url: &str,
+		tx_hashes: &TxHashes,
+		reason: &str,
+	) -> Result<(), SenderError> {
+		log::warn!(
+			url = url,
+			extrinsic_hash = &tx_hashes.extrinsic_hash,
+			midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+			reason = reason;
+			"NO_POOL_VERDICT"
+		);
+		Ok(())
+	}
+
+	fn status_name(
+		status: &TransactionStatus<
+			MidnightNodeClientConfig,
+			OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+		>,
+	) -> &'static str {
+		match status {
+			TransactionStatus::Validated => "Validated",
+			TransactionStatus::Broadcasted => "Broadcasted",
+			TransactionStatus::NoLongerInBestBlock => "NoLongerInBestBlock",
+			TransactionStatus::InBestBlock(_) => "InBestBlock",
+			TransactionStatus::InFinalizedBlock(_) => "InFinalizedBlock",
+			TransactionStatus::Error { .. } => "Error",
+			TransactionStatus::Invalid { .. } => "Invalid",
+			TransactionStatus::Dropped { .. } => "Dropped",
+		}
+	}
+
+	fn log_send_failure(url: &str, tx_hashes: &TxHashes, err: &SenderError) {
+		let tag = match err {
+			SenderError::InvalidTransaction { .. } => "INVALID_TRANSACTION",
+			SenderError::DroppedTransaction { .. } => "DROPPED_TRANSACTION",
+			SenderError::TransactionError { .. } => "TRANSACTION_ERROR",
+			_ => "FAILED_TO_REACH_BEST_BLOCK",
+		};
+		log::info!(
+			url = url,
+			extrinsic_hash = &tx_hashes.extrinsic_hash,
+			midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+			reason = err.to_string().as_str();
+			"{tag}"
+		);
+	}
+
 	/// Waits until the tx lands in a block. The `bool` in the success value is
 	/// true when the subscription skipped straight to `InFinalizedBlock`
 	/// (event coalescing under load) — the caller can skip the finality wait.
@@ -339,12 +439,7 @@ impl Sender {
 						return Err(SenderError::TransactionError { message });
 					},
 					Ok(status) => {
-						last_status = match status {
-							TransactionStatus::Validated => "Validated",
-							TransactionStatus::Broadcasted => "Broadcasted",
-							TransactionStatus::NoLongerInBestBlock => "NoLongerInBestBlock",
-							_ => "Unknown",
-						};
+						last_status = Self::status_name(&status);
 					},
 					Err(e) => {
 						return Err(SenderError::TransactionError { message: e.to_string() });
@@ -462,19 +557,7 @@ impl Sender {
 		let (best_block, already_finalized) = match best_block_result {
 			Ok(info) => info,
 			Err(err) => {
-				let tag = match &err {
-					SenderError::InvalidTransaction { .. } => "INVALID_TRANSACTION",
-					SenderError::DroppedTransaction { .. } => "DROPPED_TRANSACTION",
-					SenderError::TransactionError { .. } => "TRANSACTION_ERROR",
-					_ => "FAILED_TO_REACH_BEST_BLOCK",
-				};
-				log::info!(
-					url = &url,
-					extrinsic_hash = &tx_hashes.extrinsic_hash,
-					midnight_tx_hash = &tx_hashes.midnight_tx_hash,
-					reason = err.to_string().as_str();
-					"{tag}"
-				);
+				Self::log_send_failure(&url, tx_hashes, &err);
 				return Err(err);
 			},
 		};

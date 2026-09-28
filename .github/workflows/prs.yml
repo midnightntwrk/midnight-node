@@ -8,6 +8,13 @@ on:
 # no top level default permissions for security reasons
 permissions: {}
 
+env:
+  # Registry the images this workflow touches live in. Derived from the repo owner so a fork
+  # or private clone never reads from or writes to midnightntwrk's registries. Upstream's
+  # private GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the
+  # canonical branch has to name the repo explicitly rather than derive it.
+  GHCR_REGISTRY: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnight-ntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+
 jobs:
   run:
     name: Check PR job
@@ -30,7 +37,8 @@ jobs:
           echo "NODE_CRATE_VERSION=$NODE_CRATE_VERSION" >> "$GITHUB_ENV"
           GHCR_TOKEN=$(echo "$GHCR_SECRET" | base64)
           export GHCR_TOKEN
-          TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/midnight-ntwrk/midnight-node/tags/list)
+          TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" \
+            "https://ghcr.io/v2/${GHCR_REGISTRY#ghcr.io/}/${GITHUB_REPOSITORY#*/}/tags/list")
           export TAGS_RESPONSE
 
           # Check list of tags to see if any existing tags have the node crate version

@@ -13,8 +13,12 @@ RUN microdnf -y install \
   tree-1.8.0 && \
   microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-COPY .envrc ./bin/.envrc
-COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+# Create appuser before the COPYs so files land already owned by it: a later
+# `chown -R` rewrites every copied file into a duplicate image layer.
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
+
+COPY --chown=appuser:appuser .envrc ./bin/.envrc
+COPY --chown=appuser:appuser static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
 
 ENV TOOLKIT_JS_PATH="/toolkit-js"
 ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -28,6 +32,5 @@ RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*
   rm -rf /node
 COPY util/toolkit/bin/entrypoint.sh /entrypoint.sh
 
-RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]

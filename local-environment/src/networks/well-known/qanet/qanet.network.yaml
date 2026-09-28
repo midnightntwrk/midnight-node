@@ -79,7 +79,7 @@ services:
       - ./data/node-1:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_01_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000002
@@ -121,7 +121,7 @@ services:
       - ./data/node-2:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_02_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000003
@@ -164,7 +164,7 @@ services:
       - ./data/node-3:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_03_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000004
@@ -207,7 +207,7 @@ services:
       - ./data/node-4:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_04_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000005
@@ -249,7 +249,7 @@ services:
       - ./data/node-5:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_05_0}
 
       ARGS: >
@@ -292,7 +292,7 @@ services:
       - ./data/node-6:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_06_0}
 
       ARGS: >
@@ -335,7 +335,7 @@ services:
       - ./data/node-7:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_07_0}
 
       ARGS: >
@@ -378,7 +378,7 @@ services:
       - ./data/node-8:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_08_0}
 
       ARGS: >
@@ -421,7 +421,7 @@ services:
       - ./data/node-9:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_09_0}
 
       ARGS: >
@@ -464,7 +464,7 @@ services:
       - ./data/node-10:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_10_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000011
@@ -500,7 +500,7 @@ services:
       - ./data/node-11:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_11_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_11_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_11_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000012
@@ -536,7 +536,7 @@ services:
       - ./data/node-12:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_12_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_12_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_12_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000013
@@ -607,3 +607,12 @@ volumes:
   node-data-11:
   node-data-12:
   node-data-13:
+
+networks:
+  # Stable, project-name-independent network name so external consumers
+  # (e.g. the midnight-indexer overlay) can attach with `external: true`.
+  # Without an explicit name compose derives `<project>_default`, which
+  # shifts when COMPOSE_PROJECT_NAME is set and would no longer match the
+  # MIDNIGHT_FORK_NETWORK recorded in artifacts/qanet.manifest.env.
+  default:
+    name: midnight-fork-qanet

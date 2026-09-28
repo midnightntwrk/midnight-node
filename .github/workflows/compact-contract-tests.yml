@@ -14,6 +14,13 @@ concurrency:
   group: compact-contract-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
+env:
+  # Registry the images this workflow touches live in. Derived from the repo owner so a fork
+  # or private clone never reads from or writes to midnightntwrk's registries. Upstream's
+  # private GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the
+  # canonical branch has to name the repo explicitly rather than derive it.
+  GHCR_REGISTRY: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnight-ntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+
 jobs:
   toolkit-contract-e2e:
     name: Compact contract E2E
@@ -75,7 +82,7 @@ jobs:
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             -P --strict \
-            --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
+            --remote-cache="${GHCR_REGISTRY}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
               --CACHE_KEY=compact-contract-tests \
               --RUN_COMPACT_CONTRACT_TESTS=true

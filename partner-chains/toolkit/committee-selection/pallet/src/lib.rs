@@ -456,19 +456,7 @@ pub mod pallet {
 		/// (its selection epoch + 1), and, if [NextCommittee] is defined, its value is moved to
 		/// [QueuedCommittee]. Returns the value taken from [NextCommittee].
 		pub fn rotate_committee_to_next_epoch() -> Option<Vec<T::CommitteeMember>> {
-			// The committee queued at the previous rotation has just become the effective
-			// validator set; promote it even if there is no new committee to queue. `get`
-			// rather than `take`: the queued value must remain in place as the anchor of the
-			// selection pipeline (see [QueuedCommittee]).
-			//
-			// The promoted committee is stamped with its selection epoch + 1: the epoch it was
-			// due to start serving. In normal operation this is the epoch the rotation happens
-			// in, but after skipped epochs (catch-up rotations in consecutive blocks) it keeps
-			// each recovered committee's label unique and in recovery order, instead of
-			// collapsing them all onto the current epoch.
-			let mut promoted = QueuedCommittee::<T>::get();
-			promoted.epoch = promoted.epoch + One::one();
-			CurrentCommittee::<T>::put(promoted);
+			Self::promote_queued_committee_to_current();
 
 			let next_committee = NextCommittee::<T>::take()?;
 
@@ -481,6 +469,45 @@ pub mod pallet {
 				next_committee.epoch
 			);
 			Some(validators)
+		}
+
+		/// Drops [NextCommittee] without handing it to `pallet_session` after session-key
+		/// registration failed for any member.
+		///
+		/// The previously queued committee has just become the effective validator set, so it is
+		/// still promoted to [CurrentCommittee]. [QueuedCommittee] keeps those same members —
+		/// matching `pallet_session` keeping the previous authorities when `new_session` returns
+		/// [`None`] — and is stamped with the skipped committee's epoch so
+		/// [`pallet_session::ShouldEndSession`] does not retry every block.
+		pub(crate) fn skip_unregistered_next_committee() {
+			Self::promote_queued_committee_to_current();
+
+			if let Some(next_committee) = NextCommittee::<T>::take() {
+				QueuedCommittee::<T>::mutate(|queued| {
+					queued.epoch = next_committee.epoch;
+				});
+				warn!(
+					"Skipped committee for epoch {}: session key registration failed; keeping previous validator set",
+					next_committee.epoch
+				);
+			}
+		}
+
+		/// Promotes [QueuedCommittee] to [CurrentCommittee].
+		///
+		/// The queued committee has just become the effective validator set. `get` rather than
+		/// `take`: the queued value must remain in place as the anchor of the selection pipeline
+		/// (see [QueuedCommittee]).
+		///
+		/// The promoted committee is stamped with its selection epoch + 1: the epoch it was due
+		/// to start serving. In normal operation this is the epoch the rotation happens in, but
+		/// after skipped epochs (catch-up rotations in consecutive blocks) it keeps each
+		/// recovered committee's label unique and in recovery order, instead of collapsing them
+		/// all onto the current epoch.
+		fn promote_queued_committee_to_current() {
+			let mut promoted = QueuedCommittee::<T>::get();
+			promoted.epoch = promoted.epoch + One::one();
+			CurrentCommittee::<T>::put(promoted);
 		}
 
 		/// Returns main chain scripts.

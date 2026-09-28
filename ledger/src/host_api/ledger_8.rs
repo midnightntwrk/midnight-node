@@ -1,7 +1,20 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #[cfg(feature = "std")]
 use crate::ledger_8::Bridge;
 use crate::{
-	common::types::{
+	boundary::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot,
 		SystemTransactionAppliedStateRootWithEvents, TransactionAppliedStateRoot,
 		TransactionAppliedStateRootWithEvents, Tx,
@@ -9,6 +22,7 @@ use crate::{
 	ledger_8::{BlockContext, types::LedgerApiError},
 };
 use alloc::vec::Vec;
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use sp_runtime_interface::pass_by::{
 	AllocateAndReturnByCodec, AllocateAndReturnFatPointer, PassFatPointerAndDecode,
 	PassFatPointerAndRead,
@@ -23,6 +37,27 @@ use {
 
 #[cfg(feature = "std")]
 type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
+
+/// A still-generating cNIGHT dust entry, read back out of the pre-fork
+/// (ledger-8) dust state by [`Ledger8Bridge::dust_generation_values`].
+#[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq)]
+pub struct DustGenerationEntry {
+	/// The entry's night value.
+	pub value: u128,
+	/// The (untagged) serialized `DustPublicKey`, i.e. exactly what
+	/// `construct_cnight_generates_dust_event` accepts for `owner`.
+	pub owner: Vec<u8>,
+}
+
+/// The result of one batched [`Ledger8Bridge::dust_generation_values`] read.
+#[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq)]
+pub struct DustGenerationValues {
+	/// The dust parameters' `time_to_cap`, in seconds.
+	pub time_to_cap: u64,
+	/// One per requested nonce and positionally aligned with them; `None` when
+	/// the nonce is not tracked, or has already been destroyed.
+	pub entries: Vec<Option<DustGenerationEntry>>,
+}
 
 // `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against
 // `Storage<D>`'s TypeId. The two storage modes register storages with different
@@ -82,8 +117,8 @@ pub fn apply_transaction_v1(
 			/* skew_tblock */ true,
 		)
 	}
-	// The bridge now returns the events-carrying shape; v1 is the events-free host
-	// function, so drop them here rather than at each call site.
+	// The bridge returns the events-carrying shape; v1 is the events-free host
+	// function, so the events are dropped here rather than at each call site.
 	.map(Into::into)
 }
 
@@ -292,11 +327,41 @@ pub trait Ledger8Bridge {
 				block_context,
 			)
 		}
+	}
+
+	/*
+	 * apply_{governance,cnight,bridge}_system_transaction()
+	 *
+	 * Each unversioned function returns the events-free `SystemTransactionAppliedStateRoot`;
+	 * `#[version(2)]` carries the ledger events, for the same reason as `apply_transaction`.
+	 */
+	fn apply_governance_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
 		.map(Into::into)
 	}
 
 	#[version(2)]
-	fn apply_system_transaction(
+	fn apply_governance_system_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
@@ -305,14 +370,116 @@ pub trait Ledger8Bridge {
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
 	{
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_system_transaction(
+			Bridge::<Signature, DbUnified>::apply_governance_system_transaction(
 				*self,
 				state_key,
 				tx,
 				block_context,
 			)
 		} else {
-			Bridge::<Signature, DbSeparate>::apply_system_transaction(
+			Bridge::<Signature, DbSeparate>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_cnight_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+		.map(Into::into)
+	}
+
+	#[version(2)]
+	fn apply_cnight_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
+	{
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_bridge_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+		.map(Into::into)
+	}
+
+	#[version(2)]
+	fn apply_bridge_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
+	{
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_bridge_system_transaction(
 				*self,
 				state_key,
 				tx,
@@ -647,6 +814,34 @@ pub trait Ledger8Bridge {
 			Bridge::<Signature, DbUnified>::construct_distribute_treasury_system_tx(amount)
 		} else {
 			Bridge::<Signature, DbSeparate>::construct_distribute_treasury_system_tx(amount)
+		}
+	}
+
+	/// Each requested nonce's still-generating entry in the *pre-fork*
+	/// (ledger-8) dust state, plus that state's dust `time_to_cap`.
+	///
+	/// Called by `pallet-cnight-observation`'s dust re-apply migration, which
+	/// rebuilds the cNIGHT generation entries the ledger 8 -> 9 hardfork wipes
+	/// and backdates their `ctime` by `time_to_cap`. `state_key` is the v8 arena
+	/// root it saved during the upgrade block; `Err(NoLedgerState)` means that
+	/// root no longer resolves, or is not a ledger-8 root at all.
+	fn dust_generation_values(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		nonces: PassFatPointerAndDecode<Vec<[u8; 32]>>,
+	) -> AllocateAndReturnByCodec<Result<DustGenerationValues, LedgerApiError>> {
+		// `set_default_storage` is idempotent, so this stays callable from
+		// anywhere in the block.
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::set_default_storage(*self);
+			crate::host_api::dust_generation::dust_generation_values::<DbUnified>(
+				state_key, &nonces,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
+			crate::host_api::dust_generation::dust_generation_values::<DbSeparate>(
+				state_key, &nonces,
+			)
 		}
 	}
 

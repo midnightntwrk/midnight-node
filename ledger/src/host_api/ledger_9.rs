@@ -1,7 +1,20 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #[cfg(feature = "std")]
 use crate::ledger_9::Bridge;
 use crate::{
-	common::types::{
+	boundary::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot,
 		SystemTransactionAppliedStateRootWithEvents, TransactionAppliedStateRoot,
 		TransactionAppliedStateRootWithEvents, Tx,
@@ -54,9 +67,8 @@ type Signature8 = crate::ledger_8::TransactionSignature;
 
 /// Translate a ledger-8 `LedgerApiError` into its ledger-9 counterpart.
 ///
-/// The two are distinct types generated from the same source
-/// (`versions/common/types.rs`) by module parameterization, so their SCALE
-/// encodings are identical by construction. Round-tripping keeps this correct
+/// The two are distinct types declared identically in `ledger_8/types.rs` and
+/// `ledger_9/types.rs`, so their SCALE encodings are identical by construction. Round-tripping keeps this correct
 /// when a variant is added, where a hand-written match would need editing in
 /// lockstep. `ledger_8_error_encoding_matches_ledger_9` guards the assumption.
 #[cfg(feature = "std")]
@@ -249,11 +261,41 @@ pub trait Ledger9Bridge {
 				block_context,
 			)
 		}
+	}
+
+	/*
+	 * apply_{governance,cnight,bridge}_system_transaction()
+	 *
+	 * Each unversioned function returns the events-free `SystemTransactionAppliedStateRoot`;
+	 * `#[version(2)]` carries the ledger events, for the same reason as `apply_transaction`.
+	 */
+	fn apply_governance_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
 		.map(Into::into)
 	}
 
 	#[version(2)]
-	fn apply_system_transaction(
+	fn apply_governance_system_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		tx: PassFatPointerAndRead<&[u8]>,
@@ -262,14 +304,116 @@ pub trait Ledger9Bridge {
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
 	{
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_system_transaction(
+			Bridge::<Signature, DbUnified>::apply_governance_system_transaction(
 				*self,
 				state_key,
 				tx,
 				block_context,
 			)
 		} else {
-			Bridge::<Signature, DbSeparate>::apply_system_transaction(
+			Bridge::<Signature, DbSeparate>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_cnight_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+		.map(Into::into)
+	}
+
+	#[version(2)]
+	fn apply_cnight_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
+	{
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_bridge_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+		.map(Into::into)
+	}
+
+	#[version(2)]
+	fn apply_bridge_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
+	{
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_bridge_system_transaction(
 				*self,
 				state_key,
 				tx,
@@ -522,6 +666,42 @@ pub trait Ledger9Bridge {
 	}
 
 	/*
+	 * As v1, but `tx` may also be a `SystemTransaction`: the version dispatches on
+	 * the serialized header tag. v1 could only price user transactions, which left
+	 * the cNIGHT dust replay migration with no way to ask what a
+	 * `CNightGeneratesDustUpdate` batch costs.
+	 *
+	 * A strict superset of v1 for `Transaction` bytes, and sp-runtime-interface
+	 * always binds the runtime to the highest version, so every existing caller
+	 * (`pallet_midnight::get_tx_weight` among them) moves here.
+	 */
+	// Current Enabled Version
+	#[version(2)]
+	fn get_transaction_cost(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_any_transaction_cost(
+				state_key,
+				tx,
+				&block_context,
+				max_weight,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_any_transaction_cost(
+				state_key,
+				tx,
+				&block_context,
+				max_weight,
+			)
+		}
+	}
+
+	/*
 	 * Returns the Zsawp state root
 	 */
 	// Current Enabled Version
@@ -730,8 +910,8 @@ mod tests {
 	use crate::{ledger_8::types as v8, ledger_9::types as v9};
 
 	/// `as_ledger_9_error` relies on the two versions' `LedgerApiError` sharing a
-	/// SCALE encoding, which holds because both are generated from
-	/// `versions/common/types.rs`. Pin that down — including a nested payload and
+	/// SCALE encoding, which holds because `ledger_8/types.rs` and
+	/// `ledger_9/types.rs` declare it identically. Pin that down — including a nested payload and
 	/// the last variant, which is where a divergence would first show up — so a
 	/// future edit to one version's enum fails here rather than silently turning
 	/// every pre-migration read error into `HostApiError`.

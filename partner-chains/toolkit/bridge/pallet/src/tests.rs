@@ -7,7 +7,7 @@ use frame_support::{
 	assert_err, assert_ok,
 	inherent::{InherentData, ProvideInherent},
 };
-use sidechain_domain::{AssetName, MainchainAddress, McTxHash, PolicyId};
+use sidechain_domain::{AssetName, MainchainAddress, McBlockNumber, McTxHash, PolicyId};
 use sp_core::bounded_vec;
 use sp_partner_chains_bridge::*;
 use sp_runtime::{AccountId32, BoundedVec};
@@ -38,6 +38,12 @@ fn main_chain_scripts() -> MainChainScripts {
 
 fn data_checkpoint() -> BridgeDataCheckpoint {
 	BridgeDataCheckpoint::Tx(McTxHash([1; 32]))
+}
+
+/// Checkpoint the observability layer reports for a block. It is only reached when every
+/// transfer of that block has been handled.
+fn final_checkpoint() -> BridgeDataCheckpoint {
+	BridgeDataCheckpoint::Block(McBlockNumber(42))
 }
 
 mod set_main_chain_scripts {
@@ -80,10 +86,166 @@ mod handle_transfers {
 			assert_ok!(Bridge::handle_transfers(
 				RuntimeOrigin::none(),
 				transfers(),
-				data_checkpoint()
+				final_checkpoint()
 			));
 
+			assert_eq!(DataCheckpoint::<Test>::get(), Some(final_checkpoint()));
+		})
+	}
+
+	/// Transfers of two Cardano transactions, the second of which transferred both to the
+	/// reserve and to a user, mirroring what the observability layer delivers for such a
+	/// transaction.
+	fn transfers_of_two_txs() -> BoundedVec<BridgeTransferV1<RecipientAddress>, MaxTransfersPerBlock>
+	{
+		bounded_vec![
+			BridgeTransferV1 { amount: 100, mc_tx_hash: McTxHash([1; 32]), recipient: Invalid },
+			BridgeTransferV1 { amount: 200, mc_tx_hash: McTxHash([2; 32]), recipient: Reserve },
+			BridgeTransferV1 {
+				amount: 300,
+				mc_tx_hash: McTxHash([2; 32]),
+				recipient: Address { recipient: AccountId32::new([2; 32]) },
+			}
+		]
+	}
+
+	fn reject(transfer: &BridgeTransferV1<RecipientAddress>) {
+		mock_pallet::FailingTransfers::<Test>::mutate(|ts| ts.push(transfer.clone()));
+	}
+
+	fn handled_transfers() -> Vec<BridgeTransferV1<RecipientAddress>> {
+		mock_pallet::Transfers::<Test>::get().unwrap_or_default()
+	}
+
+	#[test]
+	fn stops_handling_transfers_at_the_first_failure() {
+		new_test_ext().execute_with(|| {
+			let transfers = transfers();
+			reject(&transfers[1]);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers.clone(),
+				final_checkpoint()
+			));
+
+			// The failing transfer and everything observed after it is left for a later block.
+			assert_eq!(handled_transfers(), transfers[..1].to_vec());
+			// The checkpoint points at the last transfer that was handled, which is the only
+			// transfer of the Cardano transaction before the failing one.
+			assert_eq!(
+				DataCheckpoint::<Test>::get(),
+				Some(BridgeDataCheckpoint::Tx(transfers[0].mc_tx_hash))
+			);
+		})
+	}
+
+	#[test]
+	fn keeps_the_data_checkpoint_when_no_transfer_could_be_handled() {
+		new_test_ext().execute_with(|| {
+			DataCheckpoint::<Test>::put(data_checkpoint());
+			let transfers = transfers();
+			reject(&transfers[0]);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers.clone(),
+				final_checkpoint()
+			));
+
+			assert_eq!(handled_transfers(), vec![]);
+			// Nothing was handled, so the checkpoint still describes everything that is done and
+			// all observed transfers are presented again.
 			assert_eq!(DataCheckpoint::<Test>::get(), Some(data_checkpoint()));
+		})
+	}
+
+	#[test]
+	fn records_the_reserve_transfer_of_a_partially_handled_cardano_tx_as_handled() {
+		new_test_ext().execute_with(|| {
+			// The ICS transfer of the second Cardano transaction fails, so that transaction is
+			// presented again — without its reserve transfer, which was handled.
+			let transfers = transfers_of_two_txs();
+			reject(&transfers[2]);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers.clone(),
+				final_checkpoint()
+			));
+
+			assert_eq!(handled_transfers(), transfers[..2].to_vec());
+			assert_eq!(
+				DataCheckpoint::<Test>::get(),
+				Some(BridgeDataCheckpoint::TxReserveTransfer(transfers[1].mc_tx_hash))
+			);
+		})
+	}
+
+	#[test]
+	fn keeps_a_reserve_transfer_checkpoint_when_the_ics_transfer_fails_again() {
+		new_test_ext().execute_with(|| {
+			let tx = McTxHash([2; 32]);
+			// The reserve transfer of `tx` was handled in an earlier block, so the observability
+			// layer left it out and presents only the ICS transfer.
+			let checkpoint = BridgeDataCheckpoint::TxReserveTransfer(tx);
+			DataCheckpoint::<Test>::put(checkpoint.clone());
+			let transfers: BoundedVec<_, MaxTransfersPerBlock> =
+				bounded_vec![BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid }];
+			reject(&transfers[0]);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers,
+				final_checkpoint()
+			));
+
+			assert_eq!(handled_transfers(), vec![]);
+			assert_eq!(DataCheckpoint::<Test>::get(), Some(checkpoint));
+		})
+	}
+
+	#[test]
+	fn moves_the_checkpoint_past_a_partially_handled_tx_once_its_transfers_are_handled() {
+		new_test_ext().execute_with(|| {
+			let tx = McTxHash([2; 32]);
+			DataCheckpoint::<Test>::put(BridgeDataCheckpoint::TxReserveTransfer(tx));
+			let transfers: BoundedVec<_, MaxTransfersPerBlock> =
+				bounded_vec![BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid }];
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers.clone(),
+				final_checkpoint()
+			));
+
+			assert_eq!(handled_transfers(), transfers.to_vec());
+			assert_eq!(DataCheckpoint::<Test>::get(), Some(final_checkpoint()));
+		})
+	}
+
+	#[test]
+	fn records_a_handled_reserve_transfer_when_the_ics_transfer_of_its_tx_fails() {
+		new_test_ext().execute_with(|| {
+			let tx = McTxHash([2; 32]);
+			DataCheckpoint::<Test>::put(data_checkpoint());
+			let transfers: BoundedVec<_, MaxTransfersPerBlock> = bounded_vec![
+				BridgeTransferV1 { amount: 200, mc_tx_hash: tx, recipient: Reserve },
+				BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid },
+			];
+			reject(&transfers[1]);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers.clone(),
+				final_checkpoint()
+			));
+
+			assert_eq!(handled_transfers(), transfers[..1].to_vec());
+			assert_eq!(
+				DataCheckpoint::<Test>::get(),
+				Some(BridgeDataCheckpoint::TxReserveTransfer(tx))
+			);
 		})
 	}
 

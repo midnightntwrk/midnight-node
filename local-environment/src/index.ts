@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
@@ -32,6 +32,17 @@ import {
 
 const program = new Command();
 
+const NUM_VALIDATORS_DESCRIPTION =
+  "Number of mock validators to run in a well-known network fork (requires --from-snapshot)";
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
+
 // Local type for direct values received in Image Upgrade command
 interface ImageUpgradeCliOpts {
   imageEnv?: string;
@@ -43,11 +54,13 @@ interface ImageUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   fromSnapshot?: string;
+  numValidators?: number;
   waitBefore?: number;
 }
 
 interface FederatedRuntimeUpgradeCliOpts {
-  wasm: string;
+  wasm?: string;
+  wasmFromImage?: string;
   rpcUrl?: string;
   councilUris: string[];
   technicalUris: string[];
@@ -56,6 +69,7 @@ interface FederatedRuntimeUpgradeCliOpts {
   envFile?: string[];
   skipRun?: boolean;
   fromSnapshot?: string;
+  numValidators?: number;
   allowSameVersion?: boolean;
   requiredNodeSpecVersion?: number;
   allowLaggingBinary?: boolean;
@@ -70,6 +84,7 @@ interface ConsensusUpgradeCliOpts {
   envFile?: string[];
   skipRun?: boolean;
   fromSnapshot?: string;
+  numValidators?: number;
 }
 
 interface FullUpgradeCliOpts {
@@ -82,7 +97,8 @@ interface FullUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   // governance runtime upgrade surface
-  wasm: string;
+  wasm?: string;
+  wasmFromImage?: string;
   rpcUrl?: string;
   councilUris: string[];
   technicalUris: string[];
@@ -94,6 +110,7 @@ interface FullUpgradeCliOpts {
   profiles?: string[];
   envFile?: string[];
   fromSnapshot?: string;
+  numValidators?: number;
 }
 
 program
@@ -103,6 +120,11 @@ program
   .option(
     "--from-snapshot <uri>",
     "http(s):// snapshot URI to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
+  )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
   )
   .option(
     "--from-genesis",
@@ -152,6 +174,11 @@ program
     "--from-snapshot <uri>",
     "http(s):// snapshot URI to fork the network from before rolling the image",
   )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
+  )
   .description(
     "Gradually roll out a new docker image tag across services in the given network",
   )
@@ -170,6 +197,7 @@ program
       healthTimeoutSec: cliOpts.healthTimeout ?? 180,
       requireHealthy: cliOpts.requireHealthy !== false,
       fromSnapshot: cliOpts.fromSnapshot,
+      numValidators: cliOpts.numValidators,
     };
     await imageUpgrade(network, opts);
   });
@@ -239,7 +267,14 @@ program
 
 program
   .command("governance-runtime-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .option(
+    "--wasm <path>",
+    "Path to the runtime wasm blob, relative to local-environment/artifacts/",
+  )
+  .option(
+    "--wasm-from-image <image>",
+    "Take the runtime wasm from this node image instead of --wasm (node images ship it under /artifacts-<arch>/). Defaults to $NEW_NODE_IMAGE, else $NODE_IMAGE / $MIDNIGHT_NODE_IMAGE, when --wasm is omitted.",
+  )
   .requiredOption(
     "--council-uris <uri...>",
     "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
@@ -265,6 +300,11 @@ program
   .option(
     "--from-snapshot <uri>",
     "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+  )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
   )
   .option(
     "--allow-same-version",
@@ -306,11 +346,13 @@ program
 
     const opts: FederatedRuntimeUpgradeOptions = {
       wasmPath: cliOpts.wasm,
+      wasmFromImage: cliOpts.wasmFromImage,
       rpcUrl: cliOpts.rpcUrl,
       skipRun: cliOpts.skipRun,
       profiles,
       envFile: cliOpts.envFile,
       fromSnapshot: cliOpts.fromSnapshot,
+      numValidators: cliOpts.numValidators,
       councilUris,
       techCommitteeUris: techUris,
       motionExecutorUri: executorUri,
@@ -324,7 +366,14 @@ program
 
 program
   .command("full-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .option(
+    "--wasm <path>",
+    "Path to the runtime wasm blob, relative to local-environment/artifacts/",
+  )
+  .option(
+    "--wasm-from-image <image>",
+    "Take the runtime wasm from this node image instead of --wasm (node images ship it under /artifacts-<arch>/). Defaults to $NEW_NODE_IMAGE, else $NODE_IMAGE / $MIDNIGHT_NODE_IMAGE, when --wasm is omitted.",
+  )
   .requiredOption(
     "--council-uris <uri...>",
     "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
@@ -371,6 +420,11 @@ program
   .option(
     "--from-snapshot <uri>",
     "http(s):// snapshot URI to restore before phase 1. Required for the first bring-up of a well-known network.",
+  )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
   )
   .option(
     "--allow-same-version",
@@ -421,6 +475,7 @@ program
       requireHealthy: cliOpts.requireHealthy !== false,
       // runtime upgrade surface
       wasmPath: cliOpts.wasm,
+      wasmFromImage: cliOpts.wasmFromImage,
       rpcUrl: cliOpts.rpcUrl,
       councilUris,
       techCommitteeUris: techUris,
@@ -432,6 +487,7 @@ program
       profiles,
       envFile: cliOpts.envFile,
       fromSnapshot: cliOpts.fromSnapshot,
+      numValidators: cliOpts.numValidators,
     };
 
     await fullUpgrade(network, opts);
@@ -471,6 +527,7 @@ function parseGovernanceCallCliOpts(
     profiles,
     envFile: cliOpts.envFile,
     fromSnapshot: cliOpts.fromSnapshot,
+    numValidators: cliOpts.numValidators,
     councilUris,
     techCommitteeUris: techUris,
     motionExecutorUri: executorUri,
@@ -512,6 +569,11 @@ function registerConsensusUpgradeCommand(
     .option(
       "--from-snapshot <uri>",
       "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+    )
+    .option(
+      "--num-validators <count>",
+      NUM_VALIDATORS_DESCRIPTION,
+      parsePositiveInteger,
     )
     .description(description)
     .action(async (network: string, cliOpts: ConsensusUpgradeCliOpts) => {

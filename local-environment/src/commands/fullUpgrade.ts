@@ -14,6 +14,7 @@
 import { imageUpgrade } from "./imageUpgrade";
 import { federatedRuntimeUpgrade } from "./federatedRuntimeUpgrade";
 import { FullUpgradeOptions } from "../lib/types";
+import { assertWasmSourceFlagsExclusive } from "../lib/runtimeWasmImage";
 
 /**
  * Two-phase upgrade rehearsal mirroring the live rollout:
@@ -28,11 +29,14 @@ export async function fullUpgrade(
   namespace: string,
   opts: FullUpgradeOptions,
 ): Promise<void> {
+  assertWasmSourceFlagsExclusive(opts);
+
   console.log(`[full-upgrade ${namespace}] phase 1/2: client image rollout`);
   await imageUpgrade(namespace, {
     profiles: opts.profiles,
     envFile: opts.envFile,
     fromSnapshot: opts.fromSnapshot,
+    numValidators: opts.numValidators,
     imageEnvVar: opts.imageEnvVar,
     services: opts.services,
     includePattern: opts.includePattern,
@@ -50,8 +54,10 @@ export async function fullUpgrade(
     profiles: opts.profiles,
     envFile: opts.envFile,
     fromSnapshot: undefined,
+    numValidators: undefined,
     skipRun: true,
     wasmPath: opts.wasmPath,
+    wasmFromImage: opts.wasmFromImage,
     rpcUrl: opts.rpcUrl,
     councilUris: opts.councilUris,
     techCommitteeUris: opts.techCommitteeUris,
