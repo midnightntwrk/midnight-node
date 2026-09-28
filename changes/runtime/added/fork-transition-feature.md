@@ -38,7 +38,20 @@ on-chain `spec_version`: `codeSubstitutes` is keyed by it, and a mismatch makes
 the substitute silently inert - the fork block is then rejected as "Bad
 signature" rather than reported as a misconfiguration.
 
-**A runtime built with this feature must never be released.**
+**A runtime built with this feature must never be released.** Cargo feature
+unification can turn it on for a whole build when any one crate asks for it, so
+three guards back that up:
+
+- `build.rs` refuses to build the feature unless `MIDNIGHT_FORK_HEIGHT` and
+  `MIDNIGHT_FORK_AURA_AUTHORITIES` are both set and well-formed, so an
+  accidental enable fails the build rather than yielding a quietly inert runtime;
+- a fork runtime reports `impl_name` `midnight-fork-transition-UNSAFE`, visible
+  in `state_getRuntimeVersion`. `codeSubstitutes` matches on `spec_version`
+  alone, so this does not affect the substitute;
+- `scripts/assert-no-fork-transition.sh` runs in the Earthfile's `+build`,
+  `+build-node-only`, `+build-benchmarks` and `+srtool-build`, failing if the
+  feature is in the cargo feature graph or the built wasm carries that
+  `impl_name`.
 
 Fork points are chosen, not assumed: a verifying node resolves the fork block's
 inherited main-chain reference through the mock follower, which only ~2% of real

@@ -48,8 +48,22 @@
 //! ```
 //!
 //! Both come from the `fork-bundle.json` that `mock-authorities convert`
-//! writes. Built without them, every hook below is a no-op and the runtime
-//! behaves exactly like the stock one.
+//! writes. `build.rs` refuses to build the feature without both, well-formed:
+//! enabling it is only ever deliberate, so a build that turned it on without a
+//! fork to build for -- through cargo feature unification, say -- fails loudly
+//! instead of quietly producing a runtime that is merely inert.
+//!
+//! ## Guarding against release
+//!
+//! Besides the build-time check above:
+//!
+//! - the runtime's `impl_name` becomes [`crate::FORK_TRANSITION_IMPL_NAME`], so a
+//!   fork runtime is identifiable from `state_getRuntimeVersion` or from its wasm.
+//!   `codeSubstitutes` matches on `spec_version` alone, so this does not stop
+//!   the substitute from applying;
+//! - `scripts/assert-no-fork-transition.sh` fails the release builds in the
+//!   Earthfile if the feature is in their cargo feature graph or that
+//!   `impl_name` is in the wasm they produce.
 //!
 //! ## The failure mode to know about
 //!
@@ -179,8 +193,9 @@ pub fn execute_fork_block(block: &<crate::Block as sp_runtime::traits::Block>::L
 	);
 }
 
-/// Parse a decimal block number. An empty value is `None`, not height 0, so a
-/// build with `MIDNIGHT_FORK_HEIGHT=` set but blank stays inert.
+/// Parse a decimal block number. An empty value is `None`, not height 0: a
+/// blank `MIDNIGHT_FORK_HEIGHT=` must never be read as "fork at genesis".
+/// `build.rs` rejects it before this is reached; this is the second line.
 fn parse_u32(raw: &str) -> Option<BlockNumber> {
 	raw.trim().parse().ok()
 }
@@ -213,20 +228,27 @@ mod tests {
 	use super::*;
 	use parity_scale_codec::Decode;
 
-	/// The safety property this feature rests on: built without the fork
-	/// configuration, every hook is inert and the runtime behaves like stock.
+	/// The safety property this feature rests on: the mock set is reported at
+	/// exactly one height, the fork block's parent, and every other height reads
+	/// state. `build.rs` guarantees both variables are set whenever this runs.
 	#[test]
-	fn is_inert_without_configuration() {
-		if option_env!("MIDNIGHT_FORK_HEIGHT").is_some() {
-			// Configured build: this test cannot assert inertness, but the
-			// height must at least parse, or the hooks would never fire.
-			assert!(fork_height().is_some(), "MIDNIGHT_FORK_HEIGHT must parse");
-			return;
-		}
+	fn relaxes_exactly_one_height() {
+		let fork_height = fork_height().expect("build.rs requires MIDNIGHT_FORK_HEIGHT");
+		let parent = fork_height.checked_sub(1).expect("the fork block cannot be genesis");
 
-		assert_eq!(fork_height(), None);
-		assert_eq!(aura_authorities_at(0), None);
-		assert_eq!(aura_authorities_at(BlockNumber::MAX), None);
+		assert!(aura_authorities_at(parent).is_some(), "fork parent must report the mock set");
+		assert_eq!(aura_authorities_at(fork_height), None);
+		assert_eq!(aura_authorities_at(fork_height.saturating_add(1)), None);
+		if let Some(grandparent) = parent.checked_sub(1) {
+			assert_eq!(aura_authorities_at(grandparent), None);
+		}
+	}
+
+	/// The literal in `runtime_version!` and the constant release checks grep
+	/// for must agree, or the release guard would look for the wrong string.
+	#[test]
+	fn is_identifiable_by_impl_name() {
+		assert_eq!(crate::VERSION.impl_name, crate::FORK_TRANSITION_IMPL_NAME);
 	}
 
 	#[test]
