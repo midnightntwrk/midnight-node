@@ -326,5 +326,83 @@ fn rejected_system_tx_mutates_no_state_and_emits_no_event() {
 			)),
 			"a rejected system transaction must emit no SystemTransactionApplied",
 		);
+		assert!(
+			system_ledger_events().is_empty(),
+			"a rejected system transaction must emit no LedgerEvent",
+		);
+	});
+}
+
+fn applied_system_tx_hashes() -> Vec<midnight_node_ledger::types::Hash> {
+	mock::System::events()
+		.into_iter()
+		.filter_map(|r| match r.event {
+			mock::RuntimeEvent::MidnightSystem(crate::Event::SystemTransactionApplied(applied)) => {
+				Some(applied.hash)
+			},
+			_ => None,
+		})
+		.collect()
+}
+
+fn system_ledger_events() -> Vec<midnight_node_ledger::types::LedgerEvent> {
+	mock::System::events()
+		.into_iter()
+		.filter_map(|r| match r.event {
+			mock::RuntimeEvent::MidnightSystem(crate::Event::LedgerEvent(event)) => Some(event),
+			_ => None,
+		})
+		.collect()
+}
+
+/// The governance path deposits one `LedgerEvent` per ledger event, each correlated to
+/// its system transaction by hash, and refines the post-dispatch weight to that count.
+#[test]
+fn governance_deposits_ledger_events_correlated_by_hash() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let post_info = mock::MidnightSystem::send_mn_system_transaction(
+			RuntimeOrigin::root(),
+			overwrite_parameters_tx(),
+		)
+		.expect("governance accepts OverwriteParameters");
+
+		let [hash] = applied_system_tx_hashes()[..] else {
+			panic!("exactly one SystemTransactionApplied expected");
+		};
+		let ledger_events = system_ledger_events();
+		assert!(!ledger_events.is_empty(), "OverwriteParameters must emit a ledger event");
+		assert!(
+			ledger_events.iter().all(|e| e.source.transaction_hash == hash),
+			"every ledger event must carry its system transaction's hash",
+		);
+		assert_eq!(
+			post_info.actual_weight,
+			Some(crate::ConfigurableSystemTxWeight::<Test>::get().saturating_add(
+				crate::PER_LEDGER_EVENT_WEIGHT.saturating_mul(ledger_events.len() as u64)
+			)),
+		);
+	});
+}
+
+/// The executor paths deposit ledger events the same way as the governance path.
+#[test]
+fn cnight_executor_deposits_ledger_events_correlated_by_hash() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let hash =
+			<mock::MidnightSystem as MidnightSystemTransactionCNightExecutor>::execute_system_transaction(
+				cnight_tx(),
+			)
+			.expect("cnight executor accepts CNightGeneratesDustUpdate");
+
+		let ledger_events = system_ledger_events();
+		assert!(!ledger_events.is_empty(), "CNightGeneratesDustUpdate must emit a ledger event");
+		assert!(
+			ledger_events.iter().all(|e| e.source.transaction_hash == hash),
+			"every ledger event must carry its system transaction's hash",
+		);
 	});
 }
