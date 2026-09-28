@@ -68,8 +68,8 @@ bun install
 # Prepare one shot hash
 echo "=== One Shot Hash Preparation ==="
 
-bun cli simple-tx -p kupmios
-bun cli sign-and-submit -p kupmios deployments/local/simple-tx.json
+bun cli/index.ts simple-tx -p kupmios
+bun cli/index.ts sign-and-submit -p kupmios deployments/local/simple-tx.json
 one_shot_hash=$(jq -r '.txHash' deployments/local/simple-tx.json)
 
 echo "✓ One shot hash: $one_shot_hash generated successfully"
@@ -95,6 +95,14 @@ toml set aiken.toml config.local.terms_and_conditions_one_shot_hash.bytes "$one_
 toml set aiken.toml config.local.terms_and_conditions_threshold_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
 toml set aiken.toml config.local.cnight_minting_one_shot_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
 toml set aiken.toml config.local.collateral_utxo_hash.bytes "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+
+# Reserve distinct simple-tx outputs for rewards one-shots.
+index=16
+for component in virtual_account rewards_batcher rewards_pool rewards_pool_staging rewards_pool_logic; do
+    toml set aiken.toml "config.local.${component}_one_shot_hash.bytes" "$one_shot_hash" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+    toml set aiken.toml "config.local.${component}_one_shot_index" "$index" > aiken.toml.tmp && mv aiken.toml.tmp aiken.toml
+    index=$((index + 1))
+done
 
 # Debug: Show the updated local section of aiken.toml
 echo "--- aiken.toml config.local values ---"
@@ -126,11 +134,11 @@ echo ""
 
 # Deploy contracts
 echo "=== Contracts Deployment ==="
-bun cli deploy -p kupmios
-bun cli sign-and-submit -p kupmios deployments/local/deployment-transactions.json
+bun cli/index.ts deploy -p kupmios
+bun cli/index.ts sign-and-submit -p kupmios deployments/local/deployment-transactions.json
 
-bun cli register-gov-auth -p kupmios --use-build
-bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
+bun cli/index.ts register-gov-auth -p kupmios --use-build
+bun cli/index.ts sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
 
 echo "✓ Contracts deployed successfully"
 echo "=== Contracts Deployment Complete ==="
@@ -151,7 +159,7 @@ echo ""
 # Export all contract data for midnight-setup
 echo "=== Contracts Data Exporter ==="
 echo "Saving contracts data for chain initialization (midnight-setup) and manual testing"
-bun cli info --use-build --format json > $CONTRACTS_DIR/contracts-info.json
+bun cli/index.ts info --use-build --format json > $CONTRACTS_DIR/contracts-info.json
 cp $PLUTUS_JSON $AIKEN_TOML ${CONTRACTS_DIR}/contract_blueprint.ts ${CONTRACTS_DIR}/contract_blueprint_local.ts $CONTRACTS_DIR/contracts-info.json $OUTPUT_DIR
 echo "Contract files in ${OUTPUT_DIR}:"
 ls $OUTPUT_DIR

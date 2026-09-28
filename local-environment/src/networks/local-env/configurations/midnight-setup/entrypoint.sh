@@ -65,6 +65,7 @@ TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .script
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generates Dust") | .address' $CONTRACT_INFO)
 PLUTUS_INFO="/runtime-values/plutus-local.json"
+VIRTUAL_ACCOUNT_POLICY_ID=$(jq -r '.validators[] | select(.title == "virtual_account.virtual_account.else") | .hash' "$PLUTUS_INFO")
 CNIGHT_MINTING_POLICY_ID=$(jq -r '.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .hash' "$PLUTUS_INFO")
 ICS_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "ICS Forever") | .address' $CONTRACT_INFO)
 RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' $CONTRACT_INFO)
@@ -193,6 +194,15 @@ patch_json /res/local/reserve-config.json \
    | .total_amount = ($utxos | map(.amount) | add // 0)'
 echo "Patched reserve-config.json:"
 cat /res/local/reserve-config.json
+
+section "block-rewards-config.json"
+patch_json /res/local/block-rewards-config.json \
+   --arg policy "$VIRTUAL_ACCOUNT_POLICY_ID" \
+   --slurpfile reserve /res/local/reserve-config.json \
+   'def hex_bytes: [scan("..") | explode | map(if . >= 97 then . - 87 else . - 48 end) | .[0] * 16 + .[1]];
+    .virtual_account_policy = ($policy | hex_bytes)
+    | .reserve = $reserve[0].total_amount'
+
 
 
 # The bridge observes strictly AFTER initial_data_checkpoint, so anchor it to the cNIGHT
