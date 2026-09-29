@@ -1314,6 +1314,38 @@ mod tests {
 		assert_eq!(key(&mid_block, true), key(&mid_block, false));
 	}
 
+	/// Mainnet #1788980's first ledger tx: its intent TTL (1784643562) lies between the block
+	/// timestamp (1784643558) and the corrected tblock (parent 1784643552 + 12).
+	const MAINNET_1788980_TX: &[u8] = include_bytes!("../../../test-data/mainnet_1788980_tx.raw");
+
+	#[test]
+	fn corrected_first_tx_falls_back_to_the_block_timestamp() {
+		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+			return;
+		}
+		let tx = api::new()
+			.tagged_deserialize::<Transaction<base_crypto_local::signatures::Signature, DefaultDB>>(
+				MAINNET_1788980_TX,
+			)
+			.expect("fixture deserializes");
+		let ledger = Ledger::new(LedgerState::new("mainnet"));
+		let verify = |tblock, skew_tblock| {
+			let bc = BlockContext::with_parent_block_time(tblock, 1784643552);
+			let result = Bridge::<base_crypto_local::signatures::Signature, DefaultDB>::get_verified_transaction(
+				&ledger,
+				&tx,
+				&bc,
+				&WrappedHash([0u8; 32]),
+				skew_tblock,
+			);
+			format!("{:?}", result.map(|_| ()))
+		};
+
+		// A fresh state fails a later stateful check either way; only the TTL error tells them apart.
+		let ttl_expired = verify(1784643564, false);
+		assert_ne!(verify(1784643558, true), ttl_expired);
+	}
+
 	fn normalized_all(value: FixedPoint) -> LedgerNormalizedCost {
 		LedgerNormalizedCost {
 			read_time: value,
