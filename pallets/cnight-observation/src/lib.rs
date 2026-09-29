@@ -541,8 +541,7 @@ pub mod pallet {
 						"Additional registration for {cardano_reward_address:?}, which already has 2+ mappings"
 					);
 				},
-				// 1 -> 1: the insert overwrote the sole mapping, so this UTXO was
-				// already stored. UtxoIds are unique and the cursor only advances.
+				// 1 -> 1: only possible if this exact UTXO was already stored.
 				(Some(_), Some(_)) => {
 					log::error!(
 						"error: registration UTXO {utxo_id:?} for {cardano_reward_address:?} observed twice; cursor or data source bug"

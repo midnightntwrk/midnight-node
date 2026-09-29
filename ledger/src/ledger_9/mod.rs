@@ -1387,8 +1387,7 @@ where
 		let api = api::new();
 		let event = CNightGeneratesDustEvent {
 			value,
-			// Not `api.deserialize`: that logs at error, but owner keys come from
-			// Cardano registration datums, so invalid ones are expected input.
+			// Not `api.deserialize` (logs at error): invalid keys are expected user input.
 			owner: midnight_serialize_local::Deserializable::deserialize(&mut &owner[..], 0)
 				.map_err(|e| {
 					log::debug!(target: LOG_TARGET, "Invalid DustPublicKey: {e:?}");
