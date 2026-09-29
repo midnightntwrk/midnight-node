@@ -870,7 +870,9 @@ jobs:
       DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   # The Docker Hub and public midnightntwrk images these attest only exist on the
-  # canonical repo; a fork never publishes them.
+  # canonical repo; a fork never publishes them. They skip the scan (same layers as the
+  # GHCR scan) and run alongside it rather than after: prepare-release has already pushed
+  # the images, so the scan can only gate finalize-release, which needs every job here.
   sbom-scan-dockerhub-node:
     if: github.event.inputs.skip-node != 'true' && github.repository == 'midnightntwrk/midnight-node'
     permissions:
@@ -879,7 +881,7 @@ jobs:
       id-token: write
       attestations: write
     name: SBOM Attest Node Docker Hub (${{ matrix.arch }})
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-node]
+    needs: [validate-inputs, prepare-release]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -902,7 +904,7 @@ jobs:
       id-token: write
       attestations: write
     name: SBOM Attest Toolkit Docker Hub (${{ matrix.arch }})
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-toolkit]
+    needs: [validate-inputs, prepare-release]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -925,7 +927,7 @@ jobs:
       id-token: write
       attestations: write
     name: SBOM Attest Node midnightntwrk (${{ matrix.arch }})
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-node]
+    needs: [validate-inputs, prepare-release]
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -950,7 +952,7 @@ jobs:
       id-token: write
       attestations: write
     name: SBOM Attest Toolkit midnightntwrk (${{ matrix.arch }})
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-toolkit]
+    needs: [validate-inputs, prepare-release]
     strategy:
       matrix:
         arch: [amd64, arm64]
