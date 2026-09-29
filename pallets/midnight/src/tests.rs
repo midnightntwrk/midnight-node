@@ -462,8 +462,8 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 }
 
 /// The parent timestamp that makes the correction land a minute before the block context the
-/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies. So the
-/// correction, when it applies, turns an accepted block into a rejected one.
+/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies, while the
+/// block's own timestamp still does (the shape of mainnet #1788980).
 fn parent_ts_that_the_correction_rejects(block_context: &BlockContext) -> u64 {
 	block_context.tblock - 60 - TBLOCK_CORRECTION_OFFSET_SECS
 }
@@ -492,14 +492,13 @@ fn apply_transaction_v1(tx: &[u8]) -> Result<(), LedgerApiError> {
 	.map(|_| ())
 }
 
-/// The first ledger transaction of a historical block is verified against the *parent* block's
-/// timestamp plus the mempool skew, not the block's own. Host-function version 1 — the version
-/// pre-upgrade runtimes import — must still do that, so the same block that version 2 accepts
-/// below is rejected here.
+/// Host-function version 1 verifies a historical block's first ledger transaction against the
+/// parent's timestamp plus the mempool skew, and falls back to the block's own timestamp if that
+/// fails: the producer's cache was not always warm at the skewed timestamp (mainnet #1788980).
 ///
 /// See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 #[test]
-fn test_tblock_correction_verifies_first_tx_against_parent_timestamp() {
+fn test_tblock_correction_falls_back_to_the_block_timestamp() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 	let block_context: BlockContext = block_context.into();
@@ -509,16 +508,13 @@ fn test_tblock_correction_verifies_first_tx_against_parent_timestamp() {
 		init_ledger_state(block_context.clone());
 		begin_block(1, parent_ts, uncached_block_ts(&block_context));
 
-		assert!(
-			apply_transaction_v1(&tx).is_err(),
-			"version 1 must verify the first tx in the block against the parent block's timestamp"
-		);
+		assert_ok!(apply_transaction_v1(&tx));
 	});
 }
 
 /// The runtime this node ships imports version 2 of the host function, which does not correct:
-/// the same block the version 1 test rejects is verified against its own timestamp and accepted.
-/// This is the loophole closing — it is gated on the runtime upgrade, nothing else.
+/// the block is verified against its own timestamp only. This is the loophole closing — it is
+/// gated on the runtime upgrade, nothing else.
 #[test]
 fn test_tblock_correction_not_applied_by_the_current_runtime() {
 	let (tx, block_context) =
@@ -537,9 +533,6 @@ fn test_tblock_correction_not_applied_by_the_current_runtime() {
 /// Mempool ingress must not be corrected, not even by version 1: `validate_unsigned` already
 /// skews the block context it passes to the ledger by `slot_duration * (1 + MaxSkippedSlots)`, so
 /// correcting there too would double-count a slot and reject valid transactions.
-///
-/// Both halves run in the same externalities, against the same block — only the entry point
-/// differs.
 #[test]
 fn test_tblock_correction_does_not_affect_mempool_validation() {
 	let (tx, block_context) =
@@ -556,11 +549,6 @@ fn test_tblock_correction_does_not_affect_mempool_validation() {
 			TransactionSource::External,
 			&call
 		));
-
-		assert!(
-			apply_transaction_v1(&tx).is_err(),
-			"version 1's block path must still apply the correction the mempool path ignores"
-		);
 	});
 }
 
