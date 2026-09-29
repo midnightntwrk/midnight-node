@@ -535,9 +535,17 @@ pub mod pallet {
 						dust_public_key: prev_dust_key,
 					}))
 				},
-				_ => {
+				// 2+ -> 3+: still ambiguous, nothing to announce.
+				(None, None) => {
+					log::debug!(
+						"Additional registration for {cardano_reward_address:?}, which already has 2+ mappings"
+					);
+				},
+				// 1 -> 1: the insert overwrote the sole mapping, so this UTXO was
+				// already stored. UtxoIds are unique and the cursor only advances.
+				(Some(_), Some(_)) => {
 					log::error!(
-						"fatal integrity error: mapping added, previous and post mapping count == 1"
+						"error: registration UTXO {utxo_id:?} for {cardano_reward_address:?} observed twice; cursor or data source bug"
 					);
 				},
 			}
@@ -632,7 +640,7 @@ pub mod pallet {
 					Some(CNightGeneratesDustEventSerialized(event_bytes))
 				},
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					Self::log_dust_event_failure(&data.utxo_tx_hash.0, data.utxo_tx_index, e);
 					None
 				},
 			}
@@ -670,9 +678,24 @@ pub mod pallet {
 			match event {
 				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					Self::log_dust_event_failure(&data.utxo_tx_hash.0, data.utxo_tx_index, e);
 					None
 				},
+			}
+		}
+
+		fn log_dust_event_failure(tx_hash: &[u8], index: u16, e: LedgerApiError) {
+			let utxo = hex::encode(tx_hash);
+			match e {
+				// Registration datums are user-controlled; out-of-range keys are common.
+				LedgerApiError::Deserialization(DeserializationError::DustPublicKey) => {
+					log::debug!(
+						"Skipping cNIGHT observation {utxo}#{index}: invalid DustPublicKey"
+					);
+				},
+				e => log::warn!(
+					"cNIGHT observation {utxo}#{index} dropped: unable to construct CNightGeneratesDustEvent: {e:?}"
+				),
 			}
 		}
 	}
