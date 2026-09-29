@@ -1249,19 +1249,24 @@ where
 		// Cache miss: compute VerifiedTransaction
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		let verified_tx =
-			tx.0.well_formed(
-				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				Timestamp::from_secs(strict_key.well_formed_tblock),
-			)
-			.map_err(|e| {
+		let verified_tx = match tx.0.well_formed(
+			&ctx.ref_state,
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			Timestamp::from_secs(strict_key.well_formed_tblock),
+		) {
+			// The producer verified at whichever tblock its cache held, so a historical first
+			// tx is valid at either; e.g. mainnet #1788980 is only valid uncorrected (#1924).
+			Err(_) if strict_key.well_formed_tblock != block_context.tblock => {
+				return Self::get_verified_transaction(ledger, tx, block_context, tx_hash, false);
+			},
+			res => res.map_err(|e| {
 				log::warn!(
 					target: LOG_TARGET,
 					"Transaction malformed: {e}",
 				);
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
-			})?;
+			})?,
+		};
 
 		// Cache in strict cache (soft cache is managed by do_validate_transaction)
 		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
@@ -1532,13 +1537,10 @@ const TBLOCK_CORRECTION_OFFSET_SECS: i128 = 12;
 /// timestamp — and only for the first ledger tx in a block, which is the only position where
 /// that cache could hit — so those blocks still import.
 ///
-/// A transaction only reaches a block through the producing node's own pool, so by the time that
-/// node ran `pre_dispatch` the strict cache was always warm for it: the pool verified it at
-/// `parent + offset` against the parent's post-block state, which is exactly the state and key
-/// `pre_dispatch` then looked up. The first ledger tx in a block was therefore *always* verified
-/// at `parent + offset`, never at the block's own timestamp — so this is a single unconditional
-/// rule, a total function of `(block_context, is_block_start)` evaluated identically on every
-/// node, with no try-then-retry branch for consensus to depend on.
+/// The producer's cache was not always warm at `parent + offset` (mainnet #1788980's first tx
+/// expires between the block timestamp and `parent + offset`), so a first tx failing here is
+/// retried at the block's own `tblock` by `get_verified_transaction`. The retry is still a
+/// deterministic function of the block, and only reachable under v1, i.e. on finalized history.
 ///
 /// The loophole is gated on the host-function version, not a date: version 1 of
 /// `apply_transaction`/`validate_guaranteed_execution` passes `skew_tblock = true`, version 2
