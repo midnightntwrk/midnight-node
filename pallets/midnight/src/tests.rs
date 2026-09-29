@@ -488,8 +488,8 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 }
 
 /// The parent timestamp that makes the correction land a minute before the block context the
-/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies. So the
-/// correction, when it applies, turns an accepted block into a rejected one.
+/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies, while the
+/// block's own timestamp still does (the shape of mainnet #1788980).
 fn parent_ts_that_the_correction_rejects(block_context: &BlockContext) -> u64 {
 	block_context.tblock - 60 - TBLOCK_CORRECTION_OFFSET_SECS
 }
