@@ -13,5 +13,5 @@ still logged at error, reworded to point at the cursor or data source.
 
 No state or consensus change.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2220
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1819

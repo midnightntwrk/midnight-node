@@ -9,5 +9,5 @@ expected input; the failure is now logged at debug. The returned error is unchan
 Because this runs natively, it also quiets the error during sync from genesis, where
 historical blocks execute older runtimes.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2220
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1819
