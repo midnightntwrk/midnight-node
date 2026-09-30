@@ -89,24 +89,10 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      # `act` shares the host docker socket, so this step's
-      # `docker image prune --all --force` would nuke the developer's local
-      # image cache (including the locally-cached mock-authorities image we
-      # rely on as the pull fallback). Skip it on act runs.
-      # Also skip on self-hosted — the action's targets (e.g. /usr/share/swift,
-      # android SDK) aren't on our self-hosted runner.
-      - name: Free disk space
-        if: env.ACT != 'true' && runner.environment != 'self-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          swap-storage: false
-
-      - name: Disk space after cleanup
+      # No free-disk-space step: the self-hosted runner has none of the
+      # GitHub-hosted preinstalls to delete, and scripts/free-disk-space.sh
+      # refuses to run off GitHub-hosted runners.
+      - name: Disk space
         run: df -h /
 
       - name: Checkout
