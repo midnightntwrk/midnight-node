@@ -18,7 +18,7 @@ target version is reached. It preserves key→authority mappings by translating:
 Runtime scaffolding lives in `runtime/src/migrations.rs` (`LegacySessionKeys`,
 `LegacyCommitteeMember`, `UpgradeCommitteeMember`). It is not wired into
 `SingleBlockMigrations` yet — `SessionKeys` is still aura + grandpa — and should
-be connected when the arm upgrade changes the key encoding.
+be connected when the runtime upgrade changes the key encoding.
 
 Includes try-runtime checks and unit tests for committee membership and key-owner
 preservation.

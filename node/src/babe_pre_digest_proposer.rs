@@ -11,25 +11,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Proposer wrapper that attaches a synthetic BABE `SecondaryPlain` pre-runtime digest to authored
-//! blocks while the consensus engine has the flip to BABE armed.
+//! Proposer wrapper that attaches a synthetic BABE `SecondaryPlain` pre-runtime digest to every
+//! block the AURA slot worker authors.
 //!
-//! During the AURA→BABE migration the chain keeps producing blocks with AURA, but once governance
-//! arms the flip ([`ArmedBabe`]/[`ScheduledFlip`]) every produced block must carry a synthetic BABE
-//! pre-runtime. The digest is a [`SecondaryPlain`] entry — `{ authority_index, slot }`,
+//! During the AURA→BABE migration the chain keeps producing blocks with AURA, but from the block
+//! that activates `pallet-consensus-engine` every produced block must carry a BABE pre-runtime
+//! digest after the AURA one. The digest is a [`SecondaryPlain`] entry — `{ authority_index, slot }`,
 //! where `slot` is the block's AURA slot and `authority_index` is the same index the AURA logic uses
 //! to pick the slot's author.
 //!
-//! The gate ([`ConsensusEngineApi::should_emit_babe_preruntime_digest`]) is read from the runtime at
-//! the parent block: it is false in `Aura` (a BABE digest would be rejected on import) and `Babe`
-//! (BABE authors its own digests), true only in the armed window.
+//! Emission is not gated on chain state: running a migration-aware node *is* the signal that the
+//! network is moving to BABE. Blocks authored before the runtime upgrade therefore already carry
+//! the digest, which a runtime without the pallet ignores, and the upgrade block — whose author
+//! cannot yet ask the new runtime anything — carries it too. The only per-block input read from
+//! the parent is the AURA authority count. The BABE slot worker that takes over after the flip is
+//! not wrapped; it adds its own pre-digest.
 //!
-//! [`ArmedBabe`]: pallet_consensus_engine
-//! [`ScheduledFlip`]: pallet_consensus_engine
 //! [`SecondaryPlain`]: sp_consensus_babe::digests::PreDigest::SecondaryPlain
 
 use futures::FutureExt;
-use midnight_primitives_consensus_engine::ConsensusEngineApi;
 use parity_scale_codec::Encode;
 use sp_api::ProvideRuntimeApi;
 use sp_consensus::{Environment, ProposeArgs, Proposer};
@@ -47,75 +47,67 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-const LOG_TARGET: &str = "armed-babe-predigest";
+const LOG_TARGET: &str = "babe-predigest";
 
 /// Proposer factory wrapper. See the [module docs](self).
-pub struct ArmedBabeProposerFactory<B, E, C> {
+pub struct BabePreDigestProposerFactory<B, E, C> {
 	inner: E,
 	client: Arc<C>,
 	_phantom: PhantomData<B>,
 }
 
-impl<B, E, C> ArmedBabeProposerFactory<B, E, C> {
-	/// Wrap `inner`, reading the arming state and AURA authorities from `client`.
+impl<B, E, C> BabePreDigestProposerFactory<B, E, C> {
+	/// Wrap `inner`, reading the AURA authorities from `client`.
 	pub fn new(inner: E, client: Arc<C>) -> Self {
 		Self { inner, client, _phantom: PhantomData }
 	}
 }
 
-impl<B, E, C> Environment<B> for ArmedBabeProposerFactory<B, E, C>
+impl<B, E, C> Environment<B> for BabePreDigestProposerFactory<B, E, C>
 where
 	B: BlockT,
 	E: Environment<B>,
 	C: ProvideRuntimeApi<B> + Send + Sync + 'static,
-	C::Api: ConsensusEngineApi<B> + AuraApi<B, AuraId>,
+	C::Api: AuraApi<B, AuraId>,
 {
-	type Proposer = ArmedBabeProposer<B, E::Proposer>;
+	type Proposer = BabePreDigestProposer<B, E::Proposer>;
 	type CreateProposer =
 		Box<dyn Future<Output = Result<Self::Proposer, Self::Error>> + Send + Unpin + 'static>;
 	type Error = <E as Environment<B>>::Error;
 
 	fn init(&mut self, parent_header: &<B as BlockT>::Header) -> Self::CreateProposer {
-		// Resolve the arming state (and authority count) at the parent up front; the proposer only
-		// needs the AURA slot, which it reads from inherent data at `propose` time.
-		let emit_with_authorities = babe_emit_context(&self.client, parent_header);
+		// Resolve the authority count at the parent up front; the proposer only needs the AURA
+		// slot, which it reads from inherent data at `propose` time.
+		let n_authorities = aura_authority_count(&self.client, parent_header);
 		Box::new(self.inner.init(parent_header).map(move |res| {
-			res.map(|proposer| ArmedBabeProposer::new(proposer, emit_with_authorities))
+			res.map(|proposer| BabePreDigestProposer::new(proposer, n_authorities))
 		}))
 	}
 }
 
-/// `Some(n_authorities)` when the parent's runtime says a BABE pre-digest should be emitted and the
-/// AURA authority set is non-empty; `None` otherwise (not armed, empty set, or query failure).
-fn babe_emit_context<B, C>(client: &Arc<C>, parent_header: &<B as BlockT>::Header) -> Option<u32>
+/// `Some(n_authorities)` when the AURA authority set at the parent is non-empty; `None` otherwise
+/// (empty set or query failure), in which case no digest is attached.
+fn aura_authority_count<B, C>(client: &Arc<C>, parent_header: &<B as BlockT>::Header) -> Option<u32>
 where
 	B: BlockT,
 	C: ProvideRuntimeApi<B>,
-	C::Api: ConsensusEngineApi<B> + AuraApi<B, AuraId>,
+	C::Api: AuraApi<B, AuraId>,
 {
 	let parent_hash = parent_header.hash();
-	let api = client.runtime_api();
-
-	// A runtime older than `ConsensusEngineApi` v2 lacks this method; any failure means "not armed".
-	if !api.should_emit_babe_preruntime_digest(parent_hash).unwrap_or(false) {
-		return None;
-	}
-
-	match api.authorities(parent_hash) {
+	match client.runtime_api().authorities(parent_hash) {
 		Ok(authorities) if !authorities.is_empty() => Some(authorities.len() as u32),
 		Ok(_) => {
 			log::warn!(
 				target: LOG_TARGET,
-				"Armed for BABE pre-digest but the AURA authority set at {parent_hash:?} is empty; \
-				 not attaching a pre-digest.",
+				"AURA authority set at {parent_hash:?} is empty; not attaching a BABE pre-digest.",
 			);
 			None
 		},
 		Err(err) => {
 			log::warn!(
 				target: LOG_TARGET,
-				"Armed for BABE pre-digest but failed to read AURA authorities at {parent_hash:?}: \
-				 {err}; not attaching a pre-digest.",
+				"Failed to read AURA authorities at {parent_hash:?}: {err}; not attaching a BABE \
+				 pre-digest.",
 			);
 			None
 		},
@@ -123,20 +115,20 @@ where
 }
 
 /// Proposer wrapper. See the [module docs](self).
-pub struct ArmedBabeProposer<B: BlockT, P> {
+pub struct BabePreDigestProposer<B: BlockT, P> {
 	inner: P,
 	/// `Some(n_authorities)` if a BABE pre-digest should be attached, else `None`.
-	emit_with_authorities: Option<u32>,
+	n_authorities: Option<u32>,
 	_phantom: PhantomData<B>,
 }
 
-impl<B: BlockT, P> ArmedBabeProposer<B, P> {
-	fn new(inner: P, emit_with_authorities: Option<u32>) -> Self {
-		Self { inner, emit_with_authorities, _phantom: PhantomData }
+impl<B: BlockT, P> BabePreDigestProposer<B, P> {
+	fn new(inner: P, n_authorities: Option<u32>) -> Self {
+		Self { inner, n_authorities, _phantom: PhantomData }
 	}
 }
 
-impl<B, P> Proposer<B> for ArmedBabeProposer<B, P>
+impl<B, P> Proposer<B> for BabePreDigestProposer<B, P>
 where
 	B: BlockT,
 	P: Proposer<B>,
@@ -145,7 +137,7 @@ where
 	type Proposal = <P as Proposer<B>>::Proposal;
 
 	fn propose(self, mut args: ProposeArgs<B>) -> Self::Proposal {
-		if let Some(n_authorities) = self.emit_with_authorities
+		if let Some(n_authorities) = self.n_authorities
 			&& let Some(slot) = aura_slot_from_inherents(&args.inherent_data)
 		{
 			let digest = babe_secondary_plain_digest(slot, n_authorities);
@@ -159,7 +151,7 @@ where
 
 /// Build the BABE `SecondaryPlain` pre-digest for this block.
 fn babe_secondary_plain_digest(slot: Slot, n_authorities: u32) -> DigestItem {
-	// `n_authorities` is guaranteed non-zero by `babe_emit_context`.
+	// `n_authorities` is guaranteed non-zero by `aura_authority_count`.
 	let authority_index = (u64::from(slot) % u64::from(n_authorities)) as u32;
 	let pre_digest = PreDigest::SecondaryPlain(SecondaryPlainPreDigest { authority_index, slot });
 	log::debug!(
@@ -180,7 +172,6 @@ fn aura_slot_from_inherents(inherent_data: &sp_inherents::InherentData) -> Optio
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use midnight_primitives_consensus_engine::ActiveEngine;
 	use sp_api::{ApiRef, ProvideRuntimeApi};
 	use sp_consensus::Proposal;
 	use sp_consensus_aura::SlotDuration;
@@ -249,29 +240,23 @@ mod tests {
 		}
 	}
 
-	/// Runtime API answering the two queries [`babe_emit_context`] makes.
+	/// Runtime API answering the one query [`aura_authority_count`] makes.
 	#[derive(Clone)]
 	struct TestApi {
-		/// `None` stands for a runtime that does not have the method, i.e. a failing call.
-		should_emit: Option<bool>,
 		/// `None` stands for a failing `authorities` call.
 		authorities: Option<Vec<AuraId>>,
 	}
 
 	impl TestApi {
-		/// Armed, with `n` AURA authorities.
-		fn armed(n: usize) -> Self {
+		/// `n` AURA authorities.
+		fn with_n_authorities(n: usize) -> Self {
 			let authorities =
 				(0..n).map(|i| AuraId::from(sr25519::Public::from_raw([i as u8; 32]))).collect();
-			Self { should_emit: Some(true), authorities: Some(authorities) }
-		}
-
-		fn with_should_emit(self, should_emit: Option<bool>) -> Self {
-			Self { should_emit, ..self }
+			Self { authorities: Some(authorities) }
 		}
 
 		fn with_authorities(self, authorities: Option<Vec<AuraId>>) -> Self {
-			Self { authorities, ..self }
+			Self { authorities }
 		}
 	}
 
@@ -288,18 +273,6 @@ mod tests {
 	}
 
 	sp_api::mock_impl_runtime_apis! {
-		impl ConsensusEngineApi<Block> for TestApi {
-			#[advanced]
-			fn active_engine(&self, _: Hash) -> Result<ActiveEngine, sp_api::ApiError> {
-				unimplemented!("not read by the proposer")
-			}
-
-			#[advanced]
-			fn should_emit_babe_preruntime_digest(&self, _: Hash) -> Result<bool, sp_api::ApiError> {
-				self.should_emit.ok_or_else(|| api_error("no such runtime api"))
-			}
-		}
-
 		impl AuraApi<Block, AuraId> for TestApi {
 			#[advanced]
 			fn slot_duration(&self, _: Hash) -> Result<SlotDuration, sp_api::ApiError> {
@@ -352,13 +325,13 @@ mod tests {
 
 	/// Runs the wrapped proposer and returns the digest logs the inner proposer received.
 	fn propose_and_capture(
-		emit_with_authorities: Option<u32>,
+		n_authorities: Option<u32>,
 		args: ProposeArgs<Block>,
 	) -> Vec<DigestItem> {
 		let captured = CapturedArgs::default();
-		let proposer = ArmedBabeProposer::<Block, _>::new(
+		let proposer = BabePreDigestProposer::<Block, _>::new(
 			MockProposer { captured: captured.clone() },
-			emit_with_authorities,
+			n_authorities,
 		);
 
 		// The mock captures the arguments before returning its (failing) future.
@@ -386,7 +359,7 @@ mod tests {
 	}
 
 	#[test]
-	fn proposer_attaches_nothing_when_not_armed() {
+	fn proposer_attaches_nothing_without_an_authority_count() {
 		let logs = propose_and_capture(None, propose_args(Some(10)));
 		assert_eq!(logs, vec![unrelated_log()]);
 	}
@@ -400,7 +373,7 @@ mod tests {
 	#[test]
 	fn proposer_passes_the_remaining_propose_args_through_untouched() {
 		let captured = CapturedArgs::default();
-		let proposer = ArmedBabeProposer::<Block, _>::new(
+		let proposer = BabePreDigestProposer::<Block, _>::new(
 			MockProposer { captured: captured.clone() },
 			Some(3),
 		);
@@ -423,7 +396,7 @@ mod tests {
 	fn init_and_propose(api: TestApi, slot: u64) -> Vec<DigestItem> {
 		let inner = MockEnvironment::default();
 		let captured = inner.captured.clone();
-		let mut factory = ArmedBabeProposerFactory::new(inner, Arc::new(api));
+		let mut factory = BabePreDigestProposerFactory::new(inner, Arc::new(api));
 
 		let proposer = futures::executor::block_on(factory.init(&parent_header()))
 			.expect("inner factory does not fail");
@@ -433,37 +406,25 @@ mod tests {
 	}
 
 	#[test]
-	fn proposer_attaches_digest_when_the_runtime_reports_the_flip_as_armed() {
+	fn proposer_attaches_digest_from_the_parents_aura_authority_count() {
+		// Unconditional: no chain-state gate, only the authority count is read.
 		// slot 6, 4 authorities -> authority_index 6 % 4 == 2.
-		let logs = init_and_propose(TestApi::armed(4), 6);
+		let logs = init_and_propose(TestApi::with_n_authorities(4), 6);
 
 		assert_eq!(babe_slot_and_index(&logs[1]), (Slot::from(6), 2));
 	}
 
 	#[test]
-	fn proposer_attaches_nothing_when_the_runtime_reports_the_flip_as_not_armed() {
-		let logs = init_and_propose(TestApi::armed(4).with_should_emit(Some(false)), 6);
-
-		assert_eq!(logs, vec![unrelated_log()]);
-	}
-
-	#[test]
-	fn proposer_attaches_nothing_when_the_runtime_does_not_have_the_api() {
-		let logs = init_and_propose(TestApi::armed(4).with_should_emit(None), 6);
-
-		assert_eq!(logs, vec![unrelated_log()]);
-	}
-
-	#[test]
 	fn proposer_attaches_nothing_when_the_aura_authority_set_is_empty() {
-		let logs = init_and_propose(TestApi::armed(4).with_authorities(Some(vec![])), 6);
+		let logs =
+			init_and_propose(TestApi::with_n_authorities(4).with_authorities(Some(vec![])), 6);
 
 		assert_eq!(logs, vec![unrelated_log()]);
 	}
 
 	#[test]
 	fn proposer_attaches_nothing_when_the_authorities_cannot_be_read() {
-		let logs = init_and_propose(TestApi::armed(4).with_authorities(None), 6);
+		let logs = init_and_propose(TestApi::with_n_authorities(4).with_authorities(None), 6);
 
 		assert_eq!(logs, vec![unrelated_log()]);
 	}
@@ -472,7 +433,8 @@ mod tests {
 	fn proposer_factory_initializes_the_inner_factory_with_the_same_parent() {
 		let inner = MockEnvironment::default();
 		let parents = inner.parents.clone();
-		let mut factory = ArmedBabeProposerFactory::new(inner, Arc::new(TestApi::armed(4)));
+		let mut factory =
+			BabePreDigestProposerFactory::new(inner, Arc::new(TestApi::with_n_authorities(4)));
 
 		let _ = futures::executor::block_on(factory.init(&parent_header()))
 			.expect("inner factory does not fail");

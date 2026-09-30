@@ -1,11 +1,11 @@
 #local-env
 
-# Commands for governance actions of moving consensus engine state machine
+# Command for the governance action of moving the consensus engine state machine
 
-Two new commands are added for testing/executing consensus engine state transitions:
+A new command is added for testing/executing the consensus engine state transition:
 
-- `consensus-upgrade-arm-babe` for executing the first manual state machine transition
-- `consensus-upgrade-schedule-flip` for executing the second manual state machine transition
+- `consensus-upgrade-schedule-flip` for executing the manual state machine transition
+  (`Aura` → `ScheduledFlip`) via a federated-authority motion
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1740
 PR: https://github.com/midnightntwrk/midnight-node/pull/1918
