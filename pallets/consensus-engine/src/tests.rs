@@ -16,7 +16,10 @@
 use crate::{Error, State, babe_genesis_slot_sentinel, mock::*, pallet::EngineState};
 use frame_support::{
 	assert_noop, assert_ok,
-	traits::{GetStorageVersion, OnInitialize, OnRuntimeUpgrade, OnTimestampSet, StorageVersion},
+	traits::{
+		GetStorageVersion, OnFinalize, OnInitialize, OnRuntimeUpgrade, OnTimestampSet,
+		StorageVersion,
+	},
 };
 use midnight_primitives_consensus_engine::ActiveEngine;
 use sp_consensus_slots::Slot;
@@ -26,6 +29,14 @@ use sp_runtime::DispatchError;
 /// ConsensusEngine), matching production hook ordering.
 fn on_initialize() {
 	AllPalletsWithSystem::on_initialize(System::block_number());
+}
+
+/// Close `pallet-babe`'s block, so the next `on_initialize` is a real one — it
+/// short-circuits its `initialize` while `Initialized` is still set from this block.
+/// Only Babe is finalized: `pallet-timestamp`'s `on_finalize` asserts the timestamp
+/// inherent ran, which these digest-level tests do not simulate.
+fn finalize_babe_block() {
+	Babe::on_finalize(System::block_number());
 }
 
 #[test]
@@ -125,17 +136,62 @@ fn activation_block_requires_the_babe_pre_digest() {
 	});
 }
 
+/// The BABE `ConsensusLog`s deposited into the current block's header.
+fn babe_consensus_logs() -> Vec<sp_consensus_babe::ConsensusLog> {
+	use parity_scale_codec::Decode as _;
+	System::digest()
+		.logs
+		.iter()
+		.filter_map(|log| log.as_consensus())
+		.filter(|(id, _)| *id == sp_consensus_babe::BABE_ENGINE_ID)
+		.filter_map(|(_, mut payload)| sp_consensus_babe::ConsensusLog::decode(&mut payload).ok())
+		.collect()
+}
+
 #[test]
 fn first_block_of_a_genesis_chain_lets_babe_self_initialize_harmlessly() {
 	pre_activation_ext().execute_with(|| {
-		// A chain that has the pallet from genesis runs no migration: pallet-babe adopts the
-		// first BABE pre-digest's slot as its genesis slot. The block is still valid, and
-		// `migrate_to_babe` replaces the value at the flip.
+		// A chain that has the pallet from genesis runs no migration (`on_genesis` writes the
+		// current storage version, so `Activate` is a no-op), so pallet-babe still holds the
+		// `ValueQuery` default and adopts the first BABE pre-digest's slot as its genesis slot.
+		// The block itself is valid.
 		start_block_with_babe_pre_digest(100);
 		on_initialize();
 
-		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(100));
 		assert_eq!(EngineState::<Test>::get(), State::Aura);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(100));
+
+		// The cost is real and belongs in the header: self-init deposits a `NextEpochData`
+		// consensus digest into an AURA block, the item the activation sentinel exists to
+		// suppress on an upgraded chain (see
+		// `activation_block_does_not_self_initialize_babe_genesis`, which asserts none). It is
+		// inert — the AURA import pipeline does not read BABE consensus logs — but it is there,
+		// so assert it rather than let "harmlessly" imply the block is unchanged.
+		let logs = babe_consensus_logs();
+		assert!(
+			matches!(logs.as_slice(), [sp_consensus_babe::ConsensusLog::NextEpochData(_)]),
+			"expected exactly one NextEpochData log, got {} BABE consensus log(s)",
+			logs.len(),
+		);
+		finalize_babe_block();
+
+		// Harmless because the flip overwrites every value self-init wrote. Note
+		// `put_engine_state` leaves the self-initialized `GenesisSlot` alone (it only seeds the
+		// sentinel when unset), so the flip really does run from slot 100 here.
+		put_engine_state(State::ScheduledFlip);
+		seed_babe_authorities();
+		start_block_with_babe_pre_digest(1499);
+		on_initialize();
+
+		// Exactly the epoch-0 state an activated chain reaches; cf.
+		// `flip_fires_at_the_last_slot_of_the_epoch`, which asserts the same values having
+		// started from the sentinel.
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
+		assert_eq!(pallet_babe::CurrentSlot::<Test>::get(), Slot::from(1499));
+		assert_eq!(pallet_babe::EpochIndex::<Test>::get(), 0);
+		assert_eq!(pallet_babe::Randomness::<Test>::get(), [0u8; 32]);
+		assert_eq!(pallet_babe::NextRandomness::<Test>::get(), [0u8; 32]);
 	});
 }
 
