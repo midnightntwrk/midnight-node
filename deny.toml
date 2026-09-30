@@ -74,6 +74,7 @@ ignore = [
     { id = "RUSTSEC-2024-0438", reason = "vuln in old wasmtime version used by polkadot-sdk" },
     { id = "RUSTSEC-2024-0442", reason = "vuln in old wasmtime version used by polkadot-sdk" },
     { id = "RUSTSEC-2025-0012", reason = "backoff is unmaintained but no replacement is available" },
+    { id = "RUSTSEC-2026-0097", reason = "rand pinned at 0.10.0 so the 1.0.300 runtime rebuilds byte-identical to the on-chain wasm; unreachable - needs rand's `log` feature, which nothing enables" },
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
