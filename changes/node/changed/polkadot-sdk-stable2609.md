@@ -1,20 +1,11 @@
 #node #runtime
 
-# Update Polkadot SDK to polkadot-stable2609
+# Update Polkadot SDK to equivalent of polkadot-stable2609
 
 Updates the Polkadot SDK dependency set from the `polkadot-stable2606` tag to
-`polkadot-stable2609`. Until the final release is published the pin points at the
-latest release candidate tag (`polkadot-stable2609-rc1`); it will be moved to the
-final `polkadot-stable2609` tag without further code changes.
-
-stable2609 includes two fixes previously carried on the temporary shieldedtech fork:
-
-- paritytech/polkadot-sdk#12506: `GrandpaBlockImport::import_justification` verifies and
-  enacts the justification under one authority-set lock, removing a double-finalization
-  panic at authority-set change blocks.
-- paritytech/polkadot-sdk#12754: `sc_consensus_babe::prune_finalized` skips epoch pruning
-  when the finalized header has no BABE pre-digest, so `BabeBlockImport` can be
-  constructed on an AURA chain.
+Shielded fork of polkadot-sdk at tag `stable2609-rpc-fix-10-oct"`. This tag is
+paritytech polkadot-sdk branch `stable2609` at `3c87d294a1a74a46f579bb99ff898459406bf5cb`
+with added fix commit: 'rpc-server: set TCP_NODELAY on JSON-RPC connections'.
 
 Code adjustments for the new SDK API:
 
@@ -28,5 +19,8 @@ CI: litep2p (via `sc-network`) now enables str0m's vendored OpenSSL feature, whi
 OpenSSL from source with perl. The CI image's perl lacks `FindBin.pm`, so the Earthfile sets
 `OPENSSL_NO_VENDOR=1` to keep linking against the system OpenSSL already installed there.
 
-PR:
-Issue:
+This unblocks AURA to BABE migration PR(s).
+Further PR that updates dependency is expected in order to close #1757
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2141
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1757
