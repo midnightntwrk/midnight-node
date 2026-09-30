@@ -17,4 +17,4 @@ runtime exactly: compressed wasm blake2
 `rand 0.10.0` carries RUSTSEC-2026-0097, ignored in `deny.toml`: it needs
 rand's `log` feature, which nothing in the workspace enables.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2224
