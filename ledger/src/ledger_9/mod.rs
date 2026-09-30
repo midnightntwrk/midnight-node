@@ -1285,7 +1285,12 @@ where
 		let api = api::new();
 		let event = CNightGeneratesDustEvent {
 			value,
-			owner: api.deserialize(owner)?,
+			// Not `api.deserialize` (logs at error): invalid keys are expected user input.
+			owner: midnight_serialize_local::Deserializable::deserialize(&mut &owner[..], 0)
+				.map_err(|e| {
+					log::debug!(target: LOG_TARGET, "Invalid DustPublicKey: {e:?}");
+					LedgerApiError::Deserialization(api::DeserializationError::DustPublicKey)
+				})?,
 			time: Timestamp::from_secs(time),
 			action: match action {
 				0 => Ok(CNightGeneratesDustActionType::Create),
