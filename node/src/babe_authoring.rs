@@ -44,7 +44,8 @@
 //! so the idle BABE pipeline can still be constructed. Real epoch descriptors are seeded from
 //! `BabeApi` at the flip, not from that placeholder.
 
-use crate::consensus_engine_dispatch::{EpochSeeder, engine_from_pre_runtime_digest};
+use crate::consensus_engine_dispatch::EpochSeeder;
+use crate::engine_digests::{authoring_engine, has_authoritative_babe_pre_digest, slot_of};
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
@@ -54,7 +55,7 @@ use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key}
 use sc_consensus_epochs::{EpochChanges, IsDescendentOfBuilder, descendent_query};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
-use sp_consensus_babe::{BABE_ENGINE_ID, BabeApi, BabeConfiguration};
+use sp_consensus_babe::{BabeApi, BabeConfiguration};
 use sp_consensus_slots::{Slot, SlotDuration};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT, NumberFor};
 use std::future::Future;
@@ -161,14 +162,6 @@ where
 	}
 }
 
-fn has_babe_pre_runtime_digest(header: &<Block as BlockT>::Header) -> bool {
-	header
-		.digest()
-		.logs()
-		.iter()
-		.any(|log| matches!(log.as_pre_runtime(), Some((id, _)) if id == BABE_ENGINE_ID))
-}
-
 /// Resolve once the best chain has flipped to BABE, yielding the best block hash at that point.
 ///
 /// Returns immediately if the chain is already on BABE (restart after the flip); otherwise watches
@@ -205,7 +198,7 @@ where
 		// Cheap pre-filter for the (possibly long) history authored by pre-migration nodes: the
 		// flip block, like every block from a migration-aware author, carries a BABE pre-runtime
 		// digest. Blocks without one cannot be past the flip, so skip the runtime query for them.
-		if !has_babe_pre_runtime_digest(&notification.header) {
+		if !has_authoritative_babe_pre_digest::<Block>(&notification.header) {
 			continue;
 		}
 		if active_engine_at(&**client, notification.hash) == ActiveEngine::Babe {
@@ -295,9 +288,8 @@ where
 	let number = *header.number();
 	let parent_hash = *header.parent_hash();
 
-	let slot = sc_consensus_babe::find_pre_digest::<Block>(&header)
-		.map_err(|e| format!("flip block {at:?} has no BABE pre-digest: {e}"))?
-		.slot();
+	// The flip block is the last AURA block; its slot is the AURA one, read by the shared rule.
+	let slot = slot_of::<Block>(&header).map_err(|e| format!("flip block {at:?}: {e}"))?;
 
 	// Hold the tree lock from the coverage check through the reset. Seeding has two triggers (the
 	// authoring supervisor and the import-path seeder) that can run concurrently around the flip;
@@ -386,7 +378,7 @@ where
 		};
 		// A BABE-authored parent is already covered by the tree (see the type docs); only the flip
 		// block — an AURA-authored parent of a BABE block — can need seeding.
-		if engine_from_pre_runtime_digest::<Block>(&parent_header) == Some(ActiveEngine::Babe) {
+		if authoring_engine::<Block>(&parent_header) == Some(ActiveEngine::Babe) {
 			return;
 		}
 		if active_engine_at(&*self.client, parent) != ActiveEngine::Babe {

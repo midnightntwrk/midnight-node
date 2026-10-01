@@ -267,7 +267,12 @@ handing block authoring over from AURA to BABE at <hash>      (validators only)
      post-flip blocks.
 
 **Post-flip notes:** a node restarted after the flip starts directly in
-BABE (`chain already on BABE at startup`). BABE RPC is not wired (no
+BABE (`chain already on BABE at startup`). Nodes interpret BABE pre-runtime
+digests only in blocks whose `pallet-version` digest does not report a
+runtime older than `3.0.0` (the one that introduced `consensusEngine`); any
+block executed by an older runtime is treated as a plain AURA block whatever
+its header carries, so pre-upgrade history syncs the same way it always did,
+including over warp sync. BABE RPC is not wired (no
 `babe_epochAuthorship`) — query storage instead; no BABE import-queue
 metrics; BABE equivocation reporting is disabled.
 

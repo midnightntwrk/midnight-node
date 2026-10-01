@@ -19,28 +19,20 @@
 //! verifier / block import for the engine that **authored** it, read from the block's own header —
 //! see [`engine_from_pre_runtime_digest`].
 //!
-//! # Routing key: the first AURA/BABE pre-runtime digest
+//! # Routing key: the header, read by [`crate::engine_digests`]
 //!
 //! The key must come from the block being routed, not from chain state. Reading the engine from the
 //! parent's runtime state (`ConsensusEngineApi::active_engine`) needs the parent to be *imported*,
 //! and at the flip boundary it is not: a sync batch `[…, flip, flip+1, …]` carries the first BABE
 //! block together with its parent, so the parent's state does not exist when the batch is queued.
 //! The engine change is only visible in the flip block's post-state, so nothing derived from
-//! earlier blocks in the batch can see it either.
+//! earlier blocks in the batch can see it either. Warp and gap sync have no state or bodies at all.
 //!
-//! The header can. `pallet-consensus-engine` asserts in `on_initialize`, for every block that
-//! executes, that:
-//! - until the flip, exactly one AURA and exactly one BABE pre-runtime digest are present and the
-//!   AURA one comes **first**;
-//! - after the flip, no AURA pre-runtime digest is present.
-//!
-//! Blocks that predate the pallet carry an AURA pre-runtime digest and, when authored by a
-//! migration-aware node, a BABE one after it (the AURA slot worker always puts its own digest
-//! first; see [`crate::babe_pre_digest_proposer`]). So for any valid block the first pre-runtime
-//! digest with an AURA or BABE engine id names the engine that authored it. That is the same
-//! invariant the runtime enforces (the seal, by contrast, is only checked by the node-side
-//! verifiers), which keeps routing keyed to what the chain itself guarantees. Pre-runtime digests
-//! from other engines (e.g. the partner-chains main-chain hash) are skipped.
+//! The header can. [`engine_digests::authoring_engine`](crate::engine_digests::authoring_engine)
+//! names the engine that authored a block from its pre-runtime digests, trusting their layout only
+//! for blocks executed by a runtime that contains `pallet-consensus-engine` (which enforces it) as
+//! told by the `pallet-version` digest, and treating everything older as plain AURA. That module
+//! is the single place in the node that makes this decision; this one only routes on its answer.
 //!
 //! Routing on the header does not weaken the migration guards: it decides *which verifier runs*,
 //! not whether the block is valid. A block whose digests misstate its engine fails either the
@@ -70,36 +62,19 @@
 //! Justifications are finality (GRANDPA) and engine-agnostic; the GRANDPA justification import is
 //! registered on the queue directly and is not part of this dispatch.
 
+use crate::engine_digests::authoring_engine;
 use async_trait::async_trait;
 use midnight_primitives_consensus_engine::ActiveEngine;
 use sc_consensus::{BlockCheckParams, BlockImport, BlockImportParams, ImportResult, Verifier};
 use sp_consensus::Error as ConsensusError;
-use sp_consensus_aura::AURA_ENGINE_ID;
-use sp_consensus_babe::BABE_ENGINE_ID;
 use sp_runtime::traits::{Block as BlockT, Header as _};
 use std::{marker::PhantomData, sync::Arc};
-
-/// The consensus engine that authored `header`: the engine id of its first AURA or BABE
-/// pre-runtime digest, or `None` if it carries neither.
-///
-/// See the module docs for why the *first* such digest is decisive: `pallet-consensus-engine`
-/// requires the AURA pre-runtime digest to precede the BABE one on every pre-flip AURA block, and
-/// forbids an AURA pre-runtime digest on every post-flip BABE block.
-pub fn engine_from_pre_runtime_digest<Block: BlockT>(
-	header: &Block::Header,
-) -> Option<ActiveEngine> {
-	header.digest().logs().iter().find_map(|log| match log.as_pre_runtime() {
-		Some((id, _)) if id == AURA_ENGINE_ID => Some(ActiveEngine::Aura),
-		Some((id, _)) if id == BABE_ENGINE_ID => Some(ActiveEngine::Babe),
-		_ => None,
-	})
-}
 
 /// The pipeline a block is routed to: the engine that authored it. A header without an AURA/BABE
 /// pre-runtime digest can't be routed and defaults to AURA, whose verifier produces the clearer
 /// error for it.
 fn route<Block: BlockT>(header: &Block::Header) -> ActiveEngine {
-	engine_from_pre_runtime_digest::<Block>(header).unwrap_or(ActiveEngine::Aura)
+	authoring_engine::<Block>(header).unwrap_or(ActiveEngine::Aura)
 }
 
 /// Makes BABE's epoch tree able to resolve epochs for the children of a given parent block.
@@ -198,8 +173,13 @@ where
 mod tests {
 	use super::*;
 	use futures::executor::block_on;
+	use midnight_node_runtime::VERSION_ID;
 	use midnight_node_runtime::opaque::{Block, Header};
+	use midnight_primitives_consensus_engine::ACTIVATION_SPEC_VERSION;
+	use parity_scale_codec::Encode;
 	use sp_consensus::BlockOrigin;
+	use sp_consensus_aura::AURA_ENGINE_ID;
+	use sp_consensus_babe::BABE_ENGINE_ID;
 	use sp_core::H256;
 	use sp_runtime::{ConsensusEngineId, DigestItem, traits::Header as HeaderT};
 	use std::sync::Mutex;
@@ -309,8 +289,17 @@ mod tests {
 		DigestItem::PreRuntime(id, vec![0])
 	}
 
-	/// Header of block `number` whose parent hash starts with `number - 1`.
-	fn header_with(number: u32, logs: Vec<DigestItem>) -> Header {
+	/// The `pallet-version` consensus digest of a block executed by runtime `spec_version`.
+	fn version_digest(spec_version: u32) -> DigestItem {
+		DigestItem::Consensus(VERSION_ID, spec_version.encode())
+	}
+
+	/// A runtime from before `pallet-consensus-engine` existed.
+	const PRE_ACTIVATION_SPEC_VERSION: u32 = ACTIVATION_SPEC_VERSION - 1;
+
+	/// Header of block `number` whose parent hash starts with `number - 1`, carrying `logs`
+	/// verbatim (no version digest unless `logs` has one).
+	fn raw_header_with(number: u32, logs: Vec<DigestItem>) -> Header {
 		let mut header = Header::new(
 			number,
 			Default::default(),
@@ -322,6 +311,20 @@ mod tests {
 			header.digest_mut().push(log);
 		}
 		header
+	}
+
+	/// Header of a block executed by the runtime that introduced the pallet.
+	fn header_with(number: u32, logs: Vec<DigestItem>) -> Header {
+		let mut all = vec![version_digest(ACTIVATION_SPEC_VERSION)];
+		all.extend(logs);
+		raw_header_with(number, all)
+	}
+
+	/// Header of a block executed by a runtime from before the pallet existed.
+	fn pre_activation_header_with(number: u32, logs: Vec<DigestItem>) -> Header {
+		let mut all = vec![version_digest(PRE_ACTIVATION_SPEC_VERSION)];
+		all.extend(logs);
+		raw_header_with(number, all)
 	}
 
 	/// An AURA block from a pre-migration author: AURA pre-runtime digest only (plus the mc-hash
@@ -369,36 +372,19 @@ mod tests {
 	}
 
 	#[test]
-	fn engine_is_read_from_the_first_aura_or_babe_pre_runtime_digest() {
-		let engine = engine_from_pre_runtime_digest::<Block>;
-		assert_eq!(engine(&aura_block(1)), Some(ActiveEngine::Aura));
-		assert_eq!(engine(&babe_block(1)), Some(ActiveEngine::Babe));
-	}
-
-	#[test]
-	fn aura_block_with_both_pre_digests_is_aura() {
-		// Until the flip every AURA block also carries a BABE pre-runtime digest; the pallet
-		// guarantees the AURA one comes first, and that order is what decides.
-		assert_eq!(
-			engine_from_pre_runtime_digest::<Block>(&dual_digest_aura_block(1)),
-			Some(ActiveEngine::Aura)
-		);
-	}
-
-	#[test]
-	fn other_engines_pre_runtime_digests_are_skipped() {
-		let header =
-			header_with(1, vec![pre_runtime(OTHER_ENGINE_ID), pre_runtime(BABE_ENGINE_ID)]);
-		assert_eq!(engine_from_pre_runtime_digest::<Block>(&header), Some(ActiveEngine::Babe));
-	}
-
-	#[test]
-	fn header_without_an_aura_or_babe_pre_runtime_digest_has_no_engine() {
-		let header = header_with(
-			1,
-			vec![pre_runtime(OTHER_ENGINE_ID), DigestItem::Seal(BABE_ENGINE_ID, vec![])],
-		);
-		assert_eq!(engine_from_pre_runtime_digest::<Block>(&header), None);
+	fn verifier_routes_a_pre_activation_block_with_a_leading_babe_digest_to_aura() {
+		let h = Harness::new();
+		h.verify(pre_activation_header_with(
+			5,
+			vec![
+				pre_runtime(BABE_ENGINE_ID),
+				pre_runtime(AURA_ENGINE_ID),
+				DigestItem::Seal(AURA_ENGINE_ID, vec![1]),
+			],
+		));
+		assert_eq!(h.aura.seen(), vec![5]);
+		assert!(h.babe.seen().is_empty());
+		assert!(h.seeder.parents().is_empty());
 	}
 
 	#[test]

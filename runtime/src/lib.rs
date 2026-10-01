@@ -2401,6 +2401,23 @@ mod tests {
 
 	/// The slot duration reported by `SlotApi` comes from AURA's config, so it must not
 	/// diverge from BABE's once BABE produces the blocks.
+	/// Nodes distrust the AURA/BABE pre-runtime digest layout of blocks executed by runtimes from
+	/// before `pallet-consensus-engine`, identified by `spec_version` via the `pallet-version`
+	/// digest, so this runtime must not report a version below the activation one.
+	mod consensus_engine_activation {
+		use crate::VERSION;
+		use midnight_primitives_consensus_engine::ACTIVATION_SPEC_VERSION;
+
+		#[test]
+		fn this_runtime_is_at_or_past_the_activation_version() {
+			assert!(
+				VERSION.spec_version >= ACTIVATION_SPEC_VERSION,
+				"pallet-consensus-engine is in this runtime, so its spec_version must not be \
+				 below ACTIVATION_SPEC_VERSION ({ACTIVATION_SPEC_VERSION})",
+			);
+		}
+	}
+
 	mod slot_config {
 		use crate::{Block, Runtime};
 

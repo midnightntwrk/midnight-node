@@ -15,6 +15,7 @@ use crate::cfg::midnight_cfg::invariants::{
 	ConsensusConfigCoherenceError, MainchainEpochConfigError, check_mainchain_epoch_invariants,
 	check_sidechain_mainchain_coherence,
 };
+use crate::engine_digests::slot_of;
 use async_trait::async_trait;
 use authority_selection_inherents::CommitteeMember;
 use authority_selection_inherents::{
@@ -29,7 +30,7 @@ use midnight_node_runtime::{
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_cnight_observation::CNightObservationApi;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
-use sc_consensus_aura::{SlotDuration, find_pre_digest};
+use sc_consensus_aura::SlotDuration;
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
 use sidechain_mc_hash::McHashDataSource;
@@ -38,8 +39,7 @@ use sidechain_mc_hash::McHashInherentError;
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_consensus_aura::{Slot, sr25519::AuthorityPair as AuraPair};
-use sp_core::Pair;
+use sp_consensus_aura::Slot;
 use sp_inherents::CreateInherentDataProviders;
 use sp_partner_chains_bridge::{
 	TokenBridgeDataSource, TokenBridgeIDPRuntimeApi, TokenBridgeInherentDataProvider,
@@ -375,6 +375,11 @@ where
 	}
 }
 
+/// The slot of the block with this `header`, or `None` for genesis, which has no slot.
+///
+/// Across the AURA→BABE migration a parent may have been authored by either engine; which one,
+/// and which pre-runtime digest therefore holds the slot, is decided by
+/// [`crate::engine_digests::slot_of`], the single place in the node that reads engine digests.
 pub fn slot_from_predigest(
 	header: &<Block as BlockT>::Header,
 ) -> Result<Option<Slot>, Box<dyn Error + Send + Sync>> {
@@ -382,20 +387,7 @@ pub fn slot_from_predigest(
 		// genesis block doesn't have a slot
 		return Ok(None);
 	}
-	// Across the AURA→BABE migration a block's parent may carry either digest: pre-flip (and the
-	// flip block) have an AURA pre-digest, post-flip BABE blocks have a BABE one. Try AURA first,
-	// then fall back to BABE, so the parent slot resolves regardless of the engine that authored it.
-	match find_pre_digest::<Block, <AuraPair as Pair>::Signature>(header) {
-		Ok(slot) => Ok(Some(slot)),
-		Err(aura_err) => match sc_consensus_babe::find_pre_digest::<Block>(header) {
-			Ok(babe_pre_digest) => Ok(Some(babe_pre_digest.slot())),
-			Err(babe_err) => Err(format!(
-				"no AURA or BABE pre-runtime digest in header #{:?}: aura: {aura_err}; babe: {babe_err}",
-				header.number(),
-			)
-			.into()),
-		},
-	}
+	slot_of::<Block>(header).map(Some).map_err(Into::into)
 }
 
 #[derive(Clone)]

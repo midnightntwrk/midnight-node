@@ -55,6 +55,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use crate::consensus_engine_dispatch::{EngineDispatchBlockImport, EngineDispatchVerifier};
+use crate::engine_digests::EngineSlotExtractor;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
@@ -73,34 +74,6 @@ use std::{
 	time::Duration,
 };
 use time_source::SystemTimeSource;
-
-/// [`sc_partner_chains_consensus::SlotExtractor`] reading the slot from the Aura
-/// pre-runtime digest.
-pub struct AuraSlotExtractor;
-
-impl sc_partner_chains_consensus::SlotExtractor<Block> for AuraSlotExtractor {
-	fn extract_slot(header: &<Block as BlockT>::Header) -> Result<sp_consensus_aura::Slot, String> {
-		sc_consensus_aura::find_pre_digest::<Block, <AuraPair as sp_core::crypto::Pair>::Signature>(
-			header,
-		)
-		.map_err(|e| e.to_string())
-	}
-}
-
-/// [`sc_partner_chains_consensus::SlotExtractor`] reading the slot from the BABE pre-runtime
-/// digest. Used by the BABE import pipeline (post-flip blocks carry a BABE pre-digest, not an
-/// AURA one, so [`AuraSlotExtractor`] cannot read them).
-pub struct BabeSlotExtractor;
-
-impl sc_partner_chains_consensus::SlotExtractor<Block> for BabeSlotExtractor {
-	fn extract_slot(
-		header: &<Block as BlockT>::Header,
-	) -> Result<sp_consensus_slots::Slot, String> {
-		sc_consensus_babe::find_pre_digest::<Block>(header)
-			.map(|pre_digest| pre_digest.slot())
-			.map_err(|e| e.to_string())
-	}
-}
 
 pub struct StorageInit {
 	pub separation: StorageSeparation,
@@ -509,7 +482,7 @@ pub fn new_partial(
 	);
 
 	let aura_verifier =
-		PartnerChainsVerifier::<_, _, _, _, AuraSlotExtractor, McHashInherentDigest>::new(
+		PartnerChainsVerifier::<_, _, _, _, EngineSlotExtractor, McHashInherentDigest>::new(
 			aura_verifier,
 			client.clone(),
 			verifier_cidp.clone(),
@@ -551,7 +524,7 @@ pub fn new_partial(
 	// body from it (skipping its inherent check against the minimal CIDP) and runs the full
 	// Partner Chains inherent check with `VerifierCIDP` itself.
 	let babe_verifier =
-		PartnerChainsVerifier::<_, _, _, _, BabeSlotExtractor, McHashInherentDigest>::new(
+		PartnerChainsVerifier::<_, _, _, _, EngineSlotExtractor, McHashInherentDigest>::new(
 			sc_consensus_babe::build_verifier(sc_consensus_babe::BuildVerifierParams {
 				client: client.clone(),
 				slot_duration: babe_slot_duration,
@@ -570,16 +543,18 @@ pub fn new_partial(
 	// committee `set` inherent. Wrapping it in `PartnerChainsBlockImport` runs the real check with
 	// the full `VerifierCIDP` and withholds the body from BABE, so BABE's redundant check is skipped.
 	// A clone of the raw import shares `babe_link`'s epoch tree with the import-queue instance.
-	let babe_authoring_block_import: sc_consensus::BoxBlockImport<Block> = Box::new(
-		PartnerChainsBlockImport::<_, _, _, Block, BabeSlotExtractor, McHashInherentDigest>::new(
-			babe_block_import.clone(),
-			client.clone(),
-			verifier_cidp.clone(),
-		),
-	);
+	let babe_authoring_block_import: sc_consensus::BoxBlockImport<Block> =
+		Box::new(PartnerChainsBlockImport::<
+			_,
+			_,
+			_,
+			Block,
+			EngineSlotExtractor,
+			McHashInherentDigest,
+		>::new(babe_block_import.clone(), client.clone(), verifier_cidp.clone()));
 
 	let babe_block_import =
-		PartnerChainsBlockImport::<_, _, _, Block, BabeSlotExtractor, McHashInherentDigest>::new(
+		PartnerChainsBlockImport::<_, _, _, Block, EngineSlotExtractor, McHashInherentDigest>::new(
 			babe_block_import,
 			client.clone(),
 			verifier_cidp,
