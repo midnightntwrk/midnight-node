@@ -17,7 +17,9 @@ version 1 → 2) that:
   translating bytes a v1 chain never wrote;
 - upgrades `pallet_session`'s `NextKeys`, `QueuedKeys` and `KeyOwner` through
   `pallet_session::Pallet::upgrade_keys`, counting `NextKeys` entries via `iter_keys` so the
-  weight is right even while the on-chain bytes still have the old shape.
+  weight is right even while the on-chain bytes still have the old shape;
+- activates `pallet-consensus-engine` (`Pallet::activate`, pre-seeding `pallet_babe::GenesisSlot`
+  with its sentinel), since a version-gated migration on that brand-new pallet would never run.
 
 `try-runtime` `pre_upgrade`/`post_upgrade` read the legacy bytes through `unhashed` and check that
 committee membership and epochs are preserved, that `QueuedCommittee` matches `CurrentCommittee`,

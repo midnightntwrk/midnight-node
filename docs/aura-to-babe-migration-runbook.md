@@ -175,8 +175,8 @@ non-empty and in the new key shape, and that `babe.genesisSlot` holds the
 activation sentinel (`u64::MAX`).
 
 **Action.** Deploy the v3 runtime (adds babe pallet, consensus-engine pallet,
-the `babe` session key; runs `MigrateV1ToV2AddBabeSessionKeys` and the
-consensus-engine activation migration) through the standard governance
+the `babe` session key; runs `MigrateV1ToV2AddBabeSessionKeys`, which also
+activates the consensus-engine pallet) through the standard governance
 runtime-upgrade flow. Rebuild tooling metadata again (`SessionKeys` shape
 changed). Note this ordering — upgrade only after the 1.1 checks — is
 enforced by release management, not on chain.

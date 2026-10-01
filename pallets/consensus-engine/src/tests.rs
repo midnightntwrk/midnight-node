@@ -16,10 +16,7 @@
 use crate::{Error, State, babe_genesis_slot_sentinel, mock::*, pallet::EngineState};
 use frame_support::{
 	assert_noop, assert_ok,
-	traits::{
-		GetStorageVersion, OnFinalize, OnInitialize, OnRuntimeUpgrade, OnTimestampSet,
-		StorageVersion,
-	},
+	traits::{OnFinalize, OnInitialize, OnTimestampSet},
 };
 use midnight_primitives_consensus_engine::ActiveEngine;
 use sp_consensus_slots::Slot;
@@ -47,39 +44,35 @@ fn default_state_is_baseline_aura() {
 	});
 }
 
-// --- activation migration (v0 -> v1) ---
+// --- activation (called by the runtime's upgrade migration) ---
 
-/// Externalities shaped like a network about to be upgraded: the pallet has no storage
-/// version yet and pallet-babe never saw a BABE pre-digest.
+/// Externalities shaped like a network about to be upgraded: pallet-babe never saw a BABE
+/// pre-digest, so `GenesisSlot` still holds its `ValueQuery` default.
 fn pre_activation_ext() -> sp_io::TestExternalities {
 	let mut ext = new_test_ext();
-	ext.execute_with(|| {
-		StorageVersion::new(0).put::<ConsensusEngine>();
-		pallet_babe::GenesisSlot::<Test>::kill();
-	});
+	ext.execute_with(|| pallet_babe::GenesisSlot::<Test>::kill());
 	ext
 }
 
 fn activate() {
-	crate::migrations::v1::Activate::<Test>::on_runtime_upgrade();
+	ConsensusEngine::activate();
 }
 
 #[test]
-fn activation_migration_pre_seeds_babe_genesis_slot_and_bumps_storage_version() {
+fn activation_pre_seeds_babe_genesis_slot() {
 	pre_activation_ext().execute_with(|| {
 		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(0));
 
 		activate();
 
 		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), babe_genesis_slot_sentinel());
-		assert_eq!(ConsensusEngine::on_chain_storage_version(), StorageVersion::new(1));
 		// Activation lands in the baseline state; nothing is scheduled yet.
 		assert_eq!(EngineState::<Test>::get(), State::Aura);
 	});
 }
 
 #[test]
-fn activation_migration_overwrites_a_self_initialized_babe_genesis_slot() {
+fn activation_overwrites_a_self_initialized_babe_genesis_slot() {
 	pre_activation_ext().execute_with(|| {
 		// A dormant pallet-babe may have adopted a slot from a stray digest before the upgrade.
 		pallet_babe::GenesisSlot::<Test>::put(Slot::from(77));
@@ -87,21 +80,6 @@ fn activation_migration_overwrites_a_self_initialized_babe_genesis_slot() {
 		activate();
 
 		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), babe_genesis_slot_sentinel());
-	});
-}
-
-#[test]
-fn activation_migration_is_a_no_op_once_at_version_1() {
-	new_test_ext().execute_with(|| {
-		StorageVersion::new(1).put::<ConsensusEngine>();
-		// A chain past activation may hold anything here (e.g. the real genesis slot after the
-		// flip); the versioned wrapper must not touch it again.
-		pallet_babe::GenesisSlot::<Test>::put(Slot::from(1500));
-
-		activate();
-
-		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
-		assert_eq!(ConsensusEngine::on_chain_storage_version(), StorageVersion::new(1));
 	});
 }
 
@@ -151,10 +129,9 @@ fn babe_consensus_logs() -> Vec<sp_consensus_babe::ConsensusLog> {
 #[test]
 fn first_block_of_a_genesis_chain_lets_babe_self_initialize_harmlessly() {
 	pre_activation_ext().execute_with(|| {
-		// A chain that has the pallet from genesis runs no migration (`on_genesis` writes the
-		// current storage version, so `Activate` is a no-op), so pallet-babe still holds the
-		// `ValueQuery` default and adopts the first BABE pre-digest's slot as its genesis slot.
-		// The block itself is valid.
+		// A chain that has the pallet from genesis runs no upgrade migration, so `activate` is
+		// never called: pallet-babe still holds the `ValueQuery` default and adopts the first
+		// BABE pre-digest's slot as its genesis slot. The block itself is valid.
 		start_block_with_babe_pre_digest(100);
 		on_initialize();
 

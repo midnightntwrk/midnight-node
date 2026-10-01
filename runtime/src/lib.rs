@@ -373,11 +373,10 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes QueuedCommittee (v1 -> v2), and adds BABE keys
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE keys, and activates the
+		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
+		// `on_initialize` sees the first BABE pre-digest).
 		crate::migrations::authority_keys::MigrateV1ToV2AddBabeSessionKeys,
-		// Activates the consensus-engine pallet (v0 -> v1): pre-seeds pallet-babe's
-		// GenesisSlot before its `on_initialize` sees the first BABE pre-digest.
-		pallet_consensus_engine::migrations::v1::Activate<Runtime>,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();

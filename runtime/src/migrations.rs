@@ -106,6 +106,16 @@ pub mod authority_keys {
 		}
 	}
 
+	/// The one-shot "introduce BABE" step of the runtime upgrade: translates the committee and
+	/// session keys to the shape that includes the BABE key, and activates
+	/// `pallet-consensus-engine` by pre-seeding `pallet_babe::GenesisSlot`.
+	///
+	/// The activation lives here, gated by `pallet-session-validator-management`'s storage version
+	/// (1 → 2), rather than in a versioned migration of `pallet-consensus-engine` itself: FRAME's
+	/// `before_all_runtime_migrations` initializes a brand-new pallet's on-chain storage version to
+	/// its in-code version before any migration runs, so a `VersionedMigration` keyed on the new
+	/// pallet never fires. The committee pallet exists on every chain being upgraded, so its
+	/// version transition is what identifies this upgrade exactly once.
 	pub struct InnerMigrateV1ToV2AddBabeSessionKeys;
 
 	impl UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2AddBabeSessionKeys {
@@ -113,6 +123,12 @@ pub mod authority_keys {
 			log::info!("translating committee & session keys and initializing QueuedCommittee");
 			let db = <Runtime as frame_system::Config>::DbWeight::get();
 			let mut weight = db.reads_writes(3, 1);
+
+			// Must happen before any `on_initialize` of this block: migration-aware authors already
+			// attach the BABE pre-digest, and pallet-babe would otherwise self-initialize its genesis
+			// epoch from it. Migrations run before all hooks, so this is early enough.
+			pallet_consensus_engine::Pallet::<Runtime>::activate();
+			weight = weight.saturating_add(db.writes(1));
 
 			// `CurrentCommittee`/`NextCommittee` must be translated before anything reads them
 			// typed as the post-BABE `CommitteeMember` — reading them with the new type first
@@ -292,6 +308,17 @@ pub mod authority_keys {
 				"on-chain storage version should be 2"
 			);
 
+			ensure!(
+				pallet_babe::GenesisSlot::<Runtime>::get()
+					== pallet_consensus_engine::babe_genesis_slot_sentinel(),
+				"pallet-babe GenesisSlot should hold the consensus-engine activation sentinel"
+			);
+			ensure!(
+				pallet_consensus_engine::EngineState::<Runtime>::get()
+					== pallet_consensus_engine::State::Aura,
+				"consensus-engine should activate in state Aura"
+			);
+
 			Ok(())
 		}
 	}
@@ -303,4 +330,62 @@ pub mod authority_keys {
 		pallet_session_validator_management::Pallet<Runtime>,
 		<Runtime as frame_system::Config>::DbWeight,
 	>;
+}
+
+#[cfg(test)]
+mod tests {
+	use super::authority_keys::MigrateV1ToV2AddBabeSessionKeys;
+	use crate::{Runtime, SessionCommitteeManagement};
+	use frame_support::traits::{
+		BeforeAllRuntimeMigrations, GetStorageVersion, OnRuntimeUpgrade, StorageVersion,
+	};
+	use pallet_consensus_engine::babe_genesis_slot_sentinel;
+	use sp_consensus_slots::Slot;
+
+	/// State of a chain about to take the upgrade: the committee pallet at storage version 1,
+	/// `pallet-babe` and `pallet-consensus-engine` not present at all.
+	fn pre_upgrade_ext() -> sp_io::TestExternalities {
+		let mut ext = sp_io::TestExternalities::default();
+		ext.execute_with(|| StorageVersion::new(1).put::<SessionCommitteeManagement>());
+		ext
+	}
+
+	/// The activation must survive what FRAME does to a pallet that is new to the runtime: its
+	/// on-chain storage version is initialized to the in-code one *before* migrations run, which
+	/// is why a version-gated migration on `pallet-consensus-engine` itself could never fire.
+	#[test]
+	fn upgrade_from_v1_pre_seeds_the_babe_genesis_slot_sentinel() {
+		pre_upgrade_ext().execute_with(|| {
+			assert_eq!(pallet_babe::GenesisSlot::<Runtime>::get(), Slot::from(0));
+
+			<crate::AllPalletsWithSystem as BeforeAllRuntimeMigrations>::before_all_runtime_migrations();
+			assert_eq!(
+				crate::ConsensusEngine::on_chain_storage_version(),
+				crate::ConsensusEngine::in_code_storage_version(),
+				"FRAME initializes the new pallet's version before any migration runs"
+			);
+			MigrateV1ToV2AddBabeSessionKeys::on_runtime_upgrade();
+
+			assert_eq!(pallet_babe::GenesisSlot::<Runtime>::get(), babe_genesis_slot_sentinel());
+			assert_eq!(
+				SessionCommitteeManagement::on_chain_storage_version(),
+				StorageVersion::new(2)
+			);
+		});
+	}
+
+	/// A chain that already has the committee pallet at v2 (started from genesis with this
+	/// runtime, or already upgraded) is left alone: the migration does not run, so whatever
+	/// `GenesisSlot` pallet-babe holds stays.
+	#[test]
+	fn upgrade_is_a_no_op_once_the_committee_pallet_is_at_v2() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			StorageVersion::new(2).put::<SessionCommitteeManagement>();
+			pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(1500));
+
+			MigrateV1ToV2AddBabeSessionKeys::on_runtime_upgrade();
+
+			assert_eq!(pallet_babe::GenesisSlot::<Runtime>::get(), Slot::from(1500));
+		});
+	}
 }

@@ -28,13 +28,15 @@
 //!    about it yet. A runtime without this pallet ignores the extra item.
 //! 2. **Runtime upgrade** that adds this pallet (the *activation*). From the first block executed
 //!    by that runtime, every block must carry the AURA pre-runtime digest followed by a matching
-//!    BABE one; a block without it is rejected on import. The upgrade's migration
-//!    ([`migrations::v1`]) pre-seeds `pallet_babe::GenesisSlot` with a sentinel so pallet-babe
-//!    does not self-initialize its genesis epoch from the first BABE digest it sees. Migrations
-//!    run before any `on_initialize`, so the sentinel is in place before pallet-babe inspects the
-//!    activation block. (A chain that has this pallet from genesis runs no migration; pallet-babe
-//!    then self-initializes at block 1, which is harmless since [`Pallet::migrate_to_babe`]
-//!    re-initializes it at the flip.)
+//!    BABE one; a block without it is rejected on import. The runtime's upgrade migration calls
+//!    [`Pallet::activate`], which pre-seeds `pallet_babe::GenesisSlot` with a sentinel so
+//!    pallet-babe does not self-initialize its genesis epoch from the first BABE digest it sees.
+//!    Migrations run before any `on_initialize`, so the sentinel is in place before pallet-babe
+//!    inspects the activation block. The call cannot live in a version-gated migration of this
+//!    pallet: FRAME initializes a brand-new pallet's on-chain storage version to the in-code one
+//!    before migrations run, so such a migration would never fire. (A chain that has this pallet
+//!    from genesis runs no migration; pallet-babe then self-initializes at block 1, which is
+//!    harmless since [`Pallet::migrate_to_babe`] re-initializes it at the flip.)
 //!
 //! Both deployments must be complete network-wide before governance acts: a block from an
 //! author that does not emit the digest is rejected from the activation block onward.
@@ -83,7 +85,6 @@ extern crate alloc;
 pub use pallet::*;
 pub use weights::WeightInfo;
 
-pub mod migrations;
 mod weights;
 
 #[cfg(test)]
@@ -107,8 +108,7 @@ pub mod pallet {
 	use sp_consensus_babe::digests::{CompatibleDigestItem as _, PreDigest};
 	use sp_consensus_slots::Slot;
 
-	/// Version 1 pre-seeds `pallet_babe::GenesisSlot` on activation; see [`crate::migrations::v1`].
-	pub(crate) const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 
 	/// Bootstrap randomness for BABE's genesis epoch at the consensus flip. Mirrors
 	/// pallet-babe's own genesis default (zero).
@@ -275,11 +275,15 @@ pub mod pallet {
 			EngineState::<T>::get().active_engine()
 		}
 
-		/// Activation, run by [`crate::migrations::v1`] before any `on_initialize` of the block
-		/// it lands in: sets `GenesisSlot` to [`babe_genesis_slot_sentinel`] so pallet-babe's
-		/// `initialize` does not self-initialize a genesis epoch and deposit a bogus
-		/// `NextEpochData` digest into a header we cannot retract.
-		pub(crate) fn activate() {
+		/// Activation, to be called by the runtime migration of the upgrade that adds this pallet,
+		/// before any `on_initialize` of the block it lands in: sets `GenesisSlot` to
+		/// [`babe_genesis_slot_sentinel`] so pallet-babe's `initialize` does not self-initialize a
+		/// genesis epoch and deposit a bogus `NextEpochData` digest into a header we cannot retract.
+		///
+		/// Idempotent and safe to call again (it only rewrites the sentinel); the caller is expected
+		/// to gate it on the storage version of a pallet that already exists on chain, since this
+		/// pallet's own version is initialized by FRAME before migrations run.
+		pub fn activate() {
 			pallet_babe::GenesisSlot::<T>::put(babe_genesis_slot_sentinel());
 			log::info!(
 				target: "consensus-engine",
