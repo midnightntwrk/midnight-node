@@ -12,8 +12,12 @@ read from the block's own header: the engine id of its first AURA or BABE pre-ru
 Chain state cannot be the routing key — a sync batch `[…, flip, flip+1, …]` carries the first BABE
 block together with its parent, so the parent's post-flip state does not exist when the batch is
 queued. The header can, because `pallet-consensus-engine` asserts for every executed block that
-the AURA pre-digest comes first until the flip and that no AURA pre-digest is present after it. Digests of other engines (e.g. the main-chain hash) are skipped; a header with neither
-defaults to AURA, whose verifier gives the clearer error. Routing decides *which* verifier runs,
+the AURA pre-digest comes first until the flip and that no AURA pre-digest is present after it.
+That layout is only trusted for blocks executed by a runtime that contains the pallet:
+`engine_digests::authoring_engine` reports AURA for older blocks whatever their pre-runtime
+digests say (see `babe-digest-interpretation-from-activation-version.md`). Digests of other
+engines (e.g. the main-chain hash) are skipped; a header with neither defaults to AURA, whose
+verifier gives the clearer error. Routing decides *which* verifier runs,
 not whether a block is valid — a block whose digests misstate its engine still fails the receiving
 verifier or the pallet's own digest assertions.
 
@@ -58,10 +62,13 @@ refuse to start. `configuration_at_startup` synthesizes a placeholder configurat
 slot duration and the sidechain epoch length in that case; real epoch descriptors are always seeded
 from `BabeApi` at the flip, never from the placeholder.
 
-**Slot extraction on both sides.** `BabeSlotExtractor` reads the slot from the BABE pre-runtime
-digest for the BABE pipeline, and `slot_from_predigest` (used for the parent slot in the inherent
-data providers) now tries AURA first and falls back to BABE, so a parent authored by either engine
+**Slot extraction on both sides.** `node/src/engine_digests.rs` is the one place in the node that
+reads AURA/BABE pre-runtime digests. `EngineSlotExtractor` is the single partner-chains
+`SlotExtractor` for both import pipelines, and `slot_from_predigest` (the parent slot for the
+inherent data providers) delegates to its `slot_of`, so a parent authored by either engine
 resolves across the flip.
+
+The operator procedure for the whole migration is in `docs/aura-to-babe-migration-runbook.md`.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2113
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1757

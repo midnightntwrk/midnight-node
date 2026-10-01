@@ -9,18 +9,21 @@ permissioned candidate registered on Cardano is expected to publish a `babe` key
 
 Because the key set changed, everything that produces or consumes authority keys was extended:
 
-- `res/<network>/permissioned-candidates-config.json` (all networks) and the mock bridge data
-  gain a `babe_pub_key` entry; `InitialAuthorityData` requires it, and genesis / chain-spec
-  construction writes it into `SessionKeys`.
+- `InitialAuthorityData` requires a `babe_pub_key` entry, and genesis / chain-spec construction
+  writes it into `SessionKeys`. The checked-in `permissioned-candidates-config.json` of `dev`,
+  `devnet`, `govnet`, `guardnet`, `local`, `perfnet` and `stagenet` and the mock bridge data
+  (`default-registrations.json`, `qanet-mock.json`) carry it. The `qanet`, `preview`, `preprod`
+  and `mainnet` configs are untouched: they are regenerated from the Cardano candidate list, so
+  their chain specs can only be rebuilt once every candidate has published a `babe` key.
 - `generate_permissioned_candidates_genesis` reads the `babe` key from the candidate keys and
   skips (with a warning) candidates that are missing AURA, BABE or GRANDPA.
 - The partner-chains CLI knows a `BABE` key definition (`sr25519`, key type `babe`) and the
-  Midnight runtime lists it in `key_definitions()`, so the key-generation and registration
-  wizards handle it.
+  node's CLI bindings (`key_definitions()` in `node/src/cli.rs`) list it, so the key-generation
+  and registration wizards handle it.
 
 For the migration window the existing BABE keys are copies of the AURA keys (see the combined
-committee/session-key migration), and `AuraToBabeMigrationKeystore` answers BABE queries from the
-AURA key, so signatures stay valid for validators that have not yet added a BABE key. That
+committee/session-key migration), and the existing `AuraToBabeMigrationKeystore` answers BABE
+queries from the AURA key, so signatures stay valid for validators that have not yet added a BABE key. That
 fallback only covers the migration: from here on a validator is expected to hold a real BABE key
 and to have it registered as the permissioned candidate's `babe` key on Cardano.
 

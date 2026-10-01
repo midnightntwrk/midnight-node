@@ -58,7 +58,7 @@ impl InitialAuthorityData {
 			.expect("failed to generate aura keypair from uri")
 			.public();
 		let babe_pub_key = sp_core::sr25519::Pair::from_string(uri, None)
-			.expect("failed to generate aura keypair from uri")
+			.expect("failed to generate babe keypair from uri")
 			.public();
 		let grandpa_pub_key = sp_core::ed25519::Pair::from_string(uri, None)
 			.expect("failed to generate grandpa keypair from uri")
