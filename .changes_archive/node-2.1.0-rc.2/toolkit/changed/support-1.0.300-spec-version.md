@@ -10,3 +10,4 @@ Both versions are ledger-8 era — `LedgerVersion::from_spec_version` already cl
 `000_022_000..=001_999_999` range as Ledger8 — so they share a decoder and map to one variant.
 
 Closes: #2158
+PR: https://github.com/midnightntwrk/midnight-node/pull/2161
