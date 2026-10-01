@@ -50,7 +50,7 @@ fn default_state_is_baseline_aura() {
 /// pre-digest, so `GenesisSlot` still holds its `ValueQuery` default.
 fn pre_activation_ext() -> sp_io::TestExternalities {
 	let mut ext = new_test_ext();
-	ext.execute_with(|| pallet_babe::GenesisSlot::<Test>::kill());
+	ext.execute_with(pallet_babe::GenesisSlot::<Test>::kill);
 	ext
 }
 
