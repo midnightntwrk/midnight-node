@@ -172,6 +172,11 @@ pub enum InherentError {
 	TechnicalCommitteeMembersMismatch,
 	/// The number of members exceeds the limits
 	TooManyMembers,
+	/// The block contains a `reset_members` inherent but the verifier's inherent data carries no
+	/// federated authority data to check it against
+	InherentNotExpected,
+	/// The inherent data calls for a `reset_members` inherent but the block does not contain one
+	Missing,
 	/// Other error
 	#[cfg(feature = "std")]
 	Other(Cow<'static, str>),

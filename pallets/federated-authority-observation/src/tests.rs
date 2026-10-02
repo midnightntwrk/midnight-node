@@ -20,10 +20,11 @@ use frame_support::traits::Hooks;
 use frame_support::{BoundedVec, assert_noop, assert_ok};
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER,
+	InherentError,
 };
 use parity_scale_codec::Encode;
 use sidechain_domain::{MainchainAddress, McBlockHash, PolicyId};
-use sp_inherents::InherentData;
+use sp_inherents::{InherentData, IsFatalError};
 use sp_runtime::traits::Dispatchable;
 
 // Helper function to convert Vec<u64> to Vec<(u64, MainchainMember)>
@@ -801,6 +802,182 @@ fn inherent_check_validates_data() {
 		if let Some(call) = call {
 			assert_ok!(FederatedAuthorityObservation::check_inherent(&call, &inherent_data));
 		}
+	});
+}
+
+#[test]
+fn check_inherent_rejects_reset_members_when_inherent_data_is_absent() {
+	new_test_ext().execute_with(|| {
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 6]),
+		};
+
+		let result = FederatedAuthorityObservation::check_inherent(&call, &InherentData::new());
+
+		let error = result.expect_err("reset_members must not be accepted without inherent data");
+		assert!(matches!(error, InherentError::InherentNotExpected), "got {error:?}");
+		assert!(error.is_fatal_error());
+	});
+}
+
+#[test]
+fn check_inherent_accepts_matching_reset_members() {
+	new_test_ext().execute_with(|| {
+		let council = with_mainchain_members(&[1, 2, 3]);
+		let tc = with_mainchain_members(&[4, 5, 6]);
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 6]),
+		};
+
+		let inherent_data = create_inherent_data(council, tc);
+
+		assert_ok!(FederatedAuthorityObservation::check_inherent(&call, &inherent_data));
+	});
+}
+
+#[test]
+fn check_inherent_rejects_mismatching_members() {
+	new_test_ext().execute_with(|| {
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&[1, 2, 3]),
+			with_mainchain_members(&[4, 5, 6]),
+		);
+
+		let council_mismatch = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 9]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 6]),
+		};
+		let error =
+			FederatedAuthorityObservation::check_inherent(&council_mismatch, &inherent_data)
+				.expect_err("council mismatch must be rejected");
+		assert!(matches!(error, InherentError::CouncilMembersMismatch), "got {error:?}");
+		assert!(error.is_fatal_error());
+
+		let tc_mismatch = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 9]),
+		};
+		let error = FederatedAuthorityObservation::check_inherent(&tc_mismatch, &inherent_data)
+			.expect_err("technical committee mismatch must be rejected");
+		assert!(matches!(error, InherentError::TechnicalCommitteeMembersMismatch), "got {error:?}");
+		assert!(error.is_fatal_error());
+	});
+}
+
+#[test]
+fn check_inherent_rejects_reset_members_with_different_mainchain_members() {
+	new_test_ext().execute_with(|| {
+		let inherent_data = create_inherent_data(
+			with_different_mainchain_members(&[1, 2, 3]),
+			with_mainchain_members(&[4, 5, 6]),
+		);
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 6]),
+		};
+
+		let error = FederatedAuthorityObservation::check_inherent(&call, &inherent_data)
+			.expect_err("mainchain member mismatch must be rejected");
+		assert!(matches!(error, InherentError::CouncilMembersMismatch), "got {error:?}");
+	});
+}
+
+#[test]
+fn check_inherent_ignores_non_inherent_calls() {
+	new_test_ext().execute_with(|| {
+		let call = crate::Call::<Test>::set_council_address {
+			address: MainchainAddress::from_str("addr_test1").expect("valid address"),
+		};
+
+		assert_ok!(FederatedAuthorityObservation::check_inherent(&call, &InherentData::new()));
+	});
+}
+
+#[test]
+fn is_inherent_required_agrees_with_create_inherent() {
+	new_test_ext().execute_with(|| {
+		let cases: Vec<(&str, InherentData)> = vec![
+			("no data", InherentData::new()),
+			(
+				"valid members",
+				create_inherent_data(
+					with_mainchain_members(&[1, 2, 3]),
+					with_mainchain_members(&[4, 5, 6]),
+				),
+			),
+			("empty council", create_inherent_data(vec![], with_mainchain_members(&[4, 5, 6]))),
+			(
+				"empty technical committee",
+				create_inherent_data(with_mainchain_members(&[1, 2, 3]), vec![]),
+			),
+			(
+				"duplicated council",
+				create_inherent_data(
+					with_mainchain_members(&[1, 1, 3]),
+					with_mainchain_members(&[4, 5, 6]),
+				),
+			),
+			(
+				"duplicated technical committee",
+				create_inherent_data(
+					with_mainchain_members(&[1, 2, 3]),
+					with_mainchain_members(&[4, 4, 6]),
+				),
+			),
+			(
+				"too many council members",
+				create_inherent_data(
+					with_mainchain_members(&(1..=1001).collect::<Vec<u64>>()),
+					with_mainchain_members(&[4, 5, 6]),
+				),
+			),
+		];
+
+		for (name, data) in cases {
+			let created = FederatedAuthorityObservation::create_inherent(&data).is_some();
+			let required = FederatedAuthorityObservation::is_inherent_required(&data)
+				.unwrap_or_else(|e| panic!("{name}: is_inherent_required errored: {e:?}"));
+			assert_eq!(required.is_some(), created, "{name}: required must match create_inherent");
+			if let Some(error) = required {
+				assert!(matches!(error, InherentError::Missing), "{name}: got {error:?}");
+				assert!(error.is_fatal_error(), "{name}: Missing must be fatal");
+			}
+		}
+	});
+}
+
+#[test]
+fn is_inherent_required_when_valid_data_is_present() {
+	new_test_ext().execute_with(|| {
+		let data = create_inherent_data(
+			with_mainchain_members(&[1, 2, 3]),
+			with_mainchain_members(&[4, 5, 6]),
+		);
+
+		let required = FederatedAuthorityObservation::is_inherent_required(&data)
+			.expect("is_inherent_required should not error");
+
+		assert!(matches!(required, Some(InherentError::Missing)));
+	});
+}
+
+#[test]
+fn is_inherent_not_required_without_data_or_with_unusable_members() {
+	new_test_ext().execute_with(|| {
+		assert!(
+			FederatedAuthorityObservation::is_inherent_required(&InherentData::new())
+				.expect("is_inherent_required should not error")
+				.is_none()
+		);
+
+		let empty_council = create_inherent_data(vec![], with_mainchain_members(&[4, 5, 6]));
+		assert!(
+			FederatedAuthorityObservation::is_inherent_required(&empty_council)
+				.expect("is_inherent_required should not error")
+				.is_none()
+		);
 	});
 }
 

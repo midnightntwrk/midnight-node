@@ -483,47 +483,63 @@ pub mod pallet {
 			call: &Self::Call,
 			data: &sp_inherents::InherentData,
 		) -> Result<(), Self::Error> {
-			// Validate the federated authority data from inherent
-			if let Some(fed_auth_data) = Self::get_data_from_inherent_data(data)? {
-				let council_authorities = Self::decode_auth_members::<T::CouncilMaxMembers>(
-					fed_auth_data.council_authorities.authorities,
+			let Call::reset_members {
+				council_authorities: expected_council_authorities,
+				technical_committee_authorities: expected_technical_committee_authorities,
+			} = call
+			else {
+				return Ok(());
+			};
+
+			// A verifier without federated authority data cannot vouch for the call, so it
+			// must not accept it: otherwise any block producer could author an arbitrary
+			// governance membership reset.
+			let fed_auth_data = Self::get_data_from_inherent_data(data)?.ok_or_else(|| {
+				log::error!(
+					target: "federated-authority-observation",
+					"Block contains reset_members but inherent data has no federated authority data"
+				);
+				InherentError::InherentNotExpected
+			})?;
+
+			let council_authorities = Self::decode_auth_members::<T::CouncilMaxMembers>(
+				fed_auth_data.council_authorities.authorities,
+			)?;
+			let technical_committee_authorities =
+				Self::decode_auth_members::<T::TechnicalCommitteeMaxMembers>(
+					fed_auth_data.technical_committee_authorities.authorities,
 				)?;
-				let technical_committee_authorities =
-					Self::decode_auth_members::<T::TechnicalCommitteeMaxMembers>(
-						fed_auth_data.technical_committee_authorities.authorities,
-					)?;
 
-				let (expected_council_authorities, expected_technical_committee_authorities) =
-					match call {
-						Call::reset_members {
-							council_authorities,
-							technical_committee_authorities,
-						} => (council_authorities, technical_committee_authorities),
-						_ => return Ok(()),
-					};
+			if council_authorities != *expected_council_authorities {
+				log::error!(
+					target: "federated-authority-observation",
+					"Council Authorities mismatch - expected {:?}, got {:?}",
+					*expected_council_authorities,
+					council_authorities
+				);
+				return Err(Self::Error::CouncilMembersMismatch);
+			}
 
-				if council_authorities != *expected_council_authorities {
-					log::error!(
-						target: "federated-authority-observation",
-						"Council Authorities mismatch - expected {:?}, got {:?}",
-						*expected_council_authorities,
-						council_authorities
-					);
-					return Err(Self::Error::CouncilMembersMismatch);
-				}
-
-				if technical_committee_authorities != *expected_technical_committee_authorities {
-					log::error!(
-						target: "federated-authority-observation",
-						"Technical Committee mismatch - expected {:?}, got {:?}",
-						*expected_technical_committee_authorities,
-						technical_committee_authorities
-					);
-					return Err(Self::Error::TechnicalCommitteeMembersMismatch);
-				}
+			if technical_committee_authorities != *expected_technical_committee_authorities {
+				log::error!(
+					target: "federated-authority-observation",
+					"Technical Committee mismatch - expected {:?}, got {:?}",
+					*expected_technical_committee_authorities,
+					technical_committee_authorities
+				);
+				return Err(Self::Error::TechnicalCommitteeMembersMismatch);
 			}
 
 			Ok(())
+		}
+
+		/// The inherent is required exactly when `create_inherent` would produce it, so that
+		/// blocks honest authors produce without it (empty or duplicated observed members) are
+		/// not rejected.
+		fn is_inherent_required(
+			data: &sp_inherents::InherentData,
+		) -> Result<Option<Self::Error>, Self::Error> {
+			Ok(Self::create_inherent(data).map(|_| InherentError::Missing))
 		}
 	}
 
