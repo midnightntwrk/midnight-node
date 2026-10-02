@@ -200,17 +200,30 @@ pub mod pallet {
 			>,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
+
+			// Reject before any storage write. `create_inherent` never produces these calls;
+			// failing here makes a block that contains one invalid during execution, including
+			// on nodes that do not run `check_inherent`.
+			if council_authorities.is_empty() || technical_committee_authorities.is_empty() {
+				return Err(Error::<T>::EmptyMembers.into());
+			}
+			if Self::has_duplicated_members(council_authorities.clone())
+				|| Self::has_duplicated_members(technical_committee_authorities.clone())
+			{
+				return Err(Error::<T>::DuplicatedMembers.into());
+			}
+
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
 			// Sort pairs by AccountId before unzipping to preserve the association
 			// between AccountId and MainchainMember
-			let mut council_pairs: Vec<_> = council_authorities.clone().into_inner();
+			let mut council_pairs: Vec<_> = council_authorities.into_inner();
 			council_pairs.sort_by(|a, b| a.0.cmp(&b.0));
 			let (council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
 				council_pairs.into_iter().unzip();
 
-			let mut tc_pairs: Vec<_> = technical_committee_authorities.clone().into_inner();
+			let mut tc_pairs: Vec<_> = technical_committee_authorities.into_inner();
 			tc_pairs.sort_by(|a, b| a.0.cmp(&b.0));
 			let (technical_committee_members, technical_committee_mainchain_members): (
 				Vec<_>,
@@ -220,68 +233,7 @@ pub mod pallet {
 			let council_members_len = council_members.len() as u32;
 			let technical_committee_members_len = technical_committee_members.len() as u32;
 
-			// Helper closure to return early with no-op weight
-			let early_return = || {
-				let actual_weight = T::WeightInfo::reset_members_none(
-					council_members_len,
-					technical_committee_members_len,
-				);
-				Ok(PostDispatchInfo { actual_weight: Some(actual_weight), pays_fee: Pays::No })
-			};
-
-			// ========== VALIDATION PHASE ==========
-			// All validations are done upfront before any state changes
-
-			// ---- Council validation ----
-			if council_members.is_empty() {
-				log::error!(
-					target: "federated-authority-observation",
-					"Council members cannot be empty"
-				);
-				return early_return();
-			}
-
-			if Self::has_duplicated_members(council_authorities) {
-				log::error!(
-					target: "federated-authority-observation",
-					"Council has duplicated members"
-				);
-			}
-
-			if council_mainchain_members.is_empty() {
-				log::error!(
-					target: "federated-authority-observation",
-					"Council mainchain members cannot be empty"
-				);
-				return early_return();
-			}
-
-			// ---- Technical Committee validation ----
-			if technical_committee_members.is_empty() {
-				log::error!(
-					target: "federated-authority-observation",
-					"Technical Committee members cannot be empty"
-				);
-				return early_return();
-			}
-
-			if Self::has_duplicated_members(technical_committee_authorities) {
-				log::error!(
-					target: "federated-authority-observation",
-					"Technical Committee has duplicated members"
-				);
-			}
-
-			if technical_committee_mainchain_members.is_empty() {
-				log::error!(
-					target: "federated-authority-observation",
-					"Technical Committee mainchain members cannot be empty"
-				);
-				return early_return();
-			}
-
 			// ========== STATE CHANGE PHASE ==========
-			// All validations passed, now apply state changes
 
 			// council_members and technical_committee_members are already sorted
 			// from the pre-unzip sort above
@@ -484,62 +436,46 @@ pub mod pallet {
 			data: &sp_inherents::InherentData,
 		) -> Result<(), Self::Error> {
 			let Call::reset_members {
-				council_authorities: expected_council_authorities,
-				technical_committee_authorities: expected_technical_committee_authorities,
+				council_authorities,
+				technical_committee_authorities,
 			} = call
 			else {
 				return Ok(());
 			};
 
-			// A verifier without federated authority data cannot vouch for the call, so it
-			// must not accept it: otherwise any block producer could author an arbitrary
-			// governance membership reset.
-			let fed_auth_data = Self::get_data_from_inherent_data(data)?.ok_or_else(|| {
+			// Valid iff this is exactly the call `create_inherent` would produce. `None` covers
+			// absent data, decode failure, and members that are empty, duplicated, or over the
+			// bound — honest authors omit the inherent in all of those cases.
+			let Some(Call::reset_members {
+				council_authorities: expected_council_authorities,
+				technical_committee_authorities: expected_technical_committee_authorities,
+			}) = Self::create_inherent(data)
+			else {
 				log::error!(
 					target: "federated-authority-observation",
-					"Block contains reset_members but inherent data has no federated authority data"
+					"Block contains reset_members but the observed data does not call for it"
 				);
-				InherentError::InherentNotExpected
-			})?;
+				return Err(InherentError::InherentNotExpected);
+			};
 
-			let council_authorities = Self::decode_auth_members::<T::CouncilMaxMembers>(
-				fed_auth_data.council_authorities.authorities,
-			)?;
-			let technical_committee_authorities =
-				Self::decode_auth_members::<T::TechnicalCommitteeMaxMembers>(
-					fed_auth_data.technical_committee_authorities.authorities,
-				)?;
-
-			if council_authorities != *expected_council_authorities {
+			if *council_authorities != expected_council_authorities {
 				log::error!(
 					target: "federated-authority-observation",
-					"Council Authorities mismatch - expected {:?}, got {:?}",
-					*expected_council_authorities,
-					council_authorities
+					"Council Authorities mismatch - inherent {:?}, observed {:?}",
+					council_authorities,
+					expected_council_authorities
 				);
 				return Err(Self::Error::CouncilMembersMismatch);
 			}
 
-			if technical_committee_authorities != *expected_technical_committee_authorities {
+			if *technical_committee_authorities != expected_technical_committee_authorities {
 				log::error!(
 					target: "federated-authority-observation",
-					"Technical Committee mismatch - expected {:?}, got {:?}",
-					*expected_technical_committee_authorities,
-					technical_committee_authorities
+					"Technical Committee mismatch - inherent {:?}, observed {:?}",
+					technical_committee_authorities,
+					expected_technical_committee_authorities
 				);
 				return Err(Self::Error::TechnicalCommitteeMembersMismatch);
-			}
-
-			// The call matches the observed data, but an honest author only turns that data
-			// into a call when it has no empty or duplicated members (see `create_inherent`).
-			// `reset_members` itself tolerates both, so enforce it here rather than let a block
-			// producer apply a membership set that honest authors would have skipped.
-			if Self::create_inherent(data).is_none() {
-				log::error!(
-					target: "federated-authority-observation",
-					"Block contains reset_members but the observed members are empty or duplicated"
-				);
-				return Err(InherentError::InherentNotExpected);
 			}
 
 			Ok(())
