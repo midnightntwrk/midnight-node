@@ -120,30 +120,11 @@ parameter_types! {
 		};
 }
 
-thread_local! {
-	/// What the chain's own rotation rule answers in the mock; see [`set_rotation_due`].
-	static ROTATION_DUE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Stand-in for the committee pallet's `ShouldEndSession`, answering [`ROTATION_DUE`].
-pub struct MockShouldEndSession;
-impl pallet_session::ShouldEndSession<u64> for MockShouldEndSession {
-	fn should_end_session(_now: u64) -> bool {
-		ROTATION_DUE.with(|due| due.get())
-	}
-}
-
-/// Make the chain's own rotation rule report a rotation due (or not) in every block until changed.
-pub fn set_rotation_due(due: bool) {
-	ROTATION_DUE.with(|cell| cell.set(due));
-}
-
 impl pallet_consensus_engine::Config for Test {
 	// Only root drives state transitions in the mock, mirroring the runtime's governance origin.
 	type GovernanceOrigin = EnsureRoot<u64>;
 	type EpochDuration = ConstU64<EPOCH_DURATION>;
 	type EpochConfiguration = TestBabeEpochConfig;
-	type ShouldEndSession = MockShouldEndSession;
 	type WeightInfo = ();
 }
 
@@ -303,7 +284,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	// One AURA authority so `babe_pre_digest`'s index 0 matches `slot % 1`.
 	// The chain is activated as on an upgraded network: state `Aura` with the BABE
 	// genesis-slot sentinel already written by the activation migration.
-	set_rotation_due(false);
 	ext.execute_with(|| {
 		System::set_block_number(1);
 		seed_aura_authorities(1);

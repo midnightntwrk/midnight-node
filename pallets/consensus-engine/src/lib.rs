@@ -65,28 +65,17 @@
 //! this pallet and deposits pallet-babe's `NextEpochData` into an AURA block no BABE client reads,
 //! but the committee inherent of the same block stores the committee for the next epoch, so the
 //! first BABE block — in that next epoch — has its own rotation due and announces BABE epoch 1
-//! exactly where the client requires it. The flip is therefore not postponed for it; see
-//! [`Pallet::on_finalize`] for the one thing it must not do with such a rotation.
+//! exactly where the client requires it. The flip is therefore not postponed for it.
 //!
 //! # Session rotation under BABE
 //!
 //! The BABE client accepts exactly one epoch-change announcement per epoch, in the first block of
-//! that epoch, and rejects any block that announces one elsewhere (`UnexpectedEpochChange`). The
-//! committee pallet's `ShouldEndSession` knows nothing of this: when a whole sidechain epoch passes
-//! without blocks it catches up one rotation per block, and the second rotation's `NextEpochData`
-//! digest would make every later block unimportable. Harmless under AURA, fatal under BABE.
-//!
-//! The committee pallet now catches skipped epochs up in a single rotation (it stamps the queued
-//! committee with the current epoch), so it never asks for a second rotation per epoch. This
-//! pallet enforces the same invariant independently, as a safety net: the runtime wires
-//! `pallet_session::Config::ShouldEndSession` to this pallet, which forwards to
-//! [`Config::ShouldEndSession`] (the committee pallet) and, once in `Babe`, allows at most one
-//! rotation per BABE epoch. [`Pallet::on_finalize`] records the BABE epoch of every enacted
-//! rotation in [`LastRotationBabeEpoch`], and a further rotation in the same epoch is held back
-//! until the next one (then the committee pipeline runs one epoch late). A rotation enacted in
-//! the flip block is not recorded: its slot is below `GenesisSlot`, so pallet-babe's epoch
-//! arithmetic saturates it to epoch 0 — the epoch of the first BABE block, whose rotation must
-//! not be held back.
+//! that epoch (`UnexpectedEpochChange` anywhere else, `ExpectedEpochChange` if it is missing).
+//! `pallet-babe` announces one on every session rotation, so the chain must rotate exactly once
+//! per BABE epoch. This pallet does not enforce that; the committee pallet's `ShouldEndSession`
+//! does: it rotates at most once per sidechain epoch, catching skipped epochs up in a single
+//! rotation, and BABE epochs coincide with sidechain epochs (`GenesisSlot` is the first slot of a
+//! sidechain epoch and [`Config::EpochDuration`] is the sidechain epoch length).
 //!
 //! # Hook ordering requirements
 //!
@@ -167,11 +156,6 @@ pub mod pallet {
 		/// was empty at the flip time.
 		type EpochConfiguration: Get<sp_consensus_babe::BabeEpochConfiguration>;
 
-		/// The chain's own session-rotation rule (the committee pallet). `pallet_session` must be
-		/// wired to this pallet's [`pallet_session::ShouldEndSession`] impl instead, which forwards
-		/// here and rate-limits rotations to one per BABE epoch after the flip.
-		type ShouldEndSession: pallet_session::ShouldEndSession<BlockNumberFor<Self>>;
-
 		/// Weight information for this pallet's extrinsics.
 		type WeightInfo: WeightInfo;
 	}
@@ -216,12 +200,6 @@ pub mod pallet {
 	/// The current consensus-engine transition state.
 	#[pallet::storage]
 	pub type EngineState<T: Config> = StorageValue<_, State, ValueQuery>;
-
-	/// BABE epoch index (per [`Pallet::current_babe_epoch`]) of the last session rotation
-	/// pallet-babe enacted while in state `Babe`. `None` until the first post-flip rotation.
-	/// Bounds rotations to one per BABE epoch; see the module docs.
-	#[pallet::storage]
-	pub type LastRotationBabeEpoch<T: Config> = StorageValue<_, u64, OptionQuery>;
 
 	#[pallet::error]
 	pub enum Error<T> {
@@ -285,29 +263,6 @@ pub mod pallet {
 				},
 			}
 			<T as Config>::WeightInfo::on_initialize()
-		}
-
-		/// Records, once in state `Babe`, that pallet-babe enacted a session rotation in this
-		/// block: `enact_epoch_change` stamps `pallet_babe::EpochStart` with the block number
-		/// exactly when it deposits the `NextEpochData` digest (it returns early, depositing
-		/// nothing, for an empty authority set). Weight is accounted for in `on_initialize`.
-		///
-		/// The flip block is excluded even though its state is already `Babe`: its slot is the
-		/// last one before `GenesisSlot`, which pallet-babe's saturating epoch arithmetic maps to
-		/// epoch 0, the epoch of the first BABE block. Counting a flip-block rotation there would
-		/// make [`pallet_session::ShouldEndSession`] hold back the first BABE block's rotation, and
-		/// the BABE client requires exactly that one (`ExpectedEpochChange` otherwise).
-		fn on_finalize(n: BlockNumberFor<T>) {
-			if EngineState::<T>::get() != State::Babe {
-				return;
-			}
-			if pallet_babe::CurrentSlot::<T>::get() < pallet_babe::GenesisSlot::<T>::get() {
-				return;
-			}
-			let (_previous_start, current_start) = pallet_babe::EpochStart::<T>::get();
-			if current_start == n {
-				LastRotationBabeEpoch::<T>::put(Self::current_babe_epoch());
-			}
 		}
 	}
 
@@ -384,9 +339,6 @@ pub mod pallet {
 			// block's BABE pre-digest, so setting it here is order-independent.)
 			pallet_babe::CurrentSlot::<T>::put(slot);
 			pallet_babe::EpochIndex::<T>::put(0);
-			// Rotations recorded before the flip (if any) belong to no BABE epoch; the first BABE
-			// block must be free to rotate.
-			LastRotationBabeEpoch::<T>::kill();
 
 			pallet_babe::Randomness::<T>::put(BABE_GENESIS_RANDOMNESS);
 			pallet_babe::NextRandomness::<T>::put(BABE_GENESIS_RANDOMNESS);
@@ -531,49 +483,6 @@ pub mod pallet {
 			let duration = <T as Config>::EpochDuration::get().max(1);
 			let slot = u64::from(slot);
 			Slot::from((slot / duration + 1) * duration)
-		}
-
-		/// Whether the chain's own rule ([`Config::ShouldEndSession`], the committee pallet) wants
-		/// a session rotation in block `now`.
-		fn chain_rotation_due(now: BlockNumberFor<T>) -> bool {
-			<T::ShouldEndSession as pallet_session::ShouldEndSession<BlockNumberFor<T>>>::should_end_session(now)
-		}
-
-		/// The BABE epoch containing `pallet_babe::CurrentSlot`, by pallet-babe's own rule
-		/// (`(slot - GenesisSlot) / EpochDuration`, saturating). Meaningful only in state `Babe`,
-		/// once [`Pallet::migrate_to_babe`] has written the real `GenesisSlot`.
-		pub fn current_babe_epoch() -> u64 {
-			sp_consensus_babe::epoch_index(
-				pallet_babe::CurrentSlot::<T>::get(),
-				pallet_babe::GenesisSlot::<T>::get(),
-				<T as Config>::EpochDuration::get().max(1),
-			)
-		}
-	}
-
-	/// The session-rotation rule `pallet_session` must be wired to: the chain's own rule
-	/// ([`Config::ShouldEndSession`]), limited to one rotation per BABE epoch once BABE produces
-	/// blocks. See the module docs.
-	impl<T: Config> pallet_session::ShouldEndSession<BlockNumberFor<T>> for Pallet<T> {
-		fn should_end_session(now: BlockNumberFor<T>) -> bool {
-			if !Self::chain_rotation_due(now) {
-				return false;
-			}
-			if Self::active_engine() != ActiveEngine::Babe {
-				return true;
-			}
-			let epoch = Self::current_babe_epoch();
-			if LastRotationBabeEpoch::<T>::get() == Some(epoch) {
-				log::warn!(
-					target: "consensus-engine",
-					"Session rotation due at block {:?} held back: a rotation was already enacted \
-					in BABE epoch {}; BABE accepts one epoch change per epoch.",
-					now,
-					epoch,
-				);
-				return false;
-			}
-			true
 		}
 	}
 

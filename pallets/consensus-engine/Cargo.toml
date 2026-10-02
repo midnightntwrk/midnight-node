@@ -17,7 +17,6 @@ frame-system.workspace = true
 log.workspace = true
 pallet-aura.workspace = true
 pallet-babe.workspace = true
-pallet-session.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-babe.workspace = true
 sp-consensus-slots.workspace = true
@@ -37,7 +36,6 @@ std = [
     "frame-system/std",
     "pallet-aura/std",
     "pallet-babe/std",
-    "pallet-session/std",
     "scale-info/std",
     "sp-consensus-aura/std",
     "sp-consensus-babe/std",
@@ -50,7 +48,6 @@ try-runtime = [
     "frame-system/try-runtime",
     "pallet-aura/try-runtime",
     "pallet-babe/try-runtime",
-    "pallet-session/try-runtime",
     "sp-runtime/try-runtime",
 ]
 

@@ -19,12 +19,8 @@
   (`UnexpectedEpochChange`). It now catches up in a single rotation: a late rotation stamps the
   queued (and promoted) committee with the current epoch, so the inherent selects for the epoch
   after the current one and no further rotation is due until the next epoch; the committee due in
-  a skipped epoch serves the current one. As an independent safety net
-  `pallet_session::Config::ShouldEndSession` is now `ConsensusEngine`, which forwards to the
-  committee pallet and, once in `Babe`, holds back any second rotation within a BABE epoch
-  (`LastRotationBabeEpoch`, recorded in `on_finalize` from `pallet_babe::EpochStart`; a rotation
-  enacted in the flip block itself is not counted, since its pre-genesis slot saturates to BABE
-  epoch 0 and the first BABE block's rotation must go through).
+  a skipped epoch serves the current one. With BABE epochs aligned to sidechain epochs this gives
+  exactly one rotation, and one epoch-change announcement, per BABE epoch.
 - **Digest guards** (keyed on the pre-runtime engine id): `Aura`/`ScheduledFlip` blocks must carry
   the AURA pre-digest followed by a matching BABE `SecondaryPlain` one; `Babe` blocks must carry no
   AURA pre-digest. Index 10 makes the guards run before `Scheduler` and `Session`, so they see
