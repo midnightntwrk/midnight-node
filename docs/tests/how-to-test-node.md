@@ -183,6 +183,7 @@ WASM is tagged independently of, but in lockstep with, the node tag.
 | Toolkit / scripts E2E  | `scripts/tests/*.sh` (driven by `just …`)             | Docker-based smoke / contracts / mint / multi-dest / startup checks            |
 | Stack E2E (local-env)  | `local-environment/` + `tests/e2e/` (`--features local`)| Full Cardano stack via Docker, then runs the e2e Rust suite                  |
 | Network E2E (qanet)    | `tests/e2e/` (`--features qanet`), nightly job        | The same Rust suite, but against Cardano Preview-backed qanet                  |
+| Hard-fork rehearsal    | `tests/hardfork/ledger-8-to-9/` (§3.10)               | Ledger 8 → 9 fork on local-env or a network, with indexer, wallet, Midnight.js |
 | Release sign-off       | `docs/releases/<ver>/test-evidence/`                  | Manual evidence document derived from release notes + smoke/regression suite   |
 
 ### 2.2 Main user flows we exercise
@@ -423,6 +424,20 @@ Workflow:
 5. Open as PR for sign-off; commit once the rc is closed.
 
 The rc.8 doc is the canonical template — clone it.
+
+### 3.10 Ledger 8 → 9 hard-fork suite
+
+[`tests/hardfork/ledger-8-to-9/`](../../tests/hardfork/ledger-8-to-9/README.md) rehearses
+the ledger 8 → 9 hard fork end to end: node `1.0.300` → `2.1.0` in binary waves, then the
+governance runtime upgrade, with the indexer, proof servers, the wallet SDK and
+Midnight.js checked on both sides. The same checks run on local-env (the suite forks the
+chain itself, about an hour) and against a deployed network stage by stage during its
+rollout (test seeds come from a file outside the repository).
+
+```bash
+tests/hardfork/ledger-8-to-9/local-env/run.sh
+SEEDS_FILE=<file> tests/hardfork/ledger-8-to-9/network/run.sh qanet preflight
+```
 
 ---
 
