@@ -520,21 +520,17 @@ pub fn new_partial(
 		OffchainTransactionPoolFactory::new(transaction_pool.clone()),
 	)?;
 
-	// Like AURA, the BABE verifier is wrapped by the partner-chains verifier, which withholds the
-	// body from it (skipping its inherent check against the minimal CIDP) and runs the full
-	// Partner Chains inherent check with `VerifierCIDP` itself.
-	let babe_verifier =
-		PartnerChainsVerifier::<_, _, _, _, EngineSlotExtractor, McHashInherentDigest>::new(
-			sc_consensus_babe::build_verifier(sc_consensus_babe::BuildVerifierParams {
-				client: client.clone(),
-				slot_duration: babe_slot_duration,
-				config: babe_link.config().clone(),
-				epoch_changes: babe_link.epoch_changes().clone(),
-				telemetry: telemetry.as_ref().map(|x| x.handle()),
-			}),
-			client.clone(),
-			verifier_cidp.clone(),
-		);
+	// Unlike AURA's, the BABE verifier is used as is: it checks only the header and never runs an
+	// inherent check, so there is nothing to withhold from it. The Partner Chains inherent check of a
+	// BABE block runs once, in the `PartnerChainsBlockImport` around `BabeBlockImport` below;
+	// wrapping the verifier as well would run it (and select the committee) a second time.
+	let babe_verifier = sc_consensus_babe::build_verifier(sc_consensus_babe::BuildVerifierParams {
+		client: client.clone(),
+		slot_duration: babe_slot_duration,
+		config: babe_link.config().clone(),
+		epoch_changes: babe_link.epoch_changes().clone(),
+		telemetry: telemetry.as_ref().map(|x| x.handle()),
+	});
 
 	// The BABE authoring worker imports its own blocks through the *same* partner-chains sandwich as
 	// the import queue — not the raw `BabeBlockImport`. `BabeBlockImport::import_block` always runs
