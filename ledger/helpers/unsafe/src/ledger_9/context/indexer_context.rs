@@ -120,12 +120,10 @@ impl<D: DB + Clone> IndexerContext<D> {
 		unshielded.insert(seed, utxos);
 	}
 
-	/// Bring every wallet's zswap tree to one common chain index, at least the tip's.
+	/// Advance every wallet's zswap tree to a common index, at least the tip's.
 	///
-	/// A drain only fills a wallet's tree up to its last relevant transaction, so without this a
-	/// pending tx's outputs would land at indices the chain will not give them, and a coin received
-	/// that way could never be spent. Only the first call queries: after it every tree absorbs the
-	/// same pending outputs, so none lags again.
+	/// A drain stops a tree at its wallet's last relevant tx; left there, pending outputs get
+	/// indices the chain won't assign and are unspendable. Trees stay level after the first call.
 	async fn fast_forward_shielded(&self) -> Result<(), BoxError> {
 		let tip_end = self.tip().await.zswap_end_index;
 		let starts: Vec<u64> = {
@@ -751,9 +749,9 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		Ok(())
 	}
 
-	/// Applies the tx's shielded offers and unshielded spends/outputs as if it fully succeeds.
-	/// Dust needs nothing here: building the tx already marked its dust spends on the fee payer's
-	/// wallet, and the change and new generation it creates need chain dust state to replay.
+	/// Applies shielded offers and unshielded spends/outputs as if the tx fully succeeds.
+	/// Dust is skipped: building already marked the fee payer's dust spends, and replaying the
+	/// change and new generation needs chain dust state.
 	async fn apply_pending_tx<S, P>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
@@ -800,8 +798,7 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 				utxos.retain(|(utxo, _)| !spent.contains(utxo));
 			}
 
-			// The ledger hashes a guaranteed offer's outputs under segment 0, whatever the
-			// intent's own segment.
+			// Guaranteed outputs hash under segment 0, whatever the intent's segment.
 			let erased = intent.erase_proofs().erase_signatures();
 			let offers = [(0, intent.guaranteed_outputs()), (segment, intent.fallible_outputs())];
 			for (hash_segment, outputs) in offers {

@@ -6,7 +6,8 @@ source arguments, and `generate-txs` now honours them: wallets are synced from t
 (resuming from the wallet cache, as `show-wallet` does) instead of fetching and replaying every
 block. Block context and ledger parameters come from one tip snapshot per build.
 
-`send` is not supported with `--indexer-url` (it forwards source blocks, which the indexer path has none of) and fails with a clear error.
+`send` is not supported with `--indexer-url` (it forwards source blocks, which the indexer path
+has none of) and fails with a clear error.
 `register-dust-address` and contract calls with shielded inputs still hit the unimplemented
 `backs_dust_generation` / `zswap_state` indexer methods. Only Schnorr seeds are supported.
 
