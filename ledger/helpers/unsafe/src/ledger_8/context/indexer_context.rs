@@ -47,7 +47,7 @@ use crate::ledger_8::{
 	UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState,
 	deserialize, deserialize_untagged, make_block_context, serialize_untagged,
 };
-use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
+use crate::{DustFrontierRaw, DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -287,7 +287,11 @@ impl IndexerContext<DefaultDB> {
 		};
 
 		let Wallet { shielded, unshielded, dust, .. } = &mut wallet;
-		let (shielded_state, (unshielded_utxos, unshielded_tx_id), (dust_state, dust_event_id)) = tokio::try_join!(
+		let (
+			shielded_state,
+			(unshielded_utxos, unshielded_tx_id),
+			(dust_state, dust_event_id, dust_frontier),
+		) = tokio::try_join!(
 			self.sync_shielded(shielded, resume, progress),
 			self.sync_unshielded(unshielded, resume, progress),
 			self.sync_dust(dust, resume, tip_time, fast_sync, progress),
@@ -309,6 +313,7 @@ impl IndexerContext<DefaultDB> {
 			unshielded_tx_id,
 			dust_state,
 			dust_event_id,
+			dust_frontier,
 		};
 		Ok((seed.clone(), wallet, unshielded_utxos, next))
 	}
@@ -564,12 +569,10 @@ impl IndexerContext<DefaultDB> {
 	/// event's id. `replay_events` rejects a gap with `NonLinearInsertion`, so a wrong resume
 	/// cursor fails loudly rather than producing a quietly wrong balance.
 	///
-	/// With `fast_sync`, the state is rebuilt by [`fast_sync_dust`](Self::fast_sync_dust) instead,
-	/// falling back to the replay if that fails. A fast-synced state has no dust event id to
-	/// resume from, so nothing is returned for the cache and the next run fast-syncs again.
-	//
-	// TODO: resume fast sync from the cached state rather than re-snapshotting every run, so a
-	// repeat run only walks the spends made since the last one.
+	/// With `fast_sync`, the state is rebuilt by [`fast_sync_dust`](Self::fast_sync_dust) instead:
+	/// resumed from the cached spend-chain frontier if there is one, else from scratch, and
+	/// replayed only if both fail. A fast-synced state has no dust event id, so its frontier is
+	/// returned for the cache instead.
 	async fn sync_dust(
 		&self,
 		dust: &mut DustWallet<DefaultDB>,
@@ -577,14 +580,32 @@ impl IndexerContext<DefaultDB> {
 		tip_time: Timestamp,
 		fast_sync: Option<&(DustGenerationsForm, DustSnapshot)>,
 		progress: &SyncProgress,
-	) -> Result<(Option<DustLocalStateRaw>, u64), BoxError> {
+	) -> Result<(Option<DustLocalStateRaw>, u64, Option<DustFrontierRaw>), BoxError> {
 		if let Some((form, snapshot)) = fast_sync {
-			match self.fast_sync_dust(dust, *form, snapshot, tip_time).await {
-				Ok(state) => {
+			// An index-range snapshot can't be verified at a fixed block (see
+			// `DustGenerationsForm`), so it neither resumes nor leaves a frontier.
+			let resumable = *form == DustGenerationsForm::ByBlockHash;
+			let mut synced = None;
+			if let Some(frontier) =
+				resume.and_then(|r| r.dust_frontier.as_ref()).filter(|_| resumable)
+			{
+				match self.fast_sync_dust(dust, *form, snapshot, Some(frontier), tip_time).await {
+					Ok(state) => synced = Some(state),
+					Err(e) => log::warn!(
+						"indexer: resumed DUST fast sync failed ({e}); fast-syncing from scratch"
+					),
+				}
+			}
+			let synced = match synced {
+				Some(state) => Ok(state),
+				None => self.fast_sync_dust(dust, *form, snapshot, None, tip_time).await,
+			};
+			match synced {
+				Ok((state, frontier)) => {
 					dust.dust_local_state = Some(Sp::new(state));
 					dust.process_ttls(tip_time);
 					progress.dust.finish();
-					return Ok((None, 0));
+					return Ok((None, 0, resumable.then_some(frontier)));
 				},
 				Err(e) => log::warn!("indexer: DUST fast sync failed ({e}); replaying dust events"),
 			}
@@ -638,23 +659,40 @@ impl IndexerContext<DefaultDB> {
 			.transpose()?;
 		dust.process_ttls(tip_time);
 		progress.dust.finish();
-		Ok((dust_state, applied_id))
+		Ok((dust_state, applied_id, None))
 	}
 
 	/// Rebuild the wallet's DUST state at `snapshot` from per-wallet indexer queries rather than
 	/// the chain-wide event log: owned generations with the generation tree's gaps collapsed, each
 	/// output's spend chain followed by nullifier, then the commitment tree around the unspent
-	/// outputs. Returned only if both tree roots match the snapshot block's.
+	/// outputs. Returned, with its new frontier, only if both tree roots match the snapshot
+	/// block's.
+	///
+	/// With a `frontier` from an earlier run, each chain resumes from its cached head, so only the
+	/// spends made since are walked.
 	async fn fast_sync_dust(
 		&self,
 		dust: &DustWallet<DefaultDB>,
 		form: DustGenerationsForm,
 		snapshot: &DustSnapshot,
+		frontier: Option<&DustFrontierRaw>,
 		tip_time: Timestamp,
-	) -> Result<DustLocalState<DefaultDB>, BoxError> {
+	) -> Result<(DustLocalState<DefaultDB>, DustFrontierRaw), BoxError> {
 		let (Some(sk), Some(local)) = (dust.secret_key(), dust.dust_local_state.as_ref()) else {
 			return Err("watch-only dust wallet".into());
 		};
+		// Cached heads are searched for spends only after the frontier block, so a frontier block
+		// this chain no longer has could hide their spends.
+		if let Some(f) = frontier
+			&& (f.height > snapshot.height
+				|| self.client.block_hash_at(f.height).await? != Some(f.block_hash))
+		{
+			return Err(format!(
+				"cached DUST frontier block {} is not on the indexer's chain up to block {}",
+				f.height, snapshot.height
+			)
+			.into());
+		}
 		let mut state = DustLocalState::<DefaultDB>::new(local.params);
 		let owner = dust.public_key;
 
@@ -677,7 +715,7 @@ impl IndexerContext<DefaultDB> {
 		};
 
 		let generations = entries.len();
-		let mut heads = Vec::with_capacity(generations);
+		let mut first_outputs = Vec::with_capacity(generations);
 		for entry in entries {
 			if let Some(update) = &entry.collapsed_update {
 				state = state
@@ -694,7 +732,7 @@ impl IndexerContext<DefaultDB> {
 			state = state
 				.insert_generation_info(entry.generation_mt_index, info, Some(backing_night))
 				.map_err(|e| format!("insert dust generation: {e:?}"))?;
-			heads.push(QualifiedDustOutput {
+			first_outputs.push(QualifiedDustOutput {
 				initial_value: entry.initial_value,
 				owner,
 				nonce: dust_nonce(sk, backing_night, 0),
@@ -709,6 +747,7 @@ impl IndexerContext<DefaultDB> {
 				.apply_generation_collapsed_update(&deserialize(&update[..])?)
 				.map_err(|e| format!("apply dust generation update: {e:?}"))?;
 		}
+		let mut heads = chain_starts(first_outputs, frontier)?;
 
 		// Walk each output's spend chain, one `dustNullifierTransactions` call per round for all
 		// current heads: a spent head is replaced by the change output its spend created, an
@@ -718,12 +757,18 @@ impl IndexerContext<DefaultDB> {
 		let mut rounds = 0;
 		while !heads.is_empty() {
 			rounds += 1;
-			let by_nullifier: HashMap<Vec<u8>, QualifiedDustOutput> =
-				heads.drain(..).map(|qdo| (nullifier_le(&qdo.nullifier(sk)), qdo)).collect();
+			let by_nullifier: HashMap<Vec<u8>, (QualifiedDustOutput, u64)> = heads
+				.drain(..)
+				.map(|(qdo, from)| (nullifier_le(&qdo.nullifier(sk)), (qdo, from)))
+				.collect();
+			// Capped at the tip: a frontier taken there has nothing after it, and the indexer
+			// rejects `fromBlock` > `toBlock`.
+			let from_block = by_nullifier.values().map(|(_, from)| *from).min().unwrap_or(0);
 			let mut spends = self
 				.client
 				.dust_nullifier_transactions(
 					by_nullifier.keys().map(Vec::as_slice),
+					from_block.min(snapshot.height),
 					snapshot.height,
 				)
 				.await?;
@@ -733,13 +778,13 @@ impl IndexerContext<DefaultDB> {
 				.map_err(|_| "dustNullifierTransactions stalled")?
 			{
 				let spend = spend?;
-				let Some(spent) = by_nullifier.get(&spend.nullifier_le) else { continue };
+				let Some((spent, _)) = by_nullifier.get(&spend.nullifier_le) else { continue };
 				let next = spend_successor(&state, sk, spent, &spend.events)?;
 				successors.insert(spend.nullifier_le, next);
 			}
-			for (nullifier, qdo) in by_nullifier {
+			for (nullifier, (qdo, from)) in by_nullifier {
 				match successors.remove(&nullifier) {
-					Some(next) => heads.push(next),
+					Some(next) => heads.push((next, from)),
 					None => unspent.push(qdo),
 				}
 			}
@@ -774,13 +819,19 @@ impl IndexerContext<DefaultDB> {
 			}
 		}
 		state.sync_time = tip_time;
-		log::debug!(
-			"indexer: DUST fast sync at block {}: {generations} generations, {rounds} spend \
+		log::info!(
+			"indexer: DUST fast sync at block {} ({}): {generations} generations, {rounds} spend \
 			 rounds, {} unspent outputs",
 			snapshot.height,
+			frontier.map_or("fresh".to_string(), |f| format!("resumed from block {}", f.height)),
 			unspent.len(),
 		);
-		Ok(state)
+		let next_frontier = DustFrontierRaw {
+			height: snapshot.height,
+			block_hash: snapshot.hash,
+			heads: unspent.iter().map(serialize_untagged).collect::<Result<_, _>>()?,
+		};
+		Ok((state, next_frontier))
 	}
 
 	/// Fill the commitment tree over `start..end` with one collapsed update from the indexer.
@@ -798,6 +849,37 @@ impl IndexerContext<DefaultDB> {
 			.apply_commitment_collapsed_update(&deserialize(&update[..])?)
 			.map_err(|e| format!("apply dust commitment update: {e:?}"))?)
 	}
+}
+
+/// Where each generation's spend-chain walk starts, and the first block to search for its spends:
+/// the frontier's head for that generation, unspent at the frontier block, or else the generation's
+/// first output, from block 0.
+fn chain_starts(
+	first_outputs: Vec<QualifiedDustOutput>,
+	frontier: Option<&DustFrontierRaw>,
+) -> Result<Vec<(QualifiedDustOutput, u64)>, BoxError> {
+	let mut cached = HashMap::new();
+	let mut resume_from = 0;
+	if let Some(f) = frontier {
+		resume_from = f.height + 1;
+		for raw in &f.heads {
+			let head: QualifiedDustOutput = deserialize_untagged(&raw[..])?;
+			cached.insert(head.backing_night.0.0, head);
+		}
+	}
+	let starts = first_outputs
+		.into_iter()
+		.map(|first| match cached.remove(&first.backing_night.0.0) {
+			Some(head) => (head, resume_from),
+			None => (first, 0),
+		})
+		.collect();
+	if !cached.is_empty() {
+		return Err(
+			format!("{} cached DUST outputs have no generation at the tip", cached.len()).into()
+		);
+	}
+	Ok(starts)
 }
 
 /// The indexer's byte form of a nullifier.
@@ -1203,6 +1285,44 @@ mod tests {
 		let next = successor_output(&state, &sk, &spent, 1, v_fee, declared_time).unwrap();
 		assert_eq!(next.commitment(), spend.new_commitment);
 		assert_eq!(next.seq, 1);
+	}
+
+	/// The frontier round-trips its heads, and only generations it cached resume past its block.
+	#[test]
+	fn chain_starts_resume_cached_generations_after_the_frontier() {
+		let sk = DustSecretKey::derive_secret_key(&[7; 32]);
+		let owner = DustPublicKey::from(sk.clone());
+		let output = |night: u8, seq: u32| {
+			let backing_night = InitialNonce(HashOutput([night; 32]));
+			QualifiedDustOutput {
+				initial_value: 10 * u128::from(seq),
+				owner,
+				nonce: dust_nonce(&sk, backing_night, seq),
+				seq,
+				ctime: Timestamp::from_secs(1_700_000_000 + u64::from(seq)),
+				backing_night,
+				mt_index: u64::from(night) * 100 + u64::from(seq),
+			}
+		};
+		let frontier = |heads: &[QualifiedDustOutput]| DustFrontierRaw {
+			height: 41,
+			block_hash: [9; 32],
+			heads: heads.iter().map(|head| serialize_untagged(head).unwrap()).collect(),
+		};
+		let firsts = vec![output(1, 0), output(2, 0)];
+
+		assert_eq!(
+			chain_starts(firsts.clone(), None).unwrap(),
+			vec![(output(1, 0), 0), (output(2, 0), 0)],
+		);
+		assert_eq!(
+			chain_starts(firsts.clone(), Some(&frontier(&[output(1, 3)]))).unwrap(),
+			vec![(output(1, 3), 42), (output(2, 0), 0)],
+		);
+		assert!(
+			chain_starts(firsts, Some(&frontier(&[output(1, 3), output(3, 0)]))).is_err(),
+			"a cached head with no generation at the tip must fail the resume",
+		);
 	}
 
 	/// Both reads come from the cached tip; the unroutable URL would fail any re-query.

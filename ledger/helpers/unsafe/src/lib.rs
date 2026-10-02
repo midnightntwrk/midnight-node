@@ -69,6 +69,15 @@ pub struct ZswapWalletStateRaw(pub Vec<u8>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct DustLocalStateRaw(pub Vec<u8>);
 
+/// Where a verified DUST fast sync left each spend chain: the snapshot block, and every
+/// untagged-serialized `QualifiedDustOutput` the wallet held unspent there.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DustFrontierRaw {
+	pub height: u64,
+	pub block_hash: [u8; 32],
+	pub heads: Vec<Vec<u8>>,
+}
+
 /// An unshielded UTXO as its untagged-serialized `Utxo` plus its creation time.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UnshieldedUtxoRaw {

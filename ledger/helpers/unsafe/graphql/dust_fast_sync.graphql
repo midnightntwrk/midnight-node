@@ -20,8 +20,16 @@ query DustCommitmentCollapsedUpdate($startIndex: Int!, $endIndex: Int!) {
   }
 }
 
-subscription DustNullifierTransactions($prefixes: [HexEncoded!]!, $toBlock: Int!) {
-  dustNullifierTransactions(nullifierLeBytesPrefixes: $prefixes, toBlock: $toBlock) {
+subscription DustNullifierTransactions(
+  $prefixes: [HexEncoded!]!
+  $fromBlock: Int!
+  $toBlock: Int!
+) {
+  dustNullifierTransactions(
+    nullifierLeBytesPrefixes: $prefixes
+    fromBlock: $fromBlock
+    toBlock: $toBlock
+  ) {
     nullifierLeBytes
     transaction {
       __typename

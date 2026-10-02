@@ -17,9 +17,9 @@
 //! wallet state is cached per seed. Ledger snapshots unused by any wallets are eventually gced.
 
 use midnight_ledger_unsafe_helpers::{
-	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, UnshieldedUtxoRaw, Wallet, WalletSeed, WalletState,
-	deserialize_untagged, ledger_8, serialize_untagged,
+	BlockContext, DefaultDB, DustFrontierRaw, DustLocalState, HashOutput, LedgerContext,
+	LedgerState, Sp, Timestamp, UnshieldedSignatureScheme, UnshieldedUtxoRaw, Wallet, WalletSeed,
+	WalletState, deserialize_untagged, ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,9 @@ use subxt::utils::H256;
 ///     wallet entries written against untagged (implicitly ledger-9) snapshots miss cleanly.
 /// v4: carries the indexer path's stream cursors (see [`indexer_wallet_cache_key`]), which changes
 ///     the postcard body layout. Costs existing replay caches one re-replay.
-pub const WALLET_CACHE_FORMAT_VERSION: u8 = 4;
+/// v5: reserved for the indexer UTXOs' `registeredForDustGeneration` flag.
+/// v6: adds the indexer path's DUST fast-sync frontier ([`CachedWalletState::dust_frontier`]).
+pub const WALLET_CACHE_FORMAT_VERSION: u8 = 6;
 
 /// On-disk format version for a [`LedgerSnapshot`] value, prefixed before the
 /// zstd-compressed postcard body.
@@ -124,6 +126,8 @@ pub struct CachedWalletState {
 	/// Indexer path only: highest applied `transactionId` / dust ledger-event `id`.
 	pub unshielded_tx_id: u64,
 	pub dust_event_id: u64,
+	/// Indexer path only: where the last DUST fast sync left each spend chain.
+	pub dust_frontier: Option<DustFrontierRaw>,
 }
 
 // =============================================================================
@@ -328,6 +332,7 @@ impl CachedWalletState {
 			unshielded_utxos: sync.unshielded_utxos,
 			unshielded_tx_id: sync.unshielded_tx_id,
 			dust_event_id: sync.dust_event_id,
+			dust_frontier: sync.dust_frontier,
 		}
 	}
 
@@ -348,6 +353,7 @@ impl CachedWalletState {
 				.clone()
 				.map(midnight_ledger_unsafe_helpers::DustLocalStateRaw),
 			dust_event_id: self.dust_event_id,
+			dust_frontier: self.dust_frontier.clone(),
 		}
 	}
 
@@ -970,6 +976,11 @@ mod tests {
 			unshielded_tx_id: 4321,
 			dust_state: Some(DustLocalStateRaw(vec![0x44; 32])),
 			dust_event_id: 9876,
+			dust_frontier: Some(DustFrontierRaw {
+				height: 55,
+				block_hash: [0x66; 32],
+				heads: vec![vec![0x77; 90], vec![0x88; 90]],
+			}),
 		};
 
 		let entry = CachedWalletState::from_sync_state(H256::from([5u8; 32]), 77, sync.clone());
@@ -984,6 +995,7 @@ mod tests {
 		assert_eq!(back.unshielded_tx_id, sync.unshielded_tx_id);
 		assert_eq!(back.dust_state, sync.dust_state);
 		assert_eq!(back.dust_event_id, sync.dust_event_id);
+		assert_eq!(back.dust_frontier, sync.dust_frontier);
 	}
 
 	/// A drain that ended merkle-misaligned persists no shielded state; the next run must read that

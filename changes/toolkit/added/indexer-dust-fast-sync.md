@@ -17,11 +17,16 @@ commitment mismatch, a stalled subscription) logs a warning and falls back to th
 that wallet. `--no-fast-sync` (env `MN_INDEXER_NO_FAST_SYNC`) forces the replay.
 
 The toolkit probes which `dustGenerations` signature the indexer serves: the block-pinned snapshot
-(indexer 4.3.4 and later) or the older index range. Indexers before 4.3.4 report the tip's dust roots
-for every block, so their snapshots rarely verify and those wallets fall back to the replay.
+(indexer 4.3.4 and later) or the older index range. Indexers before 4.3.4 report the tip's dust
+roots for every block, so their snapshots rarely verify and those wallets fall back to the replay.
 
-A fast-synced wallet has no dust event id to resume from, so the wallet cache stores no DUST state
-for it and the next run fast-syncs again.
+The spend-chain walk takes one `dustNullifierTransactions` round per spend in the longest chain, so
+the wallet cache keeps its frontier: the snapshot block and every unspent DUST output there. The
+next run still rebuilds both trees fresh at its tip, but resumes each chain from its cached output
+and only walks the spends made since. A resume that fails (its block is no longer on the indexer's
+chain, a cached output has no generation at the tip, a root mismatch) warns and retries a fresh fast
+sync before falling back to the replay. Index-range indexers keep no frontier. The wallet cache
+format moves to v6, so existing entries are re-synced once.
 
 The new operations live in their own GraphQL documents. Indexers validate every operation in the
 document they are sent, so an indexer without them still accepts the existing ones.

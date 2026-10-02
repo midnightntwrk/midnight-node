@@ -42,7 +42,7 @@ use tokio_tungstenite::{
 	tungstenite::{Message, client::IntoClientRequest},
 };
 
-use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
+use crate::{DustFrontierRaw, DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
 // Custom GraphQL scalars, resolved by name from this module scope by the `GraphQLQuery` derives
 // below. `HexEncoded` blobs are kept as hex strings and decoded to bytes here; `Unit` is the
@@ -341,6 +341,9 @@ pub struct WalletSyncState {
 	pub dust_state: Option<DustLocalStateRaw>,
 	/// Last applied dust ledger-event `id`; resume is `+ 1`.
 	pub dust_event_id: u64,
+	/// Set instead of `dust_state` when DUST was fast-synced; the next fast sync resumes each
+	/// spend chain from it.
+	pub dust_frontier: Option<DustFrontierRaw>,
 }
 
 /// Which signature of the `@beta` `dustGenerations` subscription an indexer serves. Both stream
@@ -578,15 +581,17 @@ impl IndexerClient {
 		Ok(DustGenerationsStream(self.open_subscription_payload(payload).await?))
 	}
 
-	/// Open `dustNullifierTransactions` for the exact `nullifiers` (32 LE bytes each), up to and
-	/// including block `to_block`. It completes once every match has been sent.
+	/// Open `dustNullifierTransactions` for the exact `nullifiers` (32 LE bytes each) in blocks
+	/// `from_block..=to_block`. It completes once every match has been sent.
 	pub async fn dust_nullifier_transactions(
 		&self,
 		nullifiers: impl IntoIterator<Item = &[u8]>,
+		from_block: u64,
 		to_block: u64,
 	) -> IndexerResult<DustSpendStream> {
 		let variables = dust_nullifier_transactions::Variables {
 			prefixes: nullifiers.into_iter().map(hex::encode).collect(),
+			from_block: from_block as i64,
 			to_block: to_block as i64,
 		};
 		Ok(DustSpendStream(self.open_subscription::<DustNullifierTransactions>(variables).await?))

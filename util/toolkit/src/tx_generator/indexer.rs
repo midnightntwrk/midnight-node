@@ -225,6 +225,7 @@ mod tests {
 				unshielded_tx_id: 9,
 				dust_state: None,
 				dust_event_id: 0,
+				dust_frontier: None,
 			},
 		);
 		let synced = SyncedIndexer {
