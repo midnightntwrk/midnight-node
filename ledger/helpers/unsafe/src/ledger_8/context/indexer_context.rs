@@ -680,8 +680,8 @@ impl IndexerContext<DefaultDB> {
 
 	/// Rebuild the wallet's DUST state at `snapshot` from per-wallet indexer queries rather than
 	/// the chain-wide event log: owned generations with the generation tree's gaps collapsed, each
-	/// output's spend chain followed by nullifier, then the commitment tree around the unspent
-	/// outputs. Returned, with its new frontier, only if both tree roots match the snapshot
+	/// output's spend chain followed to its unspent end, then the commitment tree around the
+	/// unspent outputs. Returned, with its new frontier, only if both tree roots match the snapshot
 	/// block's.
 	///
 	/// With a `frontier` from an earlier run, each chain resumes from its cached head, so only the
@@ -698,21 +698,83 @@ impl IndexerContext<DefaultDB> {
 		let (Some(sk), Some(local)) = (dust.secret_key(), dust.dust_local_state.as_ref()) else {
 			return Err("watch-only dust wallet".into());
 		};
-		// Cached heads are searched for spends only after the frontier block, so a frontier block
-		// this chain no longer has could hide their spends.
-		if let Some(f) = frontier
-			&& (f.height > snapshot.height
-				|| self.client.block_hash_at(f.height).await? != Some(f.block_hash))
+		if let Some(f) = frontier {
+			self.check_dust_frontier(f, snapshot).await?;
+		}
+		let state = DustLocalState::<DefaultDB>::new(local.params);
+		let (state, first_outputs) =
+			self.dust_generation_tree(state, dust, sk, form, snapshot).await?;
+		let generations = first_outputs.len();
+		let heads = chain_starts(first_outputs, frontier)?;
+
+		let event_pass = match frontier.and_then(|f| f.event_cursor) {
+			Some(cursor) => self.follow_dust_events(&state, sk, &heads, cursor, snapshot).await?,
+			None => None,
+		};
+		let (mut unspent, walked, rounds, events) = match event_pass {
+			Some(pass) => (pass.unspent, pass.walked, 0, Some(pass.events)),
+			None => {
+				let (unspent, walked, rounds) =
+					self.follow_dust_nullifiers(&state, sk, heads, snapshot).await?;
+				(unspent, walked, rounds, None)
+			},
+		};
+
+		let mut state = self.dust_commitment_tree(state, sk, &mut unspent, snapshot).await?;
+		check_dust_roots(&state, snapshot)?;
+		state.sync_time = tip_time;
+		log::info!(
+			"indexer: DUST fast sync at block {} ({}): {generations} generations, {walked} spends in \
+			 {rounds} rounds, {} unspent outputs",
+			snapshot.height,
+			match (frontier, events) {
+				(None, _) => "fresh".to_string(),
+				(Some(f), None) => format!("resumed from block {} by nullifier rounds", f.height),
+				(Some(f), Some(events)) =>
+					format!("resumed from block {} by a pass over {events} dust events", f.height),
+			},
+			unspent.len(),
+		);
+		let next_frontier = DustFrontierRaw {
+			height: snapshot.height,
+			block_hash: snapshot.hash,
+			heads: unspent.iter().map(serialize_untagged).collect::<Result<_, _>>()?,
+			event_cursor: snapshot.event_cursor,
+		};
+		Ok((state, next_frontier))
+	}
+
+	/// Cached heads are searched for spends only after the frontier block, so a frontier block
+	/// this chain no longer has could hide their spends.
+	async fn check_dust_frontier(
+		&self,
+		frontier: &DustFrontierRaw,
+		snapshot: &DustSnapshot,
+	) -> Result<(), BoxError> {
+		if frontier.height > snapshot.height
+			|| self.client.block_hash_at(frontier.height).await? != Some(frontier.block_hash)
 		{
 			return Err(format!(
 				"cached DUST frontier block {} is not on the indexer's chain up to block {}",
-				f.height, snapshot.height
+				frontier.height, snapshot.height
 			)
 			.into());
 		}
-		let mut state = DustLocalState::<DefaultDB>::new(local.params);
-		let owner = dust.public_key;
+		Ok(())
+	}
 
+	/// Fill the generation tree at `snapshot` with the wallet's own generations, collapsing the
+	/// gaps between them. Also returns each generation's first DUST output, where its spend chain
+	/// starts.
+	async fn dust_generation_tree(
+		&self,
+		mut state: DustLocalState<DefaultDB>,
+		dust: &DustWallet<DefaultDB>,
+		sk: &DustSecretKey,
+		form: DustGenerationsForm,
+		snapshot: &DustSnapshot,
+	) -> Result<(DustLocalState<DefaultDB>, Vec<QualifiedDustOutput>), BoxError> {
+		let owner = dust.public_key;
 		let address = dust.address(&self.network_id).to_bech32();
 		let mut stream = self.client.dust_generations(form, &address, snapshot).await?;
 		let mut entries = Vec::new();
@@ -731,8 +793,7 @@ impl IndexerContext<DefaultDB> {
 			}
 		};
 
-		let generations = entries.len();
-		let mut first_outputs = Vec::with_capacity(generations);
+		let mut first_outputs = Vec::with_capacity(entries.len());
 		for entry in entries {
 			if let Some(update) = &entry.collapsed_update {
 				state = state
@@ -764,21 +825,22 @@ impl IndexerContext<DefaultDB> {
 				.apply_generation_collapsed_update(&deserialize(&update[..])?)
 				.map_err(|e| format!("apply dust generation update: {e:?}"))?;
 		}
-		let mut heads = chain_starts(first_outputs, frontier)?;
-		let (mut unspent, mut walked, mut rounds) = (Vec::new(), 0, 0);
-		let mut event_pass = None;
-		if let Some(cursor) = frontier.and_then(|f| f.event_cursor)
-			&& let Some(pass) =
-				self.follow_dust_events(&state, sk, &heads, cursor, snapshot).await?
-		{
-			(unspent, walked, event_pass) = (pass.unspent, pass.walked, Some(pass.events));
-			heads.clear();
-		}
+		Ok((state, first_outputs))
+	}
 
-		// Walk each output's spend chain, one `dustNullifierTransactions` call per round for all
-		// current heads: a spent head is replaced by the change output its spend created, an
-		// unspent head is final. A successor's nullifier commits to the value and ctime its spend
-		// set, so a round can only look one spend further: rounds = the longest chain's length.
+	/// Follow each of `heads` to its unspent output at `snapshot`, one `dustNullifierTransactions`
+	/// call per round for all current heads: a spent head is replaced by the change output its
+	/// spend created, an unspent head is final. A successor's nullifier commits to the value and
+	/// ctime its spend set, so a round can only look one spend further: rounds = the longest
+	/// chain's length. Returns the unspent outputs, the spends walked and the rounds.
+	async fn follow_dust_nullifiers(
+		&self,
+		state: &DustLocalState<DefaultDB>,
+		sk: &DustSecretKey,
+		mut heads: Vec<(QualifiedDustOutput, u64)>,
+		snapshot: &DustSnapshot,
+	) -> Result<(Vec<QualifiedDustOutput>, usize, usize), BoxError> {
+		let (mut unspent, mut walked, mut rounds) = (Vec::new(), 0, 0);
 		while !heads.is_empty() {
 			rounds += 1;
 			let by_nullifier: HashMap<Vec<u8>, (QualifiedDustOutput, u64)> = heads
@@ -803,7 +865,7 @@ impl IndexerContext<DefaultDB> {
 			{
 				let spend = spend?;
 				let Some((spent, _)) = by_nullifier.get(&spend.nullifier_le) else { continue };
-				let next = spend_successor(&state, sk, spent, &spend.events)?;
+				let next = spend_successor(state, sk, spent, &spend.events)?;
 				successors.insert(spend.nullifier_le, next);
 			}
 			walked += successors.len();
@@ -814,10 +876,21 @@ impl IndexerContext<DefaultDB> {
 				}
 			}
 		}
+		Ok((unspent, walked, rounds))
+	}
 
+	/// Fill the commitment tree at `snapshot` with `unspent` as owned outputs, collapsing the gaps
+	/// between them. Sorts `unspent` by tree index.
+	async fn dust_commitment_tree(
+		&self,
+		mut state: DustLocalState<DefaultDB>,
+		sk: &DustSecretKey,
+		unspent: &mut [QualifiedDustOutput],
+		snapshot: &DustSnapshot,
+	) -> Result<DustLocalState<DefaultDB>, BoxError> {
 		unspent.sort_by_key(|qdo| qdo.mt_index);
 		let mut first_free = 0;
-		for qdo in &unspent {
+		for qdo in unspent.iter() {
 			state = self.collapse_dust_commitments(state, first_free, qdo.mt_index).await?;
 			state = state
 				.insert_commitment(qdo.mt_index, *qdo, true)
@@ -827,42 +900,8 @@ impl IndexerContext<DefaultDB> {
 				.map_err(|e| format!("add dust utxo: {e:?}"))?;
 			first_free = qdo.mt_index + 1;
 		}
-		state = self
-			.collapse_dust_commitments(state, first_free, snapshot.commitment_end_index)
-			.await?;
-
-		let roots = [
-			("commitment", state.commitment_tree.root(), &snapshot.commitment_root),
-			("generation", state.generating_tree.root(), &snapshot.generation_root),
-		];
-		for (tree, root, expected) in roots {
-			let root = root.ok_or_else(|| format!("dust {tree} tree is not rehashed"))?;
-			if serialize_untagged(&root)? != *expected {
-				return Err(
-					format!("dust {tree} root differs from block {}'s", snapshot.height).into()
-				);
-			}
-		}
-		state.sync_time = tip_time;
-		log::info!(
-			"indexer: DUST fast sync at block {} ({}): {generations} generations, {walked} spends in \
-			 {rounds} rounds, {} unspent outputs",
-			snapshot.height,
-			match (frontier, event_pass) {
-				(None, _) => "fresh".to_string(),
-				(Some(f), None) => format!("resumed from block {} by nullifier rounds", f.height),
-				(Some(f), Some(events)) =>
-					format!("resumed from block {} by a pass over {events} dust events", f.height),
-			},
-			unspent.len(),
-		);
-		let next_frontier = DustFrontierRaw {
-			height: snapshot.height,
-			block_hash: snapshot.hash,
-			heads: unspent.iter().map(serialize_untagged).collect::<Result<_, _>>()?,
-			event_cursor: snapshot.event_cursor,
-		};
-		Ok((state, next_frontier))
+		self.collapse_dust_commitments(state, first_free, snapshot.commitment_end_index)
+			.await
 	}
 
 	/// Follow each of `heads` to its unspent output at `snapshot` in one pass over the dust events
@@ -969,6 +1008,24 @@ fn chain_starts(
 		);
 	}
 	Ok(starts)
+}
+
+/// Fails unless both rebuilt DUST tree roots equal the snapshot block's.
+fn check_dust_roots(
+	state: &DustLocalState<DefaultDB>,
+	snapshot: &DustSnapshot,
+) -> Result<(), BoxError> {
+	let roots = [
+		("commitment", state.commitment_tree.root(), &snapshot.commitment_root),
+		("generation", state.generating_tree.root(), &snapshot.generation_root),
+	];
+	for (tree, root, expected) in roots {
+		let root = root.ok_or_else(|| format!("dust {tree} tree is not rehashed"))?;
+		if serialize_untagged(&root)? != *expected {
+			return Err(format!("dust {tree} root differs from block {}'s", snapshot.height).into());
+		}
+	}
+	Ok(())
 }
 
 /// The indexer's byte form of a nullifier.
