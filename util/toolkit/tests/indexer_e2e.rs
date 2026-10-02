@@ -27,6 +27,9 @@
 //! An uncached run is also the oracle for the incremental wallet cache: a cache-resumed sync must
 //! reproduce it exactly, and an entry filed under another chain must never be served.
 //!
+//! Every run must take the DUST fast sync (the local indexer serves it), and after DUST and NIGHT
+//! have been spent its wallets must equal the `--no-fast-sync` event replay's.
+//!
 //! Like the other container tests in this crate it needs Docker plus the pinned node/indexer
 //! images (resolved via `test-images.docker-compose.yml`), so it only runs where those are
 //! available (CI / a local Docker host).
@@ -242,6 +245,9 @@ async fn indexer_generate_txs_single_tx_reaches_destination() {
 		);
 		tokio::time::sleep(Duration::from_secs(3)).await;
 	}
+
+	// The transfer's fee spent the source's DUST, so its fast sync followed a spend chain.
+	assert_fast_sync_matches_replay(&env.indexer_url, FUNDED_SEED);
 }
 
 /// `batches` chains txs within one run: batch 1 spends UTXOs that the run's own initial tx created,
@@ -303,6 +309,20 @@ async fn indexer_generate_txs_batches_chain_within_a_run() {
 		);
 		tokio::time::sleep(Duration::from_secs(3)).await;
 	}
+
+	// Batch 0's wallets generated DUST from NIGHT they then spent, so their generations carry a
+	// decay time.
+	for seed in std::iter::once(&FUNDED_SEED).chain(&BATCH_SEEDS) {
+		assert_fast_sync_matches_replay(&env.indexer_url, seed);
+	}
+}
+
+fn assert_fast_sync_matches_replay(indexer_url: &str, seed: &str) {
+	assert_eq!(
+		show_wallet(indexer_url, seed, None),
+		show_wallet_with(indexer_url, seed, None, &["--no-fast-sync"]),
+		"DUST fast sync for {seed} must match the event replay",
+	);
 }
 
 fn unshielded_values(wallet: serde_json::Value) -> Vec<u64> {
@@ -315,19 +335,27 @@ fn unshielded_values(wallet: serde_json::Value) -> Vec<u64> {
 }
 
 /// Run the toolkit binary with `args`, panicking with its output on failure; returns stdout.
+///
+/// Also fails if the DUST fast sync fell back to the replay: the fallback is silent apart from its
+/// warning, and would leave the fast-sync checks comparing the replay with itself.
 fn run_toolkit(args: &[&str]) -> String {
 	let output = Command::new(env!("CARGO_BIN_EXE_midnight-node-toolkit"))
 		.args(args)
 		.output()
 		.expect("failed to run midnight-node-toolkit");
+	let (stdout, stderr) =
+		(String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
 	assert!(
 		output.status.success(),
-		"midnight-node-toolkit {args:?} failed (status {:?})\nstdout:\n{}\nstderr:\n{}",
+		"midnight-node-toolkit {args:?} failed (status {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
 		output.status.code(),
-		String::from_utf8_lossy(&output.stdout),
-		String::from_utf8_lossy(&output.stderr),
 	);
-	String::from_utf8_lossy(&output.stdout).into_owned()
+	assert!(
+		!stderr.contains("DUST fast sync failed")
+			&& !stderr.contains("DUST fast-sync probe failed"),
+		"midnight-node-toolkit {args:?} fell back to the DUST replay\nstderr:\n{stderr}",
+	);
+	stdout.into_owned()
 }
 
 /// Run `show-wallet --indexer-url …` for `seed` and return its parsed JSON.
@@ -335,6 +363,16 @@ fn run_toolkit(args: &[&str]) -> String {
 /// `cache_dir` enables the wallet cache under that directory; `None` disables it, which is what
 /// `--fetch-cache inmemory` means to the toolkit.
 fn show_wallet(indexer_url: &str, seed: &str, cache_dir: Option<&Path>) -> serde_json::Value {
+	show_wallet_with(indexer_url, seed, cache_dir, &[])
+}
+
+/// [`show_wallet`] with `extra` flags.
+fn show_wallet_with(
+	indexer_url: &str,
+	seed: &str,
+	cache_dir: Option<&Path>,
+	extra: &[&str],
+) -> serde_json::Value {
 	let mut args = vec![
 		"show-wallet".to_string(),
 		"--indexer-url".to_string(),
@@ -353,6 +391,7 @@ fn show_wallet(indexer_url: &str, seed: &str, cache_dir: Option<&Path>) -> serde
 		]),
 		None => args.extend(["--fetch-cache".to_string(), "inmemory".to_string()]),
 	}
+	args.extend(extra.iter().map(|flag| flag.to_string()));
 
 	let args: Vec<&str> = args.iter().map(String::as_str).collect();
 	let stdout = run_toolkit(&args);
