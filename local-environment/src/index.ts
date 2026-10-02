@@ -71,6 +71,8 @@ interface FederatedRuntimeUpgradeCliOpts {
   fromSnapshot?: string;
   numValidators?: number;
   allowSameVersion?: boolean;
+  requiredNodeVersion?: string;
+  allowLaggingBinary?: boolean;
 }
 
 interface ConsensusUpgradeCliOpts {
@@ -102,6 +104,8 @@ interface FullUpgradeCliOpts {
   technicalUris: string[];
   executorUri: string;
   allowSameVersion?: boolean;
+  requiredNodeVersion?: string;
+  allowLaggingBinary?: boolean;
   // shared
   profiles?: string[];
   envFile?: string[];
@@ -306,6 +310,14 @@ program
     "--allow-same-version",
     "Use system.authorizeUpgradeWithoutChecks so the upgrade is accepted even if the candidate wasm shares spec_version with the running runtime. Local-rehearsal escape hatch; do not use against production-shaped networks.",
   )
+  .option(
+    "--required-node-version <version>",
+    "Minimum node binary version (major.minor.patch) the connected node must run before the upgrade motion is submitted; gates on binary support for the ledger host-function versions the new runtime imports.",
+  )
+  .option(
+    "--allow-lagging-binary",
+    "Downgrade the node-binary compatibility gate from refuse to warn. Local-rehearsal escape hatch; do not use against production-shaped networks.",
+  )
   .description(
     "Execute a governance-approved runtime upgrade using the federated-authority pallet",
   )
@@ -344,6 +356,8 @@ program
       techCommitteeUris: techUris,
       motionExecutorUri: executorUri,
       allowSameVersion: cliOpts.allowSameVersion,
+      requiredNodeVersion: cliOpts.requiredNodeVersion,
+      allowLaggingBinary: cliOpts.allowLaggingBinary,
     };
 
     await federatedRuntimeUpgrade(network, opts);
@@ -415,6 +429,14 @@ program
     "--allow-same-version",
     "Use system.authorizeUpgradeWithoutChecks in phase 2 so the upgrade is accepted even if the candidate wasm shares spec_version with the running runtime. Local-rehearsal escape hatch; do not use against production-shaped networks.",
   )
+  .option(
+    "--required-node-version <version>",
+    "Minimum node binary version (major.minor.patch) the connected node must run before the phase-2 upgrade motion is submitted; gates on binary support for the ledger host-function versions the new runtime imports.",
+  )
+  .option(
+    "--allow-lagging-binary",
+    "Downgrade the phase-2 node-binary compatibility gate from refuse to warn. Local-rehearsal escape hatch; do not use against production-shaped networks.",
+  )
   .description(
     "Run a two-phase upgrade rehearsal: roll the validator client image (phase 1), then submit a governance-approved runtime upgrade (phase 2)",
   )
@@ -457,6 +479,8 @@ program
       techCommitteeUris: techUris,
       motionExecutorUri: executorUri,
       allowSameVersion: cliOpts.allowSameVersion,
+      requiredNodeVersion: cliOpts.requiredNodeVersion,
+      allowLaggingBinary: cliOpts.allowLaggingBinary,
       // shared
       profiles,
       envFile: cliOpts.envFile,

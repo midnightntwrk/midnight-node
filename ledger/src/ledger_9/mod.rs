@@ -88,6 +88,7 @@ use {
 	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
+		events::Event,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
 			MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker, SignatureKind,
@@ -102,9 +103,10 @@ use {
 };
 
 use crate::boundary::types::{
-	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerStats,
-	Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
-	WrappedHash,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerEvent,
+	LedgerEventSource, LedgerStats, Op, SystemTransactionAppliedStateRoot,
+	SystemTransactionAppliedStateRootWithEvents, TransactionAppliedStateRootWithEvents,
+	TransactionDetails, Tx, WrappedHash,
 };
 
 #[cfg(feature = "std")]
@@ -344,7 +346,7 @@ where
 		should_skip_failed_segments: bool,
 		runtime_version: u32,
 		skew_tblock: bool,
-	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
+	) -> Result<TransactionAppliedStateRootWithEvents, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -395,7 +397,7 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let (mut new_ledger, applied_stage) =
+		let (mut new_ledger, applied_stage, ledger_events) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -457,7 +459,7 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let mut event = TransactionAppliedStateRoot {
+		let mut event = TransactionAppliedStateRootWithEvents {
 			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
 			tx_hash,
 			all_applied,
@@ -467,6 +469,7 @@ where
 			claim_rewards: vec![],
 			unshielded_utxos_created: utxo_outputs,
 			unshielded_utxos_spent: utxo_inputs,
+			events: Self::build_ledger_events(&api, &ledger_events)?,
 		};
 		log::trace!(
 			target: LOG_TARGET,
@@ -570,7 +573,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let (mut ledger, _ledger_events) =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -594,6 +597,25 @@ where
 		Ok(event)
 	}
 
+	/// Build the SCALE `Vec<LedgerEvent>` envelope from the ledger's own `Event<D>` stream.
+	fn build_ledger_events(
+		api: &api::Api,
+		events: &[Event<D>],
+	) -> Result<Vec<LedgerEvent>, LedgerApiError> {
+		events
+			.iter()
+			.map(|ev| {
+				let source = LedgerEventSource {
+					transaction_hash: ev.source.transaction_hash.0.0,
+					logical_segment: ev.source.logical_segment,
+					physical_segment: ev.source.physical_segment,
+				};
+				let content_tagged_bytes = api.tagged_serialize(&ev.content)?;
+				Ok(LedgerEvent { source, content_tagged_bytes })
+			})
+			.collect()
+	}
+
 	/// Shared body for the caller-restricted `apply_*_system_transaction` wrappers: one
 	/// deserialize, one allow-list check, one FFI-crossing apply — as opposed to a
 	/// separate classifier call before `apply_system_transaction`, which would deserialize
@@ -604,7 +626,7 @@ where
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		is_allowed: impl FnOnce(&SystemTransaction) -> bool,
-	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+	) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_system_tx_processing_time = Instant::now();
 		let tx_size = tx_serialized.len();
@@ -624,13 +646,14 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let (mut ledger, ledger_events) =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
-		let event = SystemTransactionAppliedStateRoot {
+		let event = SystemTransactionAppliedStateRootWithEvents {
 			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			tx_type: tx_type.to_string(),
+			events: Self::build_ledger_events(&api, &ledger_events)?,
 		};
 
 		// Only update state after no errors
@@ -655,7 +678,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
-	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+	) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError> {
 		Self::apply_system_transaction_checked(
 			externalities,
 			state_key,
@@ -672,7 +695,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
-	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+	) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError> {
 		Self::apply_system_transaction_checked(
 			externalities,
 			state_key,
@@ -690,7 +713,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
-	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+	) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError> {
 		Self::apply_system_transaction_checked(
 			externalities,
 			state_key,

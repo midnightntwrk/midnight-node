@@ -115,6 +115,20 @@ export interface FederatedRuntimeUpgradeOptions
    * still catches real version-bump regressions.
    */
   allowSameVersion?: boolean;
+  /**
+   * Minimum node binary version (`major.minor.patch`, compared against the
+   * connected node's `system_version`) that provides the ledger host-function
+   * versions the new runtime imports. When set, the pre-activation gate refuses
+   * to submit the upgrade motion if the connected node's binary is older.
+   * When omitted, the gate logs a warning and does not enforce.
+   */
+  requiredNodeVersion?: string;
+  /**
+   * Downgrade the node-binary compatibility gate from refuse to warn. Intended
+   * for local rehearsals; production upgrades should leave this off so a lagging
+   * binary blocks activation rather than stalling once the upgrade applies.
+   */
+  allowLaggingBinary?: boolean;
 }
 
 /**

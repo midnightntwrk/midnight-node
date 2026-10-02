@@ -34,7 +34,8 @@ pub mod pallet {
 
 	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
-		Hash, SystemTransactionAppliedStateRoot, active_ledger_bridge as LedgerApi,
+		Hash, LedgerEvent, SystemTransactionAppliedStateRootWithEvents,
+		active_ledger_bridge as LedgerApi,
 		active_version::{
 			BlockContext, DeserializationError, LedgerApiError, SerializationError,
 			SystemTransactionError, TransactionError,
@@ -45,10 +46,23 @@ pub mod pallet {
 
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
+	/// Per-ledger-event deposit cost (one `frame_system::Events` state-trie write).
+	/// Sized from the `pallet-midnight` `bench_block_full_of_events` guardrail;
+	/// placeholder ref-time/proof-size pending the user's benchmark run.
+	pub const PER_LEDGER_EVENT_WEIGHT: Weight = Weight::from_parts(5_000_000, 4096);
+
+	/// Worst-case ledger events a single system transaction can deposit, sized to
+	/// fit the governance-motion proof envelope (~1 MB / ~4 KiB per event). Bounds
+	/// the pre-dispatch weight so a governed system tx stays within a motion's
+	/// weight bound; the post-dispatch actual weight reflects the real count.
+	/// Distinct from the per-block 50 MB benchmark ceiling in pallet-midnight.
+	pub const MAX_SYSTEM_TX_LEDGER_EVENTS: u64 = 200;
+
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		SystemTransactionApplied(SystemTransactionApplied),
+		LedgerEvent(LedgerEvent),
 	}
 
 	#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -138,65 +152,89 @@ pub mod pallet {
 		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
 
 	/// Shape shared by every `LedgerApi::apply_*_system_transaction` entry point.
-	type ApplySystemTransactionFn = fn(
-		&[u8],
-		&[u8],
-		BlockContext,
-		u32,
-	)
-		-> Result<SystemTransactionAppliedStateRoot, LedgerApiError>;
+	type ApplySystemTransactionFn =
+		fn(
+			&[u8],
+			&[u8],
+			BlockContext,
+			u32,
+		) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>;
 
 	impl<T: Config> Pallet<T> {
-		/// Applies a system transaction via the given ledger entry point and emits
-		/// `SystemTransactionApplied` on success. `apply` is one of the caller-restricted
-		/// `LedgerApi::apply_*_system_transaction` functions; `not_allowed` is the
-		/// friendly error to surface when its allow-list guard rejects the transaction.
+		/// Applies a system transaction via the given ledger entry point and, on success,
+		/// emits `SystemTransactionApplied` followed by one `LedgerEvent` per ledger event.
+		/// `apply` is one of the caller-restricted `LedgerApi::apply_*_system_transaction`
+		/// functions; `not_allowed` is the friendly error to surface when its allow-list
+		/// guard rejects the transaction. Returns the transaction hash and the number of
+		/// ledger events deposited.
 		fn apply_and_emit(
 			serialized_system_transaction: Vec<u8>,
 			apply: ApplySystemTransactionFn,
 			not_allowed: Error<T>,
-		) -> Result<Hash, DispatchError> {
-			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
-				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
-				let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
-				let result = apply(
-					&state_key,
-					&serialized_system_transaction.clone(),
-					block_context,
-					runtime_version,
-				)
-				.map_err(|e| match e {
-					LedgerApiError::Transaction(TransactionError::SystemTransaction(
-						SystemTransactionError::NotAllowedForCaller,
-					)) => not_allowed,
-					other => Error::<T>::from(other),
+		) -> Result<(Hash, u64), DispatchError> {
+			let (hash, ledger_events) =
+				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
+					let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+					let block_context =
+						<T as Config>::LedgerBlockContextProvider::get_block_context();
+					let result = apply(
+						&state_key,
+						&serialized_system_transaction.clone(),
+						block_context,
+						runtime_version,
+					)
+					.map_err(|e| match e {
+						LedgerApiError::Transaction(TransactionError::SystemTransaction(
+							SystemTransactionError::NotAllowedForCaller,
+						)) => not_allowed,
+						other => Error::<T>::from(other),
+					})?;
+					// First tuple element is the new state key written back by
+					// `mut_ledger_state`; the tx hash and events ride out as the payload.
+					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
+						result.state_root,
+						(result.tx_hash, result.events),
+					))
 				})?;
-				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
-			})?;
 
 			Self::deposit_event(Event::<T>::SystemTransactionApplied(
 				super::SystemTransactionApplied { hash, serialized_system_transaction },
 			));
 
-			Ok(hash)
+			let ledger_event_count = ledger_events.len() as u64;
+			for ledger_event in ledger_events {
+				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
+			}
+
+			Ok((hash, ledger_event_count))
 		}
 	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((ConfigurableSystemTxWeight::<T>::get(), DispatchClass::Operational))]
+		// Pre-dispatch weight bounds the base system-tx weight plus the worst-case
+		// ledger-event deposit allowance; the actual event count refines it below.
+		#[pallet::weight((
+			ConfigurableSystemTxWeight::<T>::get()
+				.saturating_add(PER_LEDGER_EVENT_WEIGHT.saturating_mul(MAX_SYSTEM_TX_LEDGER_EVENTS)),
+			DispatchClass::Operational,
+		))]
 		pub fn send_mn_system_transaction(
 			origin: OriginFor<T>,
 			midnight_system_tx: Vec<u8>,
-		) -> DispatchResult {
+		) -> DispatchResultWithPostInfo {
 			ensure_root(origin)?;
-			Self::apply_and_emit(
+			let (_, ledger_event_count) = Self::apply_and_emit(
 				midnight_system_tx,
 				LedgerApi::apply_governance_system_transaction,
 				Error::<T>::SystemTransactionNotAllowedForGovernance,
 			)?;
-			Ok(())
+
+			// Refine to the base weight plus the events actually deposited.
+			let actual_weight = ConfigurableSystemTxWeight::<T>::get()
+				.saturating_add(PER_LEDGER_EVENT_WEIGHT.saturating_mul(ledger_event_count));
+			Ok(Some(actual_weight).into())
 		}
 	}
 
@@ -209,6 +247,7 @@ pub mod pallet {
 				LedgerApi::apply_cnight_system_transaction,
 				Error::<T>::SystemTransactionNotAllowedForCNight,
 			)
+			.map(|(hash, _)| hash)
 		}
 
 		fn is_block_limit_exceeded(err: &DispatchError) -> bool {
@@ -225,6 +264,7 @@ pub mod pallet {
 				LedgerApi::apply_bridge_system_transaction,
 				Error::<T>::SystemTransactionNotAllowedForBridge,
 			)
+			.map(|(hash, _)| hash)
 		}
 
 		fn is_block_limit_exceeded(err: &DispatchError) -> bool {

@@ -23,6 +23,7 @@ import {
   buildFederatedMotionSigners,
   executeFederatedMotion,
 } from "../lib/federatedMotion";
+import { isNodeVersionAtLeast } from "../lib/nodeVersion";
 import { prepareRuntimeUpgrade } from "./runtimeUpgradeShared";
 
 export async function federatedRuntimeUpgrade(
@@ -39,6 +40,12 @@ export async function federatedRuntimeUpgrade(
     const { wasm } = prepared;
 
     console.log(`Loaded runtime code hash: ${wasm.hash}`);
+
+    // Pre-activation gate: confirm the connected node runs a binary that provides
+    // the ledger host-function versions the new runtime imports before the
+    // authorize_upgrade motion is submitted. A lagging binary cannot instantiate
+    // the new runtime, so it stops importing blocks once the upgrade applies.
+    await assertNodeBinaryCompatible(api, opts);
 
     const signers = buildFederatedMotionSigners(opts);
 
@@ -69,5 +76,53 @@ export async function federatedRuntimeUpgrade(
     console.log("Runtime upgrade completed successfully.");
   } finally {
     await disconnectApi(api, provider);
+  }
+}
+
+/**
+ * Verify the connected node's binary provides the ledger host-function versions
+ * the new runtime imports, before the upgrade motion is submitted. The binary's
+ * own version (`system_version`) is the capability signal; the active runtime's
+ * spec_version is on-chain state and reads the same on every binary.
+ *
+ * Only the node the CLI is connected to is probed. Refuses (throws) by default
+ * when its binary is older than `requiredNodeVersion`; `allowLaggingBinary`
+ * downgrades this to a warning for local rehearsals.
+ */
+async function assertNodeBinaryCompatible(
+  api: ApiPromise,
+  opts: FederatedRuntimeUpgradeOptions,
+): Promise<void> {
+  const nodeVersion = (await api.rpc.system.version()).toString();
+
+  console.log(`Node-binary compatibility probe: node version ${nodeVersion}`);
+
+  if (opts.requiredNodeVersion === undefined) {
+    console.warn(
+      "⚠️  No requiredNodeVersion provided; skipping the node-binary version " +
+        "enforcement. Pass it to gate activation on binary capability.",
+    );
+    return;
+  }
+
+  const atLeast = isNodeVersionAtLeast(nodeVersion, opts.requiredNodeVersion);
+  if (atLeast === undefined) {
+    throw new Error(
+      `❌ Cannot compare node version ${nodeVersion} with required ` +
+        `${opts.requiredNodeVersion}: expected major.minor.patch.`,
+    );
+  }
+
+  if (!atLeast) {
+    const message =
+      `Connected node binary ${nodeVersion} is older than the required ` +
+      `${opts.requiredNodeVersion}: it may lack the ledger host-function versions the ` +
+      `new runtime imports and could not instantiate it. Roll the node binaries ` +
+      `first, or pass --allow-lagging-binary to override.`;
+    if (opts.allowLaggingBinary) {
+      console.warn(`⚠️  ${message}`);
+    } else {
+      throw new Error(`❌ ${message}`);
+    }
   }
 }

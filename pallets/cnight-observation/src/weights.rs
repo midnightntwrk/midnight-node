@@ -40,6 +40,10 @@ pub trait WeightInfo {
 	fn process_tokens(n: u32) -> Weight;
 	fn set_cnight_identifier() -> Weight;
 	fn set_auth_token_asset_name() -> Weight;
+	/// Cost of depositing `n` ledger events into `frame_system::Events` from the
+	/// system transaction this pallet drives. Sized from the `pallet-midnight`
+	/// `bench_block_full_of_events` guardrail (per-event state-trie write).
+	fn ledger_event_deposit(n: u32) -> Weight;
 }
 
 /// Weights for `pallet_cnight_observation` using the Substrate node and recommended hardware.
@@ -59,6 +63,16 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
 	}
 
+	/// Per-event ledger-event deposit cost (one state-trie write into
+	/// `frame_system::Events` per event). Placeholder until the `pallet-midnight`
+	/// `bench_block_full_of_events` guardrail is run — the measured per-event cost
+	/// replaces the conservative estimate below.
+	fn ledger_event_deposit(n: u32) -> Weight {
+		Weight::from_parts(5_000_000, 4096)
+			.saturating_mul(n.into())
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
+	}
+
 	/// Single storage write to `CNightIdentifier`. Placeholder until benchmarked.
 	fn set_cnight_identifier() -> Weight {
 		Weight::from_parts(10_000_000, 0).saturating_add(T::DbWeight::get().writes(1))
@@ -73,6 +87,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 // For backwards compatibility and tests.
 impl WeightInfo for () {
 	fn process_tokens(_n: u32) -> Weight {
+		Weight::zero()
+	}
+	fn ledger_event_deposit(_n: u32) -> Weight {
 		Weight::zero()
 	}
 	fn set_cnight_identifier() -> Weight {
