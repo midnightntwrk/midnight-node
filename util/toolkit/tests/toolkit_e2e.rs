@@ -17,7 +17,7 @@ mod common;
 
 use clap::Parser;
 #[cfg(feature = "compact-contract-tests")]
-use common::toolkit_helper::{CircuitCall, ToolkitTestHelper};
+use common::toolkit_helper::{CircuitCall, ContractSpec, ToolkitTestHelper};
 use common::{test_image, wait_for_node, wait_for_node::wait_for_finalized_block};
 #[cfg(feature = "compact-contract-tests")]
 use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
@@ -1069,6 +1069,324 @@ async fn dao_e2e() {
 		organizer_private,
 		"set_topic",
 		&["Second round after cash-out", beneficiary.as_str(), reseed_coin.as_str()]
+	);
+}
+
+/// Battleship E2E ported from `midnight-contracts`.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn battleship_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary keys; `red_pk(sk)`/`blue_pk(sk)` of these become the on-chain identities.
+	const RED_SK: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+	const BLUE_SK: &str = "b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f91";
+	// Blinds each board commitment; distinct so both differ even on the same square.
+	const RED_BOARD_NONCE: &str = "11111111111111111111";
+	const BLUE_BOARD_NONCE: &str = "22222222222222222222";
+	// Ship positions on the 3x3 board (1..9).
+	const RED_SHIP: &str = "1";
+	const BLUE_SHIP: &str = "7";
+	// The contract asserts the deposit; the wager is free, but Blue's must match Red's.
+	const DEPOSIT_DUST: u64 = 100_000;
+	const WAGER_DUST: u64 = 1_000_000;
+	// `nativeToken()`, which is what the dev genesis funds the seed wallet with.
+	const NATIVE_TOKEN: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+	// Received coins become fresh outputs, so their commitments must differ. The `0xb*`
+	// family is this test's alone: dao sends coins of the same value and colour to the same
+	// node, and only disjoint nonces keep the two sets of commitments apart.
+	const RED_WAGER_NONCE: &str =
+		"b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
+	const RED_DEPOSIT_NONCE: &str =
+		"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2";
+	const BLUE_WAGER_NONCE: &str =
+		"b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3";
+	const BLUE_DEPOSIT_NONCE: &str =
+		"b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4";
+
+	let (game, red_deploy_private) = helper
+		.deploy_contract(
+			ContractSpec::new("battleship")
+				.vars(&[("SECRET_KEY", RED_SK), ("BOARD_NONCE", RED_BOARD_NONCE)])
+				.secrets(&[RED_SK]),
+		)
+		.await;
+
+	// Red's private state comes from the deploy; Blue's is the same shape, own key and nonce.
+	let mut red_private = red_deploy_private;
+	let mut blue_private = helper.work_dir.path().join("battleship_blue_private_state.json");
+	std::fs::write(
+		&blue_private,
+		serde_json::json!({
+			"secretKey": BLUE_SK,
+			"boardNonce": BLUE_BOARD_NONCE,
+			"boardPosition": "0",
+		})
+		.to_string(),
+	)
+	.expect("write blue private state");
+
+	let coin = |nonce: &str, value: u64| {
+		format!(r#"{{"nonce": "{nonce}", "color": "{NATIVE_TOKEN}", "value": {value}}}"#)
+	};
+	let red_wager = coin(RED_WAGER_NONCE, WAGER_DUST);
+	let red_deposit = coin(RED_DEPOSIT_NONCE, DEPOSIT_DUST);
+	let blue_wager = coin(BLUE_WAGER_NONCE, WAGER_DUST);
+	let blue_deposit = coin(BLUE_DEPOSIT_NONCE, DEPOSIT_DUST);
+
+	// First `start` is Red and seeds the pot; the second is Blue, whose matching wager
+	// `start` merges into the same pot coin.
+	red_private = game
+		.call(
+			&red_private,
+			&[RED_SK],
+			CircuitCall {
+				circuit_id: "start",
+				call_args: &[RED_SHIP, red_wager.as_str(), red_deposit.as_str()],
+			},
+		)
+		.await
+		.private_state;
+	blue_private = game
+		.call(
+			&blue_private,
+			&[BLUE_SK],
+			CircuitCall {
+				circuit_id: "start",
+				call_args: &[BLUE_SHIP, blue_wager.as_str(), blue_deposit.as_str()],
+			},
+		)
+		.await
+		.private_state;
+
+	// Blue moves first (`blue_started` is Blue's turn) and lands on Red's ship.
+	blue_private = game
+		.call(
+			&blue_private,
+			&[BLUE_SK],
+			CircuitCall { circuit_id: "guess", call_args: &[RED_SHIP] },
+		)
+		.await
+		.private_state;
+
+	// Red is sunk, so `concede` is its only legal move: it proves the guess hit, records
+	// `blue_wins` and refunds Red's deposit.
+	game.call(&red_private, &[RED_SK], CircuitCall { circuit_id: "concede", call_args: &[] })
+		.await;
+
+	// `withdraw` asserts `state == blue_wins`, so the payout itself proves the outcome.
+	game.call(&blue_private, &[BLUE_SK], CircuitCall { circuit_id: "withdraw", call_args: &[] })
+		.await;
+}
+
+/// Election E2E ported from `midnight-contracts`.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn election_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary keys; `public_key(sk)` of the first becomes the on-chain `authority`, and of
+	// the others the leaves it allowlists.
+	const AUTHORITY_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000001";
+	const VOTER_A_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000002";
+	const VOTER_B_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000003";
+	const YES: &str = "true";
+	const NO: &str = "false";
+
+	let (election, deploy_private) = helper
+		.deploy_contract(
+			ContractSpec::new("election")
+				.vars(&[("SECRET_KEY", AUTHORITY_SK)])
+				.constructor_args(&[AUTHORITY_SK])
+				.secrets(&[AUTHORITY_SK]),
+		)
+		.await;
+
+	let mut authority_private = deploy_private;
+	let voter_state = |name: &str, secret_key: &str| {
+		let state = helper.work_dir.path().join(format!("election_{name}_private_state.json"));
+		std::fs::write(
+			&state,
+			serde_json::json!({ "secretKey": secret_key, "state": 0, "ballot": null }).to_string(),
+		)
+		.expect("write voter private state");
+		state
+	};
+	let voter_a_private = voter_state("voter_a", VOTER_A_SK);
+	let voter_b_private = voter_state("voter_b", VOTER_B_SK);
+
+	// `add_voter` takes a public key, so each voter derives its own. The circuit only reads
+	// state, so running it for the result is enough; nothing to submit.
+	let mut voter_pks = Vec::new();
+	for private in [&voter_a_private, &voter_b_private] {
+		let out = election
+			.read(private, CircuitCall { circuit_id: "voter_public_key", call_args: &[] })
+			.await;
+		voter_pks.push(helper.result_bytes_to_hex(&out.result));
+	}
+
+	// Setup: allowlist both voters and open the topic, all gated on the authority identity.
+	for pk in &voter_pks {
+		authority_private = election
+			.call(
+				&authority_private,
+				&[AUTHORITY_SK],
+				CircuitCall { circuit_id: "add_voter", call_args: &[pk.as_str()] },
+			)
+			.await
+			.private_state;
+	}
+	authority_private = election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "set_topic", call_args: &["Adopt the proposal"] },
+		)
+		.await
+		.private_state;
+
+	// setup -> commit.
+	authority_private = election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "advance", call_args: &[] },
+		)
+		.await
+		.private_state;
+
+	// Each commit proves membership in `eligible_voters`, then inserts into `committed_votes`.
+	let mut committed = Vec::new();
+	for (private, secret, ballot) in
+		[(&voter_a_private, VOTER_A_SK, YES), (&voter_b_private, VOTER_B_SK, NO)]
+	{
+		let out = election
+			.call(
+				private,
+				&[secret],
+				CircuitCall { circuit_id: "vote_commit", call_args: &[ballot] },
+			)
+			.await;
+		committed.push((out.private_state, secret));
+	}
+
+	// commit -> reveal.
+	authority_private = election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "advance", call_args: &[] },
+		)
+		.await
+		.private_state;
+
+	// Each reveal reproduces its commitment from private state and proves it is in the tree.
+	for (private, secret) in &committed {
+		election
+			.call(private, &[secret], CircuitCall { circuit_id: "vote_reveal", call_args: &[] })
+			.await;
+	}
+
+	// reveal -> final. Reaching it is the assertion that both reveals tallied.
+	election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "advance", call_args: &[] },
+		)
+		.await;
+}
+
+/// Shielded-pool E2E ported from `midnight-contracts`.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn shielded_pool_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; `derive_zk_public_key` of it owns the minted coin.
+	const SPENDER_SK: &str = "5ec4e70000000000000000000000000000000000000000000000000000000001";
+	// The recipient is off-contract, so its keys are opaque to us and can be anything.
+	const DEST_ZK_PK: &str = "dededededededededededededededededededededededededededededededede";
+	const DEST_ENCRYPTION_PK: &str =
+		"beefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef";
+
+	// `context$new_coin_info` hands these out in order, per the counter in the template.
+	// Both `mint` and `spend` consume one, so the indices below are the whole run.
+	let coin_nonce = |index: u8| format!("{:02x}", 0x10 + index).repeat(32);
+	let coin_opening = |index: u8| format!("{:02x}", 0x40 + index).repeat(32);
+	let coin_arg = |index: u8| {
+		format!(
+			r#"{{"nonce": {{"bytes": "{}"}}, "opening": {{"bytes": "{}"}}}}"#,
+			coin_nonce(index),
+			coin_opening(index)
+		)
+	};
+
+	let (pool, private_state) = helper
+		.deploy_contract(
+			ContractSpec::new("shielded-pool")
+				.source("shielded_pool")
+				.vars(&[("SECRET_KEY", SPENDER_SK)])
+				.secrets(&[SPENDER_SK]),
+		)
+		.await;
+
+	// Mints coin 0 to the spender's own key and records it in the wallet.
+	let mint = pool
+		.call(&private_state, &[SPENDER_SK], CircuitCall { circuit_id: "mint", call_args: &[] })
+		.await;
+
+	// Nested struct arguments: a public key holding a struct and opaque bytes, and the coin
+	// holding two structs. Spending proves the minted commitment is in the tree, and mints a
+	// fresh coin 1 for the recipient.
+	let dest_public_key =
+		format!(r#"{{"zk": {{"bytes": "{DEST_ZK_PK}"}}, "encryption": "{DEST_ENCRYPTION_PK}"}}"#);
+	let spend = pool
+		.call(
+			&mint.private_state,
+			&[SPENDER_SK],
+			CircuitCall {
+				circuit_id: "spend",
+				call_args: &[dest_public_key.as_str(), coin_arg(0).as_str()],
+			},
+		)
+		.await;
+
+	// The spend consumed coin 1 for the recipient, so this mint must take coin 2. If the
+	// counter only advanced on `mint`, this would re-issue the recipient's nonce and opening
+	// to the pool's own wallet.
+	let second_mint = pool
+		.call(
+			&spend.private_state,
+			&[SPENDER_SK],
+			CircuitCall { circuit_id: "mint", call_args: &[] },
+		)
+		.await;
+
+	let wallet: serde_json::Value = serde_json::from_str(
+		&std::fs::read_to_string(&second_mint.private_state).expect("read private state"),
+	)
+	.expect("parse private state");
+	assert_eq!(wallet["nextCoin"], 3, "mint/spend/mint must each consume one coin index: {wallet}");
+	let held: Vec<&str> = wallet["coins"]
+		.as_array()
+		.expect("coins array")
+		.iter()
+		.map(|c| c["nonce"].as_str().expect("coin nonce"))
+		.collect();
+	assert_eq!(
+		held,
+		vec![coin_nonce(2)],
+		"coin 0 was spent and coin 1 went to the recipient, so only coin 2 stays: {wallet}"
 	);
 }
 
