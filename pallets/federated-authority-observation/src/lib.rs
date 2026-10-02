@@ -530,6 +530,18 @@ pub mod pallet {
 				return Err(Self::Error::TechnicalCommitteeMembersMismatch);
 			}
 
+			// The call matches the observed data, but an honest author only turns that data
+			// into a call when it has no empty or duplicated members (see `create_inherent`).
+			// `reset_members` itself tolerates both, so enforce it here rather than let a block
+			// producer apply a membership set that honest authors would have skipped.
+			if Self::create_inherent(data).is_none() {
+				log::error!(
+					target: "federated-authority-observation",
+					"Block contains reset_members but the observed members are empty or duplicated"
+				);
+				return Err(InherentError::InherentNotExpected);
+			}
+
 			Ok(())
 		}
 

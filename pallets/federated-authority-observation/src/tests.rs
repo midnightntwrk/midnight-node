@@ -885,6 +885,75 @@ fn check_inherent_rejects_reset_members_with_different_mainchain_members() {
 }
 
 #[test]
+fn check_inherent_rejects_duplicated_members_even_when_they_match_the_data() {
+	new_test_ext().execute_with(|| {
+		// Duplicated council members, matching the observed data exactly.
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&[1, 1, 3]),
+			with_mainchain_members(&[4, 5, 6]),
+		);
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 1, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 6]),
+		};
+		let error = FederatedAuthorityObservation::check_inherent(&call, &inherent_data)
+			.expect_err("duplicated council members must be rejected");
+		assert!(matches!(error, InherentError::InherentNotExpected), "got {error:?}");
+		assert!(error.is_fatal_error());
+
+		// Same for the technical committee.
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&[1, 2, 3]),
+			with_mainchain_members(&[4, 4, 6]),
+		);
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 4, 6]),
+		};
+		let error = FederatedAuthorityObservation::check_inherent(&call, &inherent_data)
+			.expect_err("duplicated technical committee members must be rejected");
+		assert!(matches!(error, InherentError::InherentNotExpected), "got {error:?}");
+	});
+}
+
+#[test]
+fn check_inherent_rejects_empty_members_even_when_they_match_the_data() {
+	new_test_ext().execute_with(|| {
+		let inherent_data = create_inherent_data(vec![], with_mainchain_members(&[4, 5, 6]));
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[]),
+			technical_committee_authorities: with_mainchain_members_tc(&[4, 5, 6]),
+		};
+		let error = FederatedAuthorityObservation::check_inherent(&call, &inherent_data)
+			.expect_err("empty council must be rejected");
+		assert!(matches!(error, InherentError::InherentNotExpected), "got {error:?}");
+
+		let inherent_data = create_inherent_data(with_mainchain_members(&[1, 2, 3]), vec![]);
+		let call = crate::Call::<Test>::reset_members {
+			council_authorities: with_mainchain_members_council(&[1, 2, 3]),
+			technical_committee_authorities: with_mainchain_members_tc(&[]),
+		};
+		let error = FederatedAuthorityObservation::check_inherent(&call, &inherent_data)
+			.expect_err("empty technical committee must be rejected");
+		assert!(matches!(error, InherentError::InherentNotExpected), "got {error:?}");
+	});
+}
+
+#[test]
+fn check_inherent_accepts_exactly_what_create_inherent_produces() {
+	new_test_ext().execute_with(|| {
+		let inherent_data = create_inherent_data(
+			with_mainchain_members(&[3, 1, 2]),
+			with_mainchain_members(&[6, 4, 5]),
+		);
+		let call = FederatedAuthorityObservation::create_inherent(&inherent_data)
+			.expect("valid data should produce an inherent");
+
+		assert_ok!(FederatedAuthorityObservation::check_inherent(&call, &inherent_data));
+	});
+}
+
+#[test]
 fn check_inherent_ignores_non_inherent_calls() {
 	new_test_ext().execute_with(|| {
 		let call = crate::Call::<Test>::set_council_address {

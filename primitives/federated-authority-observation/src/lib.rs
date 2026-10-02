@@ -172,8 +172,9 @@ pub enum InherentError {
 	TechnicalCommitteeMembersMismatch,
 	/// The number of members exceeds the limits
 	TooManyMembers,
-	/// The block contains a `reset_members` inherent but the verifier's inherent data carries no
-	/// federated authority data to check it against
+	/// The block contains a `reset_members` inherent that the verifier's inherent data does not
+	/// call for: the data is absent, or its members are empty or duplicated so honest authors
+	/// would not have produced the call
 	InherentNotExpected,
 	/// The inherent data calls for a `reset_members` inherent but the block does not contain one
 	Missing,
