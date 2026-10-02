@@ -168,7 +168,6 @@ mod tests {
 		}
 	}
 
-	/// A built tx moves the context's UTXOs, but the cache still gets the indexer-confirmed state.
 	#[tokio::test]
 	async fn pending_tx_changes_the_context_but_not_the_cache() {
 		let (alice, bob) =
@@ -258,7 +257,7 @@ mod tests {
 		)
 		.seal(rng);
 		let Transaction::Standard(stx) = &tx else { unreachable!() };
-		// A guaranteed offer's outputs are keyed by segment 0, not their intent's segment.
+		// Guaranteed outputs hash under segment 0.
 		let intent_hash =
 			stx.intents.get(&1).unwrap().erase_proofs().erase_signatures().intent_hash(0);
 		let block_context = make_block_context(

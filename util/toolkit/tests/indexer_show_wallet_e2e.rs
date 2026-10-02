@@ -278,8 +278,7 @@ async fn indexer_generate_txs_batches_chain_within_a_run() {
 		FUNDED_SEED,
 		"--num-txs-per-batch",
 		"2",
-		// Concurrent builds select the shared fee payer's DUST without a lock, so they can pick
-		// the same output and the node rejects one. The replay path fails the same way.
+		// Concurrent builds race on the fee payer's DUST (replay path too) and the node rejects one.
 		"--concurrency",
 		"1",
 		"--num-batches",

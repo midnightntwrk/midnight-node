@@ -82,8 +82,8 @@ pub trait BuilderContext<D: DB + Clone>: Send + Sync + 'static {
 		P: ProofKind<D> + Storable<D>,
 		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged;
 
-	/// Apply a built, not yet submitted `tx` to this context's wallets, so the next transaction
-	/// built in the same run does not reuse its inputs and can spend its outputs.
+	/// Apply a built but unsubmitted `tx` to the wallets, so later builds in the run skip its
+	/// inputs and can spend its outputs.
 	async fn apply_pending_tx<S, P>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
