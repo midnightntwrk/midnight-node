@@ -7947,6 +7947,7 @@ dependencies = [
  "jsonrpsee",
  "local-ip-address",
  "log",
+ "lru 0.18.2",
  "midnight-node-ledger",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
