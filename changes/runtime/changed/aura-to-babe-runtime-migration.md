@@ -12,6 +12,15 @@
   commits automatically at the last block of an epoch, postponed while `pallet-babe` has no
   authorities, and writes the BABE genesis slot and epoch config. `ConsensusEngineApi` exposes
   `active_engine`; `ConsensusEngine::current_slot()` reads the active engine's slot.
+- **BABE-compatible session rotation.** BABE accepts exactly one epoch-change announcement per
+  epoch, in its first block. `pallet-session-validator-management` used to catch up skipped
+  epochs (a sidechain epoch without blocks) with one rotation per block; the second rotation would
+  announce another epoch change and every later block would fail BABE import
+  (`UnexpectedEpochChange`). It now catches up in a single rotation: a late rotation stamps the
+  queued (and promoted) committee with the current epoch, so the inherent selects for the epoch
+  after the current one and no further rotation is due until the next epoch; the committee due in
+  a skipped epoch serves the current one. With BABE epochs aligned to sidechain epochs this gives
+  exactly one rotation, and one epoch-change announcement, per BABE epoch.
 - **Digest guards** (keyed on the pre-runtime engine id): `Aura`/`ScheduledFlip` blocks must carry
   the AURA pre-digest followed by a matching BABE `SecondaryPlain` one; `Babe` blocks must carry no
   AURA pre-digest. Index 10 makes the guards run before `Scheduler` and `Session`, so they see

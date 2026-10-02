@@ -60,6 +60,23 @@
 //! transitions to the final state `Babe`. The first block of the next epoch is authored with
 //! BABE.
 //!
+//! A session rotation may land in the flip block itself (the flip block is the first block of
+//! its epoch, or a late committee just arrived). That is harmless: `pallet-session` runs after
+//! this pallet and deposits pallet-babe's `NextEpochData` into an AURA block no BABE client reads,
+//! but the committee inherent of the same block stores the committee for the next epoch, so the
+//! first BABE block — in that next epoch — has its own rotation due and announces BABE epoch 1
+//! exactly where the client requires it. The flip is therefore not postponed for it.
+//!
+//! # Session rotation under BABE
+//!
+//! The BABE client accepts exactly one epoch-change announcement per epoch, in the first block of
+//! that epoch (`UnexpectedEpochChange` anywhere else, `ExpectedEpochChange` if it is missing).
+//! `pallet-babe` announces one on every session rotation, so the chain must rotate exactly once
+//! per BABE epoch. This pallet does not enforce that; the committee pallet's `ShouldEndSession`
+//! does: it rotates at most once per sidechain epoch, catching skipped epochs up in a single
+//! rotation, and BABE epochs coincide with sidechain epochs (`GenesisSlot` is the first slot of a
+//! sidechain epoch and [`Config::EpochDuration`] is the sidechain epoch length).
+//!
 //! # Hook ordering requirements
 //!
 //! The runtime must order this pallet's hooks (`on_initialize` runs in pallet
