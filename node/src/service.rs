@@ -1010,7 +1010,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			select_chain,
 			env: babe_proposer_factory,
 			block_import: babe_authoring_block_import,
-			sync_oracle: sync_service.clone(),
+			// Same wrapping oracle as AURA: no BABE authoring until the warp-recovered ledger is
+			// verified; a no-op passthrough on full sync.
+			sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+				sync_service.clone(),
+				warp_ledger_recovery_gate.clone(),
+			),
 			justification_sync_link: sync_service.clone(),
 			create_inherent_data_providers: make_proposal_cidp(),
 			force_authoring,
