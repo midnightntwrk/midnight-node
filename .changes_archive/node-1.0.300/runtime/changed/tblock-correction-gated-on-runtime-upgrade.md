@@ -18,14 +18,11 @@ height, so pre-upgrade wasm imports version 1 and still corrects, while every bl
 and `tblock_correction_offset` and `tblock_correction_disable_after` are removed from node config
 along with the externalities extension that carried them.
 
-The `Ledger9Bridge` host functions never skew: every ledger-9 block is produced after the upgrade
-that closed the loophole.
+`spec_version` is bumped to `001_000_003`.
 
-**All validators must be running a node that exports
-`ext_ledger_8_bridge_apply_transaction_version_2` (2.1.0, or 1.0.3 on the release branch) before
-the upgrade is enacted.** An older node cannot instantiate a runtime that imports it, so any
+**All validators must be running node 1.0.3 before the upgrade is enacted.** An older node cannot
+instantiate a runtime that imports `ext_ledger_8_bridge_apply_transaction_version_2`, so any
 validator left behind stops importing blocks at the `set_code`.
 
-Backport of https://github.com/midnightntwrk/midnight-node/pull/2002.
-
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1924
+PR: https://github.com/midnightntwrk/midnight-node/pull/2002
