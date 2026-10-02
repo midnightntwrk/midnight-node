@@ -1,4 +1,5 @@
 #tests #ci
+
 # Run nightly cNIGHT e2e job inside a container
 
 The nightly `nightly-run-cnight-e2e-qanet` workflow failed on its
@@ -25,7 +26,7 @@ rustup + Rust 1.98.1; the workspace's `rust-toolchain.toml` pulls any
 missing components on first cargo invocation). The apt dep list adds
 `pkg-config` on top of the existing `protobuf-compiler` and
 `postgresql-client` — `libssl-dev`, `libpq-dev`, and `libsqlite3-dev`
-are already in the image. `clang` is intentionally *not* installed:
+are already in the image. `clang` is intentionally _not_ installed:
 the e2e test binary depends on `subxt` + `sqlx` + `redb` only, none of
 which pull `rocksdb` or any other `bindgen`-using crate, so libclang
 is not needed (the Earthfile installs it because it builds the full
