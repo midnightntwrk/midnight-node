@@ -1,0 +1,198 @@
+# Distributed buck2 build + test on free ubuntu-latest runners.
+#
+# One `driver` job owns the buck2 invocation; N `worker` jobs lend their cores
+# over an iroh P2P mesh (gilescope/rebuck2). The driver builds with the hybrid
+# `re-cache` platform + `--prefer-remote`, so every compile/link/test is
+# dispatched to a worker while the few `local_only` actions (reindeer git_fetch,
+# which needs the driver's private-repo auth) still run locally. The driver stays
+# light — it was getting VM-reclaimed ~20 min into a cold monolithic build when
+# it compiled everything locally. buck-out + the CAS store live on /mnt (the big
+# ephemeral disk), so the central CAS the driver serves doesn't overflow `/`.
+# Rendezvous is keyless: every job derives the driver's iroh key from the run id.
+#
+# The build includes the on-chain WASM runtime blob (wasm32 cdylib → wasm-opt →
+# zstd), so the toolchain step installs a wasm-capable clang + wasm-opt + protoc +
+# a pinned binaryen on every runner (workers execute the compiles now). Tests
+# tagged `ci-infra` (Docker/devnet/Cardano) are excluded — they need external
+# stacks these runners don't have; everything else must pass.
+name: buck2 distributed
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [giles-buck2-build]
+    paths:
+      - "**/BUCK"
+      - ".buckconfig"
+      - "platforms/**"
+      - "toolchains/**"
+      - "wasm-deps/**"
+      - "tools/wasm-compress/**"
+      - "scripts/buck2/**"
+      - ".github/workflows/buck2-distributed.yml"
+      - ".github/actions/buck2-linux-toolchain/**"
+
+permissions: {}
+
+concurrency:
+  group: buck2-distributed-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # One mesh session per run; driver + workers derive the iroh key from it.
+  MESH_SESSION: mesh-${{ github.run_id }}
+  # Quorum below the worker count: one no-show runner must not scrap the run.
+  QUORUM_WORKERS: "3"
+  # Pin the toolchain so rustc uses the pre-installed 1.95 directly and never
+  # consults rust-toolchain.toml at build time — parallel rustc actions otherwise
+  # race to rustup-install its pinned components ("detected conflict:
+  # bin/cargo-clippy"). The composite also pre-installs those components.
+  RUSTUP_TOOLCHAIN: 1.95-x86_64-unknown-linux-gnu
+  # Wasm C toolchain, passed as *global* `-c` overrides (reach every cell,
+  # unlike a root-cell `.buckconfig.local`). The wrappers force
+  # --target=wasm32-unknown-unknown (cc-rs doesn't for the wasm32v1-none rust
+  # target) and add -Qunused-arguments for buck's cc-shim `--ld-path`.
+  BUCK_WASM_CFG: >-
+    -c wasm.cc=/usr/local/bin/wasm-cc.sh
+    -c wasm.cxx=/usr/local/bin/wasm-cc.sh
+    -c wasm.ar=/usr/local/bin/wasm-ar.sh
+    -c wasm.linker=/usr/local/bin/wasm-lld.sh
+  # CAS bank lineage (rebuck2): the branch's bank is its own; it inherits the
+  # parent lineage's bank read-only so a first lap on a branch is warm off trunk.
+  CAS_LINEAGE: ${{ github.head_ref || github.ref_name }}
+  CAS_PARENT_LINEAGE: ${{ github.base_ref != '' && github.base_ref || (github.ref_name != 'main' && 'main' || '') }}
+
+jobs:
+  # The driver owns buck2 but executes nothing itself (--no-local-exec): every
+  # action goes to a worker. It lends a few cores as a co-worker for the native
+  # local_only actions (reindeer fetches, toolchain discovery).
+  driver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: write # driver publishes its mesh address + banks AC/CAS
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Check test fixtures in sync
+        # The committed */test-fixtures/ copies exist because buck2 stages only
+        # same-package source resources onto RE workers; regenerate + fail on drift.
+        run: |
+          ./scripts/buck2/sync-test-fixtures.sh >/dev/null
+          git diff --exit-code -- '*/test-fixtures' || {
+            echo "::error::test fixtures out of sync — run scripts/buck2/sync-test-fixtures.sh and commit"; exit 1; }
+      # Even with --no-local-exec + --decentralized-cas the driver holds buck-out
+      # (materialized inputs to local_only actions + final outputs). Keep it off
+      # the free runner's small `/` via a BIND MOUNT to /mnt (a symlink resolves
+      # inconsistently under rebuck2's materializer → "couldn't read src/lib.rs").
+      # Reclaim the pre-installed ballast on `/` too, and add swap for the
+      # co-worker's rustc peaks.
+      - name: Redirect buck-out + store to /mnt, reclaim ballast, add swap
+        run: |
+          set -e
+          sudo mkdir -p /mnt/buck-out /mnt/rebuck2
+          mkdir -p buck-out
+          sudo mount --bind /mnt/buck-out buck-out
+          sudo chown -R "$(id -u):$(id -g)" buck-out /mnt/rebuck2
+          ( sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+              /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null ) || true
+          ( sudo fallocate -l 10G /mnt/rebuck-swap \
+            && sudo chmod 600 /mnt/rebuck-swap \
+            && sudo mkswap /mnt/rebuck-swap \
+            && sudo swapon /mnt/rebuck-swap ) || echo "extra swap unavailable (continuing)"
+          df -h / /mnt; free -h
+      - uses: ./.github/actions/install-buck2-pinned # pinned buck2 (was install-buck2 @latest — drifts)
+      - uses: ./.github/actions/buck2-linux-toolchain
+
+      - name: Bring up rebuck2 driver
+        uses: gilescope/rebuck/rebuck2/actions/driver@796b7885b954f4fc026a5d880a7c23c58ff4033d
+        with:
+          session: ${{ env.MESH_SESSION }}
+          buck2-version: "" # we install buck2 ourselves (install-buck2 above)
+          min-workers: ${{ env.QUORUM_WORKERS }}
+          co-worker-slots: "half"
+          # Hybrid `re-cache`, NOT `re-exec`/`no-local-exec`: reindeer fetches the
+          # git dependencies (midnight-ledger, whisky, polkadot-sdk) via `git_fetch`,
+          # which is `local_only = True` (network + private-repo auth live on the
+          # driver's checkout). re-exec has no local executor, so it hard-rejects
+          # those ("Trying to execute a local_only action on remote executor"). The
+          # hybrid platform keeps a local executor for them; `--prefer-remote` on
+          # the build (below) still pushes every compile/link/test to a worker, so
+          # the driver stays light without forbidding local_only.
+          execution-platforms: root//platforms:re-cache
+          # --prefetch-metadata: pull input metadata ahead of dispatch.
+          # NB: --decentralized-cas dropped — with git deps produced local_only on
+          # the driver, workers pulling those large trees P2P dropped non-.rs files
+          # (polkadot-sdk's docs/*.mmd that sp-runtime include_str!s). Central CAS
+          # (the driver serves complete blobs from /mnt) keeps the tree intact; the
+          # driver stays light anyway because --prefer-remote runs no compiles here.
+          extra-args: --prefetch-metadata
+          # cache failed actions too, so a re-run doesn't repeat known failures.
+          cache-failures: "true"
+          # CAS bank: warm incremental laps (artifacts, no LRU eviction).
+          lineage: ${{ env.CAS_LINEAGE }}
+          parent-lineage: ${{ env.CAS_PARENT_LINEAGE }}
+          # Keep the CAS store off the free runner's small `/`.
+          store: /mnt/rebuck2
+
+      # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
+      # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
+      # BUCK_WASM_CFG is a *global* -c so the toolchains cell sees the wasm cc.
+      - name: buck2 build (node + toolkit binaries + on-chain wasm blob)
+        run: |
+          set -o pipefail
+          # --prefer-remote: push every non-local_only action (all the compiles)
+          # to a worker; local_only (git_fetch) still runs on the driver.
+          buck2 build --prefer-remote $BUCK_WASM_CFG --target-platforms root//platforms:linux-x86_64 \
+            root//node:midnight-node-bin \
+            root//util/toolkit:midnight-node-toolkit-bin \
+            root//:runtime-wasm 2>&1 | tee build.log
+
+      - name: buck2 test (excluding infra-dependent tests)
+        run: |
+          set -o pipefail
+          buck2 test --prefer-remote $BUCK_WASM_CFG root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
+
+      - name: Report distribution
+        if: always()
+        run: |
+          grep -Eo 'remote: [0-9]+|local: [0-9]+|Cache hits: [0-9]+%' build.log | sort -u || true
+          grep -Eq 'remote: [1-9]' build.log \
+            && echo "distributed: actions ran cross-runner" \
+            || echo "note: no remote actions (ran on the driver — tune quorum)"
+
+      - name: Tear down rebuck2 driver (finalize + bank)
+        if: always()
+        uses: gilescope/rebuck/rebuck2/actions/driver-finish@796b7885b954f4fc026a5d880a7c23c58ff4033d
+
+  # Workers execute the dispatched compile/link/test actions, so they carry the
+  # same toolchain as the driver. They fetch input blobs P2P; with
+  # --decentralized-cas their outputs stay local and peers pull them direct.
+  # continue-on-error: the driver job is the verdict; a lost worker is fewer cores.
+  worker:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read # fetch the driver-address run artifact + bank restore
+    steps:
+      # Checkout resolves the local composite action; the build inputs arrive as
+      # blobs over the mesh, not from this tree.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Redirect worker store to /mnt
+        run: |
+          sudo mkdir -p /mnt/rebuck2
+          sudo chown -R "$(id -u):$(id -g)" /mnt/rebuck2
+      - uses: ./.github/actions/buck2-linux-toolchain
+      - name: Join the mesh and serve
+        uses: gilescope/rebuck/rebuck2/actions/worker@796b7885b954f4fc026a5d880a7c23c58ff4033d
+        with:
+          session: ${{ env.MESH_SESSION }}
+          role: ${{ runner.os }}-w${{ matrix.n }}
+          lineage: ${{ env.CAS_LINEAGE }}
+          store: /mnt/rebuck2

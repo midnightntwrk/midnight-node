@@ -1,0 +1,111 @@
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
+load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
+load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")
+load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
+load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
+
+# Wasm32 C toolchain. Absolute paths only — the cc shim `cd`s before exec'ing,
+# so a relative wrapper name wouldn't resolve. Default is macOS-arm64's Homebrew
+# LLVM clang (its wasm backend + cc-rs's own --target handling build the vendored
+# C fine locally). Linux CI overrides `[wasm] cc/cxx/ar` to an absolute path to
+# the wasm-cc.sh / wasm-ar.sh wrappers (which force --target=wasm32-unknown-
+# unknown — cc-rs doesn't pass it for `wasm32v1-none` under distro clang). Mirror
+# of ../midnight-node (bazel) toolchains/wasm32_cc.sh.
+_WASM_CC = read_config("wasm", "cc", "/opt/homebrew/opt/llvm/bin/clang")
+_WASM_CXX = read_config("wasm", "cxx", "/opt/homebrew/opt/llvm/bin/clang++")
+_WASM_AR = read_config("wasm", "ar", "/opt/homebrew/opt/llvm/bin/llvm-ar")
+# The wasm linker wrapper. Default is the in-repo relative path (works for a
+# local build from the repo root); under distributed RE it must be an absolute
+# path present on every worker (the relative path isn't staged into the remote
+# action's cwd -> "toolchains/wasm-lld.sh: No such file"), so CI overrides
+# `[wasm] linker` to /usr/local/bin/wasm-lld.sh (installed by the composite).
+_WASM_LINKER = read_config("wasm", "linker", "toolchains/wasm-lld.sh")
+
+system_genrule_toolchain(
+    name = "genrule",
+    visibility = ["PUBLIC"],
+)
+
+system_rust_toolchain(
+    name = "rust",
+    default_edition = "2024",
+    # On the wasm32 platform (root//platforms:wasm32v1-none) target the on-chain
+    # runtime triple; otherwise the host default. Keep the non-wasm branches in
+    # sync with the prelude's host detection for the platforms we build.
+    rustc_target_triple = select({
+        "prelude//cpu:wasm32": "wasm32v1-none",
+        "prelude//os:macos": select({
+            "prelude//cpu:arm64": "aarch64-apple-darwin",
+            "prelude//cpu:x86_64": "x86_64-apple-darwin",
+        }),
+        "prelude//os:linux": select({
+            "prelude//cpu:arm64": "aarch64-unknown-linux-gnu",
+            "prelude//cpu:x86_64": "x86_64-unknown-linux-gnu",
+        }),
+    }),
+    # --cfg substrate_runtime enables the wasm stubs in #[runtime_interface] and
+    # the wasm module in sp-runtime-interface (matches Cargo's runtime build).
+    # aarch64-pc-windows-msvc unwinding needs vcruntime.lib for the C++ EH
+    # personality; x86_64 uses SEH and doesn't.
+    rustc_flags = select({
+        "prelude//cpu:wasm32": ["--cfg", "substrate_runtime"],
+        "config//os:windows": ["-Clink-arg=vcruntime.lib"],
+        "DEFAULT": [],
+    }),
+    visibility = ["PUBLIC"],
+)
+
+system_cxx_toolchain(
+    name = "cxx",
+    # Absolute path: the prelude's buildscript cc shim execs the compiler
+    # via os.execl, which does no PATH lookup - a bare "clang" fails with
+    # FileNotFoundError (prelude/rust/tools/from_any_dir.py). Absolute paths
+    # sidestep it. On Windows these unix paths don't exist and break every
+    # link step; None/"cl.exe" sentinels keep the prelude's MSVC discovery.
+    # wasm32: Apple's /usr/bin/clang has no WebAssembly backend ("No available
+    # targets are compatible with triple wasm32-unknown-unknown"), so C-FFI
+    # crates in the runtime closure (secp256k1-sys) fail to compile their vendored
+    # C. Use a wasm-capable clang (_WASM_CC — Homebrew LLVM on macOS, distro clang
+    # on Linux CI). Non-wasm builds use the system clang.
+    compiler = select({
+        "config//os:windows": "cl.exe",
+        "prelude//cpu:wasm32": _WASM_CC,
+        "DEFAULT": "/usr/bin/clang",
+    }),
+    cxx_compiler = select({
+        "config//os:windows": "cl.exe",
+        "prelude//cpu:wasm32": _WASM_CXX,
+        "DEFAULT": "/usr/bin/clang++",
+    }),
+    # wasm32 rust cdylib link: rustc emits wasm-ld-flavour args (`-flavor wasm
+    # --export Core_version …`) that clang++ can't parse. rust-lld (bundled with
+    # the rust toolchain) accepts `-flavor wasm`. The wrapper strips host-only
+    # driver/link flags and locates rust-lld via the sysroot (portable).
+    linker = select({
+        "config//os:windows": "link.exe",
+        "prelude//cpu:wasm32": _WASM_LINKER,
+        "DEFAULT": "/usr/bin/clang++",
+    }),
+    archiver = select({
+        "config//os:windows": None,
+        "prelude//cpu:wasm32": _WASM_AR,
+        "DEFAULT": "/usr/bin/ar",
+    }),
+    visibility = ["PUBLIC"],
+)
+
+system_python_bootstrap_toolchain(
+    name = "python_bootstrap",
+    visibility = ["PUBLIC"],
+)
+
+remote_test_execution_toolchain(
+    name = "remote_test_execution",
+    visibility = ["PUBLIC"],
+)
+
+noop_test_toolchain(
+    name = "test",
+    visibility = ["PUBLIC"],
+)

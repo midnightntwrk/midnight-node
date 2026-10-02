@@ -1,0 +1,2 @@
+# build.rs is an empty main() ("populate OUT_DIR")
+buildscript.run = false

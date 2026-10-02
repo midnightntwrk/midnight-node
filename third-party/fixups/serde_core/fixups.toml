@@ -1,0 +1,9 @@
+# Local override of the shared buck2-fixups entry: preserves its config
+# and adds a wasm32 `omit_features` so the no_std runtime build drops `std`
+# (host/exec builds keep it). See docs/buck2-notes.md "Host/target feature split".
+
+cargo_env = true
+buildscript.run = true
+
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]

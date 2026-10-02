@@ -1,0 +1,17 @@
+bin.name = "midnight-node-toolkit"
+args = [
+    "contract-address",
+    "--src-file", "../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
+    "--tagged", "--untagged",
+]
+status.code = 2
+
+stdout = ""
+
+stderr = """
+error: the argument '--tagged' cannot be used with '--untagged'
+
+Usage: midnight-node-toolkit contract-address --src-file <SRC_FILE> --tagged
+
+For more information, try '--help'.
+"""

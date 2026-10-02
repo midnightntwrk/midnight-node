@@ -1,0 +1,14 @@
+# Local override of the shared openssl-sys fixup: point the build script at the
+# system OpenSSL so it probes the right version and sets consistent `ossl3xx`
+# cfgs (buck's action env doesn't search system paths). Without this, openssl's
+# ffi bindings and the version cfgs disagree ("not found in `ffi`"). Ubuntu
+# paths, gated to Linux — on macOS native-tls uses Security.framework, so
+# openssl-sys isn't built there. Mirrors ../midnight-node (bazel) MODULE.bazel.
+cargo_env = true
+
+[buildscript.run.env]
+OPT_LEVEL = "3"
+
+['cfg(target_os = "linux")'.buildscript.run.env]
+OPENSSL_LIB_DIR = "/usr/lib/x86_64-linux-gnu"
+OPENSSL_INCLUDE_DIR = "/usr/include"

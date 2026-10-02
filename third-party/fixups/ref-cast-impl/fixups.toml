@@ -1,0 +1,2 @@
+# env!(CARGO_PKG_VERSION_PATCH) in expanded code
+cargo_env = true

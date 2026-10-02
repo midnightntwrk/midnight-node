@@ -1,0 +1,20 @@
+# The `openssl` (0.10) crate's build script reads DEP_OPENSSL_VERSION_NUMBER
+# (openssl-sys's `links` metadata) to decide which version cfgs to emit. Reindeer
+# captures that value ONCE, at buckify time, from whatever openssl the buckify
+# host has, and bakes it in statically. Buckified on macOS (Homebrew openssl 3.5)
+# it bakes 3.5.0 -> the crate gates in 3.3+ symbols (EVP_DigestSqueeze,
+# OSSL_get_max_threads, X509_PURPOSE_CODE_SIGN). But at build time openssl-sys
+# dynamically detects the real host openssl (3.0.13 on ubuntu CI) and its ffi
+# only has 3.0 symbols -> "not found in `ffi`". Pin the dependent to the 3.0
+# baseline on Linux so it matches openssl-sys's dynamic detection and the system
+# libssl. (Proper fix is dynamic DEP_OPENSSL_* wiring in reindeer; this is the
+# pragmatic pin for the ubuntu build target.)
+cargo_env = true
+
+['cfg(target_os = "linux")'.buildscript.run.env]
+DEP_OPENSSL_VERSION_NUMBER = "30000000"
+# This env block REPLACES reindeer's baked DEP_OPENSSL_* rather than merging, so
+# the conf (which openssl-sys detects identically on macOS 3.5 and ubuntu 3.0.13
+# — both built without IDEA / SSLv3) must be restated or openssl-0.10 references
+# EVP_idea_* symbols the ffi omits under OPENSSL_NO_IDEA.
+DEP_OPENSSL_CONF = "OPENSSL_NO_IDEA,OPENSSL_NO_SSL3_METHOD"
