@@ -31,18 +31,21 @@ use tokio::time::{Instant, sleep_until, timeout};
 
 use super::{BuilderContext, DEFAULT_RESOLVER};
 use crate::indexer_client::{
-	BlockInfo, DUST_IDLE_TIMEOUT, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT,
-	SHIELDED_PROGRESS_PROBE_INTERVAL, ShieldedCatchUp, ShieldedEvent, SyncProgress,
-	TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData, WalletSyncState,
+	BlockInfo, DUST_IDLE_TIMEOUT, DustGenerationsEventData, DustGenerationsForm, DustSnapshot,
+	IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT, SHIELDED_PROGRESS_PROBE_INTERVAL,
+	ShieldedCatchUp, ShieldedEvent, SyncProgress, TransactionResultKind, UnshieldedEvent,
+	UnshieldedUtxoData, WalletSyncState,
 };
+use crate::ledger_8::mn_ledger::events::EventDetails;
 use crate::ledger_8::{
-	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustLocalState,
-	DustWallet, Event, HashOutput, IntentHash, IntoWalletAddress, LedgerParameters, LedgerState,
+	BindingKind, BlockContext, ContractAddress, ContractState, DB, DefaultDB, DustGenerationInfo,
+	DustLocalState, DustNullifier, DustOutput, DustSecretKey, DustWallet, Event, HashOutput,
+	InitialNonce, IntentHash, IntoWalletAddress, LedgerParameters, LedgerState,
 	MerkleTreeCollapsedUpdate, Offer, PedersenDowngradeable, ProofKind, ProofMarker,
-	PureGeneratorPedersen, Resolver, SerdeTransaction, Serializable, ShieldedWallet, Signature,
-	SignatureKind, Sp, Storable, Tagged, Timestamp, Transaction, UnshieldedTokenType,
-	UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState, deserialize,
-	deserialize_untagged, make_block_context, serialize_untagged,
+	PureGeneratorPedersen, QualifiedDustOutput, Resolver, SerdeTransaction, Serializable,
+	ShieldedWallet, Signature, SignatureKind, Sp, Storable, Tagged, Timestamp, Transaction,
+	UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState,
+	deserialize, deserialize_untagged, make_block_context, serialize_untagged,
 };
 use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
@@ -67,6 +70,9 @@ pub struct IndexerContext<D: DB + Clone> {
 	/// One build must read block context and ledger parameters from the same block, or a tx can
 	/// pair one block's time with another's parameters.
 	tip: Mutex<Option<BlockInfo>>,
+	/// Rebuild DUST from a per-wallet indexer snapshot where the indexer supports it, rather than
+	/// replaying the chain-wide dust event log.
+	fast_sync: bool,
 }
 
 impl<D: DB + Clone> IndexerContext<D> {
@@ -87,7 +93,14 @@ impl<D: DB + Clone> IndexerContext<D> {
 			unshielded: Mutex::new(HashMap::new()),
 			resolver: Mutex::new(&DEFAULT_RESOLVER),
 			tip: Mutex::new(None),
+			fast_sync: true,
 		})
+	}
+
+	/// Turn DUST fast sync off (it is on by default) to always replay the dust event log.
+	pub fn with_fast_sync(mut self, enabled: bool) -> Self {
+		self.fast_sync = enabled;
+		self
 	}
 
 	/// Re-read the chain tip that [`BuilderContext::latest_block_context`] and
@@ -186,6 +199,7 @@ impl IndexerContext<DefaultDB> {
 			(*LedgerState::<DefaultDB>::new(self.network_id.clone()).parameters).clone()
 		});
 		let tip_time = Timestamp::from_secs(block.timestamp);
+		let fast_sync = self.dust_fast_sync_target(&block).await;
 
 		let progress = SyncProgress { wallets: seeds.len(), ..Default::default() };
 
@@ -193,7 +207,14 @@ impl IndexerContext<DefaultDB> {
 		// `select!` yields the work's result.
 		let synced = {
 			let work = stream::iter(seeds.iter().map(|seed| {
-				self.sync_wallet(seed, resume.get(seed), &params, tip_time, &progress)
+				self.sync_wallet(
+					seed,
+					resume.get(seed),
+					&params,
+					tip_time,
+					fast_sync.as_ref(),
+					&progress,
+				)
 			}))
 			.buffer_unordered(self.wallet_sync_concurrency.get())
 			.try_collect::<Vec<_>>();
@@ -213,6 +234,34 @@ impl IndexerContext<DefaultDB> {
 		Ok(next_resume)
 	}
 
+	/// The indexer's `dustGenerations` form and the snapshot block (the tip) for DUST fast sync, or
+	/// `None` to replay dust events.
+	async fn dust_fast_sync_target(
+		&self,
+		tip: &BlockInfo,
+	) -> Option<(DustGenerationsForm, DustSnapshot)> {
+		if !self.fast_sync {
+			return None;
+		}
+		let target = async {
+			let Some(form) = self.client.dust_generations_form().await? else {
+				return Ok(None);
+			};
+			Ok::<_, IndexerClientError>(Some((form, self.client.dust_snapshot(tip.height).await?)))
+		};
+		match target.await {
+			Ok(None) => {
+				log::info!("indexer: no DUST fast-sync support; replaying dust events");
+				None
+			},
+			Ok(target) => target,
+			Err(e) => {
+				log::warn!("indexer: DUST fast-sync probe failed ({e}); replaying dust events");
+				None
+			},
+		}
+	}
+
 	/// Build the wallet for `seed` and sync its shielded / unshielded / dust streams concurrently.
 	///
 	/// The wallet is always rebuilt from the seed, so keys stay derived rather than persisted;
@@ -223,6 +272,7 @@ impl IndexerContext<DefaultDB> {
 		resume: Option<&WalletSyncState>,
 		params: &LedgerParameters,
 		tip_time: Timestamp,
+		fast_sync: Option<&(DustGenerationsForm, DustSnapshot)>,
 		progress: &SyncProgress,
 	) -> Result<(WalletSeed, Wallet<DefaultDB>, Vec<(Utxo, Timestamp)>, WalletSyncState), BoxError>
 	{
@@ -237,7 +287,7 @@ impl IndexerContext<DefaultDB> {
 		let (shielded_state, (unshielded_utxos, unshielded_tx_id), (dust_state, dust_event_id)) = tokio::try_join!(
 			self.sync_shielded(shielded, resume, progress),
 			self.sync_unshielded(unshielded, resume, progress),
-			self.sync_dust(dust, resume, tip_time, progress),
+			self.sync_dust(dust, resume, tip_time, fast_sync, progress),
 		)?;
 
 		let utxo_blobs = unshielded_utxos
@@ -510,13 +560,34 @@ impl IndexerContext<DefaultDB> {
 	/// Returns the dust state as of the last applied event *before* `process_ttls`, plus that
 	/// event's id. `replay_events` rejects a gap with `NonLinearInsertion`, so a wrong resume
 	/// cursor fails loudly rather than producing a quietly wrong balance.
+	///
+	/// With `fast_sync`, the state is rebuilt by [`fast_sync_dust`](Self::fast_sync_dust) instead,
+	/// falling back to the replay if that fails. A fast-synced state has no dust event id to
+	/// resume from, so nothing is returned for the cache and the next run fast-syncs again.
+	//
+	// ponytail: a fresh snapshot every run. If repeat runs get slow, resume from the cached state:
+	// `dtimeCutoffHeight`, the commitment update from the old end index, nullifiers from the last
+	// block.
 	async fn sync_dust(
 		&self,
 		dust: &mut DustWallet<DefaultDB>,
 		resume: Option<&WalletSyncState>,
 		tip_time: Timestamp,
+		fast_sync: Option<&(DustGenerationsForm, DustSnapshot)>,
 		progress: &SyncProgress,
 	) -> Result<(Option<DustLocalStateRaw>, u64), BoxError> {
+		if let Some((form, snapshot)) = fast_sync {
+			match self.fast_sync_dust(dust, *form, snapshot, tip_time).await {
+				Ok(state) => {
+					dust.dust_local_state = Some(Sp::new(state));
+					dust.process_ttls(tip_time);
+					progress.dust.finish();
+					return Ok((None, 0));
+				},
+				Err(e) => log::warn!("indexer: DUST fast sync failed ({e}); replaying dust events"),
+			}
+		}
+
 		let mut resume_id = 0u64;
 		if let Some(r) = resume
 			&& let Some(DustLocalStateRaw(bytes)) = &r.dust_state
@@ -567,6 +638,234 @@ impl IndexerContext<DefaultDB> {
 		progress.dust.finish();
 		Ok((dust_state, applied_id))
 	}
+
+	/// Rebuild the wallet's DUST state at `snapshot` from per-wallet indexer queries rather than
+	/// the chain-wide event log: owned generations with the generation tree's gaps collapsed, each
+	/// output's spend chain followed by nullifier, then the commitment tree around the unspent
+	/// outputs. Returned only if both tree roots match the snapshot block's.
+	async fn fast_sync_dust(
+		&self,
+		dust: &DustWallet<DefaultDB>,
+		form: DustGenerationsForm,
+		snapshot: &DustSnapshot,
+		tip_time: Timestamp,
+	) -> Result<DustLocalState<DefaultDB>, BoxError> {
+		let (Some(sk), Some(local)) = (dust.secret_key(), dust.dust_local_state.as_ref()) else {
+			return Err("watch-only dust wallet".into());
+		};
+		let mut state = DustLocalState::<DefaultDB>::new(local.params);
+		let owner = dust.public_key;
+
+		let address = dust.address(&self.network_id).to_bech32();
+		let mut stream = self.client.dust_generations(form, &address, snapshot).await?;
+		let mut entries = Vec::new();
+		let mut dtimes = HashMap::new();
+		let tail_update = loop {
+			let event = timeout(PROGRESS_IDLE_TIMEOUT, stream.next())
+				.await
+				.map_err(|_| "dustGenerations stalled")?
+				.ok_or("dustGenerations ended before its progress item")??;
+			match event {
+				DustGenerationsEventData::Entry(entry) => entries.push(entry),
+				DustGenerationsEventData::DtimeUpdate { generation_mt_index, dtime_secs } => {
+					dtimes.insert(generation_mt_index, Timestamp::from_secs(dtime_secs));
+				},
+				DustGenerationsEventData::Progress { collapsed_update } => break collapsed_update,
+			}
+		};
+
+		let generations = entries.len();
+		let mut heads = Vec::with_capacity(generations);
+		for entry in entries {
+			if let Some(update) = &entry.collapsed_update {
+				state = state
+					.apply_generation_collapsed_update(&deserialize(&update[..])?)
+					.map_err(|e| format!("apply dust generation update: {e:?}"))?;
+			}
+			let backing_night = InitialNonce(HashOutput(entry.backing_night));
+			let info = DustGenerationInfo {
+				value: entry.value,
+				owner,
+				nonce: backing_night,
+				dtime: dtimes.get(&entry.generation_mt_index).copied().unwrap_or(Timestamp::MAX),
+			};
+			state = state
+				.insert_generation_info(entry.generation_mt_index, info, Some(backing_night))
+				.map_err(|e| format!("insert dust generation: {e:?}"))?;
+			heads.push(QualifiedDustOutput {
+				initial_value: entry.initial_value,
+				owner,
+				nonce: dust_nonce(sk, backing_night, 0),
+				seq: 0,
+				ctime: Timestamp::from_secs(entry.ctime_secs),
+				backing_night,
+				mt_index: entry.commitment_mt_index,
+			});
+		}
+		if let Some(update) = tail_update {
+			state = state
+				.apply_generation_collapsed_update(&deserialize(&update[..])?)
+				.map_err(|e| format!("apply dust generation update: {e:?}"))?;
+		}
+
+		// A successor's nullifier depends on the spend that created it, so each round can only
+		// look one spend further down every chain.
+		let mut unspent = Vec::new();
+		let mut rounds = 0;
+		while !heads.is_empty() {
+			rounds += 1;
+			let by_nullifier: HashMap<Vec<u8>, QualifiedDustOutput> =
+				heads.drain(..).map(|qdo| (nullifier_le(&qdo.nullifier(sk)), qdo)).collect();
+			let mut spends = self
+				.client
+				.dust_nullifier_transactions(
+					by_nullifier.keys().map(Vec::as_slice),
+					snapshot.height,
+				)
+				.await?;
+			let mut successors = HashMap::new();
+			while let Some(spend) = timeout(PROGRESS_IDLE_TIMEOUT, spends.next())
+				.await
+				.map_err(|_| "dustNullifierTransactions stalled")?
+			{
+				let spend = spend?;
+				let Some(spent) = by_nullifier.get(&spend.nullifier_le) else { continue };
+				let next = spend_successor(&state, sk, spent, &spend.events)?;
+				successors.insert(spend.nullifier_le, next);
+			}
+			for (nullifier, qdo) in by_nullifier {
+				match successors.remove(&nullifier) {
+					Some(next) => heads.push(next),
+					None => unspent.push(qdo),
+				}
+			}
+		}
+
+		unspent.sort_by_key(|qdo| qdo.mt_index);
+		let mut first_free = 0;
+		for qdo in &unspent {
+			state = self.collapse_dust_commitments(state, first_free, qdo.mt_index).await?;
+			state = state
+				.insert_commitment(qdo.mt_index, *qdo, true)
+				.map_err(|e| format!("insert dust commitment: {e:?}"))?;
+			state = state
+				.add_utxo(&qdo.nullifier(sk), qdo, None)
+				.map_err(|e| format!("add dust utxo: {e:?}"))?;
+			first_free = qdo.mt_index + 1;
+		}
+		state = self
+			.collapse_dust_commitments(state, first_free, snapshot.commitment_end_index)
+			.await?;
+
+		let roots = [
+			("commitment", state.commitment_tree.root(), &snapshot.commitment_root),
+			("generation", state.generating_tree.root(), &snapshot.generation_root),
+		];
+		for (tree, root, expected) in roots {
+			let root = root.ok_or_else(|| format!("dust {tree} tree is not rehashed"))?;
+			if serialize_untagged(&root)? != *expected {
+				return Err(
+					format!("dust {tree} root differs from block {}'s", snapshot.height).into()
+				);
+			}
+		}
+		state.sync_time = tip_time;
+		log::debug!(
+			"indexer: DUST fast sync at block {}: {generations} generations, {rounds} spend \
+			 rounds, {} unspent outputs",
+			snapshot.height,
+			unspent.len(),
+		);
+		Ok(state)
+	}
+
+	/// Fill the commitment tree over `start..end` with one collapsed update from the indexer.
+	async fn collapse_dust_commitments(
+		&self,
+		state: DustLocalState<DefaultDB>,
+		start: u64,
+		end: u64,
+	) -> Result<DustLocalState<DefaultDB>, BoxError> {
+		if end <= start {
+			return Ok(state);
+		}
+		let update = self.client.dust_commitment_collapsed_update(start, end - 1).await?;
+		Ok(state
+			.apply_commitment_collapsed_update(&deserialize(&update[..])?)
+			.map_err(|e| format!("apply dust commitment update: {e:?}"))?)
+	}
+}
+
+/// The indexer's byte form of a nullifier.
+fn nullifier_le(nullifier: &DustNullifier) -> Vec<u8> {
+	nullifier.0.0.to_bytes_le().to_vec()
+}
+
+fn dust_nonce(sk: &DustSecretKey, backing_night: InitialNonce, seq: u32) -> crate::ledger_8::Fr {
+	sk.nonces(backing_night)
+		.nth(seq as usize)
+		.expect("nonces is an endless sequence")
+}
+
+/// The output that spending `spent` created, from the `DustSpendProcessed` among `events`
+/// (its transaction's) that reveals `spent`'s nullifier.
+fn spend_successor(
+	state: &DustLocalState<DefaultDB>,
+	sk: &DustSecretKey,
+	spent: &QualifiedDustOutput,
+	events: &[Vec<u8>],
+) -> Result<QualifiedDustOutput, BoxError> {
+	let nullifier = spent.nullifier(sk);
+	for raw in events {
+		let event: Event<DefaultDB> = deserialize(&raw[..])?;
+		let EventDetails::DustSpendProcessed {
+			commitment,
+			commitment_index,
+			nullifier: revealed,
+			v_fee,
+			declared_time,
+			..
+		} = event.content
+		else {
+			continue;
+		};
+		if revealed != nullifier {
+			continue;
+		}
+		let next = successor_output(state, sk, spent, commitment_index, v_fee, declared_time)?;
+		// The value uses the tip's dust parameters; a `ParamChange` since this spend would make it
+		// differ from what the chain committed to.
+		if next.commitment() != commitment {
+			return Err(format!(
+				"recomputed DUST output {commitment_index} does not match the chain's commitment"
+			)
+			.into());
+		}
+		return Ok(next);
+	}
+	Err("the spending transaction has no DustSpendProcessed for this nullifier".into())
+}
+
+/// Mirrors `DustLocalState::replay_events`'s handling of `DustSpendProcessed`.
+fn successor_output(
+	state: &DustLocalState<DefaultDB>,
+	sk: &DustSecretKey,
+	spent: &QualifiedDustOutput,
+	mt_index: u64,
+	v_fee: u128,
+	declared_time: Timestamp,
+) -> Result<QualifiedDustOutput, BoxError> {
+	let generation = state.generation_info(spent).ok_or("spent DUST output has no generation")?;
+	let value = DustOutput::from(*spent).updated_value(&generation, declared_time, &state.params);
+	Ok(QualifiedDustOutput {
+		initial_value: value.saturating_sub(v_fee),
+		owner: spent.owner,
+		nonce: dust_nonce(sk, spent.backing_night, spent.seq + 1),
+		seq: spent.seq + 1,
+		ctime: declared_time,
+		backing_night: spent.backing_night,
+		mt_index,
+	})
 }
 
 impl TryFrom<&BlockInfo> for LedgerParameters {
@@ -826,7 +1125,7 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::ledger_8::{INITIAL_PARAMETERS, serialize};
+	use crate::ledger_8::{DustPublicKey, INITIAL_PARAMETERS, serialize};
 
 	fn block_info(ledger_parameters: Vec<u8>) -> BlockInfo {
 		BlockInfo {
@@ -859,6 +1158,47 @@ mod tests {
 		assert_eq!(ctx.tblock_err, expected.tblock_err);
 		assert_eq!(ctx.parent_block_hash, expected.parent_block_hash);
 		assert_eq!(ctx.last_block_time, expected.last_block_time);
+	}
+
+	/// Fast sync must recompute exactly the output the ledger's own spend creates.
+	#[test]
+	fn successor_output_matches_the_ledger_spend() {
+		let sk = DustSecretKey::derive_secret_key(&[7; 32]);
+		let owner = DustPublicKey::from(sk.clone());
+		let params = INITIAL_PARAMETERS.dust;
+		let backing_night = InitialNonce(HashOutput([3; 32]));
+		let info = DustGenerationInfo {
+			value: 1_000_000_000,
+			owner,
+			nonce: backing_night,
+			dtime: Timestamp::MAX,
+		};
+		let spent = QualifiedDustOutput {
+			initial_value: 0,
+			owner,
+			nonce: dust_nonce(&sk, backing_night, 0),
+			seq: 0,
+			ctime: Timestamp::from_secs(1_700_000_000),
+			backing_night,
+			mt_index: 0,
+		};
+		let state = DustLocalState::<DefaultDB>::new(params)
+			.insert_generation_info(0, info, Some(backing_night))
+			.unwrap()
+			.insert_commitment(0, spent, true)
+			.unwrap()
+			.add_utxo(&spent.nullifier(&sk), &spent, None)
+			.unwrap();
+
+		let declared_time = Timestamp::from_secs(1_700_003_600);
+		let value = DustOutput::from(spent).updated_value(&info, declared_time, &params);
+		assert!(value > 0, "the generation must have produced DUST to spend");
+		let v_fee = value / 3;
+		let (_, spend) = state.spend(&sk, &spent, v_fee, declared_time).unwrap();
+
+		let next = successor_output(&state, &sk, &spent, 1, v_fee, declared_time).unwrap();
+		assert_eq!(next.commitment(), spend.new_commitment);
+		assert_eq!(next.seq, 1);
 	}
 
 	/// Both reads come from the cached tip; the unroutable URL would fail any re-query.

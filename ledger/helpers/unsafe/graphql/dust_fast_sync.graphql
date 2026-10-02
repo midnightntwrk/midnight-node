@@ -1,0 +1,34 @@
+# DUST fast-sync operations (`IndexerClient::dust_*`). Indexers validate every operation in the
+# document they are sent, not just the selected one, so these live apart from `indexer.graphql`:
+# an indexer without them (< 4.1.0) must still accept the rest.
+
+# The snapshot block a fast sync is pinned to.
+query DustSnapshotBlock($height: Int!) {
+  block(offset: { height: $height }) {
+    hash
+    dustCommitmentEndIndex
+    dustGenerationEndIndex
+    dustCommitmentMerkleTreeRoot
+    dustGenerationMerkleTreeRoot
+  }
+}
+
+# `endIndex` is inclusive.
+query DustCommitmentCollapsedUpdate($startIndex: Int!, $endIndex: Int!) {
+  dustCommitmentMerkleTreeUpdate(startIndex: $startIndex, endIndex: $endIndex) {
+    update
+  }
+}
+
+subscription DustNullifierTransactions($prefixes: [HexEncoded!]!, $toBlock: Int!) {
+  dustNullifierTransactions(nullifierLeBytesPrefixes: $prefixes, toBlock: $toBlock) {
+    nullifierLeBytes
+    transaction {
+      __typename
+      dustLedgerEvents {
+        __typename
+        raw
+      }
+    }
+  }
+}

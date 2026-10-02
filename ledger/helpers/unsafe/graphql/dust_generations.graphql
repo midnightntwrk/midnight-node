@@ -1,0 +1,36 @@
+# Alone in its file because indexers before 4.3.4 serve an index-range form of this subscription,
+# and would reject any document containing this one. `IndexerClient::dust_generations` rewrites it
+# for them.
+subscription DustGenerations(
+  $dustAddress: DustAddress!
+  $blockHash: HexEncoded!
+  $dtimeCutoffHeight: Int!
+) {
+  dustGenerations(
+    dustAddress: $dustAddress
+    blockHash: $blockHash
+    dtimeCutoffHeight: $dtimeCutoffHeight
+  ) {
+    __typename
+    ... on DustGenerationsItem {
+      commitmentMtIndex
+      generationMtIndex
+      value
+      initialValue
+      backingNight
+      ctime
+      collapsedMerkleTree {
+        update
+      }
+    }
+    ... on DustGenerationDtimeUpdateItem {
+      generationMtIndex
+      newDtime
+    }
+    ... on DustGenerationsProgress {
+      collapsedMerkleTree {
+        update
+      }
+    }
+  }
+}
