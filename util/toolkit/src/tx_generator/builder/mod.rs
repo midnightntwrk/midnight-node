@@ -1001,7 +1001,7 @@ macro_rules! timed {
 pub type WalletSchemes = HashMap<WalletSeed, UnshieldedSignatureScheme>;
 
 /// Resolve the scheme for `seed`, defaulting to Schnorr.
-fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureScheme {
+pub fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureScheme {
 	schemes.get(seed).copied().unwrap_or_default()
 }
 

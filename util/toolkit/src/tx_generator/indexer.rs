@@ -17,13 +17,16 @@
 use std::{collections::HashMap, sync::Arc};
 
 use midnight_ledger_unsafe_helpers::{
-	IndexerClient, UnshieldedSignatureScheme, WalletSeed, WalletSyncState,
-	indexer_client::BlockInfo, ledger_8, ledger_9,
+	IndexerClient, WalletSeed, WalletSyncState, indexer_client::BlockInfo, ledger_8, ledger_9,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use subxt::utils::H256;
 
-use super::builder::{WalletSchemes, builders::ledger_8::type_convert::convert_wallet_seed};
+use super::builder::{
+	WalletSchemes,
+	builders::ledger_8::type_convert::{convert_scheme, convert_wallet_seed},
+	ensure_ecdsa_supported, scheme_of,
+};
 use super::source::{Source, create_file_wallet_cache};
 use crate::fetcher::{
 	fetch_storage::WalletStateCaching,
@@ -100,16 +103,9 @@ pub async fn sync_indexer(
 	seeds: &[WalletSeed],
 	schemes: &WalletSchemes,
 ) -> Result<SyncedIndexer, BoxError> {
-	// Only the Schnorr unshielded identity is derivable from the seed here, so an ECDSA seed would
-	// silently use the wrong address. The replay path handles ECDSA via `ensure_ecdsa_supported`.
-	if schemes.values().any(|s| *s != UnshieldedSignatureScheme::Schnorr) {
-		return Err("--indexer-url only supports the Schnorr NIGHT identity; \
-		            an `ecdsa:` seed requires the block-replay path (omit --indexer-url)"
-			.into());
-	}
-
 	let (context, block) = connect_indexer(source, indexer_url).await?;
 	let ledger_version = context.version();
+	ensure_ecdsa_supported(ledger_version, schemes)?;
 	let client = IndexerClient::new(indexer_url)?;
 
 	// Block 1's hash is the chain identity, matching `SourceTransactions::chain_id`. An indexer
@@ -121,10 +117,7 @@ pub async fn sync_indexer(
 		chain_id.zip(create_file_wallet_cache(&source.ledger_state_db, &source.fetch_cache));
 	let keys: Vec<H256> = seeds
 		.iter()
-		.map(|seed| {
-			let scheme = schemes.get(seed).copied().unwrap_or_default();
-			indexer_wallet_cache_key(seed, scheme, ledger_version)
-		})
+		.map(|seed| indexer_wallet_cache_key(seed, scheme_of(schemes, seed), ledger_version))
 		.collect();
 
 	let mut resume: HashMap<WalletSeed, WalletSyncState> = HashMap::new();
@@ -141,16 +134,25 @@ pub async fn sync_indexer(
 	}
 
 	let mut synced = match &context {
-		IndexerLedgerContext::Ledger9(ctx) => ctx.init_wallets(seeds, &resume).await?,
+		IndexerLedgerContext::Ledger9(ctx) => {
+			let seeds: Vec<_> =
+				seeds.iter().map(|seed| (seed.clone(), scheme_of(schemes, seed))).collect();
+			ctx.init_wallets(&seeds, &resume).await?
+		},
 		IndexerLedgerContext::Ledger8(ctx) => {
 			// `WalletSeed` is a per-generation type; the replay path converts the same way.
 			let seeds_v8: Vec<_> = seeds.iter().cloned().map(convert_wallet_seed).collect();
+			let schemed_v8: Vec<_> = seeds
+				.iter()
+				.zip(&seeds_v8)
+				.map(|(seed, seed_v8)| (seed_v8.clone(), convert_scheme(scheme_of(schemes, seed))))
+				.collect();
 			let resume_v8 = seeds
 				.iter()
 				.zip(&seeds_v8)
 				.filter_map(|(seed, seed_v8)| Some((seed_v8.clone(), resume.get(seed)?.clone())))
 				.collect();
-			let synced_v8 = ctx.init_wallets(&seeds_v8, &resume_v8).await?;
+			let synced_v8 = ctx.init_wallets(&schemed_v8, &resume_v8).await?;
 			seeds
 				.iter()
 				.zip(&seeds_v8)

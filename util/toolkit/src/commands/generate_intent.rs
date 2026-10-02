@@ -129,21 +129,19 @@ pub async fn fetch_zswap_state(
 
 	#[cfg(feature = "indexer-client")]
 	if let Some(indexer_url) = indexer_source.indexer_url.as_deref() {
+		use crate::tx_generator::builder::WalletSchemes;
 		use crate::tx_generator::builder::builders::ledger_8::type_convert::{
 			convert_coin_public_key, convert_wallet_seed,
 		};
 		use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
 
-		let schemes = [(
-			wallet_seed.clone(),
-			midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
-		)]
-		.into();
+		// Only the zswap state is read, and no unshielded scheme affects it; the replay path below
+		// builds this seed's wallet with the default scheme as well.
 		let synced = sync_indexer(
 			&indexer_source,
 			indexer_url,
 			std::slice::from_ref(&wallet_seed),
-			&schemes,
+			&WalletSchemes::new(),
 		)
 		.await?;
 		let state = match &synced.context {
@@ -198,6 +196,32 @@ pub async fn fetch_zswap_state(
 			)
 		},
 	))
+}
+
+/// The tip's ledger parameters, from the indexer when `--indexer-url` is set, else from the node.
+async fn fetch_ledger_parameters(
+	source: &Source,
+) -> Result<LedgerParameters, Box<dyn std::error::Error + Send + Sync>> {
+	#[cfg(feature = "indexer-client")]
+	if let Some(indexer_url) = source.indexer_url.as_deref() {
+		let block = midnight_ledger_unsafe_helpers::IndexerClient::new(indexer_url)?
+			.latest_block()
+			.await?;
+		return LedgerParameters::try_from(&block)
+			.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()).into());
+	}
+	#[cfg(not(feature = "indexer-client"))]
+	source.reject_indexer(
+		"generate-intent circuit",
+		crate::tx_generator::source::NO_INDEXER_CLIENT,
+	)?;
+
+	let Some(rpc_url) = &source.src_url else {
+		eprintln!("missing required --src-url argument");
+		return Err(GenerateIntentError::MissingSourceUrl.into());
+	};
+	let client = MidnightNodeClient::new(rpc_url, None).await?;
+	Ok(client.get_ledger_parameters().await?)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -269,13 +293,7 @@ pub async fn execute(
 						.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()))?;
 					parameters
 				} else {
-					let Some(rpc_url) = args.source.src_url else {
-						eprintln!("missing required --src-url argument");
-						return Err(GenerateIntentError::MissingSourceUrl.into());
-					};
-
-					let client = MidnightNodeClient::new(&rpc_url, None).await?;
-					client.get_ledger_parameters().await?
+					fetch_ledger_parameters(&args.source).await?
 				};
 
 			let temp_dir =
