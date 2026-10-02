@@ -1,0 +1,148 @@
+name: Benchmark build
+
+# Builds `midnight-node` with `--features runtime-benchmarks` for linux/amd64 and
+# uploads it as a workflow artifact, packaged the way the reference machine wants it.
+#
+# Why this exists: a `runtime-benchmarks` build refuses to run as a node
+# (`bail_if_runtime_benchmarks` in node/src/command.rs), and conversely a released
+# binary cannot run `benchmark pallet`. No release asset and no CI job produced such a
+# binary, so every past weights run was hand-rolled on somebody's laptop — which is how
+# pallet_c2m_bridge and pallet_partner_chains_bridge ended up with weights measured on a
+# Ryzen 9950X instead of the reference machine.
+#
+# Manual dispatch only. Weights runs happen once per release on a quiet, dedicated box;
+# there is nothing for this to do on every push, and the build is not cheap.
+#
+# Publishes nothing: no registry, no release, no image. The binary leaves only as a
+# workflow artifact, so a fork running this writes nowhere it does not own.
+#
+# The payload deliberately mirrors the release archive layout (`midnight-node` + `res/`,
+# see the "Create release archives" step in main.yml). Two reasons:
+#   - `res/` must sit next to the binary: CFG_PRESET defaults to "dev", and every
+#     `chainspec_*` path in res/cfg/dev.toml is relative with a `path_exists` validator,
+#     so `load_spec` fails without it even though `--chain dev` builds genesis in-process.
+#   - naming the binary `midnight-node` keeps the "Executed Command" block in every
+#     generated weights file byte-identical to the previous run, so the review diff is
+#     DATE, CPU and numbers rather than 22 files of argv noise.
+#
+# Usage: dispatch -> download the artifact -> see docs on running the benchmarks.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build (default: the branch this is dispatched on)"
+        required: false
+        default: ""
+
+# no top level default permissions for security reasons
+permissions: {}
+
+concurrency:
+  group: benchmark-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-benchmarks:
+    name: Build runtime-benchmarks binary (amd64)
+    # The amd64 pool. The reference machine is a c7i (x86_64); an arm64 build is useless
+    # to it, and cross-building under emulation would take hours.
+    runs-on: [self-hosted, "tier:large"]
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+
+    steps:
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout node repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          submodules: true
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
+
+      - name: Login to DockerHub
+        # Pull-side rate-limit relief for docker.io base images only; a repo without these
+        # credentials must not have the whole build fail before it starts.
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      - name: Login to GHCR
+        # +build-benchmarks derives from the CI image, which lives in GHCR.
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Free disk space
+        if: runner.environment != 'self-hosted'
+        run: |
+          ./scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
+
+      - name: Build
+        run: |
+          . ./.envrc && earthly -P --use-inline-cache +build-benchmarks
+
+      - name: Package payload for the reference machine
+        id: package
+        run: |
+          set -euo pipefail
+
+          CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
+          VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
+          PAYLOAD="midnight-node-benchmarks-${VERSION}-${CONTENT_HASH}-linux-amd64.tar.gz"
+
+          # Staged as `midnight-node` so the generated weights headers match the previous
+          # run; `res/` comes from the checkout, which is the same content the release
+          # archive ships.
+          rm -rf payload && mkdir -p payload
+          cp artifacts-benchmarks/midnight-node-benchmarks payload/midnight-node
+          chmod +x payload/midnight-node
+          cp -R res payload/res
+          cp LICENSE_HEADER.txt payload/LICENSE_HEADER.txt
+          mkdir -p payload/runtime/src/weights
+
+          tar -czf "$PAYLOAD" -C payload .
+          sha256sum "$PAYLOAD" > "${PAYLOAD}.sha256"
+
+          printf "payload=%s\n" "$PAYLOAD" >> "$GITHUB_OUTPUT"
+          ls -lh "$PAYLOAD"
+          cat "${PAYLOAD}.sha256"
+
+      - name: Verify the binary carries the benchmark subcommand
+        # Catches the two failures that otherwise only surface on the box: a binary built
+        # without the feature (no `benchmark` subcommand at all), and a runtime whose wasm
+        # missed the feature (subcommand present, benchmark list empty). Cheap here,
+        # expensive after an SSO login and a file transfer.
+        run: |
+          set -euo pipefail
+          cd payload
+          ./midnight-node benchmark pallet \
+            --chain dev \
+            --base-path /tmp/benchmark-list \
+            --list=pallets --no-csv-header | sort | tee /tmp/pallets.txt
+          for expected in frame_system_extensions pallet_safe_mode pallet_version; do
+            if ! grep -qx "$expected" /tmp/pallets.txt; then
+              echo "::error::$expected is missing from the benchmark list; check define_benchmarks! in runtime/src/lib.rs"
+              exit 1
+            fi
+          done
+          echo "Benchmarkable pallets: $(wc -l < /tmp/pallets.txt)"
+
+      - name: Upload payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
+        with:
+          name: midnight-node-benchmarks-amd64
+          path: |
+            ${{ steps.package.outputs.payload }}
+            ${{ steps.package.outputs.payload }}.sha256
+          if-no-files-found: error
