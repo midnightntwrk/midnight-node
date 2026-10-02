@@ -310,8 +310,8 @@ async fn indexer_generate_txs_batches_chain_within_a_run() {
 		tokio::time::sleep(Duration::from_secs(3)).await;
 	}
 
-	// Batch 0's wallets generated DUST from NIGHT they then spent, so their generations carry a
-	// decay time.
+	// The funding seed paid fees in DUST and spent a genesis NIGHT, so one of its generations
+	// carries a decay time; the batch wallets' NIGHT is unregistered, which checks the empty case.
 	for seed in std::iter::once(&FUNDED_SEED).chain(&BATCH_SEEDS) {
 		assert_fast_sync_matches_replay(&env.indexer_url, seed);
 	}
