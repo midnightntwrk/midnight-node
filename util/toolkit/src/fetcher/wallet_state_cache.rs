@@ -980,6 +980,7 @@ mod tests {
 				height: 55,
 				block_hash: [0x66; 32],
 				heads: vec![vec![0x77; 90], vec![0x88; 90]],
+				event_cursor: Some(1234),
 			}),
 		};
 

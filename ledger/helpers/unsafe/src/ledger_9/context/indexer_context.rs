@@ -31,10 +31,10 @@ use tokio::time::{Instant, sleep_until, timeout};
 
 use super::{BuilderContext, DEFAULT_RESOLVER};
 use crate::indexer_client::{
-	BlockInfo, DUST_IDLE_TIMEOUT, DustGenerationsEventData, DustGenerationsForm, DustSnapshot,
-	IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT, SHIELDED_PROGRESS_PROBE_INTERVAL,
-	ShieldedCatchUp, ShieldedEvent, SyncProgress, TransactionResultKind, UnshieldedEvent,
-	UnshieldedUtxoData, WalletSyncState,
+	BlockInfo, DUST_EVENT_PASS_LIMIT, DUST_IDLE_TIMEOUT, DustGenerationsEventData,
+	DustGenerationsForm, DustSnapshot, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT,
+	SHIELDED_PROGRESS_PROBE_INTERVAL, ShieldedCatchUp, ShieldedEvent, SyncProgress,
+	TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData, WalletSyncState,
 };
 use crate::ledger_9::mn_ledger::events::EventDetails;
 use crate::ledger_9::{
@@ -192,6 +192,7 @@ impl IndexerContext<DefaultDB> {
 		seeds: &[WalletSeed],
 		resume: &HashMap<WalletSeed, WalletSyncState>,
 	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
+		let event_cursor = self.dust_event_cursor().await;
 		let block = self.refresh_tip().await?;
 		// Fall back to network defaults if the blob won't decode, so dust syncing still proceeds.
 		let params = LedgerParameters::try_from(&block).unwrap_or_else(|e| {
@@ -199,7 +200,7 @@ impl IndexerContext<DefaultDB> {
 			(*LedgerState::<DefaultDB>::new(self.network_id.clone()).parameters).clone()
 		});
 		let tip_time = Timestamp::from_secs(block.timestamp);
-		let fast_sync = self.dust_fast_sync_target(&block).await;
+		let fast_sync = self.dust_fast_sync_target(&block, event_cursor).await;
 
 		let progress = SyncProgress { wallets: seeds.len(), ..Default::default() };
 
@@ -234,11 +235,25 @@ impl IndexerContext<DefaultDB> {
 		Ok(next_resume)
 	}
 
+	/// The highest dust ledger-event id, read before the tip so that it is at or before the tip's
+	/// last dust event. `None` if fast sync is off or the indexer has no dust events.
+	async fn dust_event_cursor(&self) -> Option<u64> {
+		if !self.fast_sync {
+			return None;
+		}
+		let mut stream = self.client.dust_ledger_events(1).await.ok()?;
+		match timeout(DUST_IDLE_TIMEOUT, stream.next()).await {
+			Ok(Some(Ok(item))) => Some(item.max_id),
+			_ => None,
+		}
+	}
+
 	/// The indexer's `dustGenerations` form and the snapshot block (the tip) for DUST fast sync, or
 	/// `None` to replay dust events.
 	async fn dust_fast_sync_target(
 		&self,
 		tip: &BlockInfo,
+		event_cursor: Option<u64>,
 	) -> Option<(DustGenerationsForm, DustSnapshot)> {
 		if !self.fast_sync {
 			return None;
@@ -247,7 +262,8 @@ impl IndexerContext<DefaultDB> {
 			let Some(form) = self.client.dust_generations_form().await? else {
 				return Ok(None);
 			};
-			Ok::<_, IndexerClientError>(Some((form, self.client.dust_snapshot(tip.height).await?)))
+			let snapshot = self.client.dust_snapshot(tip.height).await?;
+			Ok::<_, IndexerClientError>(Some((form, DustSnapshot { event_cursor, ..snapshot })))
 		};
 		match target.await {
 			Ok(None) => {
@@ -669,7 +685,8 @@ impl IndexerContext<DefaultDB> {
 	/// block's.
 	///
 	/// With a `frontier` from an earlier run, each chain resumes from its cached head, so only the
-	/// spends made since are walked.
+	/// spends made since are walked: in one pass over the dust events since the frontier if there
+	/// are few enough, else in nullifier rounds.
 	async fn fast_sync_dust(
 		&self,
 		dust: &DustWallet<DefaultDB>,
@@ -748,13 +765,20 @@ impl IndexerContext<DefaultDB> {
 				.map_err(|e| format!("apply dust generation update: {e:?}"))?;
 		}
 		let mut heads = chain_starts(first_outputs, frontier)?;
+		let (mut unspent, mut walked, mut rounds) = (Vec::new(), 0, 0);
+		let mut event_pass = None;
+		if let Some(cursor) = frontier.and_then(|f| f.event_cursor)
+			&& let Some(pass) =
+				self.follow_dust_events(&state, sk, &heads, cursor, snapshot).await?
+		{
+			(unspent, walked, event_pass) = (pass.unspent, pass.walked, Some(pass.events));
+			heads.clear();
+		}
 
 		// Walk each output's spend chain, one `dustNullifierTransactions` call per round for all
 		// current heads: a spent head is replaced by the change output its spend created, an
 		// unspent head is final. A successor's nullifier commits to the value and ctime its spend
 		// set, so a round can only look one spend further: rounds = the longest chain's length.
-		let mut unspent = Vec::new();
-		let (mut rounds, mut walked) = (0, 0);
 		while !heads.is_empty() {
 			rounds += 1;
 			let by_nullifier: HashMap<Vec<u8>, (QualifiedDustOutput, u64)> = heads
@@ -824,15 +848,70 @@ impl IndexerContext<DefaultDB> {
 			"indexer: DUST fast sync at block {} ({}): {generations} generations, {walked} spends in \
 			 {rounds} rounds, {} unspent outputs",
 			snapshot.height,
-			frontier.map_or("fresh".to_string(), |f| format!("resumed from block {}", f.height)),
+			match (frontier, event_pass) {
+				(None, _) => "fresh".to_string(),
+				(Some(f), None) => format!("resumed from block {} by nullifier rounds", f.height),
+				(Some(f), Some(events)) =>
+					format!("resumed from block {} by a pass over {events} dust events", f.height),
+			},
 			unspent.len(),
 		);
 		let next_frontier = DustFrontierRaw {
 			height: snapshot.height,
 			block_hash: snapshot.hash,
 			heads: unspent.iter().map(serialize_untagged).collect::<Result<_, _>>()?,
+			event_cursor: snapshot.event_cursor,
 		};
 		Ok((state, next_frontier))
+	}
+
+	/// Follow each of `heads` to its unspent output at `snapshot` in one pass over the dust events
+	/// from `cursor`, or `None` if there are more than [`DUST_EVENT_PASS_LIMIT`].
+	///
+	/// No root check would catch a spend this misses: the spent output's commitment stays in the
+	/// tree. `cursor` is at or before the first event after the heads' frontier block, and the pass
+	/// reads to the indexer's latest event, which is at or after the snapshot block's last.
+	async fn follow_dust_events(
+		&self,
+		state: &DustLocalState<DefaultDB>,
+		sk: &DustSecretKey,
+		heads: &[(QualifiedDustOutput, u64)],
+		cursor: u64,
+		snapshot: &DustSnapshot,
+	) -> Result<Option<DustEventPass>, BoxError> {
+		let mut by_nullifier: HashMap<Vec<u8>, QualifiedDustOutput> =
+			heads.iter().map(|(qdo, _)| (nullifier_le(&qdo.nullifier(sk)), *qdo)).collect();
+		let mut stream = self.client.dust_ledger_events(cursor).await?;
+		let (mut walked, mut events) = (0, 0);
+		loop {
+			let item = timeout(DUST_IDLE_TIMEOUT, stream.next())
+				.await
+				.map_err(|_| "dustLedgerEvents stalled")?
+				.ok_or("dustLedgerEvents ended before its latest event")??;
+			if item.max_id.saturating_sub(cursor) > DUST_EVENT_PASS_LIMIT {
+				return Ok(None);
+			}
+			events += 1;
+			let event: Event<DefaultDB> = deserialize(&item.raw[..])?;
+			if let EventDetails::DustSpendProcessed { commitment_index, nullifier, .. } =
+				event.content
+			{
+				// Spends append to the commitment tree in event order, so from here on every spend
+				// is after the snapshot block.
+				if commitment_index >= snapshot.commitment_end_index {
+					break;
+				}
+				if let Some(spent) = by_nullifier.remove(&nullifier_le(&nullifier)) {
+					let next = spend_successor(state, sk, &spent, std::slice::from_ref(&item.raw))?;
+					by_nullifier.insert(nullifier_le(&next.nullifier(sk)), next);
+					walked += 1;
+				}
+			}
+			if item.id >= item.max_id {
+				break;
+			}
+		}
+		Ok(Some(DustEventPass { unspent: by_nullifier.into_values().collect(), walked, events }))
 	}
 
 	/// Fill the commitment tree over `start..end` with one collapsed update from the indexer.
@@ -850,6 +929,15 @@ impl IndexerContext<DefaultDB> {
 			.apply_commitment_collapsed_update(&deserialize(&update[..])?)
 			.map_err(|e| format!("apply dust commitment update: {e:?}"))?)
 	}
+}
+
+/// [`IndexerContext::follow_dust_events`]'s result.
+struct DustEventPass {
+	unspent: Vec<QualifiedDustOutput>,
+	/// Spends followed.
+	walked: usize,
+	/// Dust events read.
+	events: usize,
 }
 
 /// Where each generation's spend-chain walk starts, and the first block to search for its spends:
@@ -1309,6 +1397,7 @@ mod tests {
 			height: 41,
 			block_hash: [9; 32],
 			heads: heads.iter().map(|head| serialize_untagged(head).unwrap()).collect(),
+			event_cursor: None,
 		};
 		let firsts = vec![output(1, 0), output(2, 0)];
 

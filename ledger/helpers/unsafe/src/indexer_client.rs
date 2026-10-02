@@ -278,6 +278,8 @@ pub struct DustSnapshot {
 	pub commitment_root: Vec<u8>,
 	/// Untagged-serialized generation tree root.
 	pub generation_root: Vec<u8>,
+	/// A dust ledger-event id at or before the block's last dust event, if one is known.
+	pub event_cursor: Option<u64>,
 }
 
 /// An owned generation entry from `dustGenerations`, and the initial DUST output it created.
@@ -530,6 +532,7 @@ impl IndexerClient {
 			generation_end_index: block.dust_generation_end_index as u64,
 			commitment_root: root(block.dust_commitment_merkle_tree_root, "commitment")?,
 			generation_root: root(block.dust_generation_merkle_tree_root, "generation")?,
+			event_cursor: None,
 		})
 	}
 
@@ -1076,6 +1079,11 @@ impl ShieldedCatchUp {
 /// Idle timeout for the dust ledger-events subscription, which has no progress heartbeat: here
 /// silence genuinely means "no more events", so it needs no margin over the server's interval.
 pub const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The most dust ledger-event ids a resumed DUST fast sync replays in one pass instead of walking
+/// nullifier rounds: about 3s at preview's ~0.6ms per event, or 20-60 rounds at 50-150ms each.
+/// The ids are shared with zswap events, so this overcounts dust events.
+pub const DUST_EVENT_PASS_LIMIT: u64 = 5_000;
 
 /// How often [`SyncProgress::log_until_done`] emits a one-line sync-progress heartbeat while a
 /// sync run drains the subscriptions.

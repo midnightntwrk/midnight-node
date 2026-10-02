@@ -21,12 +21,14 @@ The toolkit probes which `dustGenerations` signature the indexer serves: the blo
 roots for every block, so their snapshots rarely verify and those wallets fall back to the replay.
 
 The spend-chain walk takes one `dustNullifierTransactions` round per spend in the longest chain, so
-the wallet cache keeps its frontier: the snapshot block and every unspent DUST output there. The
-next run still rebuilds both trees fresh at its tip, but resumes each chain from its cached output
-and only walks the spends made since. A resume that fails (its block is no longer on the indexer's
-chain, a cached output has no generation at the tip, a root mismatch) warns and retries a fresh fast
-sync before falling back to the replay. Index-range indexers keep no frontier. The wallet cache
-format moves to v6, so existing entries are re-synced once.
+the wallet cache keeps its frontier: the snapshot block, every unspent DUST output there, and a
+`dustLedgerEvents` id read before that block. The next run still rebuilds both trees fresh at its
+tip, but resumes each chain from its cached output. If at most 5,000 event ids have passed since the
+cached one, it follows every chain in one pass over those events, cut at the tip by commitment
+index; otherwise it walks nullifier rounds from the cached outputs. A resume that fails (its block
+is no longer on the indexer's chain, a cached output has no generation at the tip, a root mismatch)
+warns and retries a fresh fast sync before falling back to the replay. Index-range indexers keep no
+frontier. The wallet cache format moves to v6, so existing entries are re-synced once.
 
 The new operations live in their own GraphQL documents. Indexers validate every operation in the
 document they are sent, so an indexer without them still accepts the existing ones.

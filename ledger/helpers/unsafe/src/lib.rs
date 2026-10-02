@@ -76,6 +76,8 @@ pub struct DustFrontierRaw {
 	pub height: u64,
 	pub block_hash: [u8; 32],
 	pub heads: Vec<Vec<u8>>,
+	/// A dust ledger-event id at or before the first event after `height`, if one was known.
+	pub event_cursor: Option<u64>,
 }
 
 /// An unshielded UTXO as its untagged-serialized `Utxo` plus its creation time.
