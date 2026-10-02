@@ -214,6 +214,9 @@ earthly -P +rebuild-all-chainspecs
 |----------|-------------|
 | `CFG_PRESET` | Network preset (e.g., `qanet`, `preview`, `devnet`) |
 | `DB_SYNC_POSTGRES_CONNECTION_STRING` | PostgreSQL connection to Cardano db-sync |
+| `DB_SYNC_TX_INPUT_MODE` | db-sync transaction-input layout: `auto`, `tx_in`, or `consumed` |
+| `DB_SYNC_ADDRESS_MODE` | db-sync address layout: `inline` or `address_table` |
+| `DB_SYNC_SCHEMA_MODE` | Schema handling: `apply`, read-only `verify`, or `skip` |
 | `CARDANO_SECURITY_PARAMETER` | Cardano security parameter (default from pc-chain-config.json) |
 | `ALLOW_NON_SSL` | Allow non-SSL database connections (dev only) |
 
@@ -262,6 +265,8 @@ The `genesis-construction.sh` script provides an interactive wizard for genesis 
 2. **Access to Cardano db-sync database**:
    - Local: `postgres://postgres:postgres@localhost:5432/cexplorer`
    - Or a remote db-sync instance
+   - Configure a supported layout and complete history as described in
+     [Cardano db-sync compatibility](../configuration-guide.md#cardano-db-sync-compatibility)
 
 3. **Cardano block hash** (tip) for querying smart contract state
 
@@ -306,7 +311,7 @@ Generates configuration files from Cardano smart contract state:
 midnight-node generate-genesis-config --cardano-tip <block_hash>
 ```
 
-**Note:** On the first run against a DB Sync database, the `cnight-config.json` generation automatically creates required PostgreSQL indexes. This can take up to ~4 hours on mainnet depending on disk speed and available memory. Subsequent runs reuse existing indexes and are much faster.
+**Note:** With the default `DB_SYNC_SCHEMA_MODE=apply`, the first run against a DB Sync database creates required PostgreSQL indexes and applies recommended autovacuum settings. Index creation can take up to ~4 hours on mainnet depending on disk speed and available memory. Subsequent runs reuse compatible indexes. For a read-only connection, a DBA must create the required indexes first and the command must run with `DB_SYNC_SCHEMA_MODE=verify`; see [Cardano db-sync compatibility](../configuration-guide.md#cardano-db-sync-compatibility). The schema checks do not prove that transaction-input history is complete.
 
 **Output files:**
 - `res/<network>/cnight-config.json`
