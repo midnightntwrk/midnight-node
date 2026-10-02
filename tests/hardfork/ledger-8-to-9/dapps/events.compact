@@ -1,0 +1,31 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Ledger-9 contract events: a contract-defined event and a standard one.
+import CompactStandardLibrary;
+
+export ledger emitted: Counter;
+
+// A contract-defined event: 32-byte name, opaque 256-byte payload.
+export circuit log(name: Bytes<32>, payload: Bytes<256>): [] {
+  emitted.increment(1);
+  emit(Misc { name: disclose(name), payload: disclose(payload) });
+}
+
+// A standard event type with an indexed field the indexer can filter on.
+export circuit mark(n: Bytes<32>): [] {
+  emitted.increment(1);
+  emit(ShieldedSpend { nullifier: disclose(n) });
+}
