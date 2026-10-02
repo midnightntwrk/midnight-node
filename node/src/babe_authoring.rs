@@ -13,8 +13,7 @@
 
 //! Block-authoring supervision for the AURA→BABE consensus migration.
 //!
-//! `BabeBlockImport` is constructed at node start (safe now that `prune_finalized` skips
-//! headers with no BABE pre-digest). The two slot workers still cannot run concurrently:
+//! Two slot workers that cannot run concurrently:
 //! the inactive one would spam failed aux-data fetches every slot, and if both authored they
 //! would fork the chain. [`run_authoring_supervisor`] is the single authoring gate: it polls
 //! AURA until the flip, bootstraps BABE's epoch tree, then polls BABE for the rest of the
@@ -119,7 +118,7 @@ where
 
 	match client.runtime_api().api_version::<dyn BabeApi<Block>>(at_hash)? {
 		None => {
-			log::warn!(
+			log::info!(
 				target: LOG_TARGET,
 				"BabeApi is not implemented at {at_hash:?}; constructing the BABE import pipeline \
 				 from AURA slot duration and sidechain epoch length. BABE stays idle until the \
