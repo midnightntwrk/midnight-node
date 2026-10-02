@@ -425,7 +425,10 @@ impl pallet_session::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type ValidatorId = <Self as frame_system::Config>::AccountId;
 	type ValidatorIdOf = ConvertInto;
-	type ShouldEndSession = SessionCommitteeManagement;
+	// The committee pallet's rule, wrapped by the consensus-engine pallet so it can hold a
+	// rotation back when BABE has already seen one in the current epoch (see
+	// `pallet_consensus_engine` docs, "Session rotation under BABE").
+	type ShouldEndSession = ConsensusEngine;
 	type NextSessionRotation = ();
 	type SessionManager = SessionCommitteeManagement;
 	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
@@ -986,6 +989,9 @@ impl pallet_consensus_engine::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type EpochDuration = SidechainEpochDuration;
 	type EpochConfiguration = BabeEpochConfigurationValue;
+	// The chain's own rotation rule; `pallet_session` is wired to `ConsensusEngine`, which
+	// forwards here.
+	type ShouldEndSession = SessionCommitteeManagement;
 	// Unit weights for now. Issue #1863.
 	type WeightInfo = ();
 }

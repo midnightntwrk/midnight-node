@@ -10444,6 +10444,7 @@ dependencies = [
  "midnight-primitives-consensus-engine",
  "pallet-aura",
  "pallet-babe",
+ "pallet-session",
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
