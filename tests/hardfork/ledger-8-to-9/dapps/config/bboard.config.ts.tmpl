@@ -20,7 +20,8 @@ import { Contract as C_ } from './__OUT__/contract/index.js';
 // succeeds only if both the ledger state and the private state survived.
 type PrivateState = { secretKey: string };
 type Ctx = { privateState: PrivateState };
-const SECRET_KEY = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
+// A fixed test key, not a secret.
+const SECRET_KEY = '01'.repeat(32);
 
 const witnesses = {
   local_secret_key: ({ privateState }: Ctx) =>

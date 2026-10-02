@@ -51,7 +51,7 @@ const DAPPS = {
   },
   bboard: {
     witnesses: { local_secret_key: ({ privateState }) => [privateState, Uint8Array.from(Buffer.from(privateState.secretKey, 'hex'))] },
-    initialPrivateState: { secretKey: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90' },
+    initialPrivateState: { secretKey: '01'.repeat(32) },
   },
 };
 
