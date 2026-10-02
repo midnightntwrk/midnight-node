@@ -222,7 +222,10 @@ async fn indexer_generate_txs_single_tx_reaches_destination() {
 	let (_, first) = show_wallet_logged(&env.indexer_url, FUNDED_SEED, Some(cache.path()));
 	assert!(!first.resumed, "an empty cache has no frontier to resume from");
 	let (_, idle) = show_wallet_logged(&env.indexer_url, FUNDED_SEED, Some(cache.path()));
-	assert!(idle.resumed, "a cached run must resume from the frontier");
+	assert!(
+		idle.resumed && idle.pass_events.is_some(),
+		"a cached run must resume by a dust event pass"
+	);
 	assert!(
 		idle.rounds < first.rounds && idle.spends == 0,
 		"nothing was spent since the frontier, so the resume must skip the transfer's spend \
@@ -237,16 +240,15 @@ async fn indexer_generate_txs_single_tx_reaches_destination() {
 		"[dust fast sync] after 1 transfer: fresh {first:?}, resumed {idle:?}; after 2: fresh \
 		 {fresh:?}, resumed {resumed:?}"
 	);
-	assert!(resumed.resumed && !fresh.resumed);
+	assert!(resumed.resumed && resumed.pass_events.is_some() && !fresh.resumed);
 	assert_eq!(resumed_wallet, fresh_wallet, "a resumed DUST fast sync must match a fresh one");
 	assert_eq!(
 		resumed_wallet,
 		show_wallet_with(&env.indexer_url, FUNDED_SEED, None, &["--no-fast-sync"]).0,
 		"a resumed DUST fast sync must match the event replay",
 	);
-	// Only the second transfer's spend is new; the rounds tie when it extended another chain.
 	assert!(
-		resumed.spends == 1 && fresh.spends == 2 && resumed.rounds <= fresh.rounds,
+		resumed.spends == 1 && fresh.spends == 2 && resumed.rounds < fresh.rounds,
 		"the resume must walk only the spend made since its frontier \
 		 (fresh {fresh:?}, resumed {resumed:?})",
 	);
@@ -413,6 +415,8 @@ fn show_wallet(indexer_url: &str, seed: &str, cache_dir: Option<&Path>) -> serde
 #[derive(Debug)]
 struct FastSync {
 	resumed: bool,
+	/// Dust events read, if it resumed by an event pass.
+	pass_events: Option<u64>,
 	spends: u64,
 	rounds: u64,
 }
@@ -437,6 +441,7 @@ fn show_wallet_logged(
 	};
 	let report = FastSync {
 		resumed: line.contains("resumed from block"),
+		pass_events: line.contains("by a pass over").then(|| count(" dust events")),
 		spends: count(" spends in"),
 		rounds: count(" rounds,"),
 	};
