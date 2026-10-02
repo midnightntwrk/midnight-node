@@ -754,7 +754,7 @@ impl IndexerContext<DefaultDB> {
 		// unspent head is final. A successor's nullifier commits to the value and ctime its spend
 		// set, so a round can only look one spend further: rounds = the longest chain's length.
 		let mut unspent = Vec::new();
-		let mut rounds = 0;
+		let (mut rounds, mut walked) = (0, 0);
 		while !heads.is_empty() {
 			rounds += 1;
 			let by_nullifier: HashMap<Vec<u8>, (QualifiedDustOutput, u64)> = heads
@@ -782,6 +782,7 @@ impl IndexerContext<DefaultDB> {
 				let next = spend_successor(&state, sk, spent, &spend.events)?;
 				successors.insert(spend.nullifier_le, next);
 			}
+			walked += successors.len();
 			for (nullifier, (qdo, from)) in by_nullifier {
 				match successors.remove(&nullifier) {
 					Some(next) => heads.push((next, from)),
@@ -820,8 +821,8 @@ impl IndexerContext<DefaultDB> {
 		}
 		state.sync_time = tip_time;
 		log::info!(
-			"indexer: DUST fast sync at block {} ({}): {generations} generations, {rounds} spend \
-			 rounds, {} unspent outputs",
+			"indexer: DUST fast sync at block {} ({}): {generations} generations, {walked} spends in \
+			 {rounds} rounds, {} unspent outputs",
 			snapshot.height,
 			frontier.map_or("fresh".to_string(), |f| format!("resumed from block {}", f.height)),
 			unspent.len(),
