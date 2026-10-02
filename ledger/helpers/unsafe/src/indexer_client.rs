@@ -255,6 +255,45 @@ pub struct WalletSyncState {
 	pub dust_event_id: u64,
 }
 
+/// Which signature of the `@beta` `dustGenerations` subscription an indexer serves. Both stream
+/// the same `DustGenerationsEvent`s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DustGenerationsForm {
+	/// `dustGenerations(dustAddress, blockHash, dtimeCutoffHeight)`, indexer ≥ 4.3.4: a snapshot
+	/// pinned to one block.
+	ByBlockHash,
+	/// `dustGenerations(dustAddress, startIndex, endIndex)`, indexer 4.1–4.3.3: built from the
+	/// indexer's latest state, so its leaves can move past the requested block.
+	ByIndexRange,
+}
+
+// The indexer caps query depth at 15, which the stock introspection query exceeds.
+const DUST_FAST_SYNC_PROBE: &str = "{ \
+	subscription: __type(name: \"Subscription\") { fields { name args { name } } } \
+	query: __type(name: \"Query\") { fields { name } } }";
+
+/// The `dustGenerations` form, provided the indexer also serves the other two operations DUST fast
+/// sync needs; `None` means fast sync is unavailable.
+fn dust_generations_form(introspection: &Value) -> Option<DustGenerationsForm> {
+	let fields = |kind: &str| introspection[kind]["fields"].as_array().cloned().unwrap_or_default();
+	let has = |fields: &[Value], name: &str| fields.iter().any(|f| f["name"] == name);
+	let (subscriptions, queries) = (fields("subscription"), fields("query"));
+	if !has(&subscriptions, "dustNullifierTransactions")
+		|| !has(&queries, "dustCommitmentMerkleTreeUpdate")
+	{
+		return None;
+	}
+	let generations = subscriptions.iter().find(|f| f["name"] == "dustGenerations")?;
+	let args = generations["args"].as_array()?;
+	if has(args, "blockHash") {
+		Some(DustGenerationsForm::ByBlockHash)
+	} else if has(args, "startIndex") {
+		Some(DustGenerationsForm::ByIndexRange)
+	} else {
+		None
+	}
+}
+
 /// A GraphQL client targeting one indexer `api/v4` base URL.
 pub struct IndexerClient {
 	http: reqwest::Client,
@@ -303,6 +342,25 @@ impl IndexerClient {
 		}
 		resp.data
 			.ok_or_else(|| IndexerClientError::Malformed("missing `data` in response".into()))
+	}
+
+	/// Introspect which DUST fast-sync operations this indexer serves (see
+	/// [`DustGenerationsForm`]).
+	pub async fn dust_generations_form(&self) -> IndexerResult<Option<DustGenerationsForm>> {
+		let body = json!({ "query": DUST_FAST_SYNC_PROBE });
+		let resp: Value = self
+			.http
+			.post(&self.http_url)
+			.json(&body)
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+		if let Some(errors) = resp.get("errors").filter(|e| !e.is_null()) {
+			return Err(IndexerClientError::GraphQl(errors.to_string()));
+		}
+		Ok(dust_generations_form(&resp["data"]))
 	}
 
 	/// `connect(viewingKey, options)` — establish a wallet session, returns the session id.
@@ -989,6 +1047,34 @@ mod tests {
 			},
 			_ => panic!("expected progress"),
 		}
+	}
+
+	/// Shapes taken from the live mainnet (index range) and preview (block hash) indexers.
+	#[test]
+	fn dust_generations_form_reads_the_subscription_args() {
+		let introspection = |generations_args: Value, queries: Value| {
+			json!({
+				"subscription": { "fields": [
+					{ "name": "dustGenerations", "args": generations_args },
+					{ "name": "dustNullifierTransactions", "args": [] },
+				]},
+				"query": { "fields": queries },
+			})
+		};
+		let queries = json!([{ "name": "dustCommitmentMerkleTreeUpdate" }]);
+		let by_hash = json!([{ "name": "dustAddress" }, { "name": "blockHash" }]);
+		let by_range = json!([{ "name": "dustAddress" }, { "name": "startIndex" }]);
+
+		assert_eq!(
+			dust_generations_form(&introspection(by_hash.clone(), queries.clone())),
+			Some(DustGenerationsForm::ByBlockHash)
+		);
+		assert_eq!(
+			dust_generations_form(&introspection(by_range, queries)),
+			Some(DustGenerationsForm::ByIndexRange)
+		);
+		assert_eq!(dust_generations_form(&introspection(by_hash, json!([]))), None);
+		assert_eq!(dust_generations_form(&json!({})), None);
 	}
 
 	#[test]
