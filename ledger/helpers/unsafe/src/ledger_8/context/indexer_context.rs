@@ -251,7 +251,10 @@ impl IndexerContext<DefaultDB> {
 		};
 		match target.await {
 			Ok(None) => {
-				log::info!("indexer: no DUST fast-sync support; replaying dust events");
+				log::warn!(
+					"indexer: no DUST fast-sync support; replaying every dust event for each wallet \
+					 (slow)"
+				);
 				None
 			},
 			Ok(target) => target,
@@ -565,9 +568,8 @@ impl IndexerContext<DefaultDB> {
 	/// falling back to the replay if that fails. A fast-synced state has no dust event id to
 	/// resume from, so nothing is returned for the cache and the next run fast-syncs again.
 	//
-	// ponytail: a fresh snapshot every run. If repeat runs get slow, resume from the cached state:
-	// `dtimeCutoffHeight`, the commitment update from the old end index, nullifiers from the last
-	// block.
+	// TODO: resume fast sync from the cached state rather than re-snapshotting every run, so a
+	// repeat run only walks the spends made since the last one.
 	async fn sync_dust(
 		&self,
 		dust: &mut DustWallet<DefaultDB>,
@@ -708,8 +710,10 @@ impl IndexerContext<DefaultDB> {
 				.map_err(|e| format!("apply dust generation update: {e:?}"))?;
 		}
 
-		// A successor's nullifier depends on the spend that created it, so each round can only
-		// look one spend further down every chain.
+		// Walk each output's spend chain, one `dustNullifierTransactions` call per round for all
+		// current heads: a spent head is replaced by the change output its spend created, an
+		// unspent head is final. A successor's nullifier commits to the value and ctime its spend
+		// set, so a round can only look one spend further: rounds = the longest chain's length.
 		let mut unspent = Vec::new();
 		let mut rounds = 0;
 		while !heads.is_empty() {
