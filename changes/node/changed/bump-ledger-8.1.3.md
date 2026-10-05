@@ -18,5 +18,4 @@ Crate versions: `midnight-ledger`/`midnight-zswap` 8.1.3,
 `midnight-onchain-vm` 3.1.2, `midnight-base-crypto` 1.0.2 (additive only, so
 ledger 7, which shares it, is unaffected).
 
-PR: <link to PR>
-JIRA: <link to JIRA ticket>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2238
