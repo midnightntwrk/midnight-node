@@ -6,4 +6,5 @@ failures at WARN in ledger versions 8 and 9. Invalid public input is expected
 and should not trigger error-level operational alerts. Block application and
 stored-state deserialization retain ERROR logging; returned errors are unchanged.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2244
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2242
