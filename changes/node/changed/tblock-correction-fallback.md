@@ -12,5 +12,5 @@ block's own `tblock`, matching the producer's cache-dependent behaviour at the t
 only reachable under host-function v1, so it never applies to blocks after the v2 runtime upgrade
 (mainnet #2738210).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2238
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1924
