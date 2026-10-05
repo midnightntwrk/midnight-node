@@ -87,7 +87,7 @@ pub fn apply_transaction_v1(
 			state_key,
 			tx,
 			block_context,
-			/* filter_only_failed_segments */ false,
+			true,
 			runtime_version,
 			/* skew_tblock */ true,
 		)
@@ -97,7 +97,7 @@ pub fn apply_transaction_v1(
 			state_key,
 			tx,
 			block_context,
-			/* filter_only_failed_segments */ false,
+			true,
 			runtime_version,
 			/* skew_tblock */ true,
 		)
@@ -228,7 +228,7 @@ pub trait Ledger8Bridge {
 				state_key,
 				tx,
 				block_context,
-				/* filter_only_failed_segments */ false,
+				true,
 				runtime_version,
 				/* skew_tblock */ false,
 			)
@@ -238,7 +238,7 @@ pub trait Ledger8Bridge {
 				state_key,
 				tx,
 				block_context,
-				/* filter_only_failed_segments */ false,
+				true,
 				runtime_version,
 				/* skew_tblock */ false,
 			)
