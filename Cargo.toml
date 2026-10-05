@@ -165,7 +165,7 @@ partner-chains-db-sync-data-sources = { default-features = false, path = "partne
 partner-chains-mock-data-sources = { default-features = false, path = "partner-chains/toolkit/data-sources/mock" }
 partner-chains-plutus-data = { default-features = false, path = "partner-chains/toolkit/smart-contracts/plutus-data" }
 db-sync-sqlx = { default-features = false, path = "partner-chains/toolkit/utils/db-sync-sqlx" }
-cardano-serialization-lib = { default-features = false, version = "15.0.3" }
+cardano-serialization-lib = { default-features = false, features = ["arbitrary-precision-json"], version = "15.0.3" }
 substrate-prometheus-endpoint = { package = "substrate-prometheus-endpoint", git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 
 pallet-sidechain = { default-features = false, path = "partner-chains/toolkit/sidechain/pallet" }

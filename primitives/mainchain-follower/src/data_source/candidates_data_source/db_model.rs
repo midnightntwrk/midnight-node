@@ -11,41 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::db::DbDatum;
 use cardano_serialization_lib::{
 	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
 };
 use db_sync_sqlx::{Address, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
-use log::info;
+use log::{info, warn};
 use sidechain_domain::{McTxHash, UtxoId, UtxoIndex};
-use sqlx::error::BoxDynError;
-use sqlx::postgres::PgTypeInfo;
 use sqlx::types::JsonValue;
-use sqlx::{Decode, PgPool, Pool, Postgres};
+use sqlx::{PgPool, Pool, Postgres};
 use std::cell::OnceCell;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-/// Wraps PlutusData to provide sqlx::Decode and sqlx::Type implementations
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DbDatum(pub PlutusData);
-
-impl sqlx::Type<Postgres> for DbDatum {
-	fn type_info() -> <Postgres as sqlx::Database>::TypeInfo {
-		PgTypeInfo::with_name("JSONB")
-	}
-}
-
-impl<'r> Decode<'r, Postgres> for DbDatum
-where
-	JsonValue: Decode<'r, Postgres>,
-{
-	fn decode(value: <Postgres as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-		let value: JsonValue = <JsonValue as Decode<Postgres>>::decode(value)?;
-		let datum = encode_json_value_to_plutus_datum(value, DetailedSchema);
-		Ok(DbDatum(datum?))
-	}
-}
 
 /// Error type returned by Db-Sync based data sources
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -181,17 +159,24 @@ impl TryFrom<MainchainTxOutputRow> for MainchainTxOutput {
 		let tx_inputs: Result<Vec<UtxoId>, _> =
 			r.tx_inputs.into_iter().map(|i| UtxoId::from_str(i.as_str())).collect();
 		let tx_inputs = tx_inputs.map_err(|e| sqlx::Error::Decode(e.into()))?;
+		let utxo_id =
+			UtxoId { tx_hash: McTxHash(r.utxo_id_tx_hash), index: UtxoIndex(r.utxo_id_index.0) };
+		// Anyone can pay to this address, so one undecodable datum must not fail the whole query.
+		let datum = r.datum.and_then(|json| {
+			encode_json_value_to_plutus_datum(json, DetailedSchema)
+				.inspect_err(|e| {
+					warn!("Skipping datum of {utxo_id:?} that is not Plutus data: {e:?}")
+				})
+				.ok()
+		});
 		Ok(MainchainTxOutput {
-			utxo_id: UtxoId {
-				tx_hash: McTxHash(r.utxo_id_tx_hash),
-				index: UtxoIndex(r.utxo_id_index.0),
-			},
+			utxo_id,
 			tx_block_no: r.tx_block_no,
 			tx_slot_no: r.tx_slot_no,
 			tx_epoch_no: r.tx_epoch_no,
 			tx_index_in_block: r.tx_index_in_block,
 			address: r.address,
-			datum: r.datum.map(|d| d.0),
+			datum,
 			tx_inputs,
 		})
 	}
@@ -206,7 +191,7 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
-	pub datum: Option<DbDatum>,
+	pub datum: Option<JsonValue>,
 	pub tx_inputs: Vec<String>,
 }
 

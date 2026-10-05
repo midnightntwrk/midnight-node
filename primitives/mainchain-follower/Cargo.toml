@@ -35,6 +35,7 @@ serde = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 
 [dev-dependencies]
+hex-literal.workspace = true
 tokio = { workspace = true, features = ["full"]}
 
 [features]

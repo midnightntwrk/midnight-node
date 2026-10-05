@@ -403,3 +403,43 @@ pub async fn get_epoch_for_block_hash(
 		.await?
 		.map(|e| McEpochNumber(e.0)))
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use hex_literal::hex;
+	use std::str::FromStr;
+
+	// The shared fixtures put a 2^64 integer datum and an oversized constructor index next to
+	// valid registrations at the candidate address.
+	async fn undecodable_datums_do_not_fail_candidate_query(pool: PgPool) {
+		let source = CandidatesDataSourceImpl::new(pool, None).await.unwrap();
+		let candidates = source
+			.get_candidates(McEpochNumber(191), MainchainAddress::from_str("script_addr").unwrap())
+			.await
+			.unwrap();
+		let mut keys: Vec<_> = candidates.iter().map(|c| c.mainchain_pub_key().0).collect();
+		keys.sort();
+		assert_eq!(
+			keys,
+			vec![
+				hex!("bfbee74ab533f40979101057f96de62e95233f2a5216eb16b54106f09fd7350d"),
+				hex!("cfbee74ab533f40979101057f96de62e95233f2a5216eb16b54106f09fd7350d"),
+			]
+		);
+	}
+
+	#[sqlx::test(
+		migrations = "../../partner-chains/toolkit/data-sources/db-sync/testdata/migrations-tx-in-enabled"
+	)]
+	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_enabled(pool: PgPool) {
+		undecodable_datums_do_not_fail_candidate_query(pool).await
+	}
+
+	#[sqlx::test(
+		migrations = "../../partner-chains/toolkit/data-sources/db-sync/testdata/migrations-tx-in-consumed"
+	)]
+	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_consumed(pool: PgPool) {
+		undecodable_datums_do_not_fail_candidate_query(pool).await
+	}
+}
