@@ -10,5 +10,5 @@ decoded is logged and skipped like any other invalid entry, instead of failing
 the whole query. The same change is applied to the partner-chains db-sync
 candidate data source.
 
-PR:
-Issue:
+PR: https://github.com/shieldedtech/shadow-midnight-node/pull/50
+Issue: https://github.com/shieldedtech/audit-taran/issues/53
