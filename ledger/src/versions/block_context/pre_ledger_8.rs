@@ -32,6 +32,11 @@ impl BlockContext {
 	pub fn parent_block_time(&self) -> Option<u64> {
 		None
 	}
+
+	#[cfg(test)]
+	pub fn with_parent_block_time(tblock: u64, _parent_block_time: u64) -> Self {
+		Self { tblock, ..Default::default() }
+	}
 }
 
 #[cfg(feature = "std")]
