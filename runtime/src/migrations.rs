@@ -160,17 +160,28 @@ pub mod authority_keys {
 	/// key and therefore not invertible — so the mapping is rebuilt by hashing each committee
 	/// member's `id` forward. The committees are the only on-chain source of these keys.
 	fn cross_chain_keys_by_validator() -> Vec<(crate::AccountId, CrossChainPublic)> {
-		let committees = [
-			frame_support::storage::unhashed::get::<PreUpgradeCommitteeInfo>(&CurrentCommittee::<
-				Runtime,
-			>::hashed_key()),
-			frame_support::storage::unhashed::get::<PreUpgradeCommitteeInfo>(&NextCommittee::<
-				Runtime,
-			>::hashed_key()),
-		];
+		cross_chain_keys_of(
+			[
+				frame_support::storage::unhashed::get::<PreUpgradeCommitteeInfo>(
+					&CurrentCommittee::<Runtime>::hashed_key(),
+				),
+				frame_support::storage::unhashed::get::<PreUpgradeCommitteeInfo>(&NextCommittee::<
+					Runtime,
+				>::hashed_key(
+				)),
+			]
+			.into_iter()
+			.flatten(),
+		)
+	}
 
+	/// Indexes the members' cross-chain keys of the given committees by `pallet_session` validator
+	/// id. Shared by the migration and its try-runtime check so both translate the same way.
+	fn cross_chain_keys_of(
+		committees: impl IntoIterator<Item = PreUpgradeCommitteeInfo>,
+	) -> Vec<(crate::AccountId, CrossChainPublic)> {
 		let mut by_validator = Vec::new();
-		for member in committees.into_iter().flatten().flat_map(|info| info.committee) {
+		for member in committees.into_iter().flat_map(|info| info.committee) {
 			let cross_chain = member.authority_id();
 			let validator = crate::AccountId::from(cross_chain.clone());
 			if !by_validator.iter().any(|(known, _)| known == &validator) {
@@ -178,6 +189,27 @@ pub mod authority_keys {
 			}
 		}
 		by_validator
+	}
+
+	/// Translates one `pallet_session` entry: the cross-chain key becomes the beefy key when the
+	/// validator is a known committee member, otherwise the placeholder from `From` applies.
+	fn upgrade_session_keys(
+		validator: &crate::AccountId,
+		old_keys: PreUpgradeSessionKeys,
+		cross_chain_keys: &[(crate::AccountId, CrossChainPublic)],
+	) -> SessionKeys {
+		match cross_chain_keys.iter().find(|(known, _)| known == validator) {
+			Some((_, cross_chain)) => upgrade_with_cross_chain(old_keys, cross_chain.clone()),
+			None => {
+				log::warn!(
+					target: "runtime::migration::add-beefy-session-keys",
+					"No committee member matches session validator {validator:?}; \
+					 its beefy key falls back to the aura placeholder. Such a validator \
+					 is not a BEEFY authority, so the placeholder is never used to sign.",
+				);
+				old_keys.into()
+			},
+		}
 	}
 
 	/// `pallet-consensus-engine` by pre-seeding `pallet_babe::GenesisSlot`.
@@ -243,23 +275,7 @@ pub mod authority_keys {
 			// current/next committee union.
 			let validators = pallet_session::NextKeys::<Runtime>::iter_keys().count() as u64;
 			pallet_session::Pallet::<Runtime>::upgrade_keys::<PreUpgradeSessionKeys, _>(
-				|validator, old_keys| match cross_chain_keys
-					.iter()
-					.find(|(known, _)| known == &validator)
-				{
-					Some((_, cross_chain)) => {
-						upgrade_with_cross_chain(old_keys, cross_chain.clone())
-					},
-					None => {
-						log::warn!(
-							target: "runtime::migration::add-beefy-session-keys",
-							"No committee member matches session validator {validator:?}; \
-							 its beefy key falls back to the aura placeholder. Such a validator \
-							 is not a BEEFY authority, so the placeholder is never used to sign.",
-						);
-						old_keys.into()
-					},
-				},
+				|validator, old_keys| upgrade_session_keys(&validator, old_keys, &cross_chain_keys),
 			);
 			let old_key_types = PreUpgradeSessionKeys::key_ids().len() as u64;
 			let new_key_types = SessionKeys::key_ids().len() as u64;
@@ -332,6 +348,12 @@ pub mod authority_keys {
 				sp_runtime::TryRuntimeError::Other("Previously encoded state should be decodable")
 			})?;
 
+			// The migration gives committee validators their cross-chain key as beefy key and only
+			// falls back to the placeholder for validators in neither committee; the expected keys
+			// below must follow the same rule, derived from the same pre-upgrade committees.
+			let cross_chain_keys =
+				cross_chain_keys_of(core::iter::once(old_current.clone()).chain(old_next.clone()));
+
 			let new_current = CurrentCommittee::<Runtime>::get();
 			ensure!(old_current.epoch == new_current.epoch, "current epoch should be preserved");
 			ensure!(
@@ -363,7 +385,7 @@ pub mod authority_keys {
 				"session NextKeys entry count should be preserved"
 			);
 			for (validator, old_keys) in old_next_keys {
-				let expected_keys: SessionKeys = old_keys.into();
+				let expected_keys = upgrade_session_keys(&validator, old_keys, &cross_chain_keys);
 				ensure!(
 					pallet_session::NextKeys::<Runtime>::get(&validator)
 						== Some(expected_keys.clone()),
@@ -384,7 +406,10 @@ pub mod authority_keys {
 
 			let expected_queued_keys: Vec<_> = old_queued_keys
 				.into_iter()
-				.map(|(v, keys)| (v, SessionKeys::from(keys)))
+				.map(|(v, keys)| {
+					let upgraded = upgrade_session_keys(&v, keys, &cross_chain_keys);
+					(v, upgraded)
+				})
 				.collect();
 			ensure!(
 				pallet_session::QueuedKeys::<Runtime>::get() == expected_queued_keys,
@@ -572,6 +597,54 @@ mod tests {
 			let raw = keys.beefy.clone().into_inner().0;
 			assert_eq!(raw[0], 0, "placeholder keeps the invalid SEC1 tag");
 			assert_eq!(&raw[1..], &stale.aura.public().into_inner().0, "placeholder is aura bytes");
+		});
+	}
+
+	/// The try-runtime checks must expect exactly what the migration writes: the cross-chain key
+	/// as beefy key for committee validators, the placeholder only for validators in neither
+	/// committee. A pre/post round trip over both kinds of entry pins that down.
+	#[cfg(feature = "try-runtime")]
+	#[test]
+	fn try_runtime_checks_accept_the_migrated_state() {
+		pre_upgrade_ext().execute_with(|| {
+			let a = alice();
+			let stale = bob();
+			let a_validator = AccountId::from(a.cross_chain.public());
+			let stale_validator = AccountId::from(stale.cross_chain.public());
+			let a_keys =
+				PreUpgradeSessionKeys { aura: a.aura.public(), grandpa: a.grandpa.public() };
+			let stale_keys = PreUpgradeSessionKeys {
+				aura: stale.aura.public(),
+				grandpa: stale.grandpa.public(),
+			};
+
+			// Alice sits in the committee and is queued; bob is only a stale `NextKeys` entry.
+			frame_support::storage::unhashed::put(
+				&CurrentCommittee::<Runtime>::hashed_key(),
+				&PreUpgradeCommitteeInfo {
+					epoch: ScEpochNumber(7),
+					committee: BoundedVec::truncate_from(vec![pre_upgrade_member(&a)]),
+				},
+			);
+			frame_support::storage::unhashed::put(
+				&pallet_session::NextKeys::<Runtime>::hashed_key_for(&a_validator),
+				&a_keys,
+			);
+			frame_support::storage::unhashed::put(
+				&pallet_session::NextKeys::<Runtime>::hashed_key_for(&stale_validator),
+				&stale_keys,
+			);
+			frame_support::storage::unhashed::put(
+				&pallet_session::QueuedKeys::<Runtime>::hashed_key(),
+				&vec![(a_validator.clone(), a_keys)],
+			);
+
+			<crate::AllPalletsWithSystem as BeforeAllRuntimeMigrations>::before_all_runtime_migrations();
+			let state = MigrateV1ToV2AddBabeAndBeefySessionKeys::pre_upgrade()
+				.expect("pre_upgrade reads the legacy state");
+			MigrateV1ToV2AddBabeAndBeefySessionKeys::on_runtime_upgrade();
+			MigrateV1ToV2AddBabeAndBeefySessionKeys::post_upgrade(state)
+				.expect("post_upgrade must accept what on_runtime_upgrade wrote");
 		});
 	}
 }
