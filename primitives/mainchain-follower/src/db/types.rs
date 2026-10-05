@@ -83,7 +83,8 @@ pub struct DbBlockHash(pub [u8; 32]);
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RegistrationRow {
-	pub full_datum: DbDatum,
+	/// Decoded per row by the caller: one bad datum must not fail the whole page.
+	pub full_datum: JsonValue,
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
 	pub block_timestamp: NaiveDateTime,
@@ -94,7 +95,8 @@ pub struct RegistrationRow {
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DeregistrationRow {
-	pub full_datum: DbDatum,
+	/// Decoded per row by the caller: one bad datum must not fail the whole page.
+	pub full_datum: JsonValue,
 	pub block_number: DbBlockNumber,
 	pub block_hash: DbBlockHash,
 	pub block_timestamp: NaiveDateTime,

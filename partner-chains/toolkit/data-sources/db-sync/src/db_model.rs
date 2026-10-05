@@ -1,10 +1,12 @@
 use crate::db_datum::DbDatum;
 use crate::{DataSourceError, SqlxError};
 use bigdecimal::ToPrimitive;
-use cardano_serialization_lib::PlutusData;
+use cardano_serialization_lib::{
+	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
+};
 use chrono::NaiveDateTime;
 pub use db_sync_sqlx::*;
-use log::info;
+use log::{info, warn};
 use sidechain_domain::{
 	MainchainBlock, McBlockHash, McBlockNumber, McEpochNumber, McSlotNumber, McTxHash, UtxoId,
 	UtxoIndex,
@@ -120,17 +122,24 @@ impl TryFrom<MainchainTxOutputRow> for MainchainTxOutput {
 		let tx_inputs: Result<Vec<UtxoId>, _> =
 			r.tx_inputs.into_iter().map(|i| UtxoId::from_str(i.as_str())).collect();
 		let tx_inputs = tx_inputs.map_err(|e| sqlx::Error::Decode(e.into()))?;
+		let utxo_id =
+			UtxoId { tx_hash: McTxHash(r.utxo_id_tx_hash), index: UtxoIndex(r.utxo_id_index.0) };
+		// Anyone can pay to this address, so one undecodable datum must not fail the whole query.
+		let datum = r.datum.and_then(|json| {
+			encode_json_value_to_plutus_datum(json, DetailedSchema)
+				.inspect_err(|e| {
+					warn!("Skipping datum of {utxo_id:?} that is not Plutus data: {e:?}")
+				})
+				.ok()
+		});
 		Ok(MainchainTxOutput {
-			utxo_id: UtxoId {
-				tx_hash: McTxHash(r.utxo_id_tx_hash),
-				index: UtxoIndex(r.utxo_id_index.0),
-			},
+			utxo_id,
 			tx_block_no: r.tx_block_no,
 			tx_slot_no: r.tx_slot_no,
 			tx_epoch_no: r.tx_epoch_no,
 			tx_index_in_block: r.tx_index_in_block,
 			address: r.address,
-			datum: r.datum.map(|d| d.0),
+			datum,
 			tx_inputs,
 		})
 	}
@@ -145,7 +154,7 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
-	pub datum: Option<DbDatum>,
+	pub datum: Option<JsonValue>,
 	pub tx_inputs: Vec<String>,
 }
 
