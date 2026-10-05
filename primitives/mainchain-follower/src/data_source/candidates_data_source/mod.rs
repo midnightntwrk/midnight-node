@@ -407,8 +407,52 @@ pub async fn get_epoch_for_block_hash(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use ctor::{ctor, dtor};
 	use hex_literal::hex;
 	use std::str::FromStr;
+	use std::sync::{OnceLock, mpsc};
+	use testcontainers_modules::postgres::Postgres;
+	use testcontainers_modules::testcontainers::{
+		Container, ImageExt,
+		bollard::query_parameters::{RemoveContainerOptions, StopContainerOptions},
+		core::client::docker_client_instance,
+		runners::SyncRunner,
+	};
+
+	static POSTGRES: OnceLock<Container<Postgres>> = OnceLock::new();
+
+	// `sqlx::test` reads DATABASE_URL before any test code runs, so the container has to be
+	// started at binary load.
+	#[ctor]
+	fn on_startup() {
+		let postgres =
+			POSTGRES.get_or_init(|| Postgres::default().with_tag("17.2").start().unwrap());
+		let database_url = format!(
+			"postgres://postgres:postgres@127.0.0.1:{}/postgres",
+			postgres.get_host_port_ipv4(5432).unwrap()
+		);
+		unsafe {
+			std::env::set_var("DATABASE_URL", database_url);
+		}
+	}
+
+	// Statics are never dropped, so the container must be removed explicitly.
+	#[dtor]
+	fn on_shutdown() {
+		let (tx, rx) = mpsc::channel();
+		std::thread::spawn(move || {
+			let runtime =
+				tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+			runtime.block_on(async {
+				let docker = docker_client_instance().await.unwrap();
+				let id = POSTGRES.get().unwrap().id();
+				docker.stop_container(id, None::<StopContainerOptions>).await.unwrap();
+				docker.remove_container(id, None::<RemoveContainerOptions>).await.unwrap();
+				let _ = tx.send(());
+			});
+		});
+		let _: () = rx.recv().unwrap();
+	}
 
 	// The shared fixtures put a 2^64 integer datum and an oversized constructor index next to
 	// valid registrations at the candidate address.
