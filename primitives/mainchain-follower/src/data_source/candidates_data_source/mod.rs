@@ -421,8 +421,7 @@ mod tests {
 
 	static POSTGRES: OnceLock<Container<Postgres>> = OnceLock::new();
 
-	// `sqlx::test` reads DATABASE_URL before any test code runs, so the container has to be
-	// started at binary load.
+	// `sqlx::test` reads DATABASE_URL before any test code runs.
 	#[ctor]
 	fn on_startup() {
 		let postgres =
@@ -454,8 +453,7 @@ mod tests {
 		let _: () = rx.recv().unwrap();
 	}
 
-	// The shared fixtures put a 2^64 integer datum and an oversized constructor index next to
-	// valid registrations at the candidate address.
+	// Fixtures also hold a 2^64 integer datum and a 2^64 constructor index at this address.
 	async fn undecodable_datums_do_not_fail_candidate_query(pool: PgPool) {
 		let source = CandidatesDataSourceImpl::new(pool, None).await.unwrap();
 		let candidates = source

@@ -174,7 +174,7 @@ INSERT INTO tx_out ( id, tx_id           , index, address     , address_raw, add
                   ,( 8 , reg_tx_id2      , 0    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash5     )
                   ,( 9 , reg_tx_id2      , 1    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash6     ) -- formatted properly but did not consumed advertisedhash
                   ,( 10, reg_tx_id       , 3    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash7     ) -- integer wider than 64 bits
-                  ,( 11, reg_tx_id       , 4    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash8     ) -- not decodable as Plutus data
+                  ,( 11, reg_tx_id       , 4    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash8     ) -- constructor index CSL rejects
 ;
 
 INSERT INTO datum ( id, hash , tx_id     , value                                            )
