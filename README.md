@@ -375,3 +375,8 @@ python ./scripts/generate-keys.py --help
 ### Fork Testing
 
 See [fork-testing.md](docs/fork-testing.md)
+
+### Migrating AURA to BABE
+
+See [aura-to-babe-migration-runbook.md](docs/aura-to-babe-migration-runbook.md)
+
