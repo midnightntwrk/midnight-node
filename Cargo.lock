@@ -8478,6 +8478,7 @@ dependencies = [
  "async-trait",
  "authority-selection-inherents",
  "cardano-serialization-lib",
+ "ctor",
  "db-sync-sqlx",
  "figment",
  "hex-literal 1.1.0",
@@ -8501,6 +8502,7 @@ dependencies = [
  "sp-runtime",
  "sqlx",
  "substrate-prometheus-endpoint",
+ "testcontainers-modules",
  "thiserror 2.0.18",
  "tokio",
 ]
