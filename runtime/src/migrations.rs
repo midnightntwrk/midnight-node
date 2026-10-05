@@ -77,13 +77,12 @@ pub mod authority_keys {
 		}
 	}
 
-	/// Fallback translation for a `pallet_session` entry whose validator is in none of the committees, so no
-	/// cross-chain key is recoverable from AccountId.
+	/// Fallback translation for a `pallet_session` entry whose validator is in none of the
+	/// committees, so no cross-chain key is recoverable from its `AccountId`.
 	///
-	/// Aura bytes behind the invalid SEC1 tag `0x00` keep the placeholder distinct from any real
-	///
-	/// key rather than colliding with one.
-	/// BABE key is copied from AURA key.
+	/// The BEEFY key is a placeholder: the AURA bytes behind the invalid SEC1 tag `0x00`, which
+	/// keeps it distinct from any real key rather than colliding with one. The BABE key is copied
+	/// from the AURA key.
 	impl From<PreUpgradeSessionKeys> for SessionKeys {
 		fn from(old: PreUpgradeSessionKeys) -> Self {
 			let aura_raw = old.aura.clone().into_inner().0;
@@ -212,7 +211,9 @@ pub mod authority_keys {
 		}
 	}
 
-	/// `pallet-consensus-engine` by pre-seeding `pallet_babe::GenesisSlot`.
+	/// The one-shot "introduce BABE and BEEFY" step of the runtime upgrade: translates the
+	/// committees and session keys to the shape that includes the BABE and BEEFY keys, and
+	/// activates `pallet-consensus-engine` by pre-seeding `pallet_babe::GenesisSlot`.
 	///
 	/// The activation lives here, gated by `pallet-session-validator-management`'s storage version
 	/// (1 → 2), rather than in a versioned migration of `pallet-consensus-engine` itself: FRAME's
