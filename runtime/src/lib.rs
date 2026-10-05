@@ -1256,6 +1256,13 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
+	// on the unsigned mandatory block 1 since launch, and the session-key migration above
+	// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
+	// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
+	// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
+	// re-enabled (see `migrations::beefy_genesis`).
+	migrations::beefy_genesis::ResetBeefyGenesis,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime

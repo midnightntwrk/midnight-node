@@ -575,3 +575,117 @@ mod tests {
 		});
 	}
 }
+
+pub mod beefy_genesis {
+	//! One-shot reset of the BEEFY genesis block to `None`, which disables BEEFY.
+	//!
+	//! BEEFY has never produced a commitment on the live networks: the voter is stuck on the
+	//! mandatory block of the genesis session (block 1), which can only be signed by the genesis
+	//! authority set. Until this upgrade `beefy` was not a session key, so `pallet_beefy` never
+	//! received session changes and `pallet_beefy::Authorities` stayed at the chain-spec set,
+	//! whose keys were never in the validators' keystores. The gadget finalizes sessions strictly
+	//! in order, so that block has to be signed before anything else can be.
+	//!
+	//! This upgrade also adds `beefy` to `SessionKeys` (see `authority_keys`), so from the next
+	//! session rotation on, `pallet_beefy::Authorities` tracks the committee and every validator
+	//! holds the key it is listed under. That does not unstick block 1 though: the session that
+	//! starts at the old genesis still belongs to the chain-spec set.
+	//!
+	//! Clearing `pallet_beefy::GenesisBlock` makes `BeefyApi::beefy_genesis` return `None`. The
+	//! client gadget treats that as "pallet not available": `wait_for_runtime_pallet` keeps
+	//! waiting and the voter never starts. BEEFY stays disabled until governance re-enables it
+	//! with `pallet_beefy::Pallet::set_new_genesis`, which places a fresh genesis in the future
+	//! and lets the voters start a first session there with the validator set active at that
+	//! block. Do that only after at least one session rotation has followed this upgrade, so the
+	//! set active at the new genesis is the committee and not the chain-spec set.
+	//!
+	//! Note: a voter that is already running with persisted state only detects a `ConsensusReset`
+	//! when the genesis changes to a *different* `Some` value; `None` is ignored by
+	//! `handle_finality_notification`. Such a voter keeps its stuck state until the node restarts,
+	//! after which it idles like a fresh one. No commitment can be produced either way.
+	//!
+	//! The migration is a no-op once the value is `None`. Remove it from [`crate::Migrations`]
+	//! once the upgrade has landed on all live networks, and in any case before BEEFY is
+	//! re-enabled with `set_new_genesis`, otherwise the next upgrade disables it again.
+	use crate::Runtime;
+	use frame_support::{pallet_prelude::*, traits::OnRuntimeUpgrade};
+
+	#[cfg(feature = "try-runtime")]
+	use alloc::vec::Vec;
+	#[cfg(feature = "try-runtime")]
+	use parity_scale_codec::Encode;
+
+	pub struct ResetBeefyGenesis;
+
+	impl OnRuntimeUpgrade for ResetBeefyGenesis {
+		fn on_runtime_upgrade() -> Weight {
+			let current = pallet_beefy::GenesisBlock::<Runtime>::get();
+			if current.is_none() {
+				log::info!("BEEFY genesis is already unset, leaving it untouched");
+				return <Runtime as frame_system::Config>::DbWeight::get().reads(1);
+			}
+
+			pallet_beefy::GenesisBlock::<Runtime>::put(None::<crate::BlockNumber>);
+			log::info!("BEEFY genesis reset from {current:?} to None, BEEFY is disabled");
+
+			<Runtime as frame_system::Config>::DbWeight::get().reads_writes(1, 1)
+		}
+
+		#[cfg(feature = "try-runtime")]
+		fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
+			Ok(pallet_beefy::GenesisBlock::<Runtime>::get().encode())
+		}
+
+		#[cfg(feature = "try-runtime")]
+		fn post_upgrade(_state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+			frame_support::ensure!(
+				pallet_beefy::GenesisBlock::<Runtime>::get().is_none(),
+				"BEEFY genesis must be None after the upgrade"
+			);
+			Ok(())
+		}
+	}
+
+	#[cfg(test)]
+	mod tests {
+		use super::*;
+		use crate::BlockNumber;
+
+		fn db_weight() -> frame_support::weights::RuntimeDbWeight {
+			<Runtime as frame_system::Config>::DbWeight::get()
+		}
+
+		#[test]
+		fn resets_the_chain_spec_genesis_to_none() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				pallet_beefy::GenesisBlock::<Runtime>::put(Some(1));
+
+				let weight = ResetBeefyGenesis::on_runtime_upgrade();
+
+				assert_eq!(pallet_beefy::GenesisBlock::<Runtime>::get(), None);
+				assert_eq!(weight, db_weight().reads_writes(1, 1));
+			});
+		}
+
+		#[test]
+		fn resets_a_previously_moved_genesis_to_none() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				pallet_beefy::GenesisBlock::<Runtime>::put(Some(1600));
+				ResetBeefyGenesis::on_runtime_upgrade();
+				assert_eq!(pallet_beefy::GenesisBlock::<Runtime>::get(), None);
+			});
+		}
+
+		#[test]
+		fn leaves_an_unset_genesis_untouched() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				pallet_beefy::GenesisBlock::<Runtime>::put(None::<BlockNumber>);
+
+				let weight = ResetBeefyGenesis::on_runtime_upgrade();
+
+				assert_eq!(pallet_beefy::GenesisBlock::<Runtime>::get(), None);
+				assert_eq!(weight, db_weight().reads(1));
+			});
+		}
+	}
+}
