@@ -14,4 +14,5 @@ which starts a fresh first session at a future block with the validator set acti
 should happen only after at least one session rotation has followed the upgrade. The migration
 is a no-op once the value is already `None` and must be removed before BEEFY is re-enabled.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2084
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1742
