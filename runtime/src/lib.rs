@@ -115,6 +115,10 @@ pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+/// Fork-transition support. Off by default; see the module docs before
+/// enabling -- a runtime built with this feature must never be released.
+#[cfg(feature = "fork-transition")]
+pub mod fork_transition;
 mod migrations;
 pub mod weights;
 
@@ -269,23 +273,41 @@ pub mod opaque {
 
 pub type CrossChainPublic = opaque::cross_chain_app::Public;
 
-// To learn more about runtime versioning, see:
-// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
-#[allow(clippy::zero_prefixed_literal)]
-#[sp_version::runtime_version]
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: Cow::Borrowed("midnight"),
-	impl_name: Cow::Borrowed("midnight"),
-	authoring_version: 1,
-	// The version of the runtime specification. A full node will not attempt to use its native
-	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
-	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 003_000_000,
-	impl_version: 0,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 4,
-	system_version: 3,
-};
+/// The `impl_name` of a runtime built with `fork-transition`, so one is
+/// identifiable from `state_getRuntimeVersion` or from its wasm: release
+/// builds check for this string (`scripts/assert-no-fork-transition.sh`).
+pub const FORK_TRANSITION_IMPL_NAME: &str = "midnight-fork-transition-UNSAFE";
+
+// `#[sp_version::runtime_version]` only accepts string literals, so `impl_name`
+// is chosen per feature by expanding the one definition twice rather than by a
+// const. `spec_version` must stay single-sourced: `codeSubstitutes` matches on
+// it, so a fork runtime that drifted from the stock one would silently not apply.
+macro_rules! runtime_version {
+	($impl_name:tt) => {
+		// To learn more about runtime versioning, see:
+		// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
+		#[allow(clippy::zero_prefixed_literal)]
+		#[sp_version::runtime_version]
+		pub const VERSION: RuntimeVersion = RuntimeVersion {
+			spec_name: Cow::Borrowed("midnight"),
+			impl_name: Cow::Borrowed($impl_name),
+			authoring_version: 1,
+			// The version of the runtime specification. A full node will not attempt to use its native
+			//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
+			//   `spec_version`, and `authoring_version` are the same between Wasm and native.
+			spec_version: 003_000_000,
+			impl_version: 0,
+			apis: RUNTIME_API_VERSIONS,
+			transaction_version: 4,
+			system_version: 3,
+		};
+	};
+}
+
+#[cfg(not(feature = "fork-transition"))]
+runtime_version!("midnight");
+#[cfg(feature = "fork-transition")]
+runtime_version!("midnight-fork-transition-UNSAFE");
 
 /// This determines the average expected block time that we are targeting.
 /// Blocks will be produced at a minimum duration defined by `SLOT_DURATION`.
@@ -1402,6 +1424,14 @@ impl_runtime_apis! {
 		}
 
 		fn execute_block(block: <Block as BlockT>::LazyBlock) {
+			// The fork block carries a storage delta instead of the inherents a
+			// proposer would have produced; applying it is the whole execution.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				crate::fork_transition::execute_fork_block(&block);
+				return;
+			}
+
 			Executive::execute_block(block);
 		}
 
@@ -1500,6 +1530,12 @@ impl_runtime_apis! {
 			block: <Block as BlockT>::LazyBlock,
 			data: sp_inherents::InherentData,
 		) -> sp_inherents::CheckInherentsResult {
+			// The fork block has no inherents to check -- it was never proposed.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				return sp_inherents::CheckInherentsResult::new();
+			}
+
 			data.check_extrinsics(&block)
 		}
 	}
@@ -1526,6 +1562,15 @@ impl_runtime_apis! {
 		}
 
 		fn authorities() -> Vec<AuraId> {
+			// At the fork block's parent, report the fork's mock set so the
+			// fork block's seal verifies. Every other height reads state.
+			#[cfg(feature = "fork-transition")]
+			if let Some(authorities) =
+				crate::fork_transition::aura_authorities_at(System::block_number())
+			{
+				return authorities;
+			}
+
 			pallet_aura::Authorities::<Runtime>::get().into_inner()
 		}
 	}
