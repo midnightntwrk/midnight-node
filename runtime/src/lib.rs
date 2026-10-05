@@ -228,7 +228,7 @@ pub mod opaque {
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
 			let babe = keys.find(BABE)?;
 			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
-			let beefy = keys.find(BEEFY).or_else(|| keys.find(CROSS_CHAIN))?;
+			let beefy = keys.find(BEEFY)?;
 			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
 			Some(Self {
 				aura: aura.into(),

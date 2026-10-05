@@ -305,7 +305,7 @@ Chain specifications are located in `/res/` directory.
 
 ```shell
 echo "//Alice" > /tmp/alice-seed && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed BEEFY_SEED_FILE=/tmp/alice-seed \
   BASE_PATH=/tmp/node-1 CHAIN=dev VALIDATOR=true ./target/release/midnight-node
 ```
 
