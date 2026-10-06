@@ -13,5 +13,5 @@ context"). With the node checking that block in the on-chain context, the new ru
 performs the check against the parent state the old runtime left behind, so the inherent
 checks would otherwise read unmigrated storage (`Corrupted state`, `InvalidValidators`).
 
-PR:
-Issue:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2252
+Issue: n/a

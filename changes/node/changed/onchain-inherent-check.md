@@ -22,5 +22,5 @@ committee `set` block (one in five blocks there, one in `SLOTS_PER_EPOCH` on rea
 networks). The runtime half of the fix, re-running pending migrations inside
 `check_inherents`, is in the runtime change file of the same name.
 
-PR:
-Issue:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2252
+Issue: n/a
