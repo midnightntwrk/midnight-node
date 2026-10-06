@@ -113,6 +113,27 @@ use {lazy_static::lazy_static, moka::sync::Cache};
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
 
+/// `INITIAL_LIMITS.transaction_byte_limit`, for v1 host functions: old runtimes bind v1
+/// forever, and the on-chain limit equals this at every historic block. Pinned by
+/// `default_tx_byte_limit_matches_ledger_initial_limits`.
+pub const DEFAULT_TX_BYTE_LIMIT: u64 = 1 << 20;
+
+/// Cap on decoded operations/identifiers for v1 `get_decoded_transaction`; the v2 value comes
+/// from the runtime (`pallet_midnight::Config::MaxDecodedTxItems`).
+pub const DEFAULT_MAX_DECODED_ITEMS: u32 = 4096;
+
+/// Strict `>`: no transaction in any block exceeds the on-chain limit, so this never fires on
+/// historical data.
+#[cfg(feature = "std")]
+fn ensure_within_tx_byte_limit(limit: u64, bytes: &[u8]) -> Result<(), LedgerApiError> {
+	if bytes.len() as u64 > limit {
+		return Err(LedgerApiError::Transaction(types::TransactionError::Malformed(
+			types::MalformedError::TransactionTooLarge,
+		)));
+	}
+	Ok(())
+}
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct StrictTxValidationKey {
 	state_hash: Hash,
@@ -718,8 +739,14 @@ where
 		let start_tx_validation_time = Instant::now();
 
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		// Ledger first, so its `transaction_byte_limit` bounds the payload before deserializing.
+		// Semantically inert: `well_formed` enforces the same limit later.
 		let ledger = Self::get_ledger(&api, state_key)?;
+		ensure_within_tx_byte_limit(
+			ledger.state.parameters.limits.transaction_byte_limit,
+			tx_serialized,
+		)?;
+		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
 
 		let wrapped_cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
@@ -779,8 +806,12 @@ where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
+		ensure_within_tx_byte_limit(
+			ledger.state.parameters.limits.transaction_byte_limit,
+			tx_serialized,
+		)?;
+		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
 
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
@@ -810,11 +841,44 @@ where
 		Ok(())
 	}
 
-	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
+	/// For v1 host functions, which old runtimes bind forever.
+	pub fn get_decoded_transaction_v1(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
+		ensure_within_tx_byte_limit(DEFAULT_TX_BYTE_LIMIT, transaction_bytes)?;
+		Self::decode_transaction_inner(transaction_bytes, DEFAULT_MAX_DECODED_ITEMS)
+	}
+
+	pub fn get_decoded_transaction(
+		state_key: &[u8],
+		transaction_bytes: &[u8],
+		max_items: u32,
+	) -> Result<Tx, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		ensure_within_tx_byte_limit(
+			ledger.state.parameters.limits.transaction_byte_limit,
+			transaction_bytes,
+		)?;
+		Self::decode_transaction_inner(transaction_bytes, max_items)
+	}
+
+	/// `max_items` caps operations and identifiers independently — it bounds output
+	/// materialization and response size, not the (already byte-limited) parse.
+	fn decode_transaction_inner(
+		transaction_bytes: &[u8],
+		max_items: u32,
+	) -> Result<Tx, LedgerApiError> {
+		let too_many_items = || {
+			LedgerApiError::Transaction(types::TransactionError::Malformed(
+				types::MalformedError::TransactionTooLarge,
+			))
+		};
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(transaction_bytes)?;
 		let hash = tx.hash();
 		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
+			if acc.len() >= max_items as usize {
+				return Err(too_many_items());
+			}
 			let a = match cd {
 				TransactionOperation::Call { address, entry_point } => {
 					Op::Call { address: api.tagged_serialize(&address)?, entry_point }
@@ -835,6 +899,9 @@ where
 		})?;
 
 		let identifiers = tx.identifiers().try_fold(Vec::new(), |mut acc, i| {
+			if acc.len() >= max_items as usize {
+				return Err(too_many_items());
+			}
 			acc.push(api.tagged_serialize(&i)?);
 			Ok::<_, LedgerApiError>(acc)
 		})?;
@@ -971,6 +1038,17 @@ where
 		Ok(gas_cost)
 	}
 
+	/// For v1 host functions, which old runtimes bind forever.
+	pub fn get_transaction_cost_v1(
+		state_key: &[u8],
+		tx: &[u8],
+		block_context: &BlockContext,
+		max_weight: u64,
+	) -> Result<GasCost, LedgerApiError> {
+		ensure_within_tx_byte_limit(DEFAULT_TX_BYTE_LIMIT, tx)?;
+		Self::get_transaction_cost(state_key, tx, block_context, max_weight)
+	}
+
 	/// The cost of either a `Transaction` or a [`SystemTransaction`], dispatched on
 	/// the serialized header tag.
 	///
@@ -982,6 +1060,11 @@ where
 		block_context: &BlockContext,
 		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
+		// Caller-controlled bytes, via `state_call` and the mempool's filtering pool: bound them
+		// before either arm deserializes.
+		let ledger = Self::get_ledger(&api::new(), state_key)?;
+		ensure_within_tx_byte_limit(ledger.state.parameters.limits.transaction_byte_limit, tx)?;
+
 		if is_system_transaction(tx) {
 			Self::get_system_transaction_cost(state_key, tx, max_weight)
 		} else {
@@ -1617,6 +1700,60 @@ mod tests {
 		assert_ne!(verify(1784643558, true), ttl_expired);
 	}
 
+	fn transaction_too_large() -> LedgerApiError {
+		LedgerApiError::Transaction(types::TransactionError::Malformed(
+			types::MalformedError::TransactionTooLarge,
+		))
+	}
+
+	/// A ledger bump that changes `INITIAL_LIMITS` must fail loudly: the v1 host
+	/// functions hardcode this value as the byte limit for historic blocks.
+	#[test]
+	fn default_tx_byte_limit_matches_ledger_initial_limits() {
+		assert_eq!(
+			DEFAULT_TX_BYTE_LIMIT,
+			mn_ledger_local::structure::INITIAL_LIMITS.transaction_byte_limit
+		);
+	}
+
+	/// The v1 byte check precedes deserialization and state loading, so junk bytes
+	/// and a junk state key are fine — nothing else may run first.
+	#[test]
+	fn v1_query_paths_reject_oversized_transactions() {
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let oversized = vec![0u8; DEFAULT_TX_BYTE_LIMIT as usize + 1];
+		assert_eq!(
+			TestBridge::get_decoded_transaction_v1(&oversized).unwrap_err(),
+			transaction_too_large()
+		);
+		assert_eq!(
+			TestBridge::get_transaction_cost_v1(&[], &oversized, &block_context(), 1_000)
+				.unwrap_err(),
+			transaction_too_large()
+		);
+	}
+
+	#[test]
+	fn decoded_items_are_capped() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			// The fixture transaction is latest-ledger format.
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let (tx, _) = midnight_ledger_unsafe_helpers::ledger_8::extract_tx_with_context(
+			midnight_node_res::undeployed::transactions::DEPLOY_TX,
+		);
+		assert_eq!(
+			TestBridge::decode_transaction_inner(&tx, 0).unwrap_err(),
+			transaction_too_large()
+		);
+		assert!(TestBridge::decode_transaction_inner(&tx, DEFAULT_MAX_DECODED_ITEMS).is_ok());
+	}
+
 	fn normalized_all(value: FixedPoint) -> LedgerNormalizedCost {
 		LedgerNormalizedCost {
 			read_time: value,
@@ -1792,5 +1929,64 @@ mod tests {
 		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	/// `validate_unsigned` and `pre_dispatch` reach these with caller bytes ahead of any fee,
+	/// and before `CheckWeight` can reject a bare extrinsic on length.
+	#[test]
+	fn validation_paths_reject_oversized_payloads_before_deserializing() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+		let genesis = midnight_node_res::networks::MidnightNetwork::genesis_state(
+			&midnight_node_res::networks::UndeployedNetwork,
+		);
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+
+		let limit = ledger.state.parameters.limits.transaction_byte_limit;
+		let oversized = vec![0u8; limit as usize + 1];
+
+		let is_too_large = |err: &LedgerApiError| {
+			matches!(
+				err,
+				LedgerApiError::Transaction(types::TransactionError::Malformed(
+					types::MalformedError::TransactionTooLarge
+				))
+			)
+		};
+
+		let mut test_ext = sp_io::TestExternalities::default();
+		let mut ext = test_ext.ext();
+
+		let validate = TestBridge::validate_transaction(
+			&mut ext,
+			&state_key,
+			&oversized,
+			BlockContext::default(),
+			1,
+			1,
+			false,
+		)
+		.unwrap_err();
+		assert!(is_too_large(&validate), "validate_transaction returned {validate:?}");
+
+		let guaranteed = TestBridge::validate_guaranteed_execution(
+			&mut ext,
+			&state_key,
+			&oversized,
+			BlockContext::default(),
+			1,
+			false,
+		)
+		.unwrap_err();
+		assert!(is_too_large(&guaranteed), "validate_guaranteed_execution returned {guaranteed:?}");
 	}
 }
