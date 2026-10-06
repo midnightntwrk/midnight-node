@@ -987,7 +987,7 @@ parameter_types! {
 	pub const MaxBytes: u64 = 10 * 1024 * 1024;
 	/// Maximum transactions a single account can submit within a throttle window
 	pub const MaxTxs: u64 = 100;
-	/// Number of blocks that define a throttle window (1 day at 6s/block).
+	/// Number of blocks that define a throttle window (1 hour: 600 blocks at 6 s/block).
 	pub const WindowSize: u32 = HOURS;
 }
 
