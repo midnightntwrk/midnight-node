@@ -430,16 +430,54 @@ pub trait Ledger9Bridge {
 
 	/*
 	 * get_decoded_transaction()
+	 *
+	 * Kept for old runtimes, which bind v1 forever (every historic-block `state_call`
+	 * executes that block's runtime). Bounded by the hardcoded ledger defaults, which
+	 * equal the on-chain limits at every historic block.
 	 */
-	// Current Enabled Version
 	fn get_decoded_transaction(
 		&mut self,
 		transaction_bytes: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Tx, LedgerApiError>> {
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_decoded_transaction(transaction_bytes)
+			Bridge::<Signature, DbUnified>::get_decoded_transaction_v1(transaction_bytes)
 		} else {
-			Bridge::<Signature, DbSeparate>::get_decoded_transaction(transaction_bytes)
+			Bridge::<Signature, DbSeparate>::get_decoded_transaction_v1(transaction_bytes)
+		}
+	}
+
+	/*
+	 * As v1, but stateful: rejects transactions above the on-chain
+	 * `transaction_byte_limit` before deserialization (so a future governance raise
+	 * isn't clamped by the v1 default), and caps decoded operations/identifiers at
+	 * `max_items` (the runtime's `MaxDecodedTxItems` pallet constant).
+	 */
+	// Current Enabled Version
+	#[version(2)]
+	fn get_decoded_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		transaction_bytes: PassFatPointerAndRead<&[u8]>,
+		max_items: u32,
+	) -> AllocateAndReturnByCodec<Result<Tx, LedgerApiError>> {
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_decoded_transaction(state_key, transaction_bytes, max_items)
+		);
+
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_decoded_transaction(
+				state_key,
+				transaction_bytes,
+				max_items,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_decoded_transaction(
+				state_key,
+				transaction_bytes,
+				max_items,
+			)
 		}
 	}
 
@@ -562,14 +600,14 @@ pub trait Ledger9Bridge {
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_transaction_cost(
+			Bridge::<Signature, DbUnified>::get_transaction_cost_v1(
 				state_key,
 				tx,
 				&block_context,
 				max_weight,
 			)
 		} else {
-			Bridge::<Signature, DbSeparate>::get_transaction_cost(
+			Bridge::<Signature, DbSeparate>::get_transaction_cost_v1(
 				state_key,
 				tx,
 				&block_context,

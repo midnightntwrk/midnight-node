@@ -452,6 +452,10 @@ pub trait Ledger8Bridge {
 
 	/*
 	 * get_decoded_transaction()
+	 *
+	 * Only reachable from old runtimes (the new runtime uses the ledger-9 bridge), so
+	 * bounded by the hardcoded ledger defaults, which equal the on-chain limits at
+	 * every historic block.
 	 */
 	// Current Enabled Version
 	fn get_decoded_transaction(
@@ -459,9 +463,9 @@ pub trait Ledger8Bridge {
 		transaction_bytes: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Tx, LedgerApiError>> {
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_decoded_transaction(transaction_bytes)
+			Bridge::<Signature, DbUnified>::get_decoded_transaction_v1(transaction_bytes)
 		} else {
-			Bridge::<Signature, DbSeparate>::get_decoded_transaction(transaction_bytes)
+			Bridge::<Signature, DbSeparate>::get_decoded_transaction_v1(transaction_bytes)
 		}
 	}
 
@@ -545,6 +549,9 @@ pub trait Ledger8Bridge {
 
 	/*
 	 * Returns the expected fee to pay for a submitting a transaction
+	 *
+	 * Only reachable from old runtimes; the hardcoded default byte limit equals the
+	 * on-chain limit at every historic block.
 	 */
 	fn get_transaction_cost(
 		&mut self,
@@ -554,14 +561,14 @@ pub trait Ledger8Bridge {
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_transaction_cost(
+			Bridge::<Signature, DbUnified>::get_transaction_cost_v1(
 				state_key,
 				tx,
 				&block_context,
 				max_weight,
 			)
 		} else {
-			Bridge::<Signature, DbSeparate>::get_transaction_cost(
+			Bridge::<Signature, DbSeparate>::get_transaction_cost_v1(
 				state_key,
 				tx,
 				&block_context,

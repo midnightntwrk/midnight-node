@@ -419,6 +419,56 @@ fn test_get_mn_transaction_fee() {
 }
 
 #[test]
+fn test_get_decoded_transaction() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context.into());
+
+		let decoded = mock::Midnight::get_decoded_transaction(&tx).unwrap();
+
+		assert!(!decoded.operations.is_empty());
+	});
+}
+
+/// A real transaction padded one byte past `transaction_byte_limit`. Genuine leading bytes
+/// pass the node-count check, so the byte limit is what rejects it.
+fn oversized_tx() -> Vec<u8> {
+	let (mut tx, _) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	tx.resize((1 << 20) + 1, 0);
+	tx
+}
+
+#[test]
+fn test_get_decoded_transaction_rejects_oversized_tx() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_eq!(
+			mock::Midnight::get_decoded_transaction(&oversized_tx()).unwrap_err(),
+			LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			))
+		);
+	});
+}
+
+#[test]
+fn test_get_transaction_cost_rejects_oversized_tx() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_eq!(
+			mock::Midnight::get_transaction_cost(&oversized_tx()).unwrap_err(),
+			LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			))
+		);
+	});
+}
+
+#[test]
 fn test_get_ledger_parameters() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
@@ -632,3 +682,48 @@ fn state_key_is_block_start_after_a_block_with_system_transactions() {
 	})
 }
 // grcov-excl-stop
+
+/// A payload far inside the byte limit is still refused when it declares too many nodes.
+#[test]
+fn declared_node_count_is_capped() {
+	mock::new_test_ext().execute_with(|| {
+		// Declares 20,000 nodes in a few dozen bytes, so only the node cap can reject it.
+		let mut dense = b"midnight:transaction[v12](proof):".to_vec();
+		dense.extend(((20_000u32 << 2) | 0b10).to_le_bytes());
+
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&dense),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+
+		// A realistic count gets past the cap and fails on content instead.
+		let mut sparse = b"midnight:transaction[v12](proof):".to_vec();
+		sparse.extend(((43u32 << 2) | 0b10).to_le_bytes());
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&sparse),
+			Err(LedgerApiError::Deserialization(_))
+		);
+	});
+}
+
+/// The node cap must bind first, or the item cap would refuse transactions the ledger accepts
+/// and blocks can carry.
+#[test]
+fn the_node_cap_binds_before_the_item_cap() {
+	use sp_core::Get;
+
+	// Lower bound on nodes per operation; ledger_9's
+	// `byte_limited_payload_cannot_declare_unbounded_work` asserts at least 4.
+	const NODES_PER_OPERATION: u32 = 4;
+	let nodes = <<Test as crate::Config>::MaxTransactionNodes as Get<u32>>::get();
+	let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
+	let operations_admitted = nodes / NODES_PER_OPERATION;
+
+	assert!(
+		items > operations_admitted,
+		"MaxDecodedTxItems ({items}) binds before MaxTransactionNodes admits \
+		 {operations_admitted} operations",
+	);
+}

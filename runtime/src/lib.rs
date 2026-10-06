@@ -706,6 +706,10 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Runtime {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
+	// admits, so the node cap binds first.
+	type MaxDecodedTxItems = ConstU32<4096>;
+	type MaxTransactionNodes = ConstU32<1024>;
 }
 
 /// Configure the pallet-midnight in pallets/midnight.
