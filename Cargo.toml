@@ -24,6 +24,7 @@ members = [
     "primitives/session-info",
     "primitives/consensus-engine",
     "primitives/system-parameters",
+    "primitives/tx-error-codes",
     "res",
     "runtime",
     "util/toolkit",
@@ -158,6 +159,7 @@ midnight-primitives-session-info = { path = "primitives/session-info", default-f
 midnight-primitives-consensus-engine = { path = "primitives/consensus-engine", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
+midnight-primitives-tx-error-codes = { path = "primitives/tx-error-codes" }
 
 runtime-common = { path = "runtime/common", default-features = false }
 

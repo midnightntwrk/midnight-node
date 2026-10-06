@@ -552,7 +552,7 @@ impl From<LedgerApiError> for u8 {
 			LedgerApiError::BeneficiaryNotFound => 157,
 			LedgerApiError::GetTransactionContextError => 165,
 			// Error in the Host API, not coming from Ledger
-			LedgerApiError::HostApiError => 255,
+			LedgerApiError::HostApiError => midnight_primitives_tx_error_codes::HOST_API,
 		}
 	}
 }
@@ -641,6 +641,21 @@ mod tests {
 				panic!("Error code {code} used by both '{existing}' and '{desc}'");
 			}
 			seen.insert(code, desc);
+		}
+	}
+
+	/// The ledger owns `0..=LEDGER_LAST` and `HOST_API`; node-side codes live strictly
+	/// between the two. A failure here means a new ledger variant landed on a node code,
+	/// which clients would see as the wrong error.
+	#[test]
+	fn error_codes_stay_inside_the_ledger_bounds() {
+		for error in all_ledger_api_errors() {
+			let desc = format!("{error}");
+			let code: u8 = error.into();
+			assert!(
+				midnight_primitives_tx_error_codes::is_ledger_code(code),
+				"code {code} for '{desc}' is outside the ledger's allocation"
+			);
 		}
 	}
 }

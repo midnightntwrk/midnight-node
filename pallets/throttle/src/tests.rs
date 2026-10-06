@@ -23,6 +23,11 @@ use sp_runtime::{
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
 };
 
+/// The rejection `CheckThrottle` returns over the limit. Pinned to the wire value clients
+/// match on, not to `NodeTxCode`, so a renumbering fails every rejection test.
+const THROTTLED: TransactionValidityError =
+	TransactionValidityError::Invalid(InvalidTransaction::Custom(254));
+
 fn usage(bytes_used: u64, txs_used: u64, window_start: u64) -> UsageStats<Test> {
 	UsageStats { bytes_used, txs_used, window_start }
 }
@@ -158,10 +163,7 @@ fn validate_rejects_over_limit() {
 		System::set_block_number(1);
 
 		let result = validate_signed(1, MaxBytes::get() as usize + 1);
-		assert_eq!(
-			result.unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(result.unwrap_err(), THROTTLED);
 	});
 }
 
@@ -175,10 +177,7 @@ fn validate_rejects_accumulated_over_limit() {
 
 		// Second tx tries 5 MB more (total 11 MB > 10 MB limit)
 		let result = validate_signed(1, 5 * 1024 * 1024);
-		assert_eq!(
-			result.unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(result.unwrap_err(), THROTTLED);
 	});
 }
 
@@ -211,10 +210,7 @@ fn validate_rejects_one_byte_over_limit() {
 		System::set_block_number(1);
 
 		validate_and_prepare(1, MaxBytes::get() as usize);
-		assert_eq!(
-			validate_signed(1, 1).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(validate_signed(1, 1).unwrap_err(), THROTTLED);
 	});
 }
 
@@ -228,10 +224,7 @@ fn validate_rejects_when_tx_count_exceeded() {
 		System::set_block_number(1);
 		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get(), 1));
 
-		assert_eq!(
-			validate_signed(1, 0).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(validate_signed(1, 0).unwrap_err(), THROTTLED);
 	});
 }
 
@@ -253,10 +246,7 @@ fn validate_rejects_one_tx_over_limit() {
 		// Already at the limit — the next validate would exceed it
 		AccountUsage::<Test>::insert(1u64, usage(0, MaxTxs::get(), 1));
 
-		assert_eq!(
-			validate_signed(1, 0).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(validate_signed(1, 0).unwrap_err(), THROTTLED);
 	});
 }
 
@@ -280,10 +270,7 @@ fn validate_tx_count_does_not_reset_before_window_expires() {
 		// One block before window expires
 		System::set_block_number(10 + WindowSize::get() as u64 - 1);
 
-		assert_eq!(
-			validate_signed(1, 0).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(validate_signed(1, 0).unwrap_err(), THROTTLED);
 	});
 }
 
@@ -348,10 +335,7 @@ fn validate_does_not_reset_before_window_expires() {
 		// One block before window expires
 		System::set_block_number(10 + WindowSize::get() as u64 - 1);
 
-		assert_eq!(
-			validate_signed(1, 1).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
-		);
+		assert_eq!(validate_signed(1, 1).unwrap_err(), THROTTLED);
 	});
 }
 

@@ -21,6 +21,7 @@ use crate::pallet::Config;
 use core::marker::PhantomData;
 use frame_support::DebugNoBound;
 use frame_support::{dispatch::DispatchInfo, pallet_prelude::*};
+use midnight_primitives_tx_error_codes::NodeTxCode;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info::TypeInfo;
 use sp_runtime::{
@@ -89,13 +90,9 @@ where
 			};
 
 		let new_bytes = effective_bytes.saturating_add(len as u64);
-		if new_bytes > T::MaxBytes::get() {
-			return Err(TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources));
-		}
-
 		let new_txs = effective_txs.saturating_add(1);
-		if new_txs > T::MaxTxs::get() {
-			return Err(TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources));
+		if new_bytes > T::MaxBytes::get() || new_txs > T::MaxTxs::get() {
+			return Err(InvalidTransaction::Custom(NodeTxCode::ThrottleLimitExceeded.into()).into());
 		}
 
 		Ok((ValidTransaction::default(), Some(who), origin))

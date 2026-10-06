@@ -1,0 +1,8 @@
+[package]
+name = "midnight-primitives-tx-error-codes"
+version = "0.1.0"
+edition = "2024"
+description = "Shared, dependency-free list of InvalidTransaction::Custom codes and the ranges the ledger owns"
+license-file.workspace = true
+
+[dependencies]
