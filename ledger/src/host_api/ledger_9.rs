@@ -45,8 +45,7 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
-/// Shared body of both versions of `apply_transaction`; they differ only in
-/// `filter_only_failed_segments` (see the trait below).
+/// Shared body of both `apply_transaction` host-function versions.
 #[cfg(feature = "std")]
 fn apply_transaction_inner(
 	externalities: &mut dyn Externalities,
@@ -188,12 +187,9 @@ pub trait Ledger9Bridge {
 	 * before the runtime upgrade that closed it, all of which are ledger 8 or older.
 	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 	 *
-	 * v1 withholds the contract events of *every* segment a partial-success transaction
-	 * attempted, so such a transaction emitted no `ContractCall`/`ContractDeploy`/
-	 * `ContractMaintain` event at all — not even for the guaranteed segment, which always
-	 * executed. v2 withholds only the segments that actually failed. `System::Events` is in
-	 * the state trie, so the correction has to be gated: historical blocks replay against
-	 * whichever runtime was on-chain at that height, and pre-upgrade wasm imports v1.
+	 * v1 withholds contract events for every segment a partial-success transaction attempted,
+	 * succeeding ones included; v2 withholds only the failed ones. `System::Events` is in the
+	 * state trie, so blocks from pre-upgrade runtimes must keep replaying through v1.
 	 */
 	fn apply_transaction(
 		&mut self,
