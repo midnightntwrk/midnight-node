@@ -6,3 +6,4 @@ dependency chain, including braces flagged by the npm security audit.
 The existing build condition and failure handling are preserved.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2244
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2242
