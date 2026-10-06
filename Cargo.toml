@@ -34,7 +34,6 @@ members = [
     "tests/e2e/macros",
     "relay",
     "docs",
-    "partner-chains/demo/node",
     "partner-chains/toolkit/committee-selection/selection-simulator",
     "partner-chains/toolkit/data-sources/cli",
     "partner-chains/toolkit/consensus",
@@ -381,7 +380,6 @@ uplc = { version = "1.1.21" }
 whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindgen-update" }
 
 # Partner-chains local crates (not directly used but needed for workspace resolution)
-partner-chains-demo-runtime = { path = "partner-chains/demo/runtime", default-features = false }
 partner-chains-cardano-offchain = { path = "partner-chains/toolkit/smart-contracts/offchain", default-features = false }
 sidechain-block-search = { path = "partner-chains/toolkit/sidechain/sidechain-block-search", default-features = false }
 
@@ -392,13 +390,6 @@ sc-network-test = { default-features = false, git = "https://github.com/shielded
 sp-consensus = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
 sp-std = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
 substrate-test-runtime-client = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
-
-# Substrate deps needed by partner-chains demo node and runtime
-pallet-transaction-payment-rpc = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
-pallet-sudo = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
-pallet-transaction-payment = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
-pallet-transaction-payment-rpc-runtime-api = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
-sp-weights = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "stable2609-rpc-fix-10-oct" }
 
 [profile.release]
 panic = "unwind"
