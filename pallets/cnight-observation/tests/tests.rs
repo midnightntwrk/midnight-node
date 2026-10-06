@@ -1894,3 +1894,97 @@ fn set_auth_token_asset_name_rejects_non_ascii_input() {
 		);
 	});
 }
+
+fn dispatch_observations(utxos: Vec<ObservedUtxo>, position: CardanoPosition) {
+	let inherent_data = create_inherent(utxos, position);
+	let call = CNightObservation::create_inherent(&inherent_data)
+		.expect("Expected to create inherent call");
+	assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+}
+
+#[test]
+fn deregistering_out_of_range_key_restores_valid_registration() {
+	new_test_ext().execute_with(|| {
+		let (cardano_reward_address, valid_key) = test_wallet_pairing();
+		let invalid_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+
+		dispatch_observations(
+			vec![
+				ObservedUtxo {
+					header: test_header(1, 0, 0, None),
+					data: ObservedUtxoData::Registration(RegistrationData {
+						cardano_reward_address,
+						dust_public_key: valid_key.clone(),
+					}),
+				},
+				ObservedUtxo {
+					header: test_header(1, 1, 0, None),
+					data: ObservedUtxoData::Registration(RegistrationData {
+						cardano_reward_address,
+						dust_public_key: invalid_key.clone(),
+					}),
+				},
+			],
+			test_position(2, 0),
+		);
+		assert!(!CNightObservation::is_registered(&cardano_reward_address));
+
+		advance_block_and_reset_events();
+
+		let invalid_utxo_tx = tx_hash(1, 1);
+		dispatch_observations(
+			vec![ObservedUtxo {
+				header: test_header(3, 0, 0, Some(invalid_utxo_tx)),
+				data: ObservedUtxoData::Deregistration(DeregistrationData {
+					cardano_reward_address,
+					dust_public_key: invalid_key,
+				}),
+			}],
+			test_position(4, 0),
+		);
+
+		assert!(!Mapping::<Test>::contains_key(
+			cardano_reward_address,
+			UtxoId::new(invalid_utxo_tx.0, 0)
+		));
+		assert_eq!(
+			CNightObservation::get_registration(&cardano_reward_address),
+			Some(valid_key.clone())
+		);
+		let expected = RuntimeEvent::CNightObservation(crate::Event::Registration(
+			Registration::new(cardano_reward_address, valid_key),
+		));
+		assert!(System::events().iter().any(|r| r.event == expected));
+	});
+}
+
+#[test]
+fn third_registration_emits_no_registration_status_change() {
+	new_test_ext().execute_with(|| {
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		dispatch_observations(
+			(0..3)
+				.map(|tx| ObservedUtxo {
+					header: test_header(1, tx, 0, None),
+					data: ObservedUtxoData::Registration(RegistrationData {
+						cardano_reward_address,
+						dust_public_key: dust_public_key.clone(),
+					}),
+				})
+				.collect(),
+			test_position(2, 0),
+		);
+
+		let count = |f: fn(&crate::Event<Test>) -> bool| {
+			System::events()
+				.iter()
+				.filter(|r| matches!(&r.event, RuntimeEvent::CNightObservation(e) if f(e)))
+				.count()
+		};
+		assert_eq!(count(|e| matches!(e, crate::Event::Registration(_))), 1);
+		assert_eq!(count(|e| matches!(e, crate::Event::Deregistration(_))), 1);
+		assert_eq!(count(|e| matches!(e, crate::Event::MappingAdded(_))), 3);
+		assert!(!CNightObservation::is_registered(&cardano_reward_address));
+	});
+}

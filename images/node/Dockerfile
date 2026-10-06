@@ -1,6 +1,7 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:891544b0b3a6aae4e26901cfea4c21a0cb5bf02472c488167f971ec67be7465d
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
 
 ENV BASE_PATH=/node/chain
+ENV RPC_PORT=9944
 ENV RUST_BACKTRACE=1
 
 # Runtime dependencies only — no build toolchain
@@ -8,13 +9,13 @@ ENV RUST_BACKTRACE=1
 # Package versions are tied to the base image — update when bumping the base digest
 RUN microdnf -y install \
     ca-certificates-2025.2.76 \
-    curl-minimal-8.15.0 \
+    curl-minimal-8.21.0 \
     tar-1.34 \
     procps-ng-3.3.17 \
     strace-6.12 \
     gdb-16.3 \
-    vim-enhanced-9.1.1591 \
-    jq-1.7.1 \
+    vim-enhanced-9.2.920 \
+    jq-1.8.1 \
     tree-1.8.0 && \
     # Download bytehound profiler (x86_64 only, harmless no-op on arm64)
     curl -fsSL -o /tmp/bytehound.tgz https://github.com/koute/bytehound/releases/download/0.11.0/bytehound-x86_64-unknown-linux-gnu.tgz && \
@@ -33,5 +34,14 @@ COPY node/bin/entrypoint.sh /entrypoint.sh
 
 USER appuser
 
-EXPOSE 30333 9933 9944 9615
+EXPOSE 30333 9933 ${RPC_PORT} 9615
+
+# `/health` is liveness: 200 whenever RPC answers, even mid-sync or with 0 peers.
+# Not `/health/readiness` - that 500s while syncing, so a fresh node would sit
+# unhealthy for hours. `RPC_PORT` is also used by custom entrypoints when they
+# pass `--rpc-port`, keeping the node and this probe on the same endpoint. Set
+# `RPC_PORT` to match when supplying `--rpc-port` directly.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
+    CMD curl -fsS -o /dev/null "http://127.0.0.1:${RPC_PORT}/health" || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]
