@@ -20,7 +20,7 @@
     "start": "dist/bin.js",
     "test": "npm run build:variants && npm run build-compact && vitest run",
     "test:compat": "./scripts/test-all-compactc.sh",
-    "build-compact": "(test ! -d ./test/contract/managed && npm run compact || true)",
+    "build-compact": "(test ! -d ./test/contract/managed && npm run compact)",
     "compact": "fetch-compactc && npm run compact-counter && npm run compact-mint && npm run compact-tokens-minter",
     "compact-counter": "run-compactc ./test/contract/counter.compact ./test/contract/managed/counter",
     "compact-tokens-minter": "run-compactc ./test/minter_contract/minter.compact ./test/minter_contract/out",
