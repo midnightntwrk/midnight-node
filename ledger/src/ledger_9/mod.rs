@@ -1588,11 +1588,8 @@ fn well_formed_tblock<D: DB>(
 
 /// Segments whose contract actions are withheld from the emitted event.
 ///
-/// `only_failed = false` reproduces the original behaviour: *every attempted* segment is excluded,
-/// the guaranteed segment and every succeeding fallible segment included, so a partial-success
-/// transaction emitted no contract events at all. `System::Events` is in the state trie, so blocks
-/// produced under a runtime that imports v1 of `apply_transaction` must keep replaying that way —
-/// hence the host-function version gate rather than a fix in place.
+/// `only_failed = false` is the v1 `apply_transaction` behaviour, kept for replaying old blocks:
+/// every attempted segment is excluded, succeeding ones included.
 #[cfg(feature = "std")]
 fn segments_to_exclude<E>(segments: &BTreeMap<u16, Result<(), E>>, only_failed: bool) -> Vec<u16> {
 	segments
@@ -1908,7 +1905,7 @@ mod tests {
 		// v2: the guaranteed segment and the succeeding fallible segment keep their events.
 		assert_eq!(segments_to_exclude(&segments, true), vec![1]);
 
-		// v1: everything attempted is withheld — the historical behaviour blocks replay against.
+		// v1 (historical replay): everything attempted is withheld.
 		assert_eq!(segments_to_exclude(&segments, false), vec![0, 1, 2]);
 	}
 }
