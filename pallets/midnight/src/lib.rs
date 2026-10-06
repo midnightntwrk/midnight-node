@@ -469,7 +469,9 @@ pub mod pallet {
 
 		fn pre_dispatch(call: &Self::Call) -> Result<(), TransactionValidityError> {
 			let Call::send_mn_transaction { midnight_tx } = call else {
-				return Err(Self::invalid_transaction(Default::default()));
+				// Only `send_mn_transaction` may arrive unsigned; any other call is not
+				// expected here, which is exactly what `InvalidTransaction::Call` means.
+				return Err(InvalidTransaction::Call.into());
 			};
 
 			// Substrate's Bare extrinsic path runs pallet pre_dispatch before the
@@ -593,9 +595,9 @@ pub mod pallet {
 					.and_provides(tx_hash)
 					.build()
 			} else {
-				// grcov-excl-start
-				Err(Self::invalid_transaction(Default::default()))
-				// grcov-excl-stop
+				// Only `send_mn_transaction` may arrive unsigned; any other call is not
+				// expected here, which is exactly what `InvalidTransaction::Call` means.
+				Err(InvalidTransaction::Call.into())
 			}
 		}
 
