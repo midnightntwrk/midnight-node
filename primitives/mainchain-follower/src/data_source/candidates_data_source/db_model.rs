@@ -11,14 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::db::DbDatum;
-use cardano_serialization_lib::{
-	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
-};
+use crate::db::{DbDatum, DbDatumIfValid};
+use cardano_serialization_lib::PlutusData;
 use db_sync_sqlx::{Address, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
-use log::{info, warn};
+use log::info;
 use sidechain_domain::{McTxHash, UtxoId, UtxoIndex};
-use sqlx::types::JsonValue;
 use sqlx::{PgPool, Pool, Postgres};
 use std::cell::OnceCell;
 use std::str::FromStr;
@@ -159,24 +156,17 @@ impl TryFrom<MainchainTxOutputRow> for MainchainTxOutput {
 		let tx_inputs: Result<Vec<UtxoId>, _> =
 			r.tx_inputs.into_iter().map(|i| UtxoId::from_str(i.as_str())).collect();
 		let tx_inputs = tx_inputs.map_err(|e| sqlx::Error::Decode(e.into()))?;
-		let utxo_id =
-			UtxoId { tx_hash: McTxHash(r.utxo_id_tx_hash), index: UtxoIndex(r.utxo_id_index.0) };
-		// Anyone can pay to this address, so one undecodable datum must not fail the whole query.
-		let datum = r.datum.and_then(|json| {
-			encode_json_value_to_plutus_datum(json, DetailedSchema)
-				.inspect_err(|e| {
-					warn!("Skipping datum of {utxo_id:?} that is not Plutus data: {e:?}")
-				})
-				.ok()
-		});
 		Ok(MainchainTxOutput {
-			utxo_id,
+			utxo_id: UtxoId {
+				tx_hash: McTxHash(r.utxo_id_tx_hash),
+				index: UtxoIndex(r.utxo_id_index.0),
+			},
 			tx_block_no: r.tx_block_no,
 			tx_slot_no: r.tx_slot_no,
 			tx_epoch_no: r.tx_epoch_no,
 			tx_index_in_block: r.tx_index_in_block,
 			address: r.address,
-			datum,
+			datum: r.datum.map(|d| d.0),
 			tx_inputs,
 		})
 	}
@@ -191,7 +181,8 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
-	pub datum: Option<JsonValue>,
+	#[sqlx(try_from = "DbDatumIfValid")]
+	pub datum: Option<DbDatum>,
 	pub tx_inputs: Vec<String>,
 }
 

@@ -17,8 +17,8 @@
 //! To get a better understanding of how these queries are working, see the schema documentation for db-sync:
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 use crate::db::{
-	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, PagedQuery, QueryBounds,
-	RegistrationRow,
+	AssetCreateRow, AssetSpendRow, Block, DbDatumIfValid, DeregistrationRow, PagedQuery,
+	QueryBounds, RegistrationRow,
 };
 use log::info;
 use sidechain_domain::*;
@@ -36,7 +36,7 @@ pub async fn get_registrations(
 		RegistrationRow,
 		r#"
 SELECT
-    datum.value::jsonb AS "full_datum!: _",
+    datum.value::jsonb AS "full_datum!: DbDatumIfValid",
     block.block_no AS "block_number!: _",
     block.hash AS "block_hash: _",
     block.time AS "block_timestamp: _",
@@ -94,7 +94,7 @@ pub async fn get_deregistrations(
 		DeregistrationRow,
 		r#"
 SELECT
-    datum.value::jsonb AS "full_datum!: _",
+    datum.value::jsonb AS "full_datum!: DbDatumIfValid",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
     block.time as "block_timestamp: _",

@@ -4,11 +4,10 @@
 Enables cardano-serialization-lib's `arbitrary-precision-json` feature so datums
 containing integers outside `u64`/`i64` decode instead of being rejected.
 
-The candidate and cNIGHT mapping-validator data sources now decode each row's
-datum after the query rather than inside it, so an output whose datum cannot be
-decoded is logged and skipped like any other invalid entry, instead of failing
-the whole query. The same change is applied to the partner-chains db-sync
-candidate data source.
+The candidate and cNIGHT mapping-validator data sources now decode a datum that
+is not valid Plutus data as absent, so that output is skipped like any other
+invalid entry instead of failing the whole query. The same change is applied to
+the partner-chains db-sync candidate data source.
 
 PR: https://github.com/shieldedtech/shadow-midnight-node/pull/50
 Issue: https://github.com/shieldedtech/audit-taran/issues/53
