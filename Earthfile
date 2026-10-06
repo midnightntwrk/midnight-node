@@ -1118,7 +1118,6 @@ check-rust:
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching missing dependencies masked by workspace feature unification.
-# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
 # Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
 # the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
