@@ -538,9 +538,7 @@ jobs:
       contents: read
       actions: write
     name: Test Pallet Fixtures
-    # Self-hosted only in our own orgs (other repos have no such runners and would queue
-    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
-    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
