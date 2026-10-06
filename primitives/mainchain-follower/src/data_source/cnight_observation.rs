@@ -20,8 +20,7 @@ use crate::{
 };
 use cardano_serialization_lib::{
 	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
-	PlutusData, PlutusDatumSchema::DetailedSchema, RewardAddress, ScriptHash,
-	encode_json_value_to_plutus_datum,
+	PlutusData, RewardAddress, ScriptHash,
 };
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
@@ -368,14 +367,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
 
-			let datum = match encode_json_value_to_plutus_datum(row.full_datum, DetailedSchema) {
-				Ok(datum) => datum,
-				Err(e) => {
-					log::error!("Mapping validator datum is not Plutus data: {e:?} ({header:?})");
-					continue;
-				},
-			};
-			let Some(constr) = datum.as_constr_plutus_data() else {
+			let Some(constr) = row.full_datum.and_then(|d| d.0.as_constr_plutus_data()) else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
@@ -428,14 +420,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
 
-			let datum = match encode_json_value_to_plutus_datum(row.full_datum, DetailedSchema) {
-				Ok(datum) => datum,
-				Err(e) => {
-					log::error!("Mapping validator datum is not Plutus data: {e:?} ({header:?})");
-					continue;
-				},
-			};
-			let Some(constr) = datum.as_constr_plutus_data() else {
+			let Some(constr) = row.full_datum.and_then(|d| d.0.as_constr_plutus_data()) else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
