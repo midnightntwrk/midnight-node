@@ -1536,6 +1536,19 @@ impl_runtime_apis! {
 				return sp_inherents::CheckInherentsResult::new();
 			}
 
+			// Verifiers check the first block after a runtime upgrade with this, the new,
+			// runtime (the node calls this API in the on-chain context, which resolves the
+			// upgrade staged in `:pending_code`), against the parent state the old runtime
+			// left behind. Apply the pending migrations first, so the checks read storage in
+			// the layout they expect. The writes are discarded with the runtime API call;
+			// the block's own execution runs the migrations again, for real.
+			let upgraded = frame_system::LastRuntimeUpgrade::<Runtime>::get()
+				.map(|last| last.was_upgraded(&VERSION))
+				.unwrap_or(true);
+			if upgraded {
+				Executive::execute_on_runtime_upgrade();
+			}
+
 			data.check_extrinsics(&block)
 		}
 	}
