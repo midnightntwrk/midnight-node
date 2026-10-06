@@ -14,4 +14,5 @@ signed transactions are throttled, so in practice this affects governance member
 Also corrects the `WindowSize` doc comment: the throttle window is 1 hour (600 blocks at
 6 s/block), not 1 day.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2246
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2245
