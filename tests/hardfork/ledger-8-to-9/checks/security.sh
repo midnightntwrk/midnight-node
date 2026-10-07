@@ -66,7 +66,7 @@ t_check SEC-PROV-3 "-" "required commits are in the indexer image's source ($IDX
 pin_ledger8() { git -C "$REPO_ROOT" show "$1:Cargo.toml" 2>/dev/null | grep -m1 'mn-ledger-8 *=' | grep -o 'version = "[^"]*"' | cut -d'"' -f2; }
 c_pin_ledger8() {
     local a b; a=$(pin_ledger8 "$REF_L8"); b=$(pin_ledger8 "$REF_L9")
-    [ "$a" = "$L8_EXPECTED_LEDGER" ] && [ "$b" = "$L8_EXPECTED_LEDGER" ] && t_pass "both tags pin mn-ledger-8 $a" || t_fail "$REF_L8 pins '$a', $REF_L9 pins '$b'"
+    [ "$a" = "$L8_EXPECTED_LEDGER" ] && [ "$b" = "$L8_EXPECTED_LEDGER" ] && t_pass "both tags pin mn-ledger-8 $a" || t_fail "$REF_L8 pins '$a', $REF_L9 pins '$b': during the waves both binaries apply ledger-8 blocks, so they must agree"
 }
 c_pin_ledger9() {
     local pin now; pin=$(git -C "$REPO_ROOT" show "$REF_L9:Cargo.lock" 2>/dev/null | grep -A2 '^name = "midnight-ledger-v9"$' | grep -o 'tag=[^#]*' | head -1 | cut -d= -f2)
@@ -137,9 +137,12 @@ c_ps() {
 }
 c_client_ledgers() {
     [ -d "$CLIENTS_DIR/node_modules" ] || { t_skip "clients/ not installed"; return; }
-    local v l8 l9; v=$(clients_versions); l8=$(client_version ledger-v8 "$v"); l9=$(client_version ledger-v9 "$v")
+    local v l8 l9 m8; v=$(clients_versions)
+    l8=$(client_version ledger-v8 "$v"); l9=$(client_version ledger-v9 "$v"); m8=$(client_version mjs-ledger-v8 "$v")
+    # Midnight.js pins its own ledger-v8 build; the wallet SDK takes the one installed here.
     if [ "=$l8" != "$L8_EXPECTED_LEDGER" ]; then t_fail "client ledger-v8 $l8, chain $L8_EXPECTED_LEDGER"
-    elif [[ "$L9_EXPECTED_LEDGER_TAG" != *"${l9#1.0.0-}"* ]]; then t_warn "client ledger-v9 $l9 while the chain runs $L9_EXPECTED_LEDGER_TAG"
+    elif [ "=$m8" != "$L8_EXPECTED_LEDGER" ] || [[ "$L9_EXPECTED_LEDGER_TAG" != *"${l9#1.0.0-}"* ]]; then
+        t_warn "Midnight.js $(client_version midnight-js "$v") bundles ledger-v8 $m8 and ledger-v9 $l9; the chain runs $L8_EXPECTED_LEDGER and $L9_EXPECTED_LEDGER_TAG"
     else t_pass "client ledger-v8 $l8, ledger-v9 $l9"; fi
 }
 t_check SEC-CLI-1 "-" "proof servers report the matrix versions" c_ps

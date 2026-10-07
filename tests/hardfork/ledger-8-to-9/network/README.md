@@ -59,7 +59,7 @@ address from the ledger-8 toolkit, then use the faucet or send from a funded wal
 
 ```sh
 set -a; . "$SEEDS_FILE"; set +a
-docker run --rm ghcr.io/midnight-ntwrk/midnight-node-toolkit:1.0.300 \
+docker run --rm ghcr.io/midnight-ntwrk/midnight-node-toolkit:1.0.400 \
     show-address --network devnet --seed "$SEED_1" --unshielded
 ```
 

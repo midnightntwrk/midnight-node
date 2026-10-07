@@ -6,6 +6,8 @@ node-l8	b09b64b3	node#1965	tblock correction narrowed to the first transaction o
 node-l8	aee7bb4a	node#2002	tblock correction gated on the on-chain runtime
 node-l8	e6eb5464	node-1.0.300 notes	gdb removed from the node and toolkit images
 node-l8	40643af0	node-1.0.300 notes	toolkit replays runtime 1000300
+node-l8	8081e4b27	node#2238	ledger 8 moved to 8.1.3
+node-l8	5defaf5de	node#2238	ledger-8 blocks: the first transaction retried at the block's own tblock
 node-l9	1e9a5a538	node#2042	well-formed tblock check gated on the runtime
 node-l9	1f3435c20	node#2080	per-pallet allow-listed system transaction executor
 node-l9	cf7ab5e39	node#2039	cNIGHT observation query limits

@@ -26,10 +26,10 @@ REPO_ROOT="$(git -C "$SUITE_DIR" rev-parse --show-toplevel)"
 # A node-<version> ref selects the release images, any other ref the CI tree-hash images.
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/midnight-ntwrk}"
 
-L8_REF="${L8_REF:-node-1.0.300}"
+L8_REF="${L8_REF:-node-1.0.400}"
 L8_EXPECTED_SPEC="${L8_EXPECTED_SPEC:-1000300}"
-L8_EXPECTED_LEDGER="${L8_EXPECTED_LEDGER:-=8.1.2}"
-L8_EXPECTED_NODE_PREFIX="${L8_EXPECTED_NODE_PREFIX:-1.0.300}"
+L8_EXPECTED_LEDGER="${L8_EXPECTED_LEDGER:-=8.1.3}"
+L8_EXPECTED_NODE_PREFIX="${L8_EXPECTED_NODE_PREFIX:-1.0.400}"
 L8_EXPECTED_COMPACTC="${L8_EXPECTED_COMPACTC:-0.30.0}"
 
 L9_REF="${L9_REF-node-2.1.0-rc.4}"
@@ -45,7 +45,7 @@ L9_EXPECTED_COMPACTC="${L9_EXPECTED_COMPACTC:-0.33.0-rc.1}"
 INDEXER_TAG="${INDEXER_TAG:-4.4.0-rc.6-d543f011}"
 INDEXER_RELEASED_TAG="${INDEXER_RELEASED_TAG:-4.4.0-rc.5}"
 
-PS_L8_TAG="${PS_L8_TAG:-8.1.2}"
+PS_L8_TAG="${PS_L8_TAG:-8.1.3}"
 PS_L9_TAG="${PS_L9_TAG:-9.0.0-rc.7}"
 
 # Ledger-8 specs are below it, ledger-9 specs above.

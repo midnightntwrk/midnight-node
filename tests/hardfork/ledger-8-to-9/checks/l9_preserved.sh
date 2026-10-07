@@ -80,14 +80,42 @@ c_dust_cnight() {
     [ "$src" -ge 1 ] && big_gt "$(jq -r .total "$f")" 0 && t_pass "seed $CNIGHT_SEED_INDEX: $src cNIGHT-backed source(s), total $(jq -r .total "$f")" \
         || t_fail "seed $CNIGHT_SEED_INDEX: no replayed cNIGHT source"
 }
+# Seed 3's registration is held for DUST_HOLD_SECS before it is sent, for L9-DUST-6.
+DUST_HOLD_SECS="${DUST_HOLD_SECS:-60}"
 c_dust_register() {
-    local i s bad=""
-    for i in 1 2 3; do
+    local i s bad="" f="$EV/dust_register_seed3.mn" log="$EV/dust_register_seed3.log"
+    for i in 1 2; do
         s="SEED_$i"
         tk_tx generate-txs register-dust-address --wallet-seed "${!s}" -d "$NODE_WS" > "$EV/dust_register_seed$i.log" 2>&1 \
             || bad="$bad seed$i: $(last_line_of "$EV/dust_register_seed$i.log" 120);"
     done
+    rm -f "$f"
+    if tk_chain generate-txs --dest-file "$f" register-dust-address --wallet-seed "$SEED_3" > "$log" 2>&1 && [ -s "$f" ]; then
+        DUST3_BUILT=$(date -u '+%s'); sleep "$DUST_HOLD_SECS"
+        tk_send "$f" >> "$log" 2>&1 || bad="$bad seed3: $(last_line_of "$log" 120);"
+    else
+        bad="$bad seed3: $(last_line_of "$log" 120);"
+    fi
     [ -z "$bad" ] && t_pass "seeds 1-3 re-registered, fees paid from DUST accrued since the fork" || t_fail "$bad"
+}
+# New DUST starts at the registration's block, not at the time the transaction declares.
+c_dust_block_time() {
+    [ -n "${DUST3_BUILT:-}" ] || { t_skip "seed 3's registration was not built (L9-DUST-4)"; return; }
+    local h b bt ct f="$EV/dust_block_time.json"
+    h=$(tx_hashes_in "$EV/dust_register_seed3.log" | tail -1)
+    [ -n "$h" ] || { t_fail "no transaction hash in evidence/l9/dust_register_seed3.log"; return; }
+    indexer_catch_up > /dev/null || true
+    b=$(gql_query "{ transactions(offset: { hash: \"$h\" }) { block { height timestamp } } }" | jq -c '.data.transactions[0].block // empty')
+    [ -n "$b" ] || { t_fail "registration $h not found on the indexer"; return; }
+    bt=$(( $(jq -r .timestamp <<< "$b") / 1000 ))
+    dust_snapshot "$SEED_3" "$f" || { t_fail "dust-balance unreadable ($f.err)"; return; }
+    ct=$(jq '[.generation_infos[].dust_output.ctime] | max // empty' "$f")
+    [ -n "$ct" ] || { t_fail "seed 3 has no DUST output after its registration"; return; }
+    if [ "$ct" = "$bt" ] && [ "$ct" -ge $(( DUST3_BUILT + DUST_HOLD_SECS - 5 )) ]; then
+        t_pass "built at $DUST3_BUILT, sent ${DUST_HOLD_SECS}s later; DUST starts at $ct, the time of block #$(jq -r .height <<< "$b")"
+    else
+        t_fail "DUST starts at $ct; block #$(jq -r .height <<< "$b") is at $bt; built at $DUST3_BUILT, held ${DUST_HOLD_SECS}s"
+    fi
 }
 c_dust_restart() {
     wait_blocks 3
@@ -99,6 +127,7 @@ t_check L9-DUST-2 "HF-04, node#2012" "native DUST reset to zero by design for ev
 t_check L9-DUST-3 "HF-04, node#2012" "the cNIGHT-backed wallet kept a replayed DUST source" c_dust_cnight
 t_check L9-DUST-4 "HF-04" "self-funded DUST re-registration for seeds 1-3" c_dust_register
 t_check L9-DUST-5 "HF-04" "DUST generation restarts after re-registration" c_dust_restart
+t_check L9-DUST-6 "HF-04" "a held DUST registration generates from its block's time, not from the time it was built" c_dust_block_time
 
 t_section "pre-fork contracts"
 cs_call() {  # <log> <seed> <rng> <address> <keys...>

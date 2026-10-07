@@ -428,7 +428,7 @@ The rc.8 doc is the canonical template — clone it.
 ### 3.10 Ledger 8 → 9 hard-fork suite
 
 [`tests/hardfork/ledger-8-to-9/`](../../tests/hardfork/ledger-8-to-9/README.md) rehearses
-the ledger 8 → 9 hard fork end to end: node `1.0.300` → `2.1.0` in binary waves, then the
+the ledger 8 → 9 hard fork end to end: node `1.0.400` → `2.1.0` in binary waves, then the
 governance runtime upgrade, with the indexer, proof servers, the wallet SDK and
 Midnight.js checked on both sides. The same checks run on local-env (the suite forks the
 chain itself, about an hour) and against a deployed network stage by stage during its

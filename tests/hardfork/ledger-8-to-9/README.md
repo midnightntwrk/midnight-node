@@ -1,6 +1,6 @@
 # Ledger 8 -> 9 hard fork tests
 
-End-to-end tests for the ledger 8 -> 9 hard fork: node `1.0.300` (ledger 8) to node `2.1.0`
+End-to-end tests for the ledger 8 -> 9 hard fork: node `1.0.400` (ledger 8) to node `2.1.0`
 (ledger 9), first a binary rollout and then a governance runtime upgrade. The same checks run
 against a local-env chain that the suite forks itself, and against a deployed network while
 its operators roll the fork out.
@@ -39,7 +39,7 @@ tests/hardfork/ledger-8-to-9/local-env/run.sh l9 features   # some phases, on th
 
 | Phase | What it does | Tables |
 |---|---|---|
-| `env` | fresh local-env on `node-1.0.300`, with the indexer | - |
+| `env` | fresh local-env on `node-1.0.400`, with the indexer | - |
 | `l8` | the ledger-8 baseline the fork must preserve | L8 |
 | `clients-l8` | wallet SDK, Midnight.js and proof servers on ledger 8 | CLI-L8 |
 | `fork` | binary waves with a smoke after each, the pre-fork snapshot, `set_code` | HF, WAVE-n, SNAP |
@@ -86,7 +86,7 @@ last two columns say where each check runs.
 
 | IDs | Checks | Local | Network |
 |---|---|---|---|
-| L8-VER-1..4 | ledger `=8.1.2`, spec `1000300`, toolkit and compactc versions, genesis | yes | yes |
+| L8-VER-1..4 | ledger `=8.1.3`, spec `1000300`, toolkit and compactc versions, genesis | yes | yes |
 | L8-NET-1 | block production and finality | yes | yes |
 | L8-FUND-1, L8-DUST-1..2 | NIGHT and DUST of the test wallets; DUST generating | yes | yes |
 | L8-TX-1..5 | unshielded, shielded, mixed, multi-destination, second-wallet transfers | yes | yes |
@@ -111,7 +111,7 @@ last two columns say where each check runs.
 | IDs | Checks | Local | Network |
 |---|---|---|---|
 | L9-VER-1..4, L9-NET-1 | ledger-9 versions on every node and the toolkit; finality | yes | yes |
-| L9-DUST-1..5 | cNIGHT replay migration, native DUST reset by design, a cNIGHT-backed source kept, self-funded re-registration, generation restarts | yes (no cNIGHT) | yes (L9-DUST-1 with `KUBE_CONTEXT`) |
+| L9-DUST-1..6 | cNIGHT replay migration, native DUST reset by design, a cNIGHT-backed source kept, self-funded re-registration, generation restarts, a held registration generates from its block's time | yes (no cNIGHT) | yes (L9-DUST-1 with `KUBE_CONTEXT`) |
 | L9-STATE-1..4 | pre-fork contracts: reads, writes, data unchanged across the fork block, committee rotation | yes | yes |
 | L9-TX-1..4 | the transfer matrix from pre-fork funds | yes | yes |
 | L9-HF08-1..3 | the node rejects the saved ledger-8 tx (`1010`, Custom error 1) and a corrupted ledger-9 tx; seed 3 unspent; the chain unharmed | yes | yes |
@@ -198,7 +198,8 @@ KNOWN is recorded only when the evidence matches the issue:
 Limitations not filed upstream, and other unexpected results, are WARN: the toolkit's embedded
 prover is V2-only (FEAT-ZKIR3-2), toolkit-js can't run a cross-contract call (FEAT-CCC-2), the
 toolkit can't replay past a filtered extrinsic (SAFE-3, SAFE-4), SDK DUST re-registration of
-UTxOs the toolkit already registered (C8), and the released indexer against this node (HF12-4).
+UTxOs the toolkit already registered (C8), the released indexer against this node (HF12-4), and
+Midnight.js bundling ledger builds other than the chain's (SEC-CLI-2).
 
 ## Reports
 
@@ -225,11 +226,11 @@ environment:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `L8_REF` | `node-1.0.300` | the ledger-8 release |
+| `L8_REF` | `node-1.0.400` | the ledger-8 release |
 | `L9_REF` | `node-2.1.0-rc.4` | the ledger-9 release; a `node-*` tag uses release images, any other ref (a branch, a commit) the CI images of its checkout; on a network such a ref also needs `L9_NODE_IMAGE` and `L9_TOOLKIT_IMAGE`; for a pull request set `L9_REF=` (empty) and `L9_PR=<number>` |
 | `INDEXER_TAG` | `4.4.0-rc.6-d543f011` | the indexer paired with the ledger-9 node |
 | `INDEXER_RELEASED_TAG` | `4.4.0-rc.5` | the latest published indexer, for the HF12-4 pairing check |
-| `PS_L8_TAG`, `PS_L9_TAG` | `8.1.2`, `9.0.0-rc.7` | the proof servers |
+| `PS_L8_TAG`, `PS_L9_TAG` | `8.1.3`, `9.0.0-rc.7` | the proof servers |
 | `L8_EXPECTED_*`, `L9_EXPECTED_*` | | the versions the checks expect |
 
 Client versions are pinned in `clients/package.json`. `INDEXER_TAG` must be built against the
@@ -239,6 +240,7 @@ Other knobs: `HF_WAVES` (local waves, default `1 2,3,4,5`), `MANUAL_UPGRADE=1` (
 [Running on local-env](#running-on-local-env)), `RUNTIME_WASM_SOURCE=image`, `TOOLKIT_L8_BIN` /
 `TOOLKIT_L9_BIN` (native toolkit builds), `PROOF_SERVER_L8` / `PROOF_SERVER_L9`, `ECDSA_SEED`
 (default seed 4), `FEAT_ONLY` (a subset of `ECDSA,EVT,ZKIR3,CCC,BRIDGE,SCOPE`), `RUN_FULL_FETCH=1`,
+`DUST_HOLD_SECS` (how long L9-DUST-6 holds a registration before sending it, default 60),
 `SEC_SIGKILL=0`, `INDEXER_PAIRING_CHECK=0`, `SEC_REQUIRED_COMMITS_FILE`, `GITHUB_TOKEN` (for the
 GitHub API calls of SEC-PROV-3), `WAVE_EXPECTED_L9`, `MJS_RETAINED_COMPACTC` /
 `MJS_CURRENT_COMPACTC` (default `0.31.1` / `0.34.0`), `BRIDGE_AMOUNT` / `BRIDGE_WAIT_S`,

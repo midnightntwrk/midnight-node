@@ -22,11 +22,14 @@ PS_L9_URL="${PROOF_SERVER_L9:-http://127.0.0.1:${PS_L9_PORT:-6301}}"
 
 proof_server_version() { curl -s -m 5 "$1/version" 2>/dev/null; }
 
-proof_server_up() {  # <l8|l9>: reuse a running one, else start a local container
-    local era=$1 url tag name port
+proof_server_up() {  # <l8|l9>: a remote one as it is; a local one only at the matrix version
+    local era=$1 url tag name port v
     if [ "$era" = l8 ]; then url=$PS_L8_URL; tag=$PS_L8_TAG; else url=$PS_L9_URL; tag=$PS_L9_TAG; fi
-    [ -n "$(proof_server_version "$url")" ] && return 0
-    case "$url" in http://127.0.0.1:*|http://localhost:*) ;; *) echo "no proof server answering at $url" >&2; return 1 ;; esac
+    v=$(proof_server_version "$url")
+    case "$url" in
+        http://127.0.0.1:*|http://localhost:*) [ "$v" = "$tag" ] && return 0 ;;
+        *) [ -n "$v" ] && return 0; echo "no proof server answering at $url" >&2; return 1 ;;
+    esac
     name="hf-proof-server-$era"; port="${url##*:}"
     docker rm -f "$name" >/dev/null 2>&1 || true
     docker run -d --name "$name" -p "$port:6300" "$PS_IMAGE_REPO:$tag" >/dev/null || return 1
@@ -58,6 +61,7 @@ clients_versions() {  # as installed
         "midnight-js=" + v("@midnight-ntwrk/midnight-js-contracts"),
         "ledger-v8=" + v("@midnight-ntwrk/ledger-v8"),
         "ledger-v9=" + v("@midnightntwrk/ledger-v9"),
+        "mjs-ledger-v8=" + v("@midnightntwrk/ledger-v8"),
         "compact-js=" + v("@midnight-ntwrk/compact-js"),
         "compact-runtime=" + v("@midnight-ntwrk/compact-runtime"),
       ].join(" "));')
