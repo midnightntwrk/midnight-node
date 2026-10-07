@@ -406,6 +406,13 @@ impl frame_system::Config for Runtime {
 		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
 		// `on_initialize` sees the first BABE pre-digest).
 		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
+		// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
+		// on the unsigned mandatory block 1 since launch, and the session-key migration above
+		// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
+		// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
+		// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
+		// re-enabled (see `migrations::beefy_genesis`).
+		migrations::beefy_genesis::ResetBeefyGenesis,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -572,14 +579,12 @@ parameter_types! {
 
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
-	#[cfg(not(feature = "runtime-benchmarks"))]
+	#[cfg(not(any(feature = "runtime-benchmarks", test)))]
 	// Append-only: `ActiveCursor.index` indexes this tuple.
-	type Migrations = (
-		pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,
-		pallet_cnight_observation::migrations::v2::MigrateV1ToV2<Runtime>,
-	);
-	// Benchmarks need mocked migrations to guarantee that they succeed.
-	#[cfg(feature = "runtime-benchmarks")]
+	type Migrations = ();
+	// Benchmarks need mocked migrations to guarantee that they succeed, and the unit tests
+	// use them to drive a migration into failure (see `tests::failed_mbm_recovery`).
+	#[cfg(any(feature = "runtime-benchmarks", test))]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
 	type CursorMaxLen = ConstU32<65_536>;
 	type IdentifierMaxLen = ConstU32<256>;
@@ -1261,31 +1266,11 @@ pub type Executive = frame_executive::Executive<
 	frame_system::ChainContext<Runtime>,
 	Runtime,
 	AllPalletsWithSystem,
-	Migrations,
+	(),
 >;
 
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
-/// Migrations to apply on runtime upgrade.
-pub type Migrations = (
-	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
-	// MUST precede the pallet-midnight translation below: it captures the
-	// still-untranslated v8 state key, which the cNIGHT dust generation replay
-	// (`pallet_cnight_observation::migrations::v2::MigrateV1ToV2`) reads the
-	// wiped entries' values and owners from.
-	pallet_cnight_observation::migrations::v2::RecordPreForkState<Runtime>,
-	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
-	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
-	// this ledger-9 runtime (storage version 2).
-	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
-	// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
-	// on the unsigned mandatory block 1 since launch, and the session-key migration above
-	// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
-	// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
-	// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
-	// re-enabled (see `migrations::beefy_genesis`).
-	migrations::beefy_genesis::ResetBeefyGenesis,
-);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -2544,12 +2529,14 @@ mod tests {
 			frame_system::Pallet::<Runtime>::can_set_code(&[], false)
 		}
 
-		/// Fail migration 0 (cnight v1 `MigrateV0ToV1`) by planting an active cursor whose
-		/// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size cursor
-		/// type -> `InvalidCursor` -> `FailedMigrationHandler`, then step the MBMs the way
-		/// Executive does after inherent application. Leaves the chain in safe mode with
-		/// the cursor unstuck.
+		/// Fail migration 0 by registering a single mocked migration that fails on its first
+		/// step (the runtime's MBM list is the mocked one under `cfg(test)`), planting an
+		/// active cursor on it, then stepping the MBMs the way Executive does after inherent
+		/// application: `Failed` -> `FailedMigrationHandler`. Leaves the chain in safe mode
+		/// with the cursor unstuck.
 		fn fail_mbm_and_enter_safe_mode() {
+			use pallet_migrations::mock_helpers::{MockedMigrationKind, MockedMigrations};
+
 			// Mark the runtime as already upgraded so a later `initialize_block` doesn't
 			// onboard the MBMs again.
 			frame_system::LastRuntimeUpgrade::<Runtime>::put(
@@ -2558,10 +2545,11 @@ mod tests {
 			frame_system::Pallet::<Runtime>::set_block_number(1);
 			assert!(can_set_code().into_result().is_ok());
 
+			MockedMigrations::set(vec![(MockedMigrationKind::FailAfter, 0)]);
 			assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
 				crate::RuntimeOrigin::root(),
 				0,
-				Some(vec![0u8].try_into().unwrap()),
+				None,
 				Some(1),
 			));
 			assert!(ongoing());
