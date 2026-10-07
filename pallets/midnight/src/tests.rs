@@ -432,11 +432,12 @@ fn test_get_decoded_transaction() {
 	});
 }
 
-/// A real transaction padded one byte past `transaction_byte_limit`. Genuine leading bytes
-/// pass the node-count check, so the byte limit is what rejects it.
+/// A real transaction whose untagged body is padded one byte past `transaction_byte_limit`.
+/// Genuine leading bytes pass the node-count check, so the byte limit is what rejects it.
 fn oversized_tx() -> Vec<u8> {
 	let (mut tx, _) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
-	tx.resize((1 << 20) + 1, 0);
+	let (tag, _) = midnight_node_ledger::types::split_tag(&tx).expect("DEPLOY_TX is tagged");
+	tx.resize(tag.len() + (1 << 20) + 1, 0);
 	tx
 }
 
