@@ -1,4 +1,4 @@
-use crate::db_datum::DbDatum;
+use crate::db_datum::{DbDatum, DbDatumIfValid};
 use crate::{DataSourceError, SqlxError};
 use bigdecimal::ToPrimitive;
 use cardano_serialization_lib::PlutusData;
@@ -145,6 +145,7 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
+	#[sqlx(try_from = "DbDatumIfValid")]
 	pub datum: Option<DbDatum>,
 	pub tx_inputs: Vec<String>,
 }
@@ -434,7 +435,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index) ORDER BY consumes_tx.hash, consumes_tx_in.tx_out_index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
@@ -483,7 +484,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index) ORDER BY consumes_tx.hash, consumes_tx_out.index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id

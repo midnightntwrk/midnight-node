@@ -367,7 +367,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
 
-			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
+			let Some(constr) = row.full_datum.and_then(|d| d.0.as_constr_plutus_data()) else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
@@ -420,7 +420,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
 
-			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
+			let Some(constr) = row.full_datum.and_then(|d| d.0.as_constr_plutus_data()) else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
 				continue;
 			};
