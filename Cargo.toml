@@ -83,16 +83,16 @@ zkir = { version = "^2.2.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto (2.x) and zkir are shared above so reuse those entries.
-mn-ledger-8 = { version = "=8.1.2", package = "midnight-ledger" }
+mn-ledger-8 = { version = "=8.1.3", package = "midnight-ledger" }
 # `state-translation` (needed by the v8->v9 storage migration) pulls in
 # `public-internal-structure`, exposing `merkle_patricia_trie`/`storable`/the
 # `state_translation` module used by the `v8-to-v9-state-translation` crate.
 ledger-storage-ledger-8 = { version = "=2.0.4", package = "midnight-storage", features = ["parity-db", "state-translation"] }
-onchain-runtime-ledger-8 = { version = "=3.1.1", package = "midnight-onchain-runtime" }
+onchain-runtime-ledger-8 = { version = "=3.1.2", package = "midnight-onchain-runtime" }
 # Same `midnight-onchain-state` instance that `mn-ledger-8`'s `ContractState`
-# resolves to (via onchain-runtime 3.1.1); used as the v8 side of the state translation table.
-onchain-state-ledger-8 = { version = "=3.0.1", package = "midnight-onchain-state" }
-zswap-ledger-8 = { version = "=8.1.2", package = "midnight-zswap" }
+# resolves to (via onchain-runtime 3.1.2); used as the v8 side of the state translation table.
+onchain-state-ledger-8 = { version = "=3.0.2", package = "midnight-onchain-state" }
+zswap-ledger-8 = { version = "=8.1.3", package = "midnight-zswap" }
 
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
 # storage shares versions with L8 so reuses that entry. coin-structure and
