@@ -1,0 +1,348 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * Battleship Game Contract
+ *
+ * Two-player battleship on a 3x3 board (positions 1..9, row-major), ships are 1x1. Each
+ * player commits to a hidden ship position and wagers shielded coins, then guesses at the
+ * opponent's square. Only the commitment reaches the ledger, so a sunk player proves the
+ * hit themselves via `concede`; `withdraw` then asserts the winning state.
+ *
+ * States: no_game -> red_started -> blue_started -> red_turn <-> blue_turn -> *_wins
+ *
+ * Test intent: `QualifiedShieldedCoinInfo` cells the contract funds, merges and pays out;
+ * struct-typed circuit arguments; a witness the circuit writes back (`local_set_board`).
+ */
+
+pragma language_version >= 0.17.0;
+
+import CompactStandardLibrary;
+
+// Re-exports so TypeScript types are generated for them: the coin struct `start` takes as
+// an argument, and the two the config template names.
+export { ShieldedCoinInfo, Board, Committable }
+
+export enum Player {
+  red,
+  blue,
+}
+
+enum State {
+  no_game,
+  red_started,
+  blue_started,
+  red_turn,
+  blue_turn,
+  red_wins,
+  blue_wins
+}
+
+struct Committable<A> {
+  nonce: Field,
+  contents: A
+}
+
+struct Commitment<A> {
+  value: Field
+}
+
+circuit eq_commitment<A>(left: Commitment<A>, right: Commitment<A>): Boolean {
+  return left.value == right.value;
+}
+
+circuit commit<A>(c: Committable<A>): Commitment<A> {
+  const commitment = transientCommit<A>(c.contents, c.nonce);
+
+  return Commitment<A>{commitment};
+}
+
+circuit is_match<A>(c: Committable<A>, b: Commitment<A>): Boolean {
+  return eq_commitment<A>(commit<A>(c), b);
+}
+
+circuit zero_commitment<A>(): Commitment<A> {
+  return Commitment<A>{0};
+}
+
+struct Board {
+  position: Field;
+}
+
+// Private State
+witness local_secret_key(): Bytes<32>;
+witness local_board(): Committable<Board>;
+witness local_set_board(board: Committable<Board>): [];
+witness fresh_nonce(): Field;
+
+// Public Keys
+export ledger red : Bytes<32>;
+export ledger blue: Bytes<32>;
+// Hashes of Private Board States
+export ledger red_board: Commitment<Board>;
+export ledger blue_board: Commitment<Board>;
+// Dynamic State of the Game
+export ledger last_guess: Maybe<Field>;
+export ledger state: State;
+export ledger pot: QualifiedShieldedCoinInfo;
+// No time-lock yet, so these are only a game-theoretic incentive to concede.
+export ledger red_deposit: QualifiedShieldedCoinInfo;
+export ledger blue_deposit: QualifiedShieldedCoinInfo;
+
+constructor () {
+  state = State.no_game;
+  last_guess = none<Field>();
+}
+
+circuit red_pk(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:red")]));
+}
+
+circuit is_red(sk: Bytes<32>, pk: Bytes<32>): Boolean {
+  return pk == persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:red")]);
+}
+
+circuit blue_pk(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:blue")]));
+}
+
+circuit is_blue(sk: Bytes<32>, pk: Bytes<32>): Boolean {
+  return pk == persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:blue")]);
+}
+
+// Compact 0.34 no longer coerces an integer literal to `Field` in an equality.
+circuit is_valid_pos(pos: Field): Boolean {
+  return pos == 1 as Field ||
+         pos == 2 as Field ||
+         pos == 3 as Field ||
+         pos == 4 as Field ||
+         pos == 5 as Field ||
+         pos == 6 as Field ||
+         pos == 7 as Field ||
+         pos == 8 as Field ||
+         pos == 9 as Field;
+}
+
+circuit is_valid_board(board: Board): Boolean {
+  const pos = board.position;
+  return is_valid_pos(pos);
+}
+
+circuit is_player_honest(local_board: Committable<Board>, remote_board: Commitment<Board>): Boolean {
+  return is_valid_board(local_board.contents) &&
+         is_match<Board>(local_board, remote_board);
+}
+
+circuit is_blue_turn(state: State): Boolean {
+  return state == State.blue_turn || state == State.blue_started;
+}
+
+circuit is_red_turn(state: State): Boolean {
+  return state == State.red_turn;
+}
+
+circuit is_player_alive(local_board: Committable<Board>, guess: Field): Boolean {
+  return !(local_board.contents.position == guess);
+}
+
+/** Place a ship, wager into the pot and put up a deposit.
+
+    The board is kept private; only its commitment is stored on-chain. The deposit is
+    refunded on concede or on a win, so losing players still have a reason to settle.
+
+    First caller is red, second is blue; returns which one.
+ */
+export circuit start(pos: Field, wager: ShieldedCoinInfo, deposit: ShieldedCoinInfo): Player {
+  assert (state == State.no_game || state == State.red_started, "The game already has two players");
+  if (state == State.red_started) {
+    assert (disclose(wager.value) == pot.value && wager.color == pot.color,
+     "Blue must match Reds wager");
+  }
+  assert (deposit.value == 100000 && deposit.color == nativeToken(), "Invalid deposit");
+  const b = Board{pos};
+  assert (is_valid_board(b), "Initial board is not valid");
+
+  receiveShielded(disclose(wager));
+  receiveShielded(disclose(deposit));
+
+  const sk = disclose(local_secret_key());
+  const n = disclose(fresh_nonce());
+  const cb = Committable<Board>{n, b};
+
+  if (state == State.no_game) {
+    pot.writeCoin(disclose(wager), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    red_deposit.writeCoin(disclose(deposit), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    red = red_pk(sk);
+    red_board = disclose(commit<Board>(cb));
+    state = State.red_started;
+    local_set_board(cb);
+    return Player.red;
+  } else {
+    pot.writeCoin(mergeCoinImmediate(pot, disclose(wager)), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    blue_deposit.writeCoin(disclose(deposit), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    blue = blue_pk(sk);
+    blue_board = disclose(commit<Board>(cb));
+    state = State.blue_started;
+    local_set_board(cb);
+    return Player.blue;
+  }
+}
+
+export circuit guess(position: Field): [] {
+  const sk = disclose(local_secret_key());
+  const player_is_red = is_red(sk, red);
+  const player_is_blue = is_blue(sk, blue);
+  assert (player_is_red || player_is_blue, "Not a player");
+  return disclose(player_is_red ? red_guess(position) : blue_guess(position));
+}
+
+// Red is still alive and makes a valid move
+circuit red_guess(my_guess: Field): [] {
+  const sk = disclose(local_secret_key());
+  const lb = local_board();
+
+  // Preconditions for Red
+  assert (is_red(sk, red), "Not player Red");
+  assert (is_player_honest(lb, red_board), "Red player is not honest");
+  assert (is_red_turn(state), "Not Red's turn");
+
+  assert (is_player_alive(lb, last_guess.value), "Red player is not alive");
+  assert (is_valid_pos(my_guess), "Red guess is not a valid position");
+
+  // Record Red's guess
+  last_guess = disclose(some<Field>(my_guess));
+  state = State.blue_turn;
+}
+
+// Blue is still alive and makes a valid move
+circuit blue_guess(my_guess: Field): [] {
+  const sk = disclose(local_secret_key());
+  const lb = local_board();
+
+  // Preconditions for Blue guess
+  assert (is_blue(sk, blue), "Not player Blue");
+  assert (is_player_honest(lb, blue_board), "Blue player is not honest");
+  assert (is_blue_turn(state), "Not Blue's turn");
+  assert (is_player_alive(lb, last_guess.value), "Blue player is not alive");
+  assert (is_valid_pos(my_guess), "Blue guess is not a valid position");
+
+  // Record Blue's guess
+  last_guess = disclose(some<Field>(my_guess));
+  state = State.red_turn;
+}
+
+export circuit concede(): ShieldedCoinInfo {
+  const sk = disclose(local_secret_key());
+  const player_is_red = is_red(sk, red);
+  const player_is_blue = is_blue(sk, blue);
+  assert (player_is_red || player_is_blue, "Not a player");
+  return disclose(player_is_red ? red_concede() : blue_concede());
+}
+
+// Red is defeated and finishes the game
+circuit red_concede(): ShieldedCoinInfo {
+  const sk = disclose(local_secret_key());
+  const lb = local_board();
+
+  // Preconditions for Red
+  assert (is_red(sk, red), "Not player Red");
+  assert (is_player_honest(lb, red_board), "Red player is not honest");
+  assert (is_red_turn(state), "Not Red's turn");
+
+  // Player Red has been defeated
+  assert (!is_player_alive(lb, last_guess.value), "Red player is still alive");
+
+  // Record that Blue has won
+  state = State.blue_wins;
+
+  return sendShielded(
+    red_deposit,
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()),
+    red_deposit.value
+  ).sent;
+}
+
+// Blue is defeated and finishes the game
+circuit blue_concede(): ShieldedCoinInfo {
+  const sk = disclose(local_secret_key());
+  const lb = local_board();
+
+  // Preconditions for Blue guess
+  assert (is_blue(sk, blue), "Not player Blue");
+  assert (is_player_honest(lb, blue_board), "Blue player is not honest");
+  assert (is_blue_turn(state), "Not Blue's turn");
+
+  assert (!is_player_alive(lb, last_guess.value), "Blue player is still alive");
+
+  // Record that Red has won
+  state = State.red_wins;
+
+  return sendShielded(
+    blue_deposit,
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()),
+    blue_deposit.value
+  ).sent;
+}
+
+struct WithdrawnCoins {
+  wager: ShieldedCoinInfo;
+  deposit: ShieldedCoinInfo;
+}
+
+export circuit withdraw(): WithdrawnCoins {
+  const sk = disclose(local_secret_key());
+  const player_is_red = is_red(sk, red);
+  const player_is_blue = is_blue(sk, blue);
+  assert (player_is_red || player_is_blue, "Not a player");
+  return disclose(player_is_red ? red_withdraw() : blue_withdraw());
+}
+
+circuit red_withdraw(): WithdrawnCoins {
+  const sk = disclose(local_secret_key());
+
+  assert (is_red(sk, red), "Not player Red");
+  assert (state == State.red_wins, "Red hasn't won");
+
+  const wager = sendShielded(
+    pot,
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()),
+    pot.value
+  ).sent;
+  const deposit = sendShielded (
+    red_deposit,
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()),
+    red_deposit.value
+  ).sent;
+  return WithdrawnCoins{disclose(wager), disclose(deposit)};
+}
+
+circuit blue_withdraw(): WithdrawnCoins {
+  const sk = disclose(local_secret_key());
+
+  assert (is_blue(sk, blue), "Not player Blue");
+  assert (state == State.blue_wins, "Blue hasn't won");
+
+  const wager = sendShielded(
+    pot,
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()),
+    pot.value
+  ).sent;
+  const deposit = sendShielded (
+    blue_deposit,
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()),
+    blue_deposit.value
+  ).sent;
+  return WithdrawnCoins{disclose(wager), disclose(deposit)};
+}
