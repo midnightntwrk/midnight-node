@@ -165,9 +165,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ecdsa, ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -220,8 +220,7 @@ pub mod opaque {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
 			pub babe: Babe,
-			// todo: add the beefy
-			// pub beefy: Beefy,
+			pub beefy: Beefy,
 		}
 	}
 
@@ -233,7 +232,14 @@ pub mod opaque {
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
 			let babe = keys.find(BABE)?;
 			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
+			let beefy = keys.find(BEEFY)?;
+			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
+			Some(Self {
+				aura: aura.into(),
+				grandpa: grandpa.into(),
+				babe: babe.into(),
+				beefy: beefy.into(),
+			})
 		}
 	}
 
@@ -252,6 +258,7 @@ pub mod opaque {
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
+				sidechain_domain::CandidateKey::new(BEEFY, value.beefy.into_inner().to_raw_vec()),
 			])
 		}
 	}
@@ -395,10 +402,10 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes QueuedCommittee (v1 -> v2), adds BABE keys, and activates the
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE and BEEFY keys, and activates the
 		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
 		// `on_initialize` sees the first BABE pre-digest).
-		crate::migrations::authority_keys::MigrateV1ToV2AddBabeSessionKeys,
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -1271,6 +1278,13 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
+	// on the unsigned mandatory block 1 since launch, and the session-key migration above
+	// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
+	// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
+	// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
+	// re-enabled (see `migrations::beefy_genesis`).
+	migrations::beefy_genesis::ResetBeefyGenesis,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime

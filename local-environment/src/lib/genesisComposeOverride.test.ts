@@ -70,6 +70,7 @@ test("wires seed files for services whose seed var is set", () => {
       AURA_SEED_FILE: "/seeds/aura.seed",
       GRANDPA_SEED_FILE: "/seeds/grandpa.seed",
       CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed",
+      BEEFY_SEED_FILE: "/seeds/beefy.seed",
       SEED_PHRASE: "",
     },
     volumes: [`./${GENESIS_CONFIG_DIRNAME}/seeds/node1:/seeds:ro`],
@@ -77,7 +78,12 @@ test("wires seed files for services whose seed var is set", () => {
   assert.equal(override.services.node2, undefined);
   assert.equal(override.services.proxy, undefined);
 
-  for (const file of ["aura.seed", "grandpa.seed", "cross_chain.seed"]) {
+  for (const file of [
+    "aura.seed",
+    "grandpa.seed",
+    "cross_chain.seed",
+    "beefy.seed",
+  ]) {
     assert.equal(readSeed(composeFile, "node1", file), "one two three");
   }
 });
@@ -100,6 +106,7 @@ test("per-key-type vars override the base var and fall back to it", () => {
     readSeed(composeFile, "node1", "cross_chain.seed"),
     "base phrase",
   );
+  assert.equal(readSeed(composeFile, "node1", "beefy.seed"), "base phrase");
 });
 
 test("incomplete per-type seeds without a base-var fallback are not seeded", () => {
