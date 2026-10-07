@@ -18,4 +18,4 @@ Crate versions: `midnight-ledger`/`midnight-zswap` 8.1.3,
 
 Backport of the ledger bump from #2238 (release/node-1.0.400).
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2254
