@@ -47,7 +47,10 @@ impl<'r> sqlx::Decode<'r, Postgres> for DbDatumIfValid {
 		if value.is_null() {
 			return Ok(Self(None));
 		}
-		let value: JsonValue = <JsonValue as Decode<Postgres>>::decode(value)?;
+		// serde_json rejects JSON nested past 128 levels, which a datum of 64 nested lists reaches.
+		let Ok(value) = <JsonValue as Decode<Postgres>>::decode(value) else {
+			return Ok(Self(None));
+		};
 		Ok(Self(encode_json_value_to_plutus_datum(value, DetailedSchema).ok()))
 	}
 }
