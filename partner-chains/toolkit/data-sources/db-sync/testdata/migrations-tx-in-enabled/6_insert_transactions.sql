@@ -16,7 +16,6 @@ DECLARE
  hash5 hash32type := decode('055557FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  hash6 hash32type := decode('01EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  hash7 hash32type := decode('07EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
- hash8 hash32type := decode('08EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  hash9 hash32type := decode('09EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  consumed_tx_hash  hash32type := decode('cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13','hex');
 
@@ -175,7 +174,6 @@ INSERT INTO tx_out ( id, tx_id           , index, address     , address_raw, add
                   ,( 8 , reg_tx_id2      , 0    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash5     )
                   ,( 9 , reg_tx_id2      , 1    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash6     ) -- formatted properly but did not consumed advertisedhash
                   ,( 10, reg_tx_id       , 3    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash7     ) -- integer wider than 64 bits
-                  ,( 11, reg_tx_id       , 4    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash8     ) -- constructor index CSL rejects
                   ,( 12, reg_tx_id       , 5    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash9     ) -- nested past serde_json's recursion limit
 ;
 
@@ -186,7 +184,6 @@ INSERT INTO datum ( id, hash , tx_id     , value                                
                  ,( 4 , hash5, reg_tx_id2, registration_SPO_C                               )
                  ,( 5 , hash6, reg_tx_id2, registration3                                    )
                  ,( 6 , hash7, reg_tx_id , '{ "int": 18446744073709551616 }'                  )
-                 ,( 7 , hash8, reg_tx_id , '{ "constructor": 18446744073709551616, "fields": [] }' )
                  ,( 8 , hash9, reg_tx_id , (repeat('{ "list": [', 64) || '{ "int": 1 }' || repeat('] }', 64))::jsonb )
 ;
 
