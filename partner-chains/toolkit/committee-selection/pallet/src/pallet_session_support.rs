@@ -152,7 +152,9 @@ where
 	fn should_end_session(n: BlockNumberFor<T>) -> bool {
 		let current_epoch_number = T::current_epoch_number();
 		// The queued committee is the most recently rotated one, so its epoch determines
-		// whether a rotation is due for the current epoch.
+		// whether a rotation is due for the current epoch. A late rotation stamps it with the
+		// current epoch (see `rotate_committee_to_next_epoch`), so at most one rotation happens
+		// per epoch however many epochs were skipped — BABE accepts one epoch change per epoch.
 		let queued_committee_epoch = crate::Pallet::<T>::queued_committee_storage().epoch;
 		let next_committee_is_defined = crate::Pallet::<T>::next_committee().is_some();
 		if current_epoch_number > queued_committee_epoch {
@@ -303,6 +305,54 @@ mod tests {
 				ids_and_keys_fn(&[CHARLIE, DAVE])
 			);
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 2);
+		});
+	}
+
+	/// Whole epochs without blocks are caught up with a single session rotation, so BABE sees
+	/// exactly one epoch-change announcement per epoch.
+	#[test]
+	fn skipped_epochs_are_caught_up_in_a_single_session() {
+		new_test_ext().execute_with(|| {
+			assert_eq!(Session::current_index(), 0);
+			// Normal operation: the committee for epoch 1 is selected during epoch 0.
+			set_validators_directly(&[CHARLIE, DAVE], 1).unwrap();
+
+			// Epochs 1 and 2 pass without a single block; the first block lands in epoch 3.
+			increment_epoch();
+			increment_epoch();
+			increment_epoch();
+			assert_eq!(current_epoch_number(), 3);
+
+			// One rotation: the stale committee is queued, stamped with the current epoch.
+			advance_one_block();
+			assert_eq!(Session::current_index(), 1);
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[CHARLIE, DAVE])
+			);
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, 3);
+			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 3);
+
+			// The inherent in that block selects for epoch 4 (the pre-fix pipeline would have
+			// asked for epoch 2 and then rotated again next block).
+			assert_eq!(SessionCommitteeManagement::get_next_unset_epoch_number(), 4);
+			set_validators_directly(&[ALICE], 4).unwrap();
+
+			// No second session within the epoch.
+			for _ in 0..10 {
+				advance_one_block();
+				assert_eq!(Session::current_index(), 1);
+				assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			}
+
+			// The next epoch rotates once more, applying the caught-up committee.
+			increment_epoch();
+			advance_one_block();
+			assert_eq!(Session::current_index(), 2);
+			assert_eq!(Session::validators(), vec![CHARLIE.authority_id, DAVE.authority_id]);
+			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 4);
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, 4);
 		});
 	}
 

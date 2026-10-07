@@ -504,6 +504,9 @@ midnight-node-toolkit \
 
 If this isn't done, the transaction will succeed, but no coins will be visible in the destination wallet. This is because the encryption key is not visible to the contract execution layer.
 
+For a circuit that calls `receiveShielded`, `send-intent --funding-seed` selects shielded coins
+to cover the call and returns any change to the funding wallet.
+
 ### Register DUST Address
 
 - Register a seed's DUST address to start generating DUST based on owned NIGHT. This also spends all NIGHT UTxOs owned by the wallet and recreates them, allowing them to start generating DUST.

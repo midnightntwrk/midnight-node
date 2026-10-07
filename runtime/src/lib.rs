@@ -98,8 +98,6 @@ use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use crate::{constants::time_units::HOURS, currency::CurrencyWaiver};
 use alloc::{vec, vec::Vec};
-#[cfg(feature = "std")]
-use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // Make the WASM binary available.
@@ -117,6 +115,10 @@ pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+/// Fork-transition support. Off by default; see the module docs before
+/// enabling -- a runtime built with this feature must never be released.
+#[cfg(feature = "fork-transition")]
+pub mod fork_transition;
 mod migrations;
 pub mod weights;
 
@@ -165,7 +167,7 @@ pub mod opaque {
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_core::{ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -217,6 +219,7 @@ pub mod opaque {
 		pub struct SessionKeys {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
+			pub babe: Babe,
 			// todo: add the beefy
 			// pub beefy: Beefy,
 		}
@@ -228,7 +231,9 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+			let babe = keys.find(BABE)?;
+			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
+			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
 		}
 	}
 
@@ -238,6 +243,10 @@ pub mod opaque {
 				sidechain_domain::CandidateKey::new(
 					AURA,
 					value.aura.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
+					BABE,
+					value.babe.into_inner().to_raw().to_vec(),
 				),
 				sidechain_domain::CandidateKey::new(
 					GRANDPA,
@@ -264,23 +273,41 @@ pub mod opaque {
 
 pub type CrossChainPublic = opaque::cross_chain_app::Public;
 
-// To learn more about runtime versioning, see:
-// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
-#[allow(clippy::zero_prefixed_literal)]
-#[sp_version::runtime_version]
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: Cow::Borrowed("midnight"),
-	impl_name: Cow::Borrowed("midnight"),
-	authoring_version: 1,
-	// The version of the runtime specification. A full node will not attempt to use its native
-	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
-	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 003_000_000,
-	impl_version: 0,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 4,
-	system_version: 3,
-};
+/// The `impl_name` of a runtime built with `fork-transition`, so one is
+/// identifiable from `state_getRuntimeVersion` or from its wasm: release
+/// builds check for this string (`scripts/assert-no-fork-transition.sh`).
+pub const FORK_TRANSITION_IMPL_NAME: &str = "midnight-fork-transition-UNSAFE";
+
+// `#[sp_version::runtime_version]` only accepts string literals, so `impl_name`
+// is chosen per feature by expanding the one definition twice rather than by a
+// const. `spec_version` must stay single-sourced: `codeSubstitutes` matches on
+// it, so a fork runtime that drifted from the stock one would silently not apply.
+macro_rules! runtime_version {
+	($impl_name:tt) => {
+		// To learn more about runtime versioning, see:
+		// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
+		#[allow(clippy::zero_prefixed_literal)]
+		#[sp_version::runtime_version]
+		pub const VERSION: RuntimeVersion = RuntimeVersion {
+			spec_name: Cow::Borrowed("midnight"),
+			impl_name: Cow::Borrowed($impl_name),
+			authoring_version: 1,
+			// The version of the runtime specification. A full node will not attempt to use its native
+			//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
+			//   `spec_version`, and `authoring_version` are the same between Wasm and native.
+			spec_version: 003_000_000,
+			impl_version: 0,
+			apis: RUNTIME_API_VERSIONS,
+			transaction_version: 4,
+			system_version: 3,
+		};
+	};
+}
+
+#[cfg(not(feature = "fork-transition"))]
+runtime_version!("midnight");
+#[cfg(feature = "fork-transition")]
+runtime_version!("midnight-fork-transition-UNSAFE");
 
 /// This determines the average expected block time that we are targeting.
 /// Blocks will be produced at a minimum duration defined by `SLOT_DURATION`.
@@ -298,12 +325,6 @@ pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
 		c: (1, 4),
 		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
 	};
-
-/// The version information used to identify this runtime when compiled natively.
-#[cfg(feature = "std")]
-pub fn native_version() -> NativeVersion {
-	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
-}
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
@@ -374,9 +395,10 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes the QueuedCommittee storage added in v2
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-		// See migrations::authority_keys when opaque::SessionKeys changes shape.
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE keys, and activates the
+		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
+		// `on_initialize` sees the first BABE pre-digest).
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeSessionKeys,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -723,13 +745,6 @@ impl pallet_midnight::Config for Runtime {
 impl pallet_midnight_system::Config for Runtime {
 	type LedgerStateProviderMut = Midnight;
 	type LedgerBlockContextProvider = Midnight;
-}
-
-pub struct ValidatorSet;
-impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
-	fn get() -> BoundedVec<AuraId, MaxAuthorities> {
-		pallet_aura::Authorities::<Runtime>::get()
-	}
 }
 
 /// Configure the pallet-upgrade in pallets/upgrade.
@@ -1128,7 +1143,7 @@ mod runtime {
 	// Consensus engine transition state machine. Hook order (pallet index order) is
 	// load-bearing: its `on_initialize` digest guards must run after Babe (which
 	// consumes BABE pre-digests) but before anything that mutates the state they
-	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
+	// check against — Scheduler (18) can dispatch `schedule_flip` from
 	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
 	// which the `authority_index == slot % n` transition guard compares with. Both
 	// the block author and the AURA seal verifier work from the parent state, so
@@ -1409,6 +1424,14 @@ impl_runtime_apis! {
 		}
 
 		fn execute_block(block: <Block as BlockT>::LazyBlock) {
+			// The fork block carries a storage delta instead of the inherents a
+			// proposer would have produced; applying it is the whole execution.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				crate::fork_transition::execute_fork_block(&block);
+				return;
+			}
+
 			Executive::execute_block(block);
 		}
 
@@ -1507,6 +1530,12 @@ impl_runtime_apis! {
 			block: <Block as BlockT>::LazyBlock,
 			data: sp_inherents::InherentData,
 		) -> sp_inherents::CheckInherentsResult {
+			// The fork block has no inherents to check -- it was never proposed.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				return sp_inherents::CheckInherentsResult::new();
+			}
+
 			data.check_extrinsics(&block)
 		}
 	}
@@ -1533,6 +1562,15 @@ impl_runtime_apis! {
 		}
 
 		fn authorities() -> Vec<AuraId> {
+			// At the fork block's parent, report the fork's mock set so the
+			// fork block's seal verifies. Every other height reads state.
+			#[cfg(feature = "fork-transition")]
+			if let Some(authorities) =
+				crate::fork_transition::aura_authorities_at(System::block_number())
+			{
+				return authorities;
+			}
+
 			pallet_aura::Authorities::<Runtime>::get().into_inner()
 		}
 	}
@@ -1844,10 +1882,6 @@ impl_runtime_apis! {
 	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()
-		}
-
-		fn should_emit_babe_preruntime_digest() -> bool {
-			ConsensusEngine::should_emit_babe_preruntime_digest()
 		}
 	}
 
@@ -2395,23 +2429,36 @@ mod tests {
 			});
 		}
 
-		// The armed and scheduled states still produce AURA blocks, so the slot must
-		// keep coming from AURA until the flip actually completes.
+		// The scheduled state still produces AURA blocks, so the slot must keep
+		// coming from AURA until the flip actually completes.
 		#[test]
 		fn slot_is_read_from_aura_storage_while_the_flip_is_pending() {
-			for state in [State::ArmedBabe, State::ScheduledFlip] {
-				sp_io::TestExternalities::default().execute_with(|| {
-					EngineState::<Runtime>::put(state);
-					pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
-					pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::ScheduledFlip);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
 
-					assert_eq!(
-						get_sidechain_status().slot,
-						ScSlotNumber(STALE_AURA_SLOT),
-						"unexpected slot in state {state:?}"
-					);
-				});
-			}
+				assert_eq!(get_sidechain_status().slot, ScSlotNumber(STALE_AURA_SLOT));
+			});
+		}
+	}
+
+	/// Nodes distrust the AURA/BABE pre-runtime digest layout of blocks executed by runtimes from
+	/// before `pallet-consensus-engine`, identified by `spec_version` via the `pallet-version`
+	/// digest, so this runtime must not report a version below the activation one.
+	mod consensus_engine_activation {
+		use crate::VERSION;
+		use midnight_primitives_consensus_engine::ACTIVATION_SPEC_VERSION;
+
+		#[test]
+		fn this_runtime_is_at_or_past_the_activation_version() {
+			const {
+				assert!(
+					VERSION.spec_version >= ACTIVATION_SPEC_VERSION,
+					"pallet-consensus-engine is in this runtime, so its spec_version must not be \
+					 below ACTIVATION_SPEC_VERSION",
+				)
+			};
 		}
 	}
 
@@ -2522,13 +2569,41 @@ mod tests {
 					pallet_safe_mode::Call::force_exit {}
 				)));
 
-				// The next block admits normal (non-inherent) extrinsics again.
+				// The next block admits normal (non-inherent) extrinsics again. Like any
+				// AURA block it must carry the AURA pre-digest followed by the matching BABE
+				// `SecondaryPlain` one, which `pallet-consensus-engine` checks against the
+				// AURA authority set (`authority_index == slot % n`).
+				let authority = sp_consensus_aura::sr25519::AuthorityId::from(
+					sp_core::sr25519::Public::from_raw([1u8; 32]),
+				);
+				pallet_aura::Authorities::<Runtime>::put(frame_support::BoundedVec::truncate_from(
+					vec![authority],
+				));
+				let slot = sp_consensus_slots::Slot::from(1);
+				let digest = sp_runtime::Digest {
+					logs: vec![
+						sp_runtime::DigestItem::PreRuntime(
+							sp_consensus_aura::AURA_ENGINE_ID,
+							slot.encode(),
+						),
+						sp_runtime::DigestItem::PreRuntime(
+							sp_consensus_babe::BABE_ENGINE_ID,
+							sp_consensus_babe::digests::PreDigest::SecondaryPlain(
+								sp_consensus_babe::digests::SecondaryPlainPreDigest {
+									authority_index: 0,
+									slot,
+								},
+							)
+							.encode(),
+						),
+					],
+				};
 				let header = crate::Header::new(
 					2,
 					Default::default(),
 					Default::default(),
 					frame_system::Pallet::<Runtime>::parent_hash(),
-					Default::default(),
+					digest,
 				);
 				assert_eq!(
 					Executive::initialize_block(&header),

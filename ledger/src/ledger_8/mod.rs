@@ -102,8 +102,8 @@ use {
 };
 
 use crate::boundary::types::{
-	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
-	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerStats,
+	Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
 	WrappedHash,
 };
 
@@ -718,7 +718,7 @@ where
 		let start_tx_validation_time = Instant::now();
 
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let wrapped_cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
@@ -779,7 +779,7 @@ where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
@@ -812,7 +812,7 @@ where
 
 	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(transaction_bytes)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(transaction_bytes)?;
 		let hash = tx.hash();
 		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
 			let a = match cd {
@@ -899,6 +899,32 @@ where
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ledger_state = default_storage::<D>().arena.alloc(ledger.state.clone());
 		api.serialize(&ledger_state.as_typed_key())
+	}
+
+	/// Collection sizes held at the `LedgerState` root (`midnight_ledgerStats`).
+	///
+	/// Every value is O(1). The counts are read off annotations maintained at each
+	/// storage trie root — `NightAnn { size, value }` for the UTXO and contract
+	/// maps, `SizeAnn` for the nullifier sets — and the commitment totals are
+	/// scalar `first_free` fields. Nothing iterates, so the cost is independent of
+	/// how large the state has grown; the only work is forcing the handful of root
+	/// nodes that are not already resident.
+	pub fn ledger_stats(state_key: &[u8]) -> Result<LedgerStats, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let st = &ledger.state;
+
+		let utxo_ann = st.utxo.utxos.ann();
+
+		Ok(LedgerStats {
+			unshielded_utxo_count: utxo_ann.size,
+			unshielded_utxo_stars: utxo_ann.value,
+			zswap_commitment_count: st.zswap.first_free,
+			zswap_nullifier_count: st.zswap.nullifiers.size() as u64,
+			dust_commitment_count: st.dust.utxo.commitments_first_free,
+			dust_nullifier_count: st.dust.utxo.nullifiers.size() as u64,
+			contract_count: st.contract.ann().size,
+		})
 	}
 
 	/// Serialize the full ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted
@@ -1028,7 +1054,7 @@ where
 		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let cost =
@@ -1223,19 +1249,24 @@ where
 		// Cache miss: compute VerifiedTransaction
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		let verified_tx =
-			tx.0.well_formed(
-				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				Timestamp::from_secs(strict_key.well_formed_tblock),
-			)
-			.map_err(|e| {
+		let verified_tx = match tx.0.well_formed(
+			&ctx.ref_state,
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			Timestamp::from_secs(strict_key.well_formed_tblock),
+		) {
+			// The producer verified at whichever tblock its cache held, so a historical first
+			// tx is valid at either; e.g. mainnet #1788980 is only valid uncorrected (#1924).
+			Err(_) if strict_key.well_formed_tblock != block_context.tblock => {
+				return Self::get_verified_transaction(ledger, tx, block_context, tx_hash, false);
+			},
+			res => res.map_err(|e| {
 				log::warn!(
 					target: LOG_TARGET,
 					"Transaction malformed: {e}",
 				);
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
-			})?;
+			})?,
+		};
 
 		// Cache in strict cache (soft cache is managed by do_validate_transaction)
 		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
@@ -1361,7 +1392,12 @@ where
 		let api = api::new();
 		let event = CNightGeneratesDustEvent {
 			value,
-			owner: api.deserialize(owner)?,
+			// Not `api.deserialize` (logs at error): invalid keys are expected user input.
+			owner: midnight_serialize_local::Deserializable::deserialize(&mut &owner[..], 0)
+				.map_err(|e| {
+					log::debug!(target: LOG_TARGET, "Invalid DustPublicKey: {e:?}");
+					LedgerApiError::Deserialization(api::DeserializationError::DustPublicKey)
+				})?,
 			time: Timestamp::from_secs(time),
 			action: match action {
 				0 => Ok(CNightGeneratesDustActionType::Create),
@@ -1506,13 +1542,10 @@ const TBLOCK_CORRECTION_OFFSET_SECS: i128 = 12;
 /// timestamp — and only for the first ledger tx in a block, which is the only position where
 /// that cache could hit — so those blocks still import.
 ///
-/// A transaction only reaches a block through the producing node's own pool, so by the time that
-/// node ran `pre_dispatch` the strict cache was always warm for it: the pool verified it at
-/// `parent + offset` against the parent's post-block state, which is exactly the state and key
-/// `pre_dispatch` then looked up. The first ledger tx in a block was therefore *always* verified
-/// at `parent + offset`, never at the block's own timestamp — so this is a single unconditional
-/// rule, a total function of `(block_context, is_block_start)` evaluated identically on every
-/// node, with no try-then-retry branch for consensus to depend on.
+/// The producer's cache was not always warm at `parent + offset` (mainnet #1788980's first tx
+/// expires between the block timestamp and `parent + offset`), so a first tx failing here is
+/// retried at the block's own `tblock` by `get_verified_transaction`. The retry is still a
+/// deterministic function of the block, and only reachable under v1, i.e. on finalized history.
 ///
 /// The loophole is gated on the host-function version, not a date: version 1 of
 /// `apply_transaction`/`validate_guaranteed_execution` passes `skew_tblock = true`, version 2
@@ -1657,6 +1690,33 @@ mod tests {
 		// Mid-block the correction is inert either way, so sharing the entry is sound.
 		let mid_block = ledger_mid_block();
 		assert_eq!(key(&mid_block, true), key(&mid_block, false));
+	}
+
+	/// Mainnet #1788980's first ledger tx: its intent TTL (1784643562) lies between the block
+	/// timestamp (1784643558) and the corrected tblock (parent 1784643552 + 12).
+	const MAINNET_1788980_TX: &[u8] = include_bytes!("../../test-data/mainnet_1788980_tx.raw");
+
+	#[test]
+	fn corrected_first_tx_falls_back_to_the_block_timestamp() {
+		let tx = api::new()
+			.tagged_deserialize::<Transaction<TransactionSignature, DefaultDB>>(MAINNET_1788980_TX)
+			.expect("fixture deserializes");
+		let ledger = Ledger::new(LedgerState::new("mainnet"));
+		let verify = |tblock, skew_tblock| {
+			let bc = BlockContext { tblock, last_block_time: 1784643552, ..Default::default() };
+			let result = Bridge::<TransactionSignature, DefaultDB>::get_verified_transaction(
+				&ledger,
+				&tx,
+				&bc,
+				&WrappedHash([0u8; 32]),
+				skew_tblock,
+			);
+			format!("{:?}", result.map(|_| ()))
+		};
+
+		// A fresh state fails a later stateful check either way; only the TTL error tells them apart.
+		let ttl_expired = verify(1784643564, false);
+		assert_ne!(verify(1784643558, true), ttl_expired);
 	}
 
 	fn normalized_all(value: FixedPoint) -> LedgerNormalizedCost {
