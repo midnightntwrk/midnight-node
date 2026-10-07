@@ -2139,9 +2139,9 @@ mod tests {
 			TestBridge::get_decoded_transaction(&state_key, &at_limit, DEFAULT_MAX_DECODED_ITEMS)
 				.unwrap_err();
 		assert_ne!(decoded, transaction_too_large());
-  }
+	}
 
-  #[test]
+	#[test]
 	fn segments_to_exclude_v2_withholds_only_failed_segments() {
 		let segments: BTreeMap<u16, Result<(), ()>> =
 			[(0, Ok(())), (1, Err(())), (2, Ok(()))].into_iter().collect();
