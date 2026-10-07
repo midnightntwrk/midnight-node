@@ -8116,6 +8116,7 @@ dependencies = [
  "midnight-onchain-state 3.0.1",
  "midnight-onchain-state 4.0.0",
  "midnight-primitives-ledger",
+ "midnight-primitives-tx-error-codes",
  "midnight-serialize",
  "midnight-storage",
  "midnight-storage-core",
@@ -8617,6 +8618,10 @@ dependencies = [
  "serde",
  "sidechain-domain",
 ]
+
+[[package]]
+name = "midnight-primitives-tx-error-codes"
+version = "0.1.0"
 
 [[package]]
 name = "midnight-proofs"
@@ -10891,6 +10896,7 @@ version = "0.1.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "midnight-primitives-tx-error-codes",
  "parity-scale-codec",
  "scale-info",
  "sp-core",

@@ -36,6 +36,7 @@ parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"
 scale-info-derive.workspace = true
 frame-support = { workspace = true, default-features = false }
 midnight-primitives-ledger = { workspace = true, optional = true }
+midnight-primitives-tx-error-codes.workspace = true
 derive-where = { workspace = true, optional = true }
 
 serde = { workspace = true, optional = true }

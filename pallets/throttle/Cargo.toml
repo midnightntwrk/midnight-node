@@ -15,6 +15,7 @@ scale-info = { workspace = true, features = ["derive"] }
 frame-support.workspace = true
 frame-system.workspace = true
 sp-runtime.workspace = true
+midnight-primitives-tx-error-codes.workspace = true
 
 [dev-dependencies]
 sp-core.workspace = true

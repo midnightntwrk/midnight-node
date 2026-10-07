@@ -239,6 +239,39 @@ fn test_validation_fails() {
 	});
 }
 
+/// Only `send_mn_transaction` may arrive unsigned. Any other call is rejected with
+/// `InvalidTransaction::Call`, not a custom code that could collide with a ledger error.
+#[test]
+fn test_validate_unsigned_rejects_wrong_call_with_invalid_call() {
+	let call = MidnightCall::set_tx_size_weight { new_weight: Weight::zero() };
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_err!(
+			<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+				TransactionSource::External,
+				&call
+			),
+			TransactionValidityError::Invalid(InvalidTransaction::Call)
+		);
+	});
+}
+
+#[test]
+fn test_pre_dispatch_rejects_wrong_call_with_invalid_call() {
+	let call = MidnightCall::set_tx_size_weight { new_weight: Weight::zero() };
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_err!(
+			<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call),
+			TransactionValidityError::Invalid(InvalidTransaction::Call)
+		);
+	});
+}
+
 #[test]
 fn test_pre_dispatch_accepts_valid_transaction() {
 	let (tx, block_context) =
