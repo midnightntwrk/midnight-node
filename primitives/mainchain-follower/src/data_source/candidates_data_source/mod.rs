@@ -453,7 +453,8 @@ mod tests {
 		let _: () = rx.recv().unwrap();
 	}
 
-	// Fixtures also hold a 2^64 integer datum and a 2^64 constructor index at this address.
+	// Fixtures also hold a 2^64 integer datum, a 2^64 constructor index and a 64-deep nested list
+	// datum at this address.
 	async fn undecodable_datums_do_not_fail_candidate_query(pool: PgPool) {
 		let source = CandidatesDataSourceImpl::new(pool, None).await.unwrap();
 		let candidates = source
