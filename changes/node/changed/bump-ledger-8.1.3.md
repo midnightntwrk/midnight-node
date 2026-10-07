@@ -24,4 +24,4 @@ Crate versions: `midnight-ledger`/`midnight-zswap` 8.1.3,
 
 Same change on release/node-2.1.0: #2254. Ledger 8 bump on release/node-1.0.400: #2238.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2257
