@@ -10850,21 +10850,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-sudo"
-version = "28.0.0"
-source = "git+https://github.com/shieldedtech/polkadot-sdk.git?tag=stable2609-rpc-fix-10-oct#84fbde240cbd08e67c65b00f8697f7598440e476"
-dependencies = [
- "docify",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-system-parameters"
 version = "0.1.0"
 dependencies = [
@@ -10945,34 +10930,6 @@ dependencies = [
  "serde",
  "sp-io",
  "sp-runtime",
-]
-
-[[package]]
-name = "pallet-transaction-payment-rpc"
-version = "30.0.0"
-source = "git+https://github.com/shieldedtech/polkadot-sdk.git?tag=stable2609-rpc-fix-10-oct#84fbde240cbd08e67c65b00f8697f7598440e476"
-dependencies = [
- "jsonrpsee",
- "pallet-transaction-payment-rpc-runtime-api",
- "parity-scale-codec",
- "sp-api",
- "sp-blockchain",
- "sp-core",
- "sp-rpc",
- "sp-runtime",
- "sp-weights",
-]
-
-[[package]]
-name = "pallet-transaction-payment-rpc-runtime-api"
-version = "28.0.0"
-source = "git+https://github.com/shieldedtech/polkadot-sdk.git?tag=stable2609-rpc-fix-10-oct#84fbde240cbd08e67c65b00f8697f7598440e476"
-dependencies = [
- "pallet-transaction-payment",
- "parity-scale-codec",
- "sp-api",
- "sp-runtime",
- "sp-weights",
 ]
 
 [[package]]
@@ -11294,123 +11251,6 @@ dependencies = [
  "time-source",
  "tokio",
  "tokio-test",
-]
-
-[[package]]
-name = "partner-chains-demo-node"
-version = "1.8.1"
-dependencies = [
- "authority-selection-inherents",
- "clap",
- "derive-new",
- "envy",
- "hex-literal 1.1.0",
- "jsonrpsee",
- "log",
- "pallet-session-validator-management-rpc",
- "pallet-sidechain-rpc",
- "pallet-transaction-payment-rpc",
- "partner-chains-cli",
- "partner-chains-db-sync-data-sources",
- "partner-chains-demo-runtime",
- "partner-chains-mock-data-sources",
- "partner-chains-node-commands",
- "pretty_assertions",
- "sc-basic-authorship",
- "sc-cli",
- "sc-client-api",
- "sc-consensus",
- "sc-consensus-aura",
- "sc-consensus-grandpa",
- "sc-consensus-grandpa-rpc",
- "sc-executor",
- "sc-network",
- "sc-partner-chains-consensus",
- "sc-rpc",
- "sc-service",
- "sc-telemetry",
- "sc-transaction-pool",
- "sc-transaction-pool-api",
- "serde_json",
- "sidechain-domain",
- "sidechain-mc-hash",
- "sidechain-slots",
- "sp-api",
- "sp-block-builder",
- "sp-blockchain",
- "sp-consensus-aura",
- "sp-core",
- "sp-inherents",
- "sp-io",
- "sp-partner-chains-bridge",
- "sp-runtime",
- "sp-session-validator-management",
- "sp-session-validator-management-query",
- "sp-sidechain",
- "sp-timestamp",
- "substrate-build-script-utils",
- "substrate-frame-rpc-system",
- "time-source",
- "tokio",
-]
-
-[[package]]
-name = "partner-chains-demo-runtime"
-version = "1.8.1"
-dependencies = [
- "authority-selection-inherents",
- "frame-benchmarking",
- "frame-executive",
- "frame-support",
- "frame-system",
- "frame-system-benchmarking",
- "frame-system-rpc-runtime-api",
- "frame-try-runtime",
- "hex",
- "hex-literal 1.1.0",
- "log",
- "minicbor 2.2.1",
- "pallet-aura",
- "pallet-balances",
- "pallet-grandpa",
- "pallet-partner-chains-bridge",
- "pallet-session",
- "pallet-session-validator-management",
- "pallet-sidechain",
- "pallet-sudo",
- "pallet-timestamp",
- "pallet-transaction-payment",
- "pallet-transaction-payment-rpc-runtime-api",
- "parity-scale-codec",
- "plutus",
- "pretty_assertions",
- "scale-info",
- "serde",
- "serde_json",
- "sidechain-domain",
- "sidechain-slots",
- "sp-api",
- "sp-block-builder",
- "sp-consensus-aura",
- "sp-consensus-grandpa",
- "sp-consensus-slots",
- "sp-core",
- "sp-genesis-builder",
- "sp-inherents",
- "sp-io",
- "sp-keyring",
- "sp-offchain",
- "sp-partner-chains-bridge",
- "sp-runtime",
- "sp-session",
- "sp-session-validator-management",
- "sp-sidechain",
- "sp-std",
- "sp-storage",
- "sp-transaction-pool",
- "sp-version",
- "sp-weights",
- "substrate-wasm-builder",
 ]
 
 [[package]]
