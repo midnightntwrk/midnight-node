@@ -283,6 +283,22 @@ pub enum NodeCountError {
 	CountDecodeFailed,
 }
 
+/// Splits a tagged serialization into `(tag, body)`, where the tag is `midnight:<type>:`.
+///
+/// The second colon ends the tag, searched for within the 512-byte window
+/// `midnight_serialize::peek_tag` uses, and like `peek_tag` this relies on no tag holding a
+/// colon. `None` when no tag ends inside the window.
+pub fn split_tag(payload: &[u8]) -> Option<(&[u8], &[u8])> {
+	const TAG_SCAN_LIMIT: usize = 512;
+	let (colon_i, _) = payload
+		.iter()
+		.take(TAG_SCAN_LIMIT)
+		.enumerate()
+		.filter(|(_, byte)| **byte == b':')
+		.nth(1)?;
+	Some(payload.split_at(colon_i + 1))
+}
+
 /// The DAG node count a serialized `Transaction` declares, read without deserializing it.
 ///
 /// A transaction is a tagged blob followed by a `Vec<TopoSortedNode>`, whose length comes
@@ -292,19 +308,7 @@ pub enum NodeCountError {
 /// A count beyond `u32` returns `CountDecodeFailed`; no payload within the byte limit could
 /// hold that many nodes.
 pub fn declared_node_count(payload: &[u8]) -> Result<u32, NodeCountError> {
-	// The tag is `midnight:<type>:`, so the second colon ends it. Bounded to match the
-	// 512-byte window `midnight_serialize::peek_tag` uses.
-	const TAG_SCAN_LIMIT: usize = 512;
-	let body_start_i = payload
-		.iter()
-		.take(TAG_SCAN_LIMIT)
-		.enumerate()
-		.filter(|(_, byte)| **byte == b':')
-		.nth(1)
-		.map(|(index, _)| index + 1)
-		.ok_or(NodeCountError::TagNotFound)?;
-
-	let body = payload.get(body_start_i..).ok_or(NodeCountError::TagNotFound)?;
+	let (_, body) = split_tag(payload).ok_or(NodeCountError::TagNotFound)?;
 
 	let Compact(node_count) =
 		Compact::<u32>::decode(&mut &body[..]).map_err(|_| NodeCountError::CountDecodeFailed)?;
@@ -316,7 +320,7 @@ pub fn declared_node_count(payload: &[u8]) -> Result<u32, NodeCountError> {
 mod node_count_tests {
 	use parity_scale_codec::Compact;
 
-	use super::{NodeCountError, declared_node_count};
+	use super::{NodeCountError, declared_node_count, split_tag};
 
 	/// A tagged blob whose body is `count` as a SCALE-compact `u32`.
 	fn tagged(count: u32) -> Vec<u8> {
@@ -327,6 +331,21 @@ mod node_count_tests {
 			_ => v.extend(((count << 2) | 0b10).to_le_bytes()),
 		}
 		v
+	}
+
+	#[test]
+	fn split_tag_ends_the_tag_at_its_second_colon() {
+		let payload = b"midnight:transaction[v12](proof):\x04\x05";
+		assert_eq!(
+			split_tag(payload),
+			Some((&b"midnight:transaction[v12](proof):"[..], &b"\x04\x05"[..]))
+		);
+		assert_eq!(split_tag(b"midnight:t:"), Some((&b"midnight:t:"[..], &b""[..])));
+		assert_eq!(split_tag(b"midnight:no-terminator"), None);
+		// A tag ending past the scan window is not found.
+		let mut long = vec![b'x'; 511];
+		long.extend(b"::");
+		assert_eq!(split_tag(&long), None);
 	}
 
 	#[test]

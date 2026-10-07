@@ -108,7 +108,7 @@ use crate::boundary::types::{
 };
 
 #[cfg(feature = "std")]
-use {lazy_static::lazy_static, moka::sync::Cache};
+use {crate::boundary::types::split_tag, lazy_static::lazy_static, moka::sync::Cache};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
@@ -122,11 +122,15 @@ pub const DEFAULT_TX_BYTE_LIMIT: u64 = 1 << 20;
 /// from the runtime (`pallet_midnight::Config::MaxDecodedTxItems`).
 pub const DEFAULT_MAX_DECODED_ITEMS: u32 = 4096;
 
-/// Strict `>`: no transaction in any block exceeds the on-chain limit, so this never fires on
-/// historical data.
+/// Measures the body alone, as `well_formed` does: it limits the untagged `serialized_size`,
+/// which equals the body's length because deserialization insists on normal form. Old runtimes
+/// reach this on block import, so counting the tag too would refuse transactions consensus
+/// accepts and split old and new nodes. An untagged payload is measured whole; it cannot
+/// deserialize anyway.
 #[cfg(feature = "std")]
 fn ensure_within_tx_byte_limit(limit: u64, bytes: &[u8]) -> Result<(), LedgerApiError> {
-	if bytes.len() as u64 > limit {
+	let body = split_tag(bytes).map_or(bytes, |(_, body)| body);
+	if body.len() as u64 > limit {
 		return Err(LedgerApiError::Transaction(types::TransactionError::Malformed(
 			types::MalformedError::TransactionTooLarge,
 		)));
@@ -740,7 +744,7 @@ where
 
 		let api = api::new();
 		// Ledger first, so its `transaction_byte_limit` bounds the payload before deserializing.
-		// Semantically inert: `well_formed` enforces the same limit later.
+		// Semantically inert: `well_formed` enforces the same limit, measured the same way, later.
 		let ledger = Self::get_ledger(&api, state_key)?;
 		ensure_within_tx_byte_limit(
 			ledger.state.parameters.limits.transaction_byte_limit,
@@ -1722,13 +1726,53 @@ mod tests {
 	fn v1_query_paths_reject_oversized_transactions() {
 		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
 
-		let oversized = vec![0u8; DEFAULT_TX_BYTE_LIMIT as usize + 1];
+		let oversized = tagged_zeros(DEFAULT_TX_BYTE_LIMIT as usize + 1);
 		assert_eq!(
 			TestBridge::get_decoded_transaction_v1(&oversized).unwrap_err(),
 			transaction_too_large()
 		);
 		assert_eq!(
 			TestBridge::get_transaction_cost_v1(&[], &oversized, &block_context(), 1_000)
+				.unwrap_err(),
+			transaction_too_large()
+		);
+	}
+
+	/// The tag prefix plus `body_len` zero bytes. `well_formed` measures only the body.
+	fn tagged_zeros(body_len: usize) -> Vec<u8> {
+		let tag = <Transaction<TransactionSignature, DefaultDB> as Tagged>::tag();
+		let mut bytes = format!("{}{tag}:", midnight_serialize_local::GLOBAL_TAG).into_bytes();
+		bytes.resize(bytes.len() + body_len, 0);
+		bytes
+	}
+
+	/// The byte check must never be stricter than `well_formed`, which ignores the tag
+	/// prefix: refusing a body it accepts splits old and new nodes on block import.
+	/// `split_tag` ends the tag at its second colon, so a tag holding one would have the byte
+	/// check count part of the tag as body and refuse transactions consensus accepts.
+	#[test]
+	fn split_tag_finds_the_real_tags() {
+		let tags = [
+			<Transaction<TransactionSignature, DefaultDB> as Tagged>::tag(),
+			<SystemTransaction as Tagged>::tag(),
+		];
+		for tag in tags {
+			assert!(!tag.contains(':'), "tag `{tag}` holds a colon");
+		}
+		assert_eq!(split_tag(&tagged_zeros(5)).map(|(_, body)| body.len()), Some(5));
+	}
+
+	#[test]
+	fn v1_query_paths_admit_a_body_at_the_limit() {
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let at_limit = tagged_zeros(DEFAULT_TX_BYTE_LIMIT as usize);
+		assert_ne!(
+			TestBridge::get_decoded_transaction_v1(&at_limit).unwrap_err(),
+			transaction_too_large()
+		);
+		assert_ne!(
+			TestBridge::get_transaction_cost_v1(&[], &at_limit, &block_context(), 1_000)
 				.unwrap_err(),
 			transaction_too_large()
 		);
@@ -1952,7 +1996,7 @@ mod tests {
 		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
 
 		let limit = ledger.state.parameters.limits.transaction_byte_limit;
-		let oversized = vec![0u8; limit as usize + 1];
+		let oversized = tagged_zeros(limit as usize + 1);
 
 		let is_too_large = |err: &LedgerApiError| {
 			matches!(
@@ -1988,5 +2032,64 @@ mod tests {
 		)
 		.unwrap_err();
 		assert!(is_too_large(&guaranteed), "validate_guaranteed_execution returned {guaranteed:?}");
+	}
+
+	/// As `v1_query_paths_admit_a_body_at_the_limit`, for the stateful paths, block import's
+	/// among them.
+	#[test]
+	fn stateful_paths_admit_a_body_at_the_limit() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+		let genesis = midnight_node_res::networks::MidnightNetwork::genesis_state(
+			&midnight_node_res::networks::UndeployedNetwork,
+		);
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+
+		let at_limit = tagged_zeros(ledger.state.parameters.limits.transaction_byte_limit as usize);
+
+		let mut test_ext = sp_io::TestExternalities::default();
+		let mut ext = test_ext.ext();
+
+		let validate = TestBridge::validate_transaction(
+			&mut ext,
+			&state_key,
+			&at_limit,
+			BlockContext::default(),
+			1,
+			1,
+			false,
+		)
+		.unwrap_err();
+		assert_ne!(validate, transaction_too_large());
+
+		let guaranteed = TestBridge::validate_guaranteed_execution(
+			&mut ext,
+			&state_key,
+			&at_limit,
+			BlockContext::default(),
+			1,
+			false,
+		)
+		.unwrap_err();
+		assert_ne!(guaranteed, transaction_too_large());
+
+		let cost =
+			TestBridge::get_any_transaction_cost(&state_key, &at_limit, &block_context(), 1_000)
+				.unwrap_err();
+		assert_ne!(cost, transaction_too_large());
+
+		let decoded =
+			TestBridge::get_decoded_transaction(&state_key, &at_limit, DEFAULT_MAX_DECODED_ITEMS)
+				.unwrap_err();
+		assert_ne!(decoded, transaction_too_large());
 	}
 }

@@ -16,6 +16,10 @@ The transaction-pool admission path is bounded by the same on-chain limit.
 deserializing, so the limit applies there too - that path is always on, runs once per
 submitted extrinsic ahead of any fee, and carries most of the cost.
 
+These early checks measure the untagged body, as `well_formed` does. Counting the
+serialization tag too would make them stricter than consensus, and old runtimes reach them on
+block import, so refusing a transaction `well_formed` accepts would split old and new nodes.
+
 A second cap bounds the DAG node count a transaction declares, at 1,024. The count is
 read from the SCALE-compact length prefix following the tag, so the check costs a bounded
 scan and at most five bytes rather than a parse.
