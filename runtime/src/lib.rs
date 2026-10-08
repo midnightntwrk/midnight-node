@@ -580,7 +580,6 @@ parameter_types! {
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	#[cfg(not(any(feature = "runtime-benchmarks", test)))]
-	// Append-only: `ActiveCursor.index` indexes this tuple.
 	type Migrations = ();
 	// Benchmarks need mocked migrations to guarantee that they succeed, and the unit tests
 	// use them to drive a migration into failure (see `tests::failed_mbm_recovery`).

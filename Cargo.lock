@@ -10769,7 +10769,6 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
- "sp-application-crypto",
  "sp-core",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/shieldedtech/polkadot-sdk.git?tag=stable2609-rpc-fix-10-oct)",
  "sp-io",

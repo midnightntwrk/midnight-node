@@ -23,8 +23,6 @@ pub use pallet::*;
 mod check_throttle;
 pub use check_throttle::CheckThrottle;
 
-pub mod migrations;
-
 /// `InvalidTransaction::Custom` code returned when a signed transaction would take its
 /// account over the per-window byte or transaction limit.
 ///
