@@ -1,0 +1,47 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Deploy only: the constructor uses no witness, so these stubs are enough.
+import { CompiledContract, ContractExecutable } from '@midnight-ntwrk/compact-js/effect';
+import { Contract as C_, LocalState } from './__OUT__/contract/index.js';
+
+type PrivateState = { secretKey: string; state: LocalState; vote: boolean | null };
+type Ctx = { privateState: PrivateState };
+const ORGANIZER_SK = 'deadbeefcafebabe1234567890abcdef1122334455667788aabbccddeeff0011';
+
+const witnesses = {
+  local_secret_key: ({ privateState }: Ctx) =>
+    [privateState, Uint8Array.from(Buffer.from(privateState.secretKey, 'hex'))],
+  local_state: ({ privateState }: Ctx) => [privateState, privateState.state],
+  local_advance_state: ({ privateState }: Ctx) => [
+    { ...privateState, state: (privateState.state + 1) as LocalState }, []
+  ],
+  local_record_vote: ({ privateState }: Ctx, vote_0: boolean) => [{ ...privateState, vote: vote_0 }, []],
+  local_vote_cast: ({ privateState }: Ctx) => [
+    privateState,
+    privateState.vote === null ? { is_some: false, value: false } : { is_some: true, value: privateState.vote },
+  ],
+  local_path_of_cm: ({ privateState }: Ctx) => [privateState, { is_some: false, value: undefined as any }],
+} as any;
+
+export default {
+  contractExecutable: CompiledContract.make<any>('MicroDaoContract', C_ as any).pipe(
+    CompiledContract.withWitnesses(witnesses),
+    CompiledContract.withCompiledFileAssets('./__OUT__'),
+    ContractExecutable.make
+  ),
+  createInitialPrivateState: (): PrivateState => ({ secretKey: ORGANIZER_SK, state: LocalState.initial, vote: null }),
+  config: { keys: { coinPublic: '__COIN_PUBLIC__' }, network: '__NETWORK_ID__' }
+}

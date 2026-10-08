@@ -1,0 +1,39 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import { CompiledContract, ContractExecutable } from '@midnight-ntwrk/compact-js/effect';
+import { Contract as C_ } from './__OUT__/contract/index.js';
+
+// The circuit derives the poster key from this secret, so take_down() after the fork
+// succeeds only if both the ledger state and the private state survived.
+type PrivateState = { secretKey: string };
+type Ctx = { privateState: PrivateState };
+// A fixed test key, not a secret.
+const SECRET_KEY = '01'.repeat(32);
+
+const witnesses = {
+  local_secret_key: ({ privateState }: Ctx) =>
+    [privateState, Uint8Array.from(Buffer.from(privateState.secretKey, 'hex'))],
+} as any;
+
+export default {
+  contractExecutable: CompiledContract.make<any>('BboardContract', C_ as any).pipe(
+    CompiledContract.withWitnesses(witnesses),
+    CompiledContract.withCompiledFileAssets('./__OUT__'),
+    ContractExecutable.make
+  ),
+  createInitialPrivateState: (): PrivateState => ({ secretKey: SECRET_KEY }),
+  config: { keys: { coinPublic: '__COIN_PUBLIC__' }, network: '__NETWORK_ID__' }
+}
