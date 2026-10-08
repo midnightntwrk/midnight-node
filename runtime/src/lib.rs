@@ -1540,8 +1540,17 @@ impl_runtime_apis! {
 			// runtime (the node calls this API in the on-chain context, which resolves the
 			// upgrade staged in `:pending_code`), against the parent state the old runtime
 			// left behind. Apply the pending migrations first, so the checks read storage in
-			// the layout they expect. The writes are discarded with the runtime API call;
-			// the block's own execution runs the migrations again, for real.
+			// the layout they expect. The runtime storage writes are discarded with the
+			// runtime API call; the block's own execution runs the migrations again, for real.
+			//
+			// Host-side effects are NOT discarded: anything a migration does through a host
+			// function (e.g. the ledger v8->v9 translation persisting the translated state in
+			// the ledger arena) happens once per run, and a verifying node runs the migrations
+			// twice for the first post-upgrade block (here, then in `execute_block`). Every
+			// migration must therefore be deterministic and idempotent on the host side. This
+			// was already required (competing children of the upgrade block, abandoned
+			// proposals and resyncs re-run them on the same host state), but it is now the
+			// normal path rather than an edge case.
 			let upgraded = frame_system::LastRuntimeUpgrade::<Runtime>::get()
 				.map(|last| last.was_upgraded(&VERSION))
 				.unwrap_or(true);
