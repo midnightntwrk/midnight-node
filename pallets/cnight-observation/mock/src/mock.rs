@@ -152,7 +152,7 @@ impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 	type LedgerStateProvider = Midnight;
 	type LedgerBlockContextProvider = Midnight;
-	type WeightInfo = ();
+	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Test>;
 }
 
 impl mock_pallet::Config for Test {}

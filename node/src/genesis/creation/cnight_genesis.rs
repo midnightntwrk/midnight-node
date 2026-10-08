@@ -5,8 +5,8 @@ use midnight_primitives_cnight_observation::{
 	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
-	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
-	ObservedUtxoData,
+	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservationBound,
+	ObservedUtxo, ObservedUtxoData,
 };
 use pallet_cnight_observation::{
 	Mapping, NextCardanoPosition, UtxoOwners,
@@ -107,7 +107,7 @@ pub async fn generate_cnight_genesis(
 				&addresses,
 				&current_position,
 				cardano_tip.clone(),
-				UTXO_CAPACITY,
+				&ObservationBound::Count(UTXO_CAPACITY),
 				midnight_node_runtime::VERSION.spec_version,
 			)
 			.await

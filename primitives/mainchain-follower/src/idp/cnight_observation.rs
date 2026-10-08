@@ -13,19 +13,47 @@
 
 //! Native Token Observation Inherent Data Provider
 
-use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
+use crate::{
+	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservationBound,
+	ObservedUtxo,
+};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
 	TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
-use sp_api::{ApiError, ApiExt, Core, ProvideRuntimeApi};
+use sp_api::{ApiError, ApiExt, CallApiAt, CallApiAtParams, CallContext, Core, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{error::Error, string::FromUtf8Error, sync::Arc};
 
 pub const DEFAULT_CARDANO_BLOCK_WINDOW_SIZE: u32 = 10000;
+
+/// Runtime export of `get_utxo_capacity_per_block`, which only version 1 of
+/// `CNightObservationApi` declares, so the generated client cannot call it.
+const UTXO_CAPACITY_PER_BLOCK_V1: &str = "CNightObservationApi_get_utxo_capacity_per_block";
+
+fn utxo_capacity_per_block_v1<Block: BlockT, C: CallApiAt<Block>>(
+	client: &C,
+	at: Block::Hash,
+) -> Result<u32, ApiError> {
+	let raw = client.call_api_at(CallApiAtParams {
+		at,
+		function: UTXO_CAPACITY_PER_BLOCK_V1,
+		arguments: Vec::new(),
+		overlayed_changes: &Default::default(),
+		call_context: CallContext::Offchain,
+		recorder: &None,
+		extensions: &Default::default(),
+	})?;
+	let decoded = u32::decode(&mut &raw[..]);
+	decoded.map_err(|error| ApiError::FailedToDecodeReturnValue {
+		function: UTXO_CAPACITY_PER_BLOCK_V1,
+		error,
+		raw,
+	})
+}
 
 pub struct MidnightCNightObservationInherentDataProvider {
 	pub utxos: Vec<ObservedUtxo>,
@@ -62,7 +90,7 @@ impl MidnightCNightObservationInherentDataProvider {
 	where
 		Block: BlockT,
 		C: HeaderBackend<Block>,
-		C: ProvideRuntimeApi<Block> + Send + Sync,
+		C: ProvideRuntimeApi<Block> + CallApiAt<Block> + Send + Sync,
 		C::Api: CNightObservationApi<Block>,
 	{
 		if let Ok(true) =
@@ -91,14 +119,12 @@ impl MidnightCNightObservationInherentDataProvider {
 	where
 		Block: BlockT,
 		C: HeaderBackend<Block>,
-		C: ProvideRuntimeApi<Block> + Send + Sync,
+		C: ProvideRuntimeApi<Block> + CallApiAt<Block> + Send + Sync,
 		C::Api: CNightObservationApi<Block>,
 	{
 		let api = client.runtime_api();
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
-		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
-
 		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
 		let auth_token_asset_name: String = api
 			.get_auth_token_asset_name(parent_hash)?
@@ -106,6 +132,30 @@ impl MidnightCNightObservationInherentDataProvider {
 			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 		let spec_version = api.version(parent_hash)?.spec_version;
+
+		// Version 1 runtimes have no cost model; the count bound then builds the same
+		// batch as nodes without it, which check our inherent against their own.
+		let bound = match api.api_version::<dyn CNightObservationApi<Block>>(parent_hash)? {
+			Some(version) if version >= 2 => match api.get_observation_cost_model(parent_hash)? {
+				Some(model) if model.utxo_gas > 0 => ObservationBound::Cost(model),
+				// Not the count bound, which can skip rows: an empty batch holding the
+				// cursor loses nothing until a runtime upgrade restores pricing.
+				model => {
+					log::error!(
+						target: "cnight-observation",
+						"runtime could not price the observation batch ({model:?}); cNIGHT observation halted at {cardano_position_start:?}"
+					);
+					return Ok(Self {
+						utxos: vec![],
+						next_cardano_position: cardano_position_start,
+					});
+				},
+			},
+			_ => {
+				ObservationBound::Count(utxo_capacity_per_block_v1(&*client, parent_hash)? as usize)
+			},
+		};
+		log::debug!(target: "cnight-observation", "observation bound: {bound:?}");
 
 		let config = CNightAddresses {
 			mapping_validator_address,
@@ -123,7 +173,7 @@ impl MidnightCNightObservationInherentDataProvider {
 				&config,
 				&cardano_position_start,
 				mc_hash,
-				utxo_capacity as usize,
+				&bound,
 				spec_version,
 			)
 			.await

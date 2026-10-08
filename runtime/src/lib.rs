@@ -1795,14 +1795,6 @@ impl_runtime_apis! {
 			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
 		}
 
-		fn get_utxo_capacity_per_block() -> u32 {
-			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
-		}
-
-		fn get_cardano_block_window_size() -> u32 {
-			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
-		}
-
 		fn get_cnight_token_identifier() -> (Vec<u8>, Vec<u8>) {
 			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
@@ -1810,6 +1802,10 @@ impl_runtime_apis! {
 
 		fn get_auth_token_asset_name() -> Vec<u8> {
 			pallet_cnight_observation::MainChainAuthTokenAssetName::<Runtime>::get().into_inner()
+		}
+
+		fn get_observation_cost_model() -> Option<midnight_primitives_cnight_observation::ObservationCostModel> {
+			CNightObservation::observation_cost_model()
 		}
 	}
 

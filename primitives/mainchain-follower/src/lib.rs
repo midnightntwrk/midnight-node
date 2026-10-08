@@ -40,22 +40,38 @@ pub use {
 
 #[cfg(feature = "std")]
 pub mod inherent_provider {
-	use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
+	use midnight_primitives_cnight_observation::{
+		CNightAddresses, CardanoPosition, ObservationCostModel, ObservedUtxos,
+	};
 	use midnight_primitives_federated_authority_observation::{
 		FederatedAuthorityData, FederatedAuthorityObservationConfig,
 	};
 	use sidechain_domain::McBlockHash;
 
+	/// How one block's cNIGHT observation batch is bounded.
+	#[derive(Clone, Debug, PartialEq, Eq)]
+	pub enum ObservationBound {
+		/// Fewer than this many Cardano transactions, with a fixed row cap per UTXO kind.
+		/// For API version 1 runtimes and genesis construction; must build the same
+		/// batch as nodes without the cost model, off-by-one included.
+		Count(usize),
+		/// Pessimistic price within the runtime's budget. `utxo_gas` must be positive:
+		/// it sets the fetch row cap.
+		Cost(ObservationCostModel),
+	}
+
 	#[async_trait::async_trait]
 	// Simple wrapper trait for native token observation
 	pub trait MidnightCNightObservationDataSource {
 		// TODO: Change the error type to something explicit
+		/// Observed UTXOs from `start_position` towards `current_tip`, cut by `bound` at
+		/// a Cardano-transaction boundary.
 		async fn get_utxos_up_to_capacity(
 			&self,
 			config: &CNightAddresses,
 			start_position: &CardanoPosition,
 			current_tip: McBlockHash,
-			capacity: usize,
+			bound: &ObservationBound,
 			spec_version: u32,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
 	}

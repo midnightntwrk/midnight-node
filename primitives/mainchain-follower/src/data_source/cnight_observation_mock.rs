@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use crate::{
-	MidnightCNightObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
-	RegistrationData, UtxoIndexInTx,
+	MidnightCNightObservationDataSource, ObservationBound, ObservedUtxo, ObservedUtxoData,
+	ObservedUtxoHeader, RegistrationData, UtxoIndexInTx,
 };
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
@@ -111,7 +111,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		_config: &CNightAddresses,
 		start: &CardanoPosition,
 		_current_tip: McBlockHash,
-		_capacity: usize,
+		_bound: &ObservationBound,
 		_spec_version: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Calculate deterministic end position
@@ -177,12 +177,24 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 
@@ -214,12 +226,24 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start1, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start1,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start2, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start2,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 

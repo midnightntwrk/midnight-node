@@ -33,6 +33,11 @@ use midnight_primitives_mainchain_follower::{
 };
 use sidechain_domain::{McBlockHash, McTxHash};
 
+/// Upper end of the `process_tokens` benchmark range: the largest count-bound batch,
+/// 200 Cardano transactions of 64 UTXOs. The cost bound admits fewer at any plausible
+/// weight.
+const MAX_UTXO_COUNT: u32 = 12_800;
+
 /// Generate `count` synthetic Registration UTXOs with unique addresses.
 fn generate_registration_utxos(count: u32) -> Vec<ObservedUtxo> {
 	(0..count)

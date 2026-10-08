@@ -452,7 +452,29 @@ pub fn sort_observed_utxos(utxos: &mut [ObservedUtxo], spec_version: u32) {
 	}
 }
 
+/// Prices for bounding one block's cNIGHT observation batch, in the
+/// `max_block.ref_time` gas units `get_transaction_cost` returns.
+///
+/// A batch is priced at `utxo_gas` per UTXO plus `create_gas` per `AssetCreate` and
+/// `destroy_gas` per `AssetSpend`: the pallet's weight plus the cNIGHT-generates-DUST
+/// update's ledger price, which depends only on the event counts. Summing the two
+/// resources is pessimistic and safe.
+#[derive(Encode, Decode, TypeInfo, Clone, Debug, PartialEq, Eq)]
+pub struct ObservationCostModel {
+	/// Pallet weight (`ref_time`) of processing one observed UTXO of any kind.
+	pub utxo_gas: u64,
+	/// Ledger gas of a cNIGHT-generates-DUST update carrying one `Create` event.
+	pub create_gas: u64,
+	/// Ledger gas of a cNIGHT-generates-DUST update carrying one `Destroy` event.
+	pub destroy_gas: u64,
+	/// Share of the block the observation batch may consume.
+	pub budget_gas: u64,
+	/// The whole block: the ceiling for a lone Cardano transaction.
+	pub full_gas: u64,
+}
+
 decl_runtime_apis! {
+	#[api_version(2)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
@@ -464,8 +486,10 @@ decl_runtime_apis! {
 
 		fn get_next_cardano_position() -> CardanoPosition;
 
-		fn get_cardano_block_window_size() -> u32;
-
-		fn get_utxo_capacity_per_block() -> u32;
+		/// Prices for cutting the observation batch by cost. `None` when the runtime
+		/// could not price a cNIGHT-generates-DUST update; callers then halt
+		/// observation.
+		#[api_version(2)]
+		fn get_observation_cost_model() -> Option<ObservationCostModel>;
 	}
 }
