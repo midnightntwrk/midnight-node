@@ -32,6 +32,8 @@ pub async fn get_registrations(
 ) -> Result<Vec<RegistrationRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
+	// The ORDER BY must be total: LIMIT can split a transaction's rows, and every
+	// validator must keep the same ones.
 	sqlx::query_as!(
 		RegistrationRow,
 		r#"
@@ -57,7 +59,7 @@ WHERE tx.id >= $9 AND tx.id <= $10
     AND ma_tx_out.quantity = 1
     AND (block.block_no > $3 OR (block.block_no = $3 AND tx.block_index >= $4))
     AND (block.block_no < $5 OR (block.block_no = $5 AND tx.block_index < $6))
-ORDER BY block.block_no, tx.block_index
+ORDER BY block.block_no, tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
         "#,
 		smart_contract_address,
@@ -86,10 +88,8 @@ pub async fn get_deregistrations(
 ) -> Result<Vec<DeregistrationRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
-	// NOTE: Ordered by transaction index (i.e. index of transaction within block)
-	// Once one valid deregistration can occur in a single tx, so we don't have to worry about
-	// ordering within txs
-
+	// The ORDER BY must be total: LIMIT can split a transaction's rows, and every
+	// validator must keep the same ones.
 	sqlx::query_as!(
 		DeregistrationRow,
 		r#"
@@ -115,7 +115,7 @@ WHERE block.block_no >= $2 AND block.block_no <= $4
     AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))
     AND tx.id >= $8 AND tx.id <=$9
     AND tx_in.id >= $10 AND tx_in.id <= $11
-ORDER BY block.block_no, tx.block_index
+ORDER BY block.block_no, tx.block_index, tx_tx_out.hash, tx_out.index
 LIMIT $6 OFFSET $7;
         "#,
 		smart_contract_address,
@@ -192,6 +192,8 @@ pub(crate) async fn get_asset_spends(
 ) -> Result<Vec<AssetSpendRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
+	// The ORDER BY must be total: LIMIT can split a transaction's rows, and every
+	// validator must keep the same ones.
 	sqlx::query_as!(
 		AssetSpendRow,
 		r#"
@@ -218,7 +220,7 @@ WHERE spending_block.block_no >= $2 AND spending_block.block_no <= $4
     AND (spending_block.block_no < $4 OR (spending_block.block_no = $4 AND spending_tx.block_index < $5))
     AND spending_tx.id >= $8 AND spending_tx.id <=$9
     AND tx_in.id >= $10 AND tx_in.id <= $11
-ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
+ORDER BY spending_block.block_no, spending_tx.block_index, tx.hash, tx_out.index
 LIMIT $6 OFFSET $7;
     "#,
 		ident,
