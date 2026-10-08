@@ -232,7 +232,6 @@ frame-benchmarking = { default-features = false, git = "https://github.com/shiel
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-api = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
-sp-application-crypto = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-io = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-block-builder = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-blockchain = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }

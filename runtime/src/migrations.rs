@@ -61,7 +61,6 @@ pub mod authority_keys {
 	use frame_support::{
 		migrations::VersionedMigration, traits::UncheckedOnRuntimeUpgrade, weights::Weight,
 	};
-	use pallet_session_validator_management::migrations::authority_keys::UpgradeCommitteeMember;
 	use pallet_session_validator_management::{
 		CommitteeInfo, CurrentCommittee, NextCommittee, QueuedCommittee,
 	};
@@ -137,19 +136,17 @@ pub mod authority_keys {
 		CommitteeInfo {
 			epoch: old.epoch,
 			committee: sp_runtime::BoundedVec::truncate_from(
-				old.committee.into_iter().map(|m| m.upgrade()).collect(),
+				old.committee.into_iter().map(upgrade).collect(),
 			),
 		}
 	}
 
-	impl UpgradeCommitteeMember<Runtime> for PreUpgradeCommitteeMember {
-		fn upgrade(
-			self,
-		) -> <Runtime as pallet_session_validator_management::Config>::CommitteeMember {
-			// A committee member carries its own cross-chain key, so no lookup is needed here.
-			let cross_chain = self.authority_id();
-			self.map_authority_keys(|old| upgrade_with_cross_chain(old, cross_chain.clone()))
-		}
+	fn upgrade(
+		pre_upgrade: PreUpgradeCommitteeMember,
+	) -> <Runtime as pallet_session_validator_management::Config>::CommitteeMember {
+		// A committee member carries its own cross-chain key, so no lookup is needed here.
+		let cross_chain = pre_upgrade.authority_id();
+		pre_upgrade.map_authority_keys(|old| upgrade_with_cross_chain(old, cross_chain.clone()))
 	}
 
 	/// Reads the still-legacy-shaped committees and indexes their members' cross-chain keys by the
