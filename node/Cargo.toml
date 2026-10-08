@@ -122,7 +122,6 @@ pallet-cnight-observation-mock = { workspace = true, default-features = true}
 thiserror = "1.0.50"
 log.workspace = true
 authority-selection-inherents.workspace = true
-#sp-block-rewards = { workspace = true, optional = true }
 sp-crypto-hashing.workspace = true
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
@@ -192,6 +191,4 @@ try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
 ]
-experimental = [
-    #"sp-block-rewards",
-]
+experimental = []

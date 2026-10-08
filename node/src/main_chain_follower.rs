@@ -45,9 +45,6 @@ use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
 };
 
-// TODO: Decide if it should be experimental
-// #[cfg(feature = "experimental")]
-
 #[derive(Clone)]
 pub struct DataSources {
 	pub mc_hash: Arc<dyn McHashDataSource + Send + Sync>,
