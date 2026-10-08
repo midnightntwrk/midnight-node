@@ -167,6 +167,7 @@ that we are still in the process of being release. As such:
 - [Configuration Guide](docs/configuration-guide.md) - Comprehensive configuration guide for SREs
 - [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
+- [Ephemeral Cardano](docs/ephemeral-cardano.md) - Real Cardano observations with local test authorities
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
 - [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
