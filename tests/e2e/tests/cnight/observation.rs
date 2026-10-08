@@ -3319,3 +3319,158 @@ async fn change_dust_address_via_deregister_and_register() {
         "DUST should keep accruing to DUST address B"
     );
 }
+
+// -------- OVERSIZED BATCH LIVENESS --------
+
+/// Per-`Create` cost of `SystemTransaction::CNightGeneratesDustUpdate` in the
+/// two ledger dimensions that can bind on a shipped network.
+const BYTES_WRITTEN_PER_CREATE: u64 = 224;
+const BYTES_CHURNED_PER_CREATE: u64 = 10_384;
+
+/// Cardano's 16 KiB transaction limit caps one mint at ~150 min-ADA cNIGHT
+/// outputs; stay well under it and spread the batch over several transactions.
+const MAX_OUTPUTS_PER_TX: usize = 80;
+
+/// Lovelace per mint transaction: the 1.5 ADA min-UTXO per output plus fee headroom.
+const FUNDING_PER_TX: u64 = 1_500_000 * MAX_OUTPUTS_PER_TX as u64 + 30_000_000;
+
+/// More registered creates than one block affords must not halt the chain (SSE-599):
+/// the batch is cut by ledger cost at a Cardano transaction boundary, the rest follows
+/// in later blocks, and every create's dust entry still lands.
+#[e2e_test]
+async fn oversized_cnight_batch_keeps_producing_blocks() {
+    let settings = Settings::default();
+    let ogmios_settings = settings.ogmios_client.clone();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let limits = midnight_client
+        .get_ledger_parameters()
+        .await
+        .expect("Failed to read ledger parameters")
+        .limits
+        .block_limits;
+    let fits_in_a_block = (limits.bytes_written / BYTES_WRITTEN_PER_CREATE)
+        .min(limits.bytes_churned / BYTES_CHURNED_PER_CREATE) as usize;
+    let n_creates = fits_in_a_block + 1;
+    tracing::info!("{fits_in_a_block} creates fit a block; submitting {n_creates}");
+
+    // One registration serves every UTXO paid to the address.
+    let bech32_address = cardano_client.address_as_bech32();
+    let dust_hex = MidnightClient::new_dust_hex(MidnightClient::new_seed());
+    tracing::info!("Cardano wallet {bech32_address} -> DUST key {dust_hex}");
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&bech32_address, 10_000_000).await;
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to submit registration")
+        .transaction
+        .id;
+    midnight_client
+        .await_cnight_observations(
+            &[register_tx_id],
+            &ogmios_settings,
+            OBSERVATION_AWAIT_TIMEOUT,
+        )
+        .await
+        .expect("registration observation should arrive within timeout");
+
+    // Each mint needs its own input so the mints can be submitted back-to-back
+    // and land in the same observation window.
+    let n_txs = n_creates.div_ceil(MAX_OUTPUTS_PER_TX);
+    let needed = FUNDING_PER_TX * n_txs as u64 + 20_000_000;
+    let mut candidates = Vec::new();
+    let mut requested = 0u64;
+    while requested < needed {
+        let amount = (needed - requested).min(900_000_000);
+        candidates.push(faucet.request_tokens(&bech32_address, amount).await);
+        requested += amount;
+    }
+    let split_tx_id = cardano_client
+        .split_to_self(&candidates, n_txs, FUNDING_PER_TX)
+        .await
+        .expect("Failed to split funding");
+    cardano_client
+        .wait_for_tx_inclusion(&split_tx_id, &bech32_address, TX_INCLUSION_TIMEOUT)
+        .await
+        .expect("funding split should be included");
+    let funding: Vec<_> = cardano_client
+        .find_utxos_by_tx_id(&bech32_address, hex::encode(split_tx_id))
+        .await
+        .into_iter()
+        .filter(|u| u.value.lovelace >= FUNDING_PER_TX)
+        .take(n_txs)
+        .collect();
+    assert_eq!(
+        funding.len(),
+        n_txs,
+        "expected {n_txs} funding UTXOs from the split"
+    );
+
+    let block_before = midnight_client
+        .get_finalized_block_number()
+        .await
+        .expect("Failed to read Midnight block number");
+
+    let mut mint_tx_ids = Vec::with_capacity(n_txs);
+    let mut remaining = n_creates;
+    for utxo in &funding {
+        let outputs = remaining.min(MAX_OUTPUTS_PER_TX);
+        let tx_id = cardano_client
+            .mint_tokens_split(1, outputs, utxo, &collateral_utxo)
+            .await
+            .expect("Failed to submit the split cNIGHT mint")
+            .transaction
+            .id;
+        tracing::info!(
+            "Submitted {outputs} cNIGHT outputs in tx 0x{}",
+            hex::encode(tx_id)
+        );
+        mint_tx_ids.push(tx_id);
+        remaining -= outputs;
+    }
+    assert_eq!(remaining, 0);
+
+    midnight_client
+        .await_cnight_observations(&mint_tx_ids, &ogmios_settings, OBSERVATION_AWAIT_TIMEOUT)
+        .await
+        .expect("every mint must be observed: an oversized batch must not halt the chain");
+
+    let block_after = midnight_client
+        .get_finalized_block_number()
+        .await
+        .expect("Failed to read Midnight block number");
+    assert!(
+        block_after > block_before,
+        "Midnight block height must keep advancing ({block_before} -> {block_after})"
+    );
+
+    let mut checked = 0usize;
+    for tx_id in &mint_tx_ids {
+        let outputs = cardano_client
+            .find_utxos_by_tx_id(&bech32_address, hex::encode(tx_id))
+            .await;
+        for output in outputs.iter().filter(|u| !u.value.native_tokens.is_empty()) {
+            let nonce = MidnightClient::calculate_nonce(
+                b"asset_create",
+                output.transaction.id,
+                output.index,
+            );
+            let owner = midnight_client
+                .query_night_utxo_owners(nonce.clone())
+                .await
+                .expect("Failed to query UTXO owners");
+            assert!(
+                owner.is_some(),
+                "no dust entry for create 0x{}#{} (nonce {nonce})",
+                hex::encode(tx_id),
+                output.index
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, n_creates, "every create must have a dust entry");
+}

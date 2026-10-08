@@ -11,12 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Validation tests for `process_tokens` UTXO guard and weight reporting.
+//! Validation tests for `process_tokens` admission, weight reporting and the
+//! observation budget setter.
 //!
 //! Uses the lightweight `mock_with_capture` runtime (no LedgerApi dependency).
-//! Covers: PM-19778 TC-01, TC-02, TC-06b.
+//! Covers: PM-19778 TC-06b.
 
-use frame_support::{assert_noop, assert_ok, dispatch::Pays, sp_runtime::traits::Dispatchable};
+use frame_support::{
+	assert_noop, assert_ok,
+	dispatch::Pays,
+	sp_runtime::{DispatchError, traits::Dispatchable},
+};
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
 	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
@@ -72,44 +77,13 @@ fn next_position() -> CardanoPosition {
 	}
 }
 
-/// PM-19778 TC-01: process_tokens rejects UTXO count exceeding capacity bound.
-///
-/// With CardanoTxCapacityPerBlock=2, the bound is 2*64=128. Submitting 129 UTXOs
-/// must fail with TooManyUtxos and leave no state modifications.
+/// The pallet accepts batches above the count bound. A failing Mandatory inherent is
+/// `BadMandatory` and halts the chain, so bounding the batch is the inherent data
+/// provider's job, not a runtime check.
 #[test]
-fn test_process_tokens_rejects_too_many_utxos() {
+fn test_process_tokens_accepts_utxos_above_old_count_bound() {
 	new_test_ext().execute_with(|| {
-		let capacity = 2u32;
-		CardanoTxCapacityPerBlock::<Test>::put(capacity);
-		let bound = capacity * UTXO_PER_TX_OVERESTIMATE;
-		let utxos = generate_registration_utxos(bound + 1);
-
-		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
-
-		assert_noop!(
-			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
-			Error::<Test>::TooManyUtxos
-		);
-
-		// Verify no state was modified
-		assert_eq!(
-			NextCardanoPosition::<Test>::get().block_number,
-			0,
-			"NextCardanoPosition should not be updated on rejection"
-		);
-	});
-}
-
-/// PM-19778 TC-02: process_tokens accepts UTXO count at exactly the capacity bound.
-///
-/// With CardanoTxCapacityPerBlock=2, submitting exactly 128 UTXOs must succeed.
-#[test]
-fn test_process_tokens_accepts_max_utxos() {
-	new_test_ext().execute_with(|| {
-		let capacity = 2u32;
-		CardanoTxCapacityPerBlock::<Test>::put(capacity);
-		let bound = capacity * UTXO_PER_TX_OVERESTIMATE;
-		let utxos = generate_registration_utxos(bound);
+		let utxos = generate_registration_utxos(200 * 64 + 1);
 
 		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
@@ -123,6 +97,25 @@ fn test_process_tokens_accepts_max_utxos() {
 	});
 }
 
+#[test]
+fn set_observation_budget_percent_is_root_only_and_capped_at_100() {
+	new_test_ext().execute_with(|| {
+		assert_eq!(ObservationBudgetPercent::<Test>::get(), DEFAULT_OBSERVATION_BUDGET_PERCENT);
+
+		assert_noop!(
+			Pallet::<Test>::set_observation_budget_percent(RawOrigin::None.into(), 30),
+			DispatchError::BadOrigin
+		);
+		assert_noop!(
+			Pallet::<Test>::set_observation_budget_percent(RawOrigin::Root.into(), 101),
+			Error::<Test>::BudgetPercentOutOfRange
+		);
+
+		assert_ok!(Pallet::<Test>::set_observation_budget_percent(RawOrigin::Root.into(), 100));
+		assert_eq!(ObservationBudgetPercent::<Test>::get(), 100);
+	});
+}
+
 /// PM-19778 TC-06b: process_tokens returns PostDispatchInfo with actual weight
 /// based on UTXO count and pays_fee == Pays::No.
 #[test]
@@ -131,17 +124,16 @@ fn test_process_tokens_returns_actual_weight() {
 		let n = 5u32;
 		let utxos = generate_registration_utxos(n);
 
+		let expected_weight = Pallet::<Test>::process_tokens_weight(&utxos);
 		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
 		let result = RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into());
 		let post_info = result.expect("dispatch should succeed");
 
-		let expected_weight =
-			<() as pallet_cnight_observation::weights::WeightInfo>::process_tokens(n);
 		assert_eq!(
 			post_info.actual_weight,
 			Some(expected_weight),
-			"actual_weight should reflect WeightInfo::process_tokens(N)"
+			"actual_weight should reflect process_tokens_weight(utxos)"
 		);
 		assert_eq!(post_info.pays_fee, Pays::No, "inherent extrinsic should not charge fees");
 	});
