@@ -579,7 +579,7 @@ mod tests {
 					tx_input_mode == ResolvedDbSyncTxInputMode::TxIn
 				);
 				assert_eq!(
-					has_keys("tx_in", &["tx_out_id", "tx_out_index"]),
+					has_keys("tx_in", &["tx_out_id"]),
 					tx_input_mode == ResolvedDbSyncTxInputMode::TxIn
 				);
 				assert_eq!(

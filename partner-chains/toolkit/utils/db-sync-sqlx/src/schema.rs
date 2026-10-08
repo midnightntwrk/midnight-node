@@ -89,12 +89,12 @@ pub const IDX_TX_IN_TX_IN_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
 };
 
 /// Lookup an output's spending input in the tx_in layout.
-pub const IDX_TX_IN_TX_OUT_ID_TX_OUT_INDEX_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
-	name: "idx_tx_in_tx_out_id_tx_out_index",
+pub const IDX_TX_IN_TX_OUT_ID_SPEC: DbSyncIndexSpec = DbSyncIndexSpec {
+	name: "idx_tx_in_tx_out_id",
 	relation: "tx_in",
 	access_methods: &["btree"],
-	keys: &["tx_out_id", "tx_out_index"],
-	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index ON tx_in(tx_out_id, tx_out_index)",
+	keys: &["tx_out_id"],
+	create_sql: "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id ON tx_in(tx_out_id)",
 };
 
 /// Lookup inputs by the spending transaction in the consumed layout.
@@ -164,7 +164,7 @@ pub fn candidate_index_specs(config: ResolvedDbSyncQueryConfig) -> Vec<DbSyncInd
 
 	match config.tx_input_mode {
 		crate::ResolvedDbSyncTxInputMode::TxIn => {
-			indexes.extend([IDX_TX_IN_TX_IN_ID_SPEC, IDX_TX_IN_TX_OUT_ID_TX_OUT_INDEX_SPEC]);
+			indexes.extend([IDX_TX_IN_TX_IN_ID_SPEC, IDX_TX_IN_TX_OUT_ID_SPEC]);
 		},
 		crate::ResolvedDbSyncTxInputMode::Consumed => {
 			indexes.push(IDX_TX_OUT_CONSUMED_BY_TX_ID_SPEC);

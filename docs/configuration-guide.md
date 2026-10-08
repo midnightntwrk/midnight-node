@@ -250,8 +250,8 @@ For `db_sync_tx_input_mode = "tx_in"`:
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_in_id
     ON tx_in (tx_in_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index
-    ON tx_in (tx_out_id, tx_out_index);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id
+    ON tx_in (tx_out_id);
 ```
 
 For `db_sync_tx_input_mode = "consumed"`:

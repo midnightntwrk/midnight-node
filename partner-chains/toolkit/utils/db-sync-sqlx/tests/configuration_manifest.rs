@@ -125,7 +125,7 @@ fn input_manifest_tracks_the_selected_transaction_input_layout() {
 	let tx_in = candidate_index_specs(resolved(ResolvedDbSyncAddressMode::Inline));
 	let tx_in_names: BTreeSet<_> = tx_in.iter().map(|index| index.name).collect();
 	assert!(tx_in_names.contains("idx_tx_in_tx_in_id"));
-	assert!(tx_in_names.contains("idx_tx_in_tx_out_id_tx_out_index"));
+	assert!(tx_in_names.contains("idx_tx_in_tx_out_id"));
 	assert!(!tx_in_names.contains("idx_tx_out_consumed_by_tx_id"));
 
 	let consumed = candidate_index_specs(ResolvedDbSyncQueryConfig {
@@ -135,7 +135,7 @@ fn input_manifest_tracks_the_selected_transaction_input_layout() {
 	let consumed_names: BTreeSet<_> = consumed.iter().map(|index| index.name).collect();
 	assert!(consumed_names.contains("idx_tx_out_consumed_by_tx_id"));
 	assert!(!consumed_names.contains("idx_tx_in_tx_in_id"));
-	assert!(!consumed_names.contains("idx_tx_in_tx_out_id_tx_out_index"))
+	assert!(!consumed_names.contains("idx_tx_in_tx_out_id"))
 }
 
 #[test]
