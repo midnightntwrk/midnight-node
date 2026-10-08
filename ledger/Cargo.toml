@@ -49,6 +49,8 @@ midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
 
 [dev-dependencies]
+# The byte-limit test needs an `Externalities` to call `validate_transaction` with.
+sp-io = { workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
 midnight-ledger-unsafe-helpers = { workspace = true }
 
