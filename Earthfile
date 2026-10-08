@@ -49,6 +49,9 @@ ARG --global GHCR_REGISTRY_PUBLIC=ghcr.io/midnight-ntwrk
 # Image basename, so a fork publishes <owner>/<its-repo> instead of overwriting midnight-node.
 ARG --global IMAGE_REPO=midnight-node
 
+# Feature builds publish immutable content tags without replacing shared moving tags.
+ARG --global PUBLISH_MOVING_TAGS=false
+
 # Repo this build came from, for the OCI source label (GHCR links a package to the repo
 # named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
 ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
@@ -1562,9 +1565,11 @@ node-image:
     # image already owns ./bin and ./res, so no `chown -R` duplicates them.
     RUN chown -R appuser:appuser /node
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/$IMAGE_REPO:latest-$NATIVEARCH \
         $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG \
         $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG_DEV
+    IF [ "$PUBLISH_MOVING_TAGS" = "true" ]
+        SAVE IMAGE --push $GHCR_REGISTRY/$IMAGE_REPO:latest-$NATIVEARCH
+    END
     # Public mirror. Only the canonical upstream repo points GHCR_REGISTRY_PUBLIC somewhere
     # else; everywhere else this is a no-op, so a fork cannot publish publicly by accident.
     IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
@@ -1602,9 +1607,10 @@ node-benchmarks-image:
     LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=midnight-node-benchmarks
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG
+    SAVE IMAGE --push $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG
+    IF [ "$PUBLISH_MOVING_TAGS" = "true" ]
+        SAVE IMAGE --push $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH
+    END
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-benchmarks-$NATIVEARCH/
 
@@ -1659,9 +1665,10 @@ toolkit-image:
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    SAVE IMAGE --push $GHCR_REGISTRY/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    IF [ "$PUBLISH_MOVING_TAGS" = "true" ]
+        SAVE IMAGE --push $GHCR_REGISTRY/$IMAGE_REPO-toolkit:latest-$NATIVEARCH
+    END
     IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
         SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO-toolkit:$IMAGE_TAG
     END
