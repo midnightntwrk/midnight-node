@@ -189,7 +189,7 @@ services:
       -c ssl=on
       -c ssl_cert_file=/etc/ssl/postgres/server.crt
       -c ssl_key_file=/etc/ssl/postgres/server.key
-      -c max_connections=120
+      -c max_connections=400
       -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
