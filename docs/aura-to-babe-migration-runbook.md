@@ -89,9 +89,6 @@ carries a `babe` key and that no two candidates share the same key.
       upgrade is the pallet's first deployment; a runtime that already carried
       a version of it would reject the dual-digest blocks the upgraded binary
       authors. **Stop and reassess if the pallet is present.**
-- [ ] Canary: start one non-validator node on the v3 binary and confirm it
-      imports blocks. `runtime requires function imports which are not present
-      on the host` → stop; every upgraded node would fail the same way.
 
 ### 1.2 Roll out the migration-aware binary — every node
 
