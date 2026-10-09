@@ -150,6 +150,8 @@ earthly +test                 # CI-equivalent tests (slow)
 
 ## Debugging Ledger Issues
 
+For common build and compilation errors, also check the [Troubleshooting Guide](troubleshooting.md).
+
 ### Keep midnight-ledger Checked Out
 
 Maintain a local checkout of the midnight-ledger repository:
@@ -235,9 +237,11 @@ cargo build --release --features runtime-benchmarks
 ./target/release/midnight-node benchmark pallet --pallet pallet_name
 ```
 
-## Hardfork Testing
+## Hardfork and Upgrade Testing
 
-**Note:** The hardfork testing process is currently incomplete. It was partially rewritten before the ledger v6 upgrade and never completed. Use the general upgrade testing approach documented in [testing-upgrades.md](testing-upgrades.md) instead.
+The primary method for testing runtime and node upgrades on live networks is through local fork testing using snapshots. 
+
+See [fork-testing.md](fork-testing.md) for the complete process of downloading a network snapshot, bringing up a local mock-authority fork, and executing an upgrade rehearsal (both binary image upgrades and governance runtime upgrades).
 
 ## Quick Reference
 
