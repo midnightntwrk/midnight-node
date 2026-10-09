@@ -38,6 +38,7 @@ use core::marker::PhantomData;
 /// Weight functions needed for `pallet_cnight_observation`.
 pub trait WeightInfo {
 	fn process_tokens(n: u32) -> Weight;
+	fn set_mapping_validator_contract_address() -> Weight;
 	fn set_cnight_identifier() -> Weight;
 	fn set_auth_token_asset_name() -> Weight;
 }
@@ -59,6 +60,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
 	}
 
+	/// Single bounded storage write to `MainChainMappingValidatorAddress`.
+	/// Placeholder until benchmarked.
+	fn set_mapping_validator_contract_address() -> Weight {
+		Weight::from_parts(10_000_000, 0).saturating_add(T::DbWeight::get().writes(1))
+	}
+
 	/// Single storage write to `CNightIdentifier`. Placeholder until benchmarked.
 	fn set_cnight_identifier() -> Weight {
 		Weight::from_parts(10_000_000, 0).saturating_add(T::DbWeight::get().writes(1))
@@ -73,6 +80,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 // For backwards compatibility and tests.
 impl WeightInfo for () {
 	fn process_tokens(_n: u32) -> Weight {
+		Weight::zero()
+	}
+	fn set_mapping_validator_contract_address() -> Weight {
 		Weight::zero()
 	}
 	fn set_cnight_identifier() -> Weight {
