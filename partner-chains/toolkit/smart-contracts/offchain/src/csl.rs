@@ -183,6 +183,14 @@ pub(crate) enum Costs {
 		mints: HashMap<cardano_serialization_lib::ScriptHash, ExUnits>,
 		/// Mapping spend indices to validator script execution costs.
 		spends: HashMap<u32, ExUnits>,
+		/// Mapping spent transaction inputs to validator script execution costs.
+		///
+		/// Ogmios reports spend budgets by redeemer index, which is the position of the spent
+		/// input in the transaction's (sorted) input list. That position is not stable: it
+		/// depends on the other inputs CSL picks while balancing the transaction. Resolving the
+		/// index against the evaluated transaction once, here, lets callers look a budget up by
+		/// the UTxO they are spending instead of by a positional index they cannot compute.
+		spend_inputs: HashMap<TransactionInput, ExUnits>,
 	},
 }
 
@@ -194,7 +202,12 @@ pub(crate) trait CostStore {
 	fn get_spend(&self, spend_ix: u32) -> ExUnits;
 	/// Returns spend cost of the single validator script in a transaction.
 	/// It panics if there is not exactly one validator script execution.
+	/// Only use it for transactions that spend a fixed, single script input. For a variable
+	/// number of script inputs use [CostStore::get_spend_for_input].
 	fn get_one_spend(&self) -> ExUnits;
+	/// Returns [ExUnits] cost of the validator script spending `input`.
+	/// Returns an error instead of panicking if the evaluation result contains no budget for it.
+	fn get_spend_for_input(&self, input: &TransactionInput) -> anyhow::Result<ExUnits>;
 	/// Returns indices of validator scripts as they appear in the CSL transaction.
 	/// These indices can be used in conjunction with [get_spend].
 	fn get_spend_indices(&self) -> Vec<u32>;
@@ -230,6 +243,20 @@ impl CostStore for Costs {
 			},
 		}
 	}
+	fn get_spend_for_input(&self, input: &TransactionInput) -> anyhow::Result<ExUnits> {
+		match self {
+			Costs::ZeroCosts => Ok(zero_ex_units()),
+			Costs::Costs { spend_inputs, .. } => {
+				spend_inputs.get(input).cloned().ok_or_else(|| {
+					anyhow::anyhow!(
+						"Transaction evaluation returned no execution budget for script input {}#{}",
+						hex::encode(input.transaction_id().to_bytes()),
+						u32::from(input.index())
+					)
+				})
+			},
+		}
+	}
 	fn get_spend_indices(&self) -> Vec<u32> {
 		match self {
 			Costs::ZeroCosts => vec![],
@@ -245,7 +272,17 @@ impl Costs {
 		mints: HashMap<cardano_serialization_lib::ScriptHash, ExUnits>,
 		spends: HashMap<u32, ExUnits>,
 	) -> Costs {
-		Costs::Costs { mints, spends }
+		Costs::Costs { mints, spends, spend_inputs: HashMap::new() }
+	}
+
+	#[cfg(test)]
+	/// Constructs new [Costs] with given `mints`, `spends` and per-input spend costs.
+	pub(crate) fn new_with_spend_inputs(
+		mints: HashMap<cardano_serialization_lib::ScriptHash, ExUnits>,
+		spends: HashMap<u32, ExUnits>,
+		spend_inputs: HashMap<TransactionInput, ExUnits>,
+	) -> Costs {
+		Costs::Costs { mints, spends, spend_inputs }
 	}
 
 	/// Creates a [Transaction] with correctly set script execution costs.
@@ -278,6 +315,8 @@ impl Costs {
 
 		let mut mints = HashMap::new();
 		let mut spends = HashMap::new();
+		let mut spend_inputs = HashMap::new();
+		let tx_inputs = tx.body().inputs();
 		for er in evaluate_response {
 			match er.validator.purpose.as_str() {
 				"mint" => {
@@ -293,13 +332,22 @@ impl Costs {
 					);
 				},
 				"spend" => {
-					spends.insert(er.validator.index, ex_units_from_response(er));
+					let index = er.validator.index;
+					let ex_units = ex_units_from_response(er);
+					if (index as usize) >= tx_inputs.len() {
+						return Err(anyhow::anyhow!(
+							"Ogmios returned a spend execution budget for redeemer index {index}, but the evaluated transaction has only {} inputs",
+							tx_inputs.len()
+						));
+					}
+					spend_inputs.insert(tx_inputs.get(index as usize), ex_units.clone());
+					spends.insert(index, ex_units);
 				},
 				_ => {},
 			}
 		}
 
-		Ok(Costs::Costs { mints, spends })
+		Ok(Costs::Costs { mints, spends, spend_inputs })
 	}
 }
 
