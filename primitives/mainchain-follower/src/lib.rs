@@ -64,12 +64,13 @@ pub mod inherent_provider {
 	// Simple wrapper trait for native token observation
 	pub trait MidnightCNightObservationDataSource {
 		// TODO: Change the error type to something explicit
-		/// Observed UTXOs from `start_position` towards `current_tip`, cut by `bound` at
-		/// a Cardano-transaction boundary.
+		/// Observed UTXOs from `start_position` towards `current_tip`, after the first
+		/// `start_offset` UTXOs of the transaction at `start_position`, cut by `bound`.
 		async fn get_utxos_up_to_capacity(
 			&self,
 			config: &CNightAddresses,
 			start_position: &CardanoPosition,
+			start_offset: u32,
 			current_tip: McBlockHash,
 			bound: &ObservationBound,
 			spec_version: u32,

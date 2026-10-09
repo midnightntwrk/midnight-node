@@ -11,13 +11,24 @@ The `process_tokens` inherent no longer rejects batches by UTXO count
   one-`Destroy` cNIGHT-generates-DUST update via the ledger, so the node can bound
   the batch by cost before building the inherent. Registrations and deregistrations are bounded by
   their weight; creates and spends by weight plus ledger price.
+- Storage `NextCardanoPosition` becomes `NextCardanoCursor { position, utxo_offset }`,
+  read by the new `CNightObservationApi::get_next_cardano_cursor` (API version 2),
+  which replaces `get_next_cardano_position`. `utxo_offset` is how many UTXOs of the
+  Cardano transaction at `position` are processed, so a batch may end inside a
+  transaction and the next resumes after it. The order the offset counts in,
+  `cmp_observed_utxos_by_data`, is unchanged and now part of the API. A runtime
+  upgrade migration moves the stored position in with offset 0; tools reading
+  `NextCardanoPosition` storage must update.
+- `CmstHeader` in the `SystemTransactionApplied` event gains `utxo_offset`, the offset
+  after the batch, so the header stays unique per batch. Indexers decoding this event
+  must update.
 - New root call `set_observation_budget_percent` and storage
   `ObservationBudgetPercent` (default 50) set the share of the block's ledger cost
   limits one observation batch may consume, leaving headroom for the bridge and
   user transactions.
 - `process_tokens` runs inside a storage layer. If the ledger still refuses the
   cNIGHT-generates-DUST update as exceeding the block limit, the batch is rolled
-  back whole, `NextCardanoPosition` is left unchanged and `ObservationsDeferred` is
+  back whole, `NextCardanoCursor` is left unchanged and `ObservationsDeferred` is
   emitted, so the chain keeps producing blocks instead of halting.
 - The `process_tokens` weight now includes the cNIGHT-generates-DUST update's
   ledger gas, priced by kind as the batch is admitted: each `AssetCreate` adds a
@@ -38,3 +49,4 @@ blocks at the upgrade.
 PR: https://github.com/shieldedtech/shadow-midnight-node/pull/45
 Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/599
 Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/590
+Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/568

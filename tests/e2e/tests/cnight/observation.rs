@@ -2746,12 +2746,15 @@ const BYTES_CHURNED_PER_CREATE: u64 = 10_384;
 /// outputs; stay well under it and spread the batch over several transactions.
 const MAX_OUTPUTS_PER_TX: usize = 80;
 
+/// The most min-ADA cNIGHT outputs one mint is trusted to fit under 16 KiB.
+const MAX_OUTPUTS_PER_LARGE_TX: usize = 140;
+
 /// Lovelace per mint transaction: the 1.5 ADA min-UTXO per output plus fee headroom.
 const FUNDING_PER_TX: u64 = 1_500_000 * MAX_OUTPUTS_PER_TX as u64 + 30_000_000;
 
-/// More registered creates than one block affords must not halt the chain (SSE-599):
-/// the batch is cut by ledger cost at a Cardano transaction boundary, the rest follows
-/// in later blocks, and every create's dust entry still lands.
+/// One more registered create than a whole block affords must not fail the Mandatory
+/// inherent (SSE-599): the batch is cut by ledger cost, the rest lands in later
+/// blocks, and every create's dust entry still lands.
 #[e2e_test]
 async fn oversized_cnight_batch_keeps_producing_blocks() {
     let settings = Settings::default();
@@ -2863,8 +2866,26 @@ async fn oversized_cnight_batch_keeps_producing_blocks() {
         "Midnight block height must keep advancing ({block_before} -> {block_after})"
     );
 
+    let checked = count_dust_entries(
+        &cardano_client,
+        &midnight_client,
+        &bech32_address,
+        &mint_tx_ids,
+    )
+    .await;
+    assert_eq!(checked, n_creates, "every create must have a dust entry");
+}
+
+/// Asserts every cNIGHT output of `tx_ids` paid to `address` has a dust entry, and
+/// returns how many there are.
+async fn count_dust_entries(
+    cardano_client: &CardanoClient,
+    midnight_client: &MidnightClient,
+    bech32_address: &str,
+    tx_ids: &[[u8; 32]],
+) -> usize {
     let mut checked = 0usize;
-    for tx_id in &mint_tx_ids {
+    for tx_id in tx_ids {
         let outputs = cardano_client
             .find_utxos_by_tx_id(&bech32_address, hex::encode(tx_id))
             .await;
@@ -2887,5 +2908,88 @@ async fn oversized_cnight_batch_keeps_producing_blocks() {
             checked += 1;
         }
     }
+    checked
+}
+
+/// One Cardano transaction with more registered creates than the observation
+/// budget affords. A batch can stop inside a Cardano transaction and resume after
+/// the UTXOs already observed, so the transaction drains over several blocks and
+/// every create's dust entry lands exactly once.
+#[e2e_test]
+async fn one_cardano_tx_over_the_budget_is_observed_across_blocks() {
+    let settings = Settings::default();
+    let ogmios_settings = settings.ogmios_client.clone();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let limits = midnight_client
+        .get_ledger_parameters()
+        .await
+        .expect("Failed to read ledger parameters")
+        .limits
+        .block_limits;
+    let fits_in_a_block = (limits.bytes_written / BYTES_WRITTEN_PER_CREATE)
+        .min(limits.bytes_churned / BYTES_CHURNED_PER_CREATE) as usize;
+    // The default budget is half the block; the per-UTXO weight makes it fewer still.
+    let n_creates = fits_in_a_block / 2 + 10;
+    assert!(
+        n_creates <= MAX_OUTPUTS_PER_LARGE_TX,
+        "{n_creates} creates do not fit one Cardano transaction"
+    );
+    tracing::info!("{fits_in_a_block} creates fit a block; minting {n_creates} in one tx");
+
+    let bech32_address = cardano_client.address_as_bech32();
+    let dust_hex = MidnightClient::new_dust_hex(MidnightClient::new_seed());
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&bech32_address, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&bech32_address, 10_000_000).await;
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to submit registration")
+        .transaction
+        .id;
+    midnight_client
+        .await_cnight_observations(
+            &[register_tx_id],
+            &ogmios_settings,
+            OBSERVATION_AWAIT_TIMEOUT,
+        )
+        .await
+        .expect("registration observation should arrive within timeout");
+
+    let funding = faucet
+        .request_tokens(&bech32_address, 1_500_000 * n_creates as u64 + 30_000_000)
+        .await;
+    let block_before = midnight_client
+        .get_finalized_block_number()
+        .await
+        .expect("Failed to read Midnight block number");
+    let mint_tx_id = cardano_client
+        .mint_tokens_split(1, n_creates, &funding, &collateral_utxo)
+        .await
+        .expect("Failed to submit the cNIGHT mint")
+        .transaction
+        .id;
+    midnight_client
+        .await_cnight_observations(&[mint_tx_id], &ogmios_settings, OBSERVATION_AWAIT_TIMEOUT)
+        .await
+        .expect("the mint must be observed even though it exceeds one batch");
+
+    let block_after = midnight_client
+        .get_finalized_block_number()
+        .await
+        .expect("Failed to read Midnight block number");
+    assert!(
+        block_after > block_before,
+        "Midnight block height must keep advancing ({block_before} -> {block_after})"
+    );
+    let checked = count_dust_entries(
+        &cardano_client,
+        &midnight_client,
+        &bech32_address,
+        &[mint_tx_id],
+    )
+    .await;
     assert_eq!(checked, n_creates, "every create must have a dust entry");
 }

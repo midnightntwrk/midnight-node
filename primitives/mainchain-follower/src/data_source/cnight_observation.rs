@@ -23,17 +23,21 @@ use cardano_serialization_lib::{
 	PlutusData, RewardAddress, ScriptHash,
 };
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
-	sort_observed_utxos,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	ObservationBatch, ObservationCostModel, ObservedUtxos,
 };
 use sidechain_domain::{McBlockHash, McTxHash};
 pub use sqlx::PgPool;
 use std::fmt::Debug;
 
-/// Row cap per UTXO kind for an [`ObservationBound::Count`] fetch (API version 1
-/// runtimes and genesis only), in UTXOs per Cardano transaction. Fixed: nodes without
-/// the cost model check our inherent against their own, fetched with this cap.
+/// Page limit per UTXO kind under [`ObservationBound::Count`] (API version 1 runtimes
+/// and genesis only), in UTXOs per Cardano transaction. Fixed: nodes without the cost
+/// model check our inherent against their own, fetched with this limit.
 const UTXOS_PER_TX_OVERESTIMATE: usize = 64;
+
+/// Bytes of the smallest row of any UTXO kind: a transaction input, CBOR
+/// `[hash32, index < 24]`. `maxTxSize` over this bounds one transaction's rows.
+const MIN_ROW_BYTES: i64 = 36;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MidnightCNightObservationDataSourceError {
@@ -45,6 +49,10 @@ pub enum MidnightCNightObservationDataSourceError {
 	CardanoNetworkError(String),
 	#[error("Invalid value for mapping validator address")]
 	MappingValidatorInvalidAddress(String),
+	#[error("db-sync returned {rows} rows for a query limited to {limit}")]
+	RowLimitExceeded { rows: usize, limit: usize },
+	#[error("db-sync has no epoch_param row for the epoch of Cardano block {0}")]
+	MissingEpochParams(u32),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -88,6 +96,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		&self,
 		config: &CNightAddresses,
 		start_position: &CardanoPosition,
+		start_offset: u32,
 		current_tip: McBlockHash,
 		bound: &ObservationBound,
 		spec_version: u32,
@@ -140,7 +149,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.into();
 		drop(_block_timer);
 
-		let (low_bounds, high_bounds) = tokio::try_join!(
+		let (low_bounds, high_bounds, max_rows_per_tx) = tokio::try_join!(
 			async {
 				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
 				crate::db::get_low_bounds(&self.pool, start_position.block_number.into())
@@ -153,6 +162,15 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
+			async {
+				let ObservationBound::Cost(_) = bound else { return Ok(0) };
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_max_tx_size");
+				let block = start_position.block_number;
+				let max_tx_size = crate::db::get_max_tx_size(&self.pool, block)
+					.await?
+					.ok_or(MidnightCNightObservationDataSourceError::MissingEpochParams(block))?;
+				Ok::<_, Box<dyn std::error::Error + Send + Sync>>((max_tx_size / MIN_ROW_BYTES) as usize)
+			},
 			)?;
 		let low_bounds = low_bounds.expect("Start position contains block hash that exists in database");
 		let high_bounds = high_bounds.expect("End position contains block hash that exists in database");
@@ -160,20 +178,21 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let end = end.increment();
 		log::debug!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
 
-		let utxo_capacity = fetch_row_cap(bound);
-
 		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
 		// ^ We may not have to do the above if the queries are fast enough
 
-		let paged = PagedQuery {
+		let query = |ledger_gas: fn(&ObservationCostModel) -> u64| PagedQuery {
 			start: start_position,
 			end: &end,
-			limit: utxo_capacity,
+			limit: page_limit(bound, start_offset as usize, max_rows_per_tx, ledger_gas),
 			offset: 0,
 			low_bound: low_bounds,
 			high_bound: high_bounds,
 		};
+		let mapping_query = query(|_| 0);
+		let create_query = query(|model| model.create_gas);
+		let spend_query = query(|model| model.destroy_gas);
 
 		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
 			async {
@@ -183,11 +202,11 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 						cardano_network,
 						ident,
 						&config.mapping_validator_address,
-						&paged,
+						&mapping_query,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
+					None => Ok(UtxoPage::default()),
 				}
 			},
 			async {
@@ -195,7 +214,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				self.get_deregistration_utxos(
 					cardano_network,
 					&config.mapping_validator_address,
-					&paged,
+					&mapping_query,
 				)
 				.await
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
@@ -206,11 +225,11 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					Some(ident) => self.get_asset_create_utxos(
 						cardano_network,
 						ident,
-						&paged,
+						&create_query,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
+					None => Ok(UtxoPage::default()),
 				}
 			},
 			async {
@@ -219,32 +238,31 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					Some(ident) => self.get_asset_spend_utxos(
 						cardano_network,
 						ident,
-						&paged,
+						&spend_query,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
+					None => Ok(UtxoPage::default()),
 				}
 			}
 		)?;
 
-		let mut utxos = Vec::with_capacity(
-			registration_utxos.len()
-				+ deregistration_utxos.len()
-				+ asset_create_utxos.len()
-				+ asset_spend_utxos.len(),
+		let pages = [registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos];
+		let frontier = match bound {
+			ObservationBound::Count(_) => None,
+			ObservationBound::Cost(_) => earliest_cut_short(&pages),
+		};
+		// Concatenation order matters: the legacy sort is stable over it.
+		let mut utxos = ObservationBatch::new(
+			pages.into_iter().flat_map(|page| page.utxos).collect(),
+			spec_version,
 		);
-		utxos.extend(registration_utxos);
-		utxos.extend(deregistration_utxos);
-		utxos.extend(asset_create_utxos);
-		utxos.extend(asset_spend_utxos);
+		skip_observed(&mut utxos, start_position, start_offset as usize);
 
-		sort_observed_utxos(&mut utxos, spec_version);
-
-		let (utxos, cut) = admit_prefix(utxos, bound);
+		let (utxos, cut) = admit_prefix(utxos, bound, frontier.as_ref());
 		match &cut {
-			Cut::Cost(resume_at) if utxos.is_empty() => log::error!(
-				"cNIGHT observation: the Cardano transaction at {resume_at} alone prices above the block limit; observation cannot advance past it"
+			Cut::Cost(resume_at) if utxos.last().is_some_and(|u| u.header.tx_position == *resume_at) => log::info!(
+				"cNIGHT observation batch ends inside the Cardano transaction at {resume_at}; resuming there"
 			),
 			Cut::Cost(resume_at) => log::warn!(
 				"cNIGHT observation falling behind the Cardano tip: cNIGHT activity exceeds one block's ledger budget, admitted {} UTXOs, resuming at {resume_at}",
@@ -258,6 +276,49 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 }
 );
 
+/// One UTXO kind's page: the UTXOs decoded from its rows and, when the rows filled the
+/// row cap, the position of the last row. Rows are dropped while decoding, so only the
+/// raw row count says whether the cap was hit.
+#[derive(Default)]
+struct UtxoPage {
+	utxos: Vec<ObservedUtxo>,
+	cut_short_at: Option<CardanoPosition>,
+}
+
+fn check_row_limit(
+	rows: usize,
+	query: &PagedQuery<'_>,
+) -> Result<(), MidnightCNightObservationDataSourceError> {
+	if rows > query.limit {
+		return Err(MidnightCNightObservationDataSourceError::RowLimitExceeded {
+			rows,
+			limit: query.limit,
+		});
+	}
+	Ok(())
+}
+
+/// The first position whose UTXOs may be incomplete: a kind that filled its row cap
+/// may have more rows in the transaction of its last row or later, and SQL orders the
+/// rows inside a transaction differently from the observation order.
+fn earliest_cut_short(pages: &[UtxoPage]) -> Option<CardanoPosition> {
+	pages
+		.iter()
+		.filter_map(|page| page.cut_short_at.clone())
+		.min_by(|a, b| a.partial_cmp(b).expect("CardanoPosition order is total"))
+}
+
+/// Drops the first `start_offset` UTXOs of the transaction at `start`, which earlier
+/// batches already observed.
+fn skip_observed(utxos: &mut ObservationBatch, start: &CardanoPosition, start_offset: usize) {
+	let observed = utxos
+		.iter()
+		.take(start_offset)
+		.take_while(|utxo| utxo.header.tx_position == *start)
+		.count();
+	utxos.remove_prefix(observed);
+}
+
 /// Where [`admit_prefix`] stopped.
 #[derive(Debug, Clone, PartialEq)]
 enum Cut {
@@ -265,9 +326,13 @@ enum Cut {
 	NotSaturated,
 	/// The Cardano transaction count of an [`ObservationBound::Count`] was reached.
 	TxCapacity,
-	/// The pessimistic ledger cost bound was hit. The transaction at this position
-	/// is the first one refused; it is re-delivered whole in the next block.
+	/// The pessimistic ledger cost bound was hit at a UTXO of the transaction at this
+	/// position. If earlier UTXOs of that transaction were admitted, the runtime records
+	/// how many and the next batch resumes after them.
 	Cost(CardanoPosition),
+	/// The page frontier: the transaction at this position may be incomplete, so the
+	/// next batch fetches it afresh.
+	Frontier(CardanoPosition),
 }
 
 impl Cut {
@@ -285,68 +350,85 @@ impl Cut {
 				.last()
 				.map_or(start.clone(), |u| u.header.tx_position.clone())
 				.increment(),
-			Cut::Cost(resume_at) => resume_at.clone(),
+			Cut::Cost(resume_at) | Cut::Frontier(resume_at) => resume_at.clone(),
 		}
 	}
 }
 
-/// Row cap per UTXO kind for one fetch. Under a cost model no UTXO costs less than
-/// `utxo_gas`, so more rows than the whole block affords can never be admitted and
-/// the cap never truncates ahead of the cost cut.
-fn fetch_row_cap(bound: &ObservationBound) -> usize {
+/// Limit of one UTXO kind's page, whose UTXOs each cost `utxo_gas + ledger_gas`.
+///
+/// Covers the skipped UTXOs plus more than the budget affords, so the cost cut, not
+/// the limit, usually ends a batch. The `max_rows_per_tx` floor, at least the rows
+/// of one kind the start transaction can carry, makes a full page reach past it,
+/// so the cursor advances even when every row before the frontier fails to decode.
+fn page_limit(
+	bound: &ObservationBound,
+	start_offset: usize,
+	max_rows_per_tx: usize,
+	ledger_gas: fn(&ObservationCostModel) -> u64,
+) -> usize {
 	match bound {
 		ObservationBound::Count(tx_capacity) => tx_capacity * UTXOS_PER_TX_OVERESTIMATE,
-		ObservationBound::Cost(model) => (model.full_gas / model.utxo_gas) as usize + 1,
+		ObservationBound::Cost(model) => {
+			let affordable = model.budget_gas / model.utxo_gas.saturating_add(ledger_gas(model));
+			start_offset + (affordable as usize).max(max_rows_per_tx) + 1
+		},
 	}
 }
 
-/// Admits a prefix of sorted `utxos` at Cardano-transaction granularity.
+/// Admits a prefix of `utxos`, sorted in the observation order.
 ///
-/// [`ObservationBound::Count`] admits fewer than that many transactions.
-/// [`ObservationBound::Cost`] admits transactions while the batch's pessimistic price,
-/// counting every `AssetCreate` and `AssetSpend` as a ledger event, fits `budget_gas`;
-/// a lone transaction over budget is admitted alone up to `full_gas`.
+/// [`ObservationBound::Count`] admits fewer than that many whole transactions.
+/// [`ObservationBound::Cost`] admits UTXOs, before the `frontier`, while the
+/// batch's pessimistic price, counting every `AssetCreate` and `AssetSpend` as a
+/// ledger event, fits `budget_gas`. It may stop inside a Cardano transaction, so a
+/// transaction of any size drains over as many blocks as it needs. The first UTXO is
+/// always admitted.
 fn admit_prefix(
-	mut utxos: Vec<ObservedUtxo>,
+	mut utxos: ObservationBatch,
 	bound: &ObservationBound,
-) -> (Vec<ObservedUtxo>, Cut) {
-	let mut num_txs = 0;
+	frontier: Option<&CardanoPosition>,
+) -> (ObservationBatch, Cut) {
 	let mut admitted = 0;
-	let mut gas = 0u64;
-	let mut cost_cut = None;
-	// A strictly greater position starts a new transaction, as in the sort order.
-	for group in utxos.chunk_by(|a, b| a.header.tx_position >= b.header.tx_position) {
-		match bound {
-			ObservationBound::Count(tx_capacity) => {
+	let cut = match bound {
+		ObservationBound::Count(tx_capacity) => {
+			let mut num_txs = 0;
+			// A strictly greater position starts a new transaction, as in the sort order.
+			for group in utxos.chunk_by(|a, b| a.header.tx_position >= b.header.tx_position) {
 				num_txs += 1;
 				if num_txs == *tx_capacity {
 					break;
 				}
-			},
-			ObservationBound::Cost(model) => {
-				let group_gas = group.iter().fold(0u64, |gas, utxo| {
-					let ledger_gas = match utxo.data {
-						ObservedUtxoData::AssetCreate(_) => model.create_gas,
-						ObservedUtxoData::AssetSpend(_) => model.destroy_gas,
-						_ => 0,
-					};
-					gas.saturating_add(model.utxo_gas).saturating_add(ledger_gas)
-				});
-				let bound = gas.saturating_add(group_gas);
-				if bound > model.budget_gas && (admitted > 0 || bound > model.full_gas) {
-					cost_cut = Some(Cut::Cost(group[0].header.tx_position.clone()));
+				admitted += group.len();
+			}
+			if num_txs >= *tx_capacity { Cut::TxCapacity } else { Cut::NotSaturated }
+		},
+		ObservationBound::Cost(model) => {
+			let mut gas = 0u64;
+			let mut cut = Cut::NotSaturated;
+			for utxo in utxos.iter() {
+				let position = &utxo.header.tx_position;
+				if let Some(frontier) = frontier.filter(|frontier| position >= *frontier) {
+					cut = Cut::Frontier(frontier.clone());
+					break;
+				}
+				let ledger_gas = match utxo.data {
+					ObservedUtxoData::AssetCreate(_) => model.create_gas,
+					ObservedUtxoData::AssetSpend(_) => model.destroy_gas,
+					_ => 0,
+				};
+				let bound = gas.saturating_add(model.utxo_gas).saturating_add(ledger_gas);
+				if bound > model.budget_gas && admitted > 0 {
+					cut = Cut::Cost(position.clone());
 					break;
 				}
 				gas = bound;
-			},
-		}
-		admitted += group.len();
-	}
+				admitted += 1;
+			}
+			cut
+		},
+	};
 	utxos.truncate(admitted);
-	let cut = cost_cut.unwrap_or(match bound {
-		ObservationBound::Count(tx_capacity) if num_txs >= *tx_capacity => Cut::TxCapacity,
-		_ => Cut::NotSaturated,
-	});
 	(utxos, cut)
 }
 
@@ -401,12 +483,16 @@ impl MidnightCNightObservationDataSourceImpl {
 		auth_token_ident: i64,
 		address: &str,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
 		let rows = get_registrations(&self.pool, address, auth_token_ident, query).await?;
 
+		check_row_limit(rows.len(), query)?;
+		let filled_cap = rows.len() == query.limit;
 		let mut utxos = Vec::new();
+		let mut cut_short_at = None;
+		let mut rows = rows.into_iter().peekable();
 
-		for row in rows {
+		while let Some(row) = rows.next() {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
 					block_hash: McBlockHash(row.block_hash.0),
@@ -418,6 +504,9 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			if filled_cap && rows.peek().is_none() {
+				cut_short_at = Some(header.tx_position.clone());
+			}
 
 			let Some(constr) = row.full_datum.and_then(|d| d.0.as_constr_plutus_data()) else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
@@ -446,7 +535,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok(UtxoPage { utxos, cut_short_at })
 	}
 
 	async fn get_deregistration_utxos(
@@ -454,12 +543,16 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		address: &str,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
 		let rows = get_deregistrations(&self.pool, address, query).await?;
 
+		check_row_limit(rows.len(), query)?;
+		let filled_cap = rows.len() == query.limit;
 		let mut utxos = Vec::new();
+		let mut cut_short_at = None;
+		let mut rows = rows.into_iter().peekable();
 
-		for row in rows {
+		while let Some(row) = rows.next() {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
 					block_hash: McBlockHash(row.block_hash.0),
@@ -471,6 +564,9 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			if filled_cap && rows.peek().is_none() {
+				cut_short_at = Some(header.tx_position.clone());
+			}
 
 			let Some(constr) = row.full_datum.and_then(|d| d.0.as_constr_plutus_data()) else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
@@ -499,7 +595,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok(UtxoPage { utxos, cut_short_at })
 	}
 
 	async fn get_asset_create_utxos(
@@ -507,12 +603,16 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		ident: i64,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
 		let rows = crate::db::get_asset_creates(&self.pool, ident, query).await?;
 
+		check_row_limit(rows.len(), query)?;
+		let filled_cap = rows.len() == query.limit;
 		let mut utxos = Vec::new();
+		let mut cut_short_at = None;
+		let mut rows = rows.into_iter().peekable();
 
-		for row in rows {
+		while let Some(row) = rows.next() {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
 					block_hash: McBlockHash(row.block_hash.0),
@@ -524,6 +624,9 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			if filled_cap && rows.peek().is_none() {
+				cut_short_at = Some(header.tx_position.clone());
+			}
 
 			let Some(cardano_address) =
 				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
@@ -556,7 +659,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok(UtxoPage { utxos, cut_short_at })
 	}
 
 	async fn get_asset_spend_utxos(
@@ -564,12 +667,16 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		ident: i64,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
 		let rows = crate::db::get_asset_spends(&self.pool, ident, query).await?;
 
+		check_row_limit(rows.len(), query)?;
+		let filled_cap = rows.len() == query.limit;
 		let mut utxos = Vec::new();
+		let mut cut_short_at = None;
+		let mut rows = rows.into_iter().peekable();
 
-		for row in rows {
+		while let Some(row) = rows.next() {
 			let header = ObservedUtxoHeader {
 				tx_position: CardanoPosition {
 					block_hash: McBlockHash(row.block_hash.0),
@@ -581,6 +688,9 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			if filled_cap && rows.peek().is_none() {
+				cut_short_at = Some(header.tx_position.clone());
+			}
 
 			let Some(cardano_address) =
 				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
@@ -614,7 +724,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok(UtxoPage { utxos, cut_short_at })
 	}
 }
 
@@ -622,13 +732,15 @@ impl MidnightCNightObservationDataSourceImpl {
 mod tests {
 	use super::*;
 	use midnight_primitives_cnight_observation::{
-		MidnightObservationTokenMovement, ObservationCostModel, TimestampUnixMillis,
+		DATA_ORDERED_UTXOS_SPEC_VERSION, MidnightObservationTokenMovement, ObservationCostModel,
+		TimestampUnixMillis, cmp_observed_utxos_by_data,
 	};
 	use parity_scale_codec::Encode;
 
 	#[derive(Clone, Copy)]
 	enum Kind {
 		Registration,
+		Deregistration,
 		Create,
 		Spend,
 	}
@@ -653,6 +765,13 @@ mod tests {
 			Kind::Registration => (
 				tx_hash,
 				ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address: owner,
+					dust_public_key: DustPublicKeyBytes::default(),
+				}),
+			),
+			Kind::Deregistration => (
+				spent_tx_hash,
+				ObservedUtxoData::Deregistration(DeregistrationData {
 					cardano_reward_address: owner,
 					dust_public_key: DustPublicKeyBytes::default(),
 				}),
@@ -758,7 +877,11 @@ mod tests {
 		}
 	}
 
-	fn inherent(utxos: Vec<ObservedUtxo>, next_cardano_position: CardanoPosition) -> Vec<u8> {
+	fn sorted(utxos: Vec<ObservedUtxo>) -> ObservationBatch {
+		ObservationBatch::new(utxos, DATA_ORDERED_UTXOS_SPEC_VERSION)
+	}
+
+	fn inherent(utxos: ObservationBatch, next_cardano_position: CardanoPosition) -> Vec<u8> {
 		MidnightObservationTokenMovement { utxos, next_cardano_position }.encode()
 	}
 
@@ -783,16 +906,21 @@ mod tests {
 		for seed in 0..32u64 {
 			for txs in [0u32, 1, 2, 7, 40] {
 				let utxos = batch(seed, txs);
+				let legacy =
+					ObservationBatch::new(utxos.clone(), DATA_ORDERED_UTXOS_SPEC_VERSION - 1);
 				let n = txs as usize;
 				for tx_capacity in [0, 1, 2, 3, n / 2, n, n + 1, 200] {
 					let (admitted, cut) =
-						admit_prefix(utxos.clone(), &ObservationBound::Count(tx_capacity));
+						admit_prefix(legacy.clone(), &ObservationBound::Count(tx_capacity), None);
 					let end = cut.end(&admitted, &start, tip.clone());
 					let (expected, expected_end) =
 						shipped_truncation(utxos.clone(), tx_capacity, &start, tip.clone());
 					assert_eq!(
 						inherent(admitted, end),
-						inherent(expected, expected_end),
+						inherent(
+							ObservationBatch::new(expected, DATA_ORDERED_UTXOS_SPEC_VERSION - 1),
+							expected_end
+						),
 						"seed {seed}, {txs} txs, tx_capacity {tx_capacity}"
 					);
 				}
@@ -800,14 +928,66 @@ mod tests {
 		}
 	}
 
+	/// `batch` plus, for some UTXOs, the second UTXO the same Cardano output yields: a
+	/// create beside a registration, a spend beside a deregistration and vice versa.
+	fn batch_with_shared_outputs(seed: u64, txs: u32) -> Vec<ObservedUtxo> {
+		let mut utxos = batch(seed, txs);
+		let twins: Vec<_> = utxos
+			.iter()
+			.enumerate()
+			.filter(|(i, _)| (*i as u64 + seed).is_multiple_of(3))
+			.map(|(_, u)| {
+				let block = u.header.tx_position.block_number;
+				let tx = u.header.tx_position.tx_index_in_block;
+				let index = u.header.utxo_index.0;
+				let twin = match u.data {
+					ObservedUtxoData::Registration(_) => Kind::Create,
+					ObservedUtxoData::AssetCreate(_) => Kind::Registration,
+					ObservedUtxoData::Deregistration(_) => Kind::Spend,
+					ObservedUtxoData::AssetSpend(_) => Kind::Deregistration,
+				};
+				utxo(block, tx, index, twin)
+			})
+			.collect();
+		utxos.extend(twins);
+		utxos
+	}
+
+	fn shuffle(utxos: &mut [ObservedUtxo], seed: u64) {
+		let mut state = seed ^ 0x9e37_79b9_7f4a_7c15;
+		for i in (1..utxos.len()).rev() {
+			state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+			utxos.swap(i, (state >> 33) as usize % (i + 1));
+		}
+	}
+
 	#[test]
-	fn cost_cut_falls_on_a_transaction_boundary_and_resumes_there() {
-		// 4 + 5 creates at 11 each are 99 of the budget of 100; the third transaction
-		// would make it 121.
+	fn observation_order_is_strict_and_independent_of_input_order() {
+		for seed in 0..32u64 {
+			let utxos = batch_with_shared_outputs(seed, 40);
+			let mut first = utxos.clone();
+			shuffle(&mut first, seed);
+			first.sort_by(cmp_observed_utxos_by_data);
+			let mut second = utxos.clone();
+			shuffle(&mut second, seed + 1000);
+			second.sort_by(cmp_observed_utxos_by_data);
+			assert_eq!(first, second, "seed {seed}: the order must not depend on input order");
+			for pair in first.windows(2) {
+				assert!(
+					cmp_observed_utxos_by_data(&pair[0], &pair[1]).is_lt(),
+					"seed {seed}: distinct UTXOs compare unequal"
+				);
+			}
+		}
+	}
+
+	#[test]
+	fn cost_cut_between_transactions_resumes_at_the_next_one() {
+		// 4 + 5 creates at 11 each are 99 of the budget of 100; one more would be 110.
 		let utxos =
 			[tx(1, 0, 4, Kind::Create), tx(1, 1, 5, Kind::Create), tx(2, 0, 2, Kind::Create)]
 				.concat();
-		let (admitted, cut) = admit_prefix(utxos, &cost());
+		let (admitted, cut) = admit_prefix(sorted(utxos), &cost(), None);
 		assert_eq!(admitted.len(), 9);
 		assert_eq!(cut, Cut::Cost(position(2, 0)));
 		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(2, 0));
@@ -824,41 +1004,67 @@ mod tests {
 			tx(1, 3, 1, Kind::Spend),
 		]
 		.concat();
-		let (admitted, cut) = admit_prefix(utxos, &cost());
+		let (admitted, cut) = admit_prefix(sorted(utxos), &cost(), None);
 		assert_eq!(admitted.len(), 25);
 		assert_eq!(cut, Cut::Cost(position(1, 3)));
 	}
 
 	#[test]
-	fn registrations_alone_are_bounded() {
-		// 50 + 40 registrations are 90; 11 more would be 101.
+	fn a_transaction_over_the_budget_is_cut_inside_it() {
+		// 50 + 40 registrations are 90; 10 of the next transaction's 11 fit the budget.
 		let utxos = [
 			tx(1, 0, 50, Kind::Registration),
 			tx(1, 1, 40, Kind::Registration),
 			tx(1, 2, 11, Kind::Registration),
 		]
 		.concat();
-		let (admitted, cut) = admit_prefix(utxos, &cost());
-		assert_eq!(admitted.len(), 90);
+		let (admitted, cut) = admit_prefix(sorted(utxos), &cost(), None);
+		assert_eq!(admitted.len(), 100);
+		assert_eq!(admitted.last().unwrap().header.tx_position, position(1, 2));
 		assert_eq!(cut, Cut::Cost(position(1, 2)));
+		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(1, 2));
 	}
 
 	#[test]
-	fn lone_transaction_between_budget_and_full_is_admitted_alone() {
-		// 165 exceeds the budget but fits the block; nothing may join it.
-		let utxos = [tx(1, 0, 15, Kind::Create), tx(1, 1, 1, Kind::Create)].concat();
-		let (admitted, cut) = admit_prefix(utxos, &cost());
-		assert_eq!(admitted.len(), 15);
-		assert_eq!(cut, Cut::Cost(position(1, 1)));
-	}
-
-	#[test]
-	fn lone_transaction_over_the_full_block_yields_an_empty_batch_at_its_position() {
-		let utxos = [tx(1, 0, 25, Kind::Create), tx(1, 1, 1, Kind::Create)].concat();
-		let (admitted, cut) = admit_prefix(utxos, &cost());
-		assert!(admitted.is_empty());
+	fn the_first_utxo_is_admitted_even_over_the_budget() {
+		let expensive = ObservationCostModel { create_gas: 1_000, ..model() };
+		let utxos = tx(1, 0, 3, Kind::Create);
+		let (admitted, cut) = admit_prefix(sorted(utxos), &ObservationBound::Cost(expensive), None);
+		assert_eq!(admitted.len(), 1);
 		assert_eq!(cut, Cut::Cost(position(1, 0)));
-		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(1, 0));
+	}
+
+	#[test]
+	fn the_frontier_stops_the_batch_before_a_possibly_incomplete_transaction() {
+		let utxos = [tx(1, 0, 3, Kind::Registration), tx(1, 1, 3, Kind::Registration)].concat();
+		let (admitted, cut) = admit_prefix(sorted(utxos), &cost(), Some(&position(1, 1)));
+		assert_eq!(admitted.len(), 3);
+		assert_eq!(cut, Cut::Frontier(position(1, 1)));
+		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(1, 1));
+	}
+
+	#[test]
+	fn the_frontier_is_the_lowest_last_row_among_kinds_that_filled_the_cap() {
+		let pages = [
+			UtxoPage { utxos: vec![], cut_short_at: Some(position(3, 0)) },
+			UtxoPage::default(),
+			UtxoPage { utxos: vec![], cut_short_at: Some(position(2, 5)) },
+			UtxoPage { utxos: vec![], cut_short_at: None },
+		];
+		assert_eq!(earliest_cut_short(&pages), Some(position(2, 5)));
+		assert_eq!(earliest_cut_short(&[UtxoPage::default()]), None);
+	}
+
+	#[test]
+	fn the_offset_skips_only_observed_utxos_of_the_start_transaction() {
+		let utxos = [tx(1, 0, 5, Kind::Create), tx(1, 1, 2, Kind::Create)].concat();
+		let mut skipped = sorted(utxos.clone());
+		skip_observed(&mut skipped, &position(1, 0), 3);
+		assert_eq!(skipped[..], utxos[3..]);
+		// An offset past the transaction never reaches into the next one.
+		let mut skipped = sorted(utxos.clone());
+		skip_observed(&mut skipped, &position(1, 0), 9);
+		assert_eq!(skipped[..], utxos[5..]);
 	}
 
 	#[test]
@@ -866,7 +1072,7 @@ mod tests {
 		let utxos =
 			[tx(1, 0, 1, Kind::Create), tx(1, 1, 1, Kind::Create), tx(1, 2, 1, Kind::Create)]
 				.concat();
-		let (admitted, cut) = admit_prefix(utxos, &ObservationBound::Count(2));
+		let (admitted, cut) = admit_prefix(sorted(utxos), &ObservationBound::Count(2), None);
 		assert_eq!(admitted.len(), 1);
 		assert_eq!(cut, Cut::TxCapacity);
 		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(1, 0).increment());
@@ -875,28 +1081,131 @@ mod tests {
 	#[test]
 	fn everything_fits_reaches_the_tip() {
 		let utxos = [tx(1, 0, 3, Kind::Create), tx(2, 0, 3, Kind::Spend)].concat();
-		let (admitted, cut) = admit_prefix(utxos, &cost());
+		let (admitted, cut) = admit_prefix(sorted(utxos), &cost(), None);
 		assert_eq!(admitted.len(), 6);
 		assert_eq!(cut, Cut::NotSaturated);
 		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(9, 0));
 	}
 
 	#[test]
-	fn fetch_row_cap_never_truncates_ahead_of_the_cost_cut() {
-		let cap = fetch_row_cap(&cost());
-		assert_eq!(cap, 201);
-		// A full fetch of the cheapest kind always overruns the block, whether it is
-		// one transaction or one UTXO per transaction, so the cut lands inside what
-		// was fetched and nothing past the cap is skipped.
-		let one_tx = tx(1, 0, cap as u16, Kind::Registration);
-		let (admitted, cut) = admit_prefix(one_tx, &cost());
-		assert!(admitted.is_empty());
+	fn page_limit_covers_the_skipped_utxos_and_more_of_its_kind_than_the_budget_affords() {
+		let cheap = ObservationBound::Cost(ObservationCostModel { budget_gas: 100_000, ..model() });
+		assert_eq!(page_limit(&cheap, 0, 455, |_| 0), 100_001);
+		assert_eq!(page_limit(&cheap, 7, 455, |_| 0), 100_008);
+		assert_eq!(page_limit(&cheap, 0, 455, |model| model.create_gas), 9_091);
+		// Never fewer than a Cardano transaction's rows past the skipped UTXOs.
+		assert_eq!(page_limit(&cost(), 7, 455, |model| model.create_gas), 463);
+		assert_eq!(page_limit(&ObservationBound::Count(200), 7, 455, |_| 0), 12_800);
+		// A full fetch of one kind always overruns the budget, so the cost cut lands
+		// inside what was fetched.
+		let rows =
+			tx(1, 0, page_limit(&cheap, 0, 455, |model| model.create_gas) as u16, Kind::Create);
+		let (admitted, cut) = admit_prefix(sorted(rows), &cheap, None);
+		assert_eq!(admitted.len(), 9_090);
 		assert_eq!(cut, Cut::Cost(position(1, 0)));
-		let many_txs: Vec<_> =
-			(0..cap as u32).flat_map(|i| tx(1, i, 1, Kind::Registration)).collect();
-		let (admitted, cut) = admit_prefix(many_txs, &cost());
-		assert_eq!(admitted.len(), 100);
-		assert_eq!(cut, Cut::Cost(position(1, 100)));
-		assert_eq!(fetch_row_cap(&ObservationBound::Count(200)), 12_800);
+	}
+
+	/// The runtime's offset rule, as `apply_observations` applies it.
+	fn next_offset(
+		admitted: &[ObservedUtxo],
+		prev: &CardanoPosition,
+		prev_offset: u32,
+		next: &CardanoPosition,
+	) -> u32 {
+		let ends_inside =
+			admitted.iter().rev().take_while(|u| u.header.tx_position == *next).count() as u32;
+		if next == prev { prev_offset + ends_inside } else { ends_inside }
+	}
+
+	/// One block's batch as `get_utxos_up_to_capacity` builds it, with `rows` in the
+	/// queries' order standing in for db-sync. `dropped` rows fail to decode.
+	fn observe(
+		rows: &[ObservedUtxo],
+		max_rows_per_tx: usize,
+		dropped: impl Fn(&ObservedUtxo) -> bool,
+		cursor: &CardanoPosition,
+		offset: u32,
+		bound: &ObservationBound,
+	) -> (ObservationBatch, Cut) {
+		let ledger_gas: [fn(&ObservationCostModel) -> u64; 4] =
+			[|_| 0, |_| 0, |model| model.destroy_gas, |model| model.create_gas];
+		let pages: Vec<_> = (0..4u8)
+			.map(|rank| {
+				let limit =
+					page_limit(bound, offset as usize, max_rows_per_tx, ledger_gas[rank as usize]);
+				let page: Vec<_> = rows
+					.iter()
+					.filter(|u| u.data.ordering_rank() == rank && u.header.tx_position >= *cursor)
+					.take(limit)
+					.collect();
+				UtxoPage {
+					cut_short_at: (page.len() == limit)
+						.then(|| page.last().unwrap().header.tx_position.clone()),
+					utxos: page.into_iter().filter(|u| !dropped(u)).cloned().collect(),
+				}
+			})
+			.collect();
+		let frontier = earliest_cut_short(&pages);
+		let mut utxos = sorted(pages.into_iter().flat_map(|page| page.utxos).collect());
+		skip_observed(&mut utxos, cursor, offset as usize);
+		admit_prefix(utxos, bound, frontier.as_ref())
+	}
+
+	#[test]
+	fn big_and_undecodable_transactions_drain_over_several_blocks_each_utxo_once() {
+		// Runtime prices: about 159 spends or 110 creates fit the budget. Mainnet has
+		// carried a Cardano transaction with 427 cNIGHT spends, and creates to
+		// enterprise addresses are fetched but decode to nothing.
+		let model = ObservationCostModel {
+			utxo_gas: 87_319_504,
+			create_gas: 8_960_000_002,
+			destroy_gas: 6_166_908_418,
+			budget_gas: 1_000_000_000_000,
+			full_gas: 2_000_000_000_000,
+		};
+		let bound = ObservationBound::Cost(model.clone());
+		let rows = [
+			tx(5, 1, 230, Kind::Create),
+			tx(5, 2, 400, Kind::Create),
+			tx(5, 3, 427, Kind::Spend),
+			tx(5, 4, 3, Kind::Create),
+			tx(6, 0, 1, Kind::Spend),
+		]
+		.concat();
+		let dropped =
+			|u: &ObservedUtxo| [position(5, 1), position(5, 2)].contains(&u.header.tx_position);
+		let tip = position(6, 0).increment();
+		let (mut cursor, mut offset) = (position(5, 0), 0u32);
+		let mut observed = Vec::new();
+		let mut blocks = 0;
+		loop {
+			blocks += 1;
+			assert!(blocks < 10, "observation must keep advancing");
+			// A 16 KiB `maxTxSize`.
+			let (admitted, cut) = observe(&rows, 455, dropped, &cursor, offset, &bound);
+			let price: u64 = admitted
+				.iter()
+				.map(|u| {
+					model.utxo_gas
+						+ match u.data {
+							ObservedUtxoData::AssetSpend(_) => model.destroy_gas,
+							ObservedUtxoData::AssetCreate(_) => model.create_gas,
+							_ => 0,
+						}
+				})
+				.sum();
+			assert!(price <= model.budget_gas);
+			let end = cut.end(&admitted, &cursor, tip.clone());
+			offset = next_offset(&admitted, &cursor, offset, &end);
+			cursor = end;
+			observed.extend(admitted);
+			if cut == Cut::NotSaturated {
+				break;
+			}
+		}
+		let decodable: Vec<_> = rows.into_iter().filter(|u| !dropped(u)).collect();
+		assert_eq!(observed, decodable);
+		// One block passes the undecodable creates, three drain the spends.
+		assert_eq!(blocks, 4);
 	}
 }

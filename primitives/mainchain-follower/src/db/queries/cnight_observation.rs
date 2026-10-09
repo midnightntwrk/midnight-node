@@ -448,3 +448,16 @@ FROM
 	.fetch_optional(pool)
 	.await
 }
+
+/// `maxTxSize`, in bytes, of the Cardano epoch holding block `block_no`.
+pub async fn get_max_tx_size(
+	pool: &Pool<Postgres>,
+	block_no: u32,
+) -> Result<Option<i64>, SqlxError> {
+	sqlx::query_scalar(
+		"SELECT MAX(epoch_param.max_tx_size)::BIGINT FROM block JOIN epoch_param ON epoch_param.epoch_no = block.epoch_no WHERE block.block_no = $1",
+	)
+	.bind(block_no as i32)
+	.fetch_one(pool)
+	.await
+}

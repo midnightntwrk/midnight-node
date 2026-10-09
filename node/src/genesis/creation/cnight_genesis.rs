@@ -2,14 +2,14 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
-	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
+	INHERENT_IDENTIFIER, ObservationBatch, ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservationBound,
-	ObservedUtxo, ObservedUtxoData,
+	ObservedUtxoData,
 };
 use pallet_cnight_observation::{
-	Mapping, NextCardanoPosition, UtxoOwners,
+	Mapping, NextCardanoCursor, UtxoOwners,
 	config::{CNightGenesis, MappingEntryGenesis, SystemTx},
 };
 use pallet_cnight_observation_mock::mock_with_capture as mock;
@@ -36,7 +36,7 @@ pub enum CNightGenesisError {
 }
 
 fn create_inherent(
-	utxos: Vec<ObservedUtxo>,
+	utxos: ObservationBatch,
 	next_cardano_position: CardanoPosition,
 ) -> InherentData {
 	let mut inherent_data = InherentData::new();
@@ -78,7 +78,7 @@ fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
 		PalletExecResult {
 			mappings,
 			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.0, v)).collect(),
-			next_cardano_position: NextCardanoPosition::<mock::Test>::get(),
+			next_cardano_position: NextCardanoCursor::<mock::Test>::get().position,
 			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),
 		}
 	})
@@ -106,6 +106,7 @@ pub async fn generate_cnight_genesis(
 			.get_utxos_up_to_capacity(
 				&addresses,
 				&current_position,
+				0,
 				cardano_tip.clone(),
 				&ObservationBound::Count(UTXO_CAPACITY),
 				midnight_node_runtime::VERSION.spec_version,
@@ -154,7 +155,7 @@ pub async fn generate_cnight_genesis(
 	let observed_utxos = ObservedUtxos {
 		start: CardanoPosition::default(),
 		end: current_position,
-		utxos: all_utxos,
+		utxos: ObservationBatch::new(all_utxos, midnight_node_runtime::VERSION.spec_version),
 	};
 
 	let PalletExecResult { mappings, utxo_owners, next_cardano_position, system_tx } =

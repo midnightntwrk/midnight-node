@@ -51,7 +51,7 @@ use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
-use midnight_primitives_cnight_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoCursor;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
@@ -1179,6 +1179,7 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	pallet_cnight_observation::migrations::cursor::MigrateToNextCardanoCursor<Runtime>,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
@@ -1791,10 +1792,6 @@ impl_runtime_apis! {
 			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}
 
-		fn get_next_cardano_position() -> CardanoPosition {
-			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
-		}
-
 		fn get_cnight_token_identifier() -> (Vec<u8>, Vec<u8>) {
 			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
@@ -1806,6 +1803,10 @@ impl_runtime_apis! {
 
 		fn get_observation_cost_model() -> Option<midnight_primitives_cnight_observation::ObservationCostModel> {
 			CNightObservation::observation_cost_model()
+		}
+
+		fn get_next_cardano_cursor() -> CardanoCursor {
+			pallet_cnight_observation::NextCardanoCursor::<Runtime>::get()
 		}
 	}
 
