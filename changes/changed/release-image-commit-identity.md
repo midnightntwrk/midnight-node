@@ -8,3 +8,5 @@ reuse, while release binaries retain the release commit in their version output.
 
 Existing releases are unchanged. Release branches must adopt the updated build
 workflow and Earthfile before producing artifacts for the new release workflow.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2282
