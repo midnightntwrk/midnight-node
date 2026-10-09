@@ -28,7 +28,7 @@ use sidechain_mc_hash::McHashDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 use sqlx::{Pool, Postgres};
 
-use super::cfg::midnight_cfg::MidnightCfg;
+use super::cfg::midnight_cfg::{MainChainFollowerMode, MidnightCfg};
 use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -71,7 +71,11 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> std::result::Result<DataSources, ServiceError> {
-	if cfg.use_main_chain_follower_mock {
+	if cfg
+		.main_chain_follower_mode()
+		.map_err(|err| ServiceError::Application(err.into()))?
+		== MainChainFollowerMode::Mock
+	{
 		let mock = create_mock_data_sources(cfg.clone()).await.map_err(|err| {
 			ServiceError::Application(
 				format!("Failed to create main chain follower mock: {err}. Check configuration.")
@@ -226,6 +230,13 @@ const BRIDGE_POOL_CFG: DbPoolCfg =
 const ICS_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
+fn observation_pool_cfg(mut cfg: DbPoolCfg, ephemeral: bool) -> DbPoolCfg {
+	if ephemeral {
+		cfg.max_connections = 2;
+	}
+	cfg
+}
+
 fn warn_deprecated_allow_non_ssl(cfg: &MidnightCfg) {
 	if cfg.allow_non_ssl {
 		log::warn!(
@@ -240,6 +251,23 @@ pub async fn create_cached_data_sources(
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
+	let ephemeral = cfg.main_chain_follower_mode()? == MainChainFollowerMode::Ephemeral;
+	// Parse local registrations before opening any database connections.
+	let local_authorities = if ephemeral {
+		let registrations_data = MockRegistrationsConfig::read_registrations(
+			cfg.mock_registrations_file
+				.as_deref()
+				.ok_or(missing("mock_registrations_file"))?,
+		)?;
+		if registrations_data.epoch_rotation.is_empty() {
+			return Err(
+				"ephemeral mock registrations must contain at least one epoch rotation".into()
+			);
+		}
+		Some(AuthoritySelectionDataSourceMock { registrations_data })
+	} else {
+		None
+	};
 	warn_deprecated_allow_non_ssl(&cfg);
 	let postgres_uri = &cfg
 		.db_sync_postgres_connection_string
@@ -267,37 +295,47 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let candidates_pool =
-		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.ssl_root_cert.as_deref())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to connect to database for candidates data source: {e}");
-				e
-			})?;
+	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
+		if let Some(local) = local_authorities {
+			Arc::new(local)
+		} else {
+			let candidates_pool =
+				get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.ssl_root_cert.as_deref())
+					.await
+					.map_err(|e| {
+						log::warn!("Failed to connect to database for candidates data source: {e}");
+						e
+					})?;
 
-	// All these pools are connections to the same database, so we can use any pool to create the index
-	create_index_if_not_exists(&candidates_pool).await;
+			// All these pools are connections to the same database, so we can use any pool to create the index
+			create_index_if_not_exists(&candidates_pool).await;
 
-	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to initialise candidates data source: {e}");
-				e
-			})?;
-	let candidates_data_source_cached =
-		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
-			log::warn!("Failed to create candidates data source cache: {e}");
-			e
-		})?;
+			let candidates_data_source =
+				CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
+					.await
+					.map_err(|e| {
+						log::warn!("Failed to initialise candidates data source: {e}");
+						e
+					})?;
+			let candidates_data_source_cached =
+				candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
+					log::warn!("Failed to create candidates data source cache: {e}");
+					e
+				})?;
 
-	let sidechain_pool =
-		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.ssl_root_cert.as_deref())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to connect to database for sidechain data source: {e}");
-				e
-			})?;
+			Arc::new(candidates_data_source_cached)
+		};
+
+	let sidechain_pool = get_connection(
+		postgres_uri,
+		observation_pool_cfg(SIDECHAIN_POOL_CFG, ephemeral),
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for sidechain data source: {e}");
+		e
+	})?;
 	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config(
 		sidechain_pool,
 		db_sync_block_data_source_config.clone(),
@@ -309,12 +347,16 @@ pub async fn create_cached_data_sources(
 		mc_metrics_opt.clone(),
 	);
 
-	let mc_hash_pool = get_connection(postgres_uri, MC_HASH_POOL_CFG, cfg.ssl_root_cert.as_deref())
-		.await
-		.map_err(|e| {
-			log::warn!("Failed to connect to database for mc_hash data source: {e}");
-			e
-		})?;
+	let mc_hash_pool = get_connection(
+		postgres_uri,
+		observation_pool_cfg(MC_HASH_POOL_CFG, ephemeral),
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for mc_hash data source: {e}");
+		e
+	})?;
 	let mc_hash_block_data_source = BlockDataSourceImpl::from_config(
 		mc_hash_pool,
 		db_sync_block_data_source_config.clone(),
@@ -323,43 +365,58 @@ pub async fn create_cached_data_sources(
 	let mc_hash =
 		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), mc_metrics_opt.clone());
 
-	let cnight_observation_pool =
-		get_connection(postgres_uri, CNIGHT_OBSERVATION_POOL_CFG, cfg.ssl_root_cert.as_deref())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to connect to database for cnight_observation data source: {e}");
-				e
-			})?;
+	let cnight_observation_pool = get_connection(
+		postgres_uri,
+		observation_pool_cfg(CNIGHT_OBSERVATION_POOL_CFG, ephemeral),
+		cfg.ssl_root_cert.as_deref(),
+	)
+	.await
+	.map_err(|e| {
+		log::warn!("Failed to connect to database for cnight_observation data source: {e}");
+		e
+	})?;
 	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
 		cnight_observation_pool,
 		midnight_metrics_opt.clone(),
 		1000,
 	);
 
-	let federated_authority_observation_pool = get_connection(
+	let federated_authority_observation: Arc<
+		dyn FederatedAuthorityObservationDataSource + Send + Sync,
+	> = if ephemeral {
+		Arc::new(FederatedAuthorityObservationDataSourceMock::new())
+	} else {
+		let federated_authority_observation_pool = get_connection(
+			postgres_uri,
+			FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
+			cfg.ssl_root_cert.as_deref(),
+		)
+		.await
+		.map_err(|e| {
+			log::warn!(
+				"Failed to connect to database for federated_authority_observation data source: {e}"
+			);
+			e
+		})?;
+		let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
+			federated_authority_observation_pool,
+			midnight_metrics_opt,
+			1000,
+		);
+
+		Arc::new(federated_authority_observation)
+	};
+
+	let bridge_pool = get_connection(
 		postgres_uri,
-		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
+		observation_pool_cfg(BRIDGE_POOL_CFG, ephemeral),
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await
 	.map_err(|e| {
-		log::warn!(
-			"Failed to connect to database for federated_authority_observation data source: {e}"
-		);
+		log::warn!("Failed to connect to database for bridge data source: {e}");
 		e
 	})?;
-	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
-		federated_authority_observation_pool,
-		midnight_metrics_opt,
-		1000,
-	);
-
-	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.ssl_root_cert.as_deref())
-		.await
-		.map_err(|e| {
-			log::warn!("Failed to connect to database for bridge data source: {e}");
-			e
-		})?;
 
 	let bridge = CachedTokenBridgeDataSourceImpl::new(
 		bridge_pool,
@@ -371,11 +428,59 @@ pub async fn create_cached_data_sources(
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
 		mc_hash: Arc::new(mc_hash),
-		authority_selection: Arc::new(candidates_data_source_cached),
+		authority_selection,
 		cnight_observation: Arc::new(cnight_observation),
 		bridge: Arc::new(bridge),
-		federated_authority_observation: Arc::new(federated_authority_observation),
+		federated_authority_observation,
 	})
+}
+
+/// Reject incompatible snapshots and lagging Cardano views before starting a private fork.
+pub(crate) async fn validate_ephemeral_snapshot(
+	source: &(dyn McHashDataSource + Send + Sync),
+	reference: sidechain_domain::McBlockHash,
+	position: midnight_primitives_cnight_observation::CardanoPosition,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+	if !source.is_cardano_tip_fresh().await? {
+		return Err("ephemeral Cardano preflight: db-sync tip is stale".into());
+	}
+	if source
+		.get_latest_stable_block_for(sp_timestamp::Timestamp::new(
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)?
+				.as_millis()
+				.try_into()?,
+		))
+		.await?
+		.is_none()
+	{
+		return Err("ephemeral Cardano preflight: no stable Cardano block is available for the current timestamp".into());
+	}
+
+	if source.get_block_by_hash(reference).await?.is_none() {
+		return Err(
+			"ephemeral Cardano preflight: snapshot mainchain reference is absent from db-sync"
+				.into(),
+		);
+	}
+	// The all-zero cursor represents an observation stream that has not started.
+	if position.block_hash.0 == [0; 32]
+		&& position.block_number == 0
+		&& position.block_timestamp.0 == 0
+		&& position.tx_index_in_block == 0
+	{
+		return Ok(());
+	}
+	let block = source
+		.get_block_by_hash(position.block_hash)
+		.await?
+		.ok_or("ephemeral Cardano preflight: cNight cursor hash is absent from db-sync")?;
+	if block.number.0 != position.block_number {
+		return Err(
+			"ephemeral Cardano preflight: cNight cursor number does not match db-sync".into()
+		);
+	}
+	Ok(())
 }
 
 // Helper for users who only need native token observation data source
@@ -383,18 +488,24 @@ pub async fn create_cnight_observation_data_source(
 	cfg: MidnightCfg,
 	metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<Arc<dyn MidnightCNightObservationDataSource>, Box<dyn Error + Send + Sync + 'static>> {
+	let ephemeral = cfg.main_chain_follower_mode()? == MainChainFollowerMode::Ephemeral;
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
 		&cfg.db_sync_postgres_connection_string
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
-		CNIGHT_OBSERVATION_POOL_CFG,
+		observation_pool_cfg(CNIGHT_OBSERVATION_POOL_CFG, ephemeral),
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
-	midnight_primitives_mainchain_follower::db::create_cnight_observation_indexes(&pool).await?;
-	midnight_primitives_mainchain_follower::db::apply_cnight_observation_autovacuum_tuning(&pool)
+	if !ephemeral {
+		midnight_primitives_mainchain_follower::db::create_cnight_observation_indexes(&pool)
+			.await?;
+		midnight_primitives_mainchain_follower::db::apply_cnight_observation_autovacuum_tuning(
+			&pool,
+		)
 		.await?;
+	}
 
 	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt, 1000)))
 }
@@ -525,6 +636,115 @@ fn missing(field: &str) -> sc_service::Error {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	struct PreflightSource {
+		fresh: bool,
+		available: bool,
+		stable: bool,
+	}
+
+	#[async_trait::async_trait]
+	impl McHashDataSource for PreflightSource {
+		async fn get_latest_stable_block_for(
+			&self,
+			_: sp_timestamp::Timestamp,
+		) -> Result<Option<sidechain_domain::MainchainBlock>, Box<dyn Error + Send + Sync>> {
+			Ok(self.stable.then_some(sidechain_domain::MainchainBlock::default()))
+		}
+		async fn get_stable_block_for(
+			&self,
+			_: sidechain_domain::McBlockHash,
+			_: sp_timestamp::Timestamp,
+		) -> Result<sidechain_mc_hash::StableBlockByHashResult, Box<dyn Error + Send + Sync>> {
+			unreachable!()
+		}
+		async fn get_block_by_hash(
+			&self,
+			hash: sidechain_domain::McBlockHash,
+		) -> Result<Option<sidechain_domain::MainchainBlock>, Box<dyn Error + Send + Sync>> {
+			Ok(self.available.then_some(sidechain_domain::MainchainBlock {
+				hash,
+				number: sidechain_domain::McBlockNumber(42),
+				..Default::default()
+			}))
+		}
+		async fn is_cardano_tip_fresh(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
+			Ok(self.fresh)
+		}
+		async fn is_cardano_ok(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
+			unreachable!()
+		}
+	}
+
+	#[tokio::test]
+	async fn ephemeral_preflight_rejects_stale_missing_and_inconsistent_state() {
+		use midnight_primitives_cnight_observation::{CardanoPosition, TimestampUnixMillis};
+		use sidechain_domain::McBlockHash;
+		let position = CardanoPosition {
+			block_hash: McBlockHash([1; 32]),
+			block_number: 42,
+			block_timestamp: TimestampUnixMillis(1000),
+			tx_index_in_block: 0,
+		};
+		let reference = McBlockHash([2; 32]);
+		let stale = PreflightSource { fresh: false, available: true, stable: true };
+		assert!(
+			validate_ephemeral_snapshot(&stale, reference.clone(), position.clone())
+				.await
+				.unwrap_err()
+				.to_string()
+				.contains("stale")
+		);
+		let missing = PreflightSource { fresh: true, available: false, stable: true };
+		assert!(
+			validate_ephemeral_snapshot(&missing, reference.clone(), position.clone())
+				.await
+				.unwrap_err()
+				.to_string()
+				.contains("reference is absent")
+		);
+		let unstable = PreflightSource { fresh: true, available: true, stable: false };
+		assert!(
+			validate_ephemeral_snapshot(&unstable, reference.clone(), position.clone())
+				.await
+				.unwrap_err()
+				.to_string()
+				.contains("no stable Cardano block")
+		);
+
+		let fresh = PreflightSource { fresh: true, available: true, stable: true };
+		assert!(
+			validate_ephemeral_snapshot(&fresh, reference.clone(), position.clone())
+				.await
+				.is_ok()
+		);
+		let wrong_number = CardanoPosition { block_number: 43, ..position };
+		assert!(
+			validate_ephemeral_snapshot(&fresh, reference.clone(), wrong_number)
+				.await
+				.unwrap_err()
+				.to_string()
+				.contains("number does not match")
+		);
+		let zero = CardanoPosition {
+			block_hash: McBlockHash([0; 32]),
+			block_number: 0,
+			block_timestamp: TimestampUnixMillis(0),
+			tx_index_in_block: 0,
+		};
+		assert!(validate_ephemeral_snapshot(&fresh, reference, zero).await.is_ok());
+	}
+
+	#[test]
+	fn ephemeral_limits_pools_without_changing_production_limits() {
+		for config in
+			[SIDECHAIN_POOL_CFG, MC_HASH_POOL_CFG, CNIGHT_OBSERVATION_POOL_CFG, BRIDGE_POOL_CFG]
+		{
+			let production_max = config.max_connections;
+			assert_eq!(observation_pool_cfg(config.clone(), false).max_connections, production_max);
+			assert_eq!(observation_pool_cfg(config, true).max_connections, 2);
+		}
+	}
 
 	#[test]
 	fn connection_error_redacts_infrastructure_details() {

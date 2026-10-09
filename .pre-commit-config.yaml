@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: Check Rust formatting
+        language: system
+        entry: cargo fmt --all -- --check
+        pass_filenames: false
+        types: [rust]
+      - id: diff-check
+        name: Check staged whitespace
+        language: system
+        entry: git diff --cached --check
+        pass_filenames: false
+        always_run: true

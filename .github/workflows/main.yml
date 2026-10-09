@@ -19,6 +19,7 @@ on:
 permissions: {}
 
 env:
+  PUBLISH_MOVING_TAGS: ${{ (github.event.inputs.branch || github.ref_name) == 'main' || startsWith(github.event.inputs.branch || github.ref_name, 'release/') }}
   # Registry the images built here are pushed to and pulled from. Derived from the repo owner
   # so a fork or private clone never touches midnightntwrk's registries. Upstream's private
   # GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the canonical

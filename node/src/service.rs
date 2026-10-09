@@ -20,7 +20,7 @@ use crate::babe_key_readiness::{
 	reporter::BabeKeyMetrics,
 };
 use crate::backend::{create_database_source, open_paritydb};
-use crate::cfg::midnight_cfg::StorageSeparation;
+use crate::cfg::midnight_cfg::{MainChainFollowerMode, StorageSeparation};
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
@@ -34,6 +34,7 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
+use midnight_primitives_cnight_observation::CNightObservationApi;
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
@@ -51,6 +52,8 @@ use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sidechain_mc_hash::McHashInherentDigest;
+use sp_api::ProvideRuntimeApi;
+use sp_blockchain::HeaderBackend;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
@@ -394,6 +397,38 @@ pub fn new_partial(
 			Arc::new(Mutex::new(ledger_metrics)),
 			ledger_storage,
 		));
+
+	if midnight_cfg.main_chain_follower_mode == Some(MainChainFollowerMode::Ephemeral) {
+		let best_hash = client.info().best_hash;
+		let reference =
+			sidechain_mc_hash::get_mc_hash_for_block::<Block, _>(client.as_ref(), best_hash)
+				.map_err(ServiceError::Application)?
+				.ok_or_else(|| {
+					ServiceError::Other(
+						"ephemeral Cardano preflight requires a converted non-genesis snapshot"
+							.into(),
+					)
+				})?;
+		let position =
+			client.runtime_api().get_next_cardano_position(best_hash).map_err(|error| {
+				ServiceError::Other(format!(
+					"ephemeral Cardano preflight: cannot read cNight cursor: {error}"
+				))
+			})?;
+		tokio::task::block_in_place(|| {
+			config
+				.tokio_handle
+				.block_on(crate::main_chain_follower::validate_ephemeral_snapshot(
+					data_sources.mc_hash.as_ref(),
+					reference,
+					position,
+				))
+		})
+		.map_err(ServiceError::Application)?;
+		log::info!(
+			"Ephemeral Cardano preflight passed: fresh db-sync tip, snapshot reference and cNight cursor verified"
+		);
+	}
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());

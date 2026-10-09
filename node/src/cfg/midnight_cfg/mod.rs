@@ -29,6 +29,15 @@ pub enum StorageSeparation {
 	Unified,
 }
 
+/// Selects Cardano observations independently from private-fork consensus.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum MainChainFollowerMode {
+	Mock,
+	DbSync,
+	Ephemeral,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 #[validate(custom = mainchain_epoch_invariants)]
@@ -64,7 +73,11 @@ pub struct MidnightCfg {
 
 	/// Mock ariadne parameters
 	pub use_main_chain_follower_mock: bool,
-	/// Required if use_main_chain_follower_mock is true
+	/// Optional mode: mock, db-sync, or ephemeral (real Cardano with local authorities).
+	/// Omit to preserve USE_MAIN_CHAIN_FOLLOWER_MOCK; explicit modes must agree with it.
+	#[serde(default)]
+	pub main_chain_follower_mode: Option<MainChainFollowerMode>,
+	/// Required for mock and ephemeral modes
 	/// Used in the sidechains library
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub mock_registrations_file: Option<String>,
@@ -133,21 +146,31 @@ pub struct MidnightCfg {
 	pub prometheus_push_job_name: Option<String>,
 }
 
+impl MidnightCfg {
+	pub fn main_chain_follower_mode(&self) -> Result<MainChainFollowerMode, String> {
+		let mode = self.main_chain_follower_mode.unwrap_or(if self.use_main_chain_follower_mock {
+			MainChainFollowerMode::Mock
+		} else {
+			MainChainFollowerMode::DbSync
+		});
+		if (mode == MainChainFollowerMode::Mock) != self.use_main_chain_follower_mock {
+			return Err("main_chain_follower_mode contradicts use_main_chain_follower_mock".into());
+		}
+		Ok(mode)
+	}
+}
+
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
+	let mode = cfg.main_chain_follower_mode().map_err(validation::Error::Custom)?;
 	let missing = |field: &str| {
 		validation::Error::Custom(format!(
-			"{field} must be defined if ariadne is enabled (i.e. if use_main_chain_follower_mock is false)"
+			"{field} must be defined for main chain follower mode {mode:?}"
 		))
 	};
-
-	if cfg.use_main_chain_follower_mock {
-		if cfg.mock_registrations_file.is_none() {
-			return Err(validation::Error::Custom(
-				"mock_registrations_file must be defined if use_main_chain_follower_mock is true."
-					.to_string(),
-			));
-		}
-	} else {
+	if mode != MainChainFollowerMode::DbSync && cfg.mock_registrations_file.is_none() {
+		return Err(missing("mock_registrations_file"));
+	}
+	if mode != MainChainFollowerMode::Mock {
 		if cfg.db_sync_postgres_connection_string.is_none() {
 			return Err(missing("db_sync_postgres_connection_string"));
 		}
@@ -201,6 +224,98 @@ impl From<MidnightCfg> for MainchainEpochConfig {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn legacy_follower_selection_is_preserved() {
+		let mut cfg = MidnightCfg::default();
+		assert_eq!(cfg.main_chain_follower_mode().unwrap(), MainChainFollowerMode::DbSync);
+		cfg.use_main_chain_follower_mock = true;
+		assert_eq!(cfg.main_chain_follower_mode().unwrap(), MainChainFollowerMode::Mock);
+	}
+
+	#[test]
+	fn explicit_modes_reject_conflicting_legacy_flag() {
+		for mode in [
+			MainChainFollowerMode::Mock,
+			MainChainFollowerMode::DbSync,
+			MainChainFollowerMode::Ephemeral,
+		] {
+			let mut cfg =
+				MidnightCfg { main_chain_follower_mode: Some(mode), ..Default::default() };
+			for mock in [false, true] {
+				cfg.use_main_chain_follower_mock = mock;
+				assert_eq!(
+					cfg.main_chain_follower_mode().is_ok(),
+					mock == (mode == MainChainFollowerMode::Mock)
+				);
+			}
+		}
+	}
+
+	#[test]
+	fn ephemeral_requires_local_registrations_and_real_database_config() {
+		let mut cfg = MidnightCfg {
+			main_chain_follower_mode: Some(MainChainFollowerMode::Ephemeral),
+			..Default::default()
+		};
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("mock_registrations_file")
+		);
+		cfg.mock_registrations_file = Some("/dev/null".into());
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("db_sync_postgres_connection_string")
+		);
+		cfg.db_sync_postgres_connection_string = Some("postgres://localhost/test".into());
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("cardano_security_parameter")
+		);
+		cfg.cardano_security_parameter = Some(2160);
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("cardano_active_slots_coeff")
+		);
+		cfg.cardano_active_slots_coeff = Some(0.05);
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("block_stability_margin")
+		);
+		cfg.block_stability_margin = Some(0);
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
+
+	#[test]
+	fn mode_deserializes_from_environment_values_and_defaults_when_absent() {
+		for (value, expected) in [
+			("mock", MainChainFollowerMode::Mock),
+			("db-sync", MainChainFollowerMode::DbSync),
+			("ephemeral", MainChainFollowerMode::Ephemeral),
+		] {
+			let mut config = serde_json::to_value(MidnightCfg::default()).unwrap();
+			config["main_chain_follower_mode"] = serde_json::Value::String(value.into());
+			let cfg: MidnightCfg = serde_json::from_value(config).unwrap();
+			assert_eq!(cfg.main_chain_follower_mode, Some(expected));
+		}
+		let mut config = serde_json::to_value(MidnightCfg::default()).unwrap();
+		config.as_object_mut().unwrap().remove("main_chain_follower_mode");
+		assert_eq!(
+			serde_json::from_value::<MidnightCfg>(config).unwrap().main_chain_follower_mode,
+			None
+		);
+		assert!(serde_json::from_str::<MainChainFollowerMode>("\"invalid\"").is_err());
+	}
 
 	/// A `MidnightCfg` whose mainchain timing fields are internally coherent (1000 ms slots, a
 	/// 5-day epoch divisible by the slot duration and at least one second). Other fields are left at
