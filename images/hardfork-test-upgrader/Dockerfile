@@ -7,7 +7,6 @@ RUN microdnf -y install \
   curl-minimal-8.21.0 \
   procps-ng-3.3.17 \
   strace-6.12 \
-  gdb-16.3 \
   vim-enhanced-9.2.920 \
   jq-1.8.1 \
   tree-1.8.0 && \
@@ -22,5 +21,9 @@ RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*
 COPY util/upgrader/bin/entrypoint.sh /entrypoint.sh
 
 RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
+# One-shot CLI, not a service: nothing long-lived to probe. NONE states that
+# explicitly (and satisfies HEALTHCHECK-presence lints such as checkov CKV_DOCKER_2).
+HEALTHCHECK NONE
+
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]

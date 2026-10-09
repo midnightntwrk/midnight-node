@@ -718,7 +718,7 @@ where
 		let start_tx_validation_time = Instant::now();
 
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let wrapped_cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
@@ -779,7 +779,7 @@ where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
@@ -812,7 +812,7 @@ where
 
 	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(transaction_bytes)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(transaction_bytes)?;
 		let hash = tx.hash();
 		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
 			let a = match cd {
@@ -1054,7 +1054,7 @@ where
 		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
 		let api = api::new();
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let cost =
@@ -1387,7 +1387,12 @@ where
 		let api = api::new();
 		let event = CNightGeneratesDustEvent {
 			value,
-			owner: api.deserialize(owner)?,
+			// Not `api.deserialize` (logs at error): invalid keys are expected user input.
+			owner: midnight_serialize_local::Deserializable::deserialize(&mut &owner[..], 0)
+				.map_err(|e| {
+					log::debug!(target: LOG_TARGET, "Invalid DustPublicKey: {e:?}");
+					LedgerApiError::Deserialization(api::DeserializationError::DustPublicKey)
+				})?,
 			time: Timestamp::from_secs(time),
 			action: match action {
 				0 => Ok(CNightGeneratesDustActionType::Create),

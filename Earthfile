@@ -197,8 +197,13 @@ build-node-only:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
     ARG NATIVEARCH
 
+    # The runtime's fork-transition feature must never be released; feature
+    # unification could turn it on from any crate in the build.
+    RUN ./scripts/assert-no-fork-transition.sh features -p midnight-node
     RUN cargo auditable build -p midnight-node --locked --release
 
     # cp (not mv) so the linked binary stays in the persistent /target cache (see +build).
@@ -720,6 +725,8 @@ node-ci-image-single-platform:
     # Install rust with minimal profile + only the components we need
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
     ENV PATH="/root/.cargo/bin:${PATH}"
+    # See +prep-no-copy: litep2p/str0m enable vendored OpenSSL; use the system library.
+    ENV OPENSSL_NO_VENDOR=1
     RUN rustup component add clippy rustfmt
 
     RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
@@ -857,6 +864,11 @@ prep-no-copy:
     # on PATH from the CI image, and are unaffected — CARGO_HOME only moves cargo's data/bin home.)
     ENV CARGO_HOME=/usr/local/cargo
     ENV PATH="/usr/local/cargo/bin:${PATH}"
+    # litep2p (polkadot-sdk stable2609 sc-network) enables str0m's `vendored` OpenSSL feature,
+    # which compiles OpenSSL from source via perl. AL2023-minimal's perl lacks FindBin.pm
+    # (Configure exits 2). openssl-devel is already in the CI image, so link against that
+    # instead, as every openssl-sys consumer did before the bump.
+    ENV OPENSSL_NO_VENDOR=1
     # Pin git-fetch-with-cli at CARGO_HOME (canonical, workdir-independent) rather than relying on
     # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
     # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
@@ -1106,7 +1118,6 @@ check-rust:
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching missing dependencies masked by workspace feature unification.
-# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
 # Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
 # the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
@@ -1238,9 +1249,10 @@ test-pallet-fixtures:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests in debug mode (compiles much faster)
+    # Limit compilation as well as execution to the fixture tests' library.
     WITH DOCKER
         RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+            --package pallet-midnight --lib \
             -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
     END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
@@ -1412,9 +1424,17 @@ build:
     # ENV AR_X86_64_UNKNOWN_LINUX_GNU=ar
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
+    # The runtime's fork-transition feature must never be released; feature
+    # unification could turn it on from any crate in the build.
+    RUN ./scripts/assert-no-fork-transition.sh features --workspace
+
     # Default build (no hardfork)
     RUN \
         cargo auditable build --workspace --locked --release
+
+    RUN ./scripts/assert-no-fork-transition.sh wasm /target/release/wbuild/midnight-node-runtime/*.wasm
 
     # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
     # (local, CI=false); otherwise cargo would re-link every binary on the next run even
@@ -1434,7 +1454,10 @@ build-benchmarks:
 
     ARG NATIVEARCH
 
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
     # Build with runtime-benchmarks feature
+    RUN ./scripts/assert-no-fork-transition.sh features --workspace --features runtime-benchmarks
     RUN \
         cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
@@ -1484,6 +1507,11 @@ srtool-build:
     # Run srtool build with --app flag to show all output, save JSON result
     RUN --no-cache /srtool/build --app --json | tee /tmp/srtool-output.txt && \
         tail -1 /tmp/srtool-output.txt > /build/srtool-digest.json
+
+    # This is the runtime proposed for on-chain upgrades: it must never be a
+    # fork-transition build.
+    COPY scripts/assert-no-fork-transition.sh /tmp/
+    RUN /tmp/assert-no-fork-transition.sh wasm /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm
 
     # Save artifacts
     SAVE ARTIFACT /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm AS LOCAL artifacts/srtool/
