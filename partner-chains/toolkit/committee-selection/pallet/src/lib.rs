@@ -20,7 +20,6 @@
 #![allow(clippy::type_complexity)]
 #![deny(missing_docs)]
 
-pub mod migrations;
 /// [`pallet_session`] integration.
 pub mod pallet_session_support;
 

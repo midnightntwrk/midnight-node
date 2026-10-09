@@ -16,6 +16,15 @@
 //! Fork-boundary e2e: build a chain-spec from the previous release, run the
 //! current node on it, upgrade the runtime, and check the boundary.
 //!
+//! The previous release is runtime 2.1.0 (`midnight-node-fork-from` in
+//! `test-images.docker-compose.yml`): AURA + GRANDPA session keys, committee
+//! storage v1, and delayed runtime upgrades (`system_version` 3, so the new code
+//! is staged in `:pending_code` and first executes one block after
+//! `apply_authorized_upgrade`). The upgrade to the current runtime has to run the
+//! committee/session-key migration (BABE and BEEFY keys) and the BEEFY genesis
+//! reset, after which the chain must keep producing and finalizing blocks and
+//! accepting transactions.
+//!
 //! Set `NODE_BINARY=target/release/midnight-node` to run the node under test as a
 //! local process instead of the `midnight-node` docker image, which skips the image
 //! build while iterating. The *fork-from* chain-spec still comes from a docker
@@ -26,22 +35,14 @@ mod common;
 
 use clap::Parser;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
-use midnight_node_toolkit::{
-	cli::{Cli, Commands, run_command},
-	client::MidnightNodeClientConfig,
-	commands::{show_address, show_wallet},
-};
+use midnight_node_toolkit::cli::{Cli, run_command};
 use std::{
 	net::TcpListener,
 	path::{Path, PathBuf},
 	process::{Child, Command},
 	time::Duration,
 };
-use subxt::{
-	OnlineClient,
-	ext::scale_value::{At, Composite},
-	rpcs::{RpcClient, rpc_params},
-};
+use subxt::rpcs::{RpcClient, rpc_params};
 use testcontainers::{
 	ContainerAsync, GenericImage, ImageExt,
 	core::{ContainerPort, WaitFor},
@@ -51,64 +52,9 @@ use testcontainers::{
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-/// ECDSA identity exercised across the fork: funded on ledger 8 (step 3b), spent on ledger 9
-/// (step 7).
-const ECDSA_SEED: &str = "1000000000000000000000000000000000000000000000000000000000000001";
-
-/// NIGHT sent to the ECDSA address before the fork. Distinctive, so step 7 can find these outputs.
-const PREFORK_NIGHT: u128 = 500;
-
-/// Shielded amount sent before the fork. The shielded address does not depend on the scheme.
-const PREFORK_SHIELDED: u128 = 777;
-
-/// One address kind (`--shielded`, `--unshielded`, …) for a seed on `undeployed`.
-fn address_of(seed: &str, kind: &str) -> String {
-	let cli = Cli::parse_from([
-		"midnight-node-toolkit",
-		"show-address",
-		"--network",
-		"undeployed",
-		"--seed",
-		seed,
-		kind,
-	]);
-	match cli.command {
-		Commands::ShowAddress(args) => match show_address::execute(args) {
-			show_address::ShowAddress::SingleAddress(addr) => addr,
-			show_address::ShowAddress::Addresses(_) => panic!("expected a single address"),
-		},
-		_ => unreachable!(),
-	}
-}
-
-/// `show-wallet` as structured data, so balances can be asserted.
-async fn wallet_state(seed: &str, url: &str) -> show_wallet::WalletInfoJson {
-	let cli = Cli::parse_from([
-		"midnight-node-toolkit",
-		"show-wallet",
-		"--fetch-cache",
-		"inmemory",
-		"--seed",
-		seed,
-		"-s",
-		url,
-	]);
-	match cli.command {
-		Commands::ShowWallet(args) => {
-			match show_wallet::execute(args).await.expect("show-wallet failed") {
-				show_wallet::ShowWalletResult::Json(info) => info,
-				other => panic!("expected JSON wallet info, got {other:?}"),
-			}
-		},
-		_ => unreachable!(),
-	}
-}
-
-/// The compiled `contract-simple` artifacts, needed for a contract deploy.
-fn contract_artifacts_ready() -> bool {
-	std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR")
-		.map(|dir| Path::new(&dir).exists())
-		.unwrap_or(false)
+/// SCALE encoding of a pallet's `StorageVersion` (a `u16`).
+fn storage_version(v: u16) -> Vec<u8> {
+	v.to_le_bytes().to_vec()
 }
 
 /// The compiled runtime blob, under whichever directory holds it.
@@ -316,14 +262,14 @@ async fn finalized_height(rpc: &RpcClient) -> u64 {
 		.expect("no number in finalized header")
 }
 
-/// Locate the block that applied the new runtime code — the one whose committed
-/// state pairs the *new* `:code` with the *old* ledger version's `StateKey`.
+/// Locate the first block whose committed state holds the *new* `:code`.
 ///
-/// `frame_system` overwrites `:code` inside that block (the pre-fork runtime ships
-/// `system_version: 1`, so the code is not staged in `:pending_code`), while
-/// pallet-midnight's v8->v9 state translation only runs in the next block's
-/// `initialize_block`. Executing a read at that hash therefore runs ledger-9 WASM
-/// against a ledger-8 arena root, which is what GH #1959 reports.
+/// The pre-fork runtime ships `system_version: 3`: `apply_authorized_upgrade` in
+/// block N only stages the code in `:pending_code`, block N+1 is built and executed
+/// by the staged runtime (its `initialize_block` runs the upgrade's migrations), and
+/// `:code` is swapped at the end of N+1. So the block found here is the first one the
+/// new runtime executed, with its migrations applied, and the block before it is the
+/// last one the old runtime executed.
 ///
 /// `state_getRuntimeVersion` reports the code stored at a block, so the first
 /// height reporting the new spec is exactly that block. spec_version is monotonic
@@ -356,52 +302,13 @@ async fn storage_at(rpc: &RpcClient, pallet: &[u8], item: &[u8], hash: &str) -> 
 	value.map(|v| hex::decode(v.trim_start_matches("0x")).expect("hex-encoded storage value"))
 }
 
-/// Every `CNightObservation::DustReapply*` event between `from` and `to`, as
-/// `(height, event name, fields)`.
-///
-/// Decoded rather than inferred from storage, because the payload is the point:
-/// a replay that self-cancelled or restored nothing winds up exactly like one
-/// that worked, so `PreForkStateKey` being cleared says nothing about the
-/// outcome. Unlike `spec_version_at`, decoding with the client's own metadata is
-/// safe here — every block in this window already runs the new runtime.
-async fn dust_replay_events(url: &str, from: u64, to: u64) -> Vec<(u64, String, Composite<()>)> {
-	let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(url)
-		.await
-		.expect("failed to open subxt client");
-
-	let mut found = Vec::new();
-	for height in from..=to {
-		let at = api
-			.at_block(height)
-			.await
-			.unwrap_or_else(|e| panic!("failed to read block #{height}: {e}"));
-		let events = at
-			.events()
-			.fetch()
-			.await
-			.unwrap_or_else(|e| panic!("failed to fetch events at #{height}: {e}"));
-
-		for event in events.iter().filter_map(Result::ok) {
-			if event.pallet_name() != "CNightObservation"
-				|| !event.event_name().starts_with("DustReapply")
-			{
-				continue;
-			}
-			let fields = event.decode_fields_unchecked_as::<Composite<()>>().unwrap_or_else(|e| {
-				panic!("failed to decode {} at #{height}: {e}", event.event_name())
-			});
-			found.push((height, event.event_name().to_owned(), fields));
-		}
-	}
-	found
-}
-
 /// Every way of reading the ledger state must answer at `height`.
 ///
-/// Both the `midnight_*` RPCs and a raw `state_call`: the fix lives in the ledger-9
-/// host function, so the runtime API has to work at the skew block too — that is
-/// the path subxt-based tooling (`chain-indexer`, GH #1969) takes, and it does not
-/// go anywhere near the node's own RPC layer.
+/// Both the `midnight_*` RPCs and a raw `state_call`: the latter is the path
+/// subxt-based tooling (`chain-indexer`, GH #1969) takes, and it does not go
+/// anywhere near the node's own RPC layer. Across the fork boundary the state is
+/// read with whichever runtime is stored at the block, so both sides of the
+/// boundary and the boundary block itself are checked.
 async fn assert_ledger_state_readable(rpc: &RpcClient, height: u64, label: &str) {
 	let hash = block_hash_at(rpc, height).await;
 
@@ -471,54 +378,6 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 3b. GH #2180: fund the `ecdsa:` identity on both sides while still on ledger 8. Ledger 8 can
-	//     hold NIGHT at the ECDSA address but not spend it, and the shielded coin is only visible
-	//     later if the wallet replayed the ledger-8 leg. Step 7 checks both.
-	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
-	let ecdsa_address = address_of(&ecdsa_seed, "--unshielded");
-	let ecdsa_shielded_address = address_of(&ecdsa_seed, "--shielded");
-
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"single-tx",
-		"--source-seed",
-		SOURCE_SEED,
-		"--unshielded-amount",
-		&PREFORK_NIGHT.to_string(),
-		"--destination-address",
-		&ecdsa_address,
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"single-tx",
-		"--source-seed",
-		SOURCE_SEED,
-		"--shielded-amount",
-		&PREFORK_SHIELDED.to_string(),
-		"--destination-address",
-		&ecdsa_shielded_address,
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	// Nothing to assert yet: `show-wallet --seed ecdsa:…` is refused while the tip is on ledger 8.
-	eprintln!(
-		"[hardfork_e2e] ecdsa identity funded pre-fork: {PREFORK_NIGHT} NIGHT + {PREFORK_SHIELDED} shielded"
-	);
-
 	// 4. Runtime upgrade: take the new WASM from the node under test and apply it
 	let wasm_path = tempdir.path().join("runtime.wasm");
 	std::fs::write(&wasm_path, runtime_wasm(node_binary.as_deref())).expect("write wasm");
@@ -542,11 +401,9 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 5. GH #1959: the whole fork boundary must stay readable. The block that
-	//    applied the new code carries a ledger-8 `StateKey` under ledger-9 `:code`,
-	//    so the ledger-9 host API has to detect that and serve the read from the
-	//    ledger-8 bridge; the block after it is already translated to v9 and must
-	//    keep taking the ordinary ledger-9 path.
+	// 5. Locate the fork boundary: `applied` is the first block the new runtime
+	//    executed (see `find_code_applied_block`), `applied - 1` the last one the old
+	//    runtime executed.
 	let rpc = RpcClient::from_insecure_url(&url).await.expect("failed to open raw RPC client");
 	let pre_fork_spec = {
 		let hash = block_hash_at(&rpc, 1).await;
@@ -562,95 +419,56 @@ async fn hardfork_single_tx() {
 	assert!(applied < head, "expected the code-applying block to be below the finalized head");
 
 	// `runtime-upgrade` already waits for finality to pass `applied`, but the
-	// assertion below needs `applied + 1` to exist regardless.
+	// assertions below need `applied + 1` to exist regardless.
 	wait_for_finalized_block(&url, applied + 1, Duration::from_secs(60)).await;
 
+	let pre_fork_hash = block_hash_at(&rpc, applied - 1).await;
+	let applied_hash = block_hash_at(&rpc, applied).await;
+
+	// 5a. The fork-from release must already be on ledger 9 (pallet-midnight storage
+	//     version 2): the runtime no longer carries the ledger 8->9 translation, so a
+	//     ledger-8 `FORK_FROM_NODE_IMAGE` would fail later in a far less obvious way
+	//     (`apply_post_block_update` panicking on the untranslated state key).
+	assert_eq!(
+		storage_at(&rpc, b"Midnight", b":__STORAGE_VERSION__:", &pre_fork_hash).await,
+		Some(storage_version(2)),
+		"the fork-from release must be on ledger 9 (pallet-midnight storage version 2) \
+		 before the upgrade; the runtime carries no ledger 8->9 migration anymore",
+	);
+
+	// 5b. The 3.0.0 migrations ran in the boundary block: the committee pallet moved to
+	//     storage version 2 (BABE and BEEFY keys added to the session keys, queued
+	//     committee initialised) and the BEEFY genesis was reset to `None` (SCALE `0x00`
+	//     under a `ValueQuery`), which keeps BEEFY disabled until governance re-enables it.
+	assert_eq!(
+		storage_at(&rpc, b"SessionCommitteeManagement", b":__STORAGE_VERSION__:", &pre_fork_hash)
+			.await,
+		Some(storage_version(1)),
+		"the fork-from release must still be on committee storage version 1",
+	);
+	assert_eq!(
+		storage_at(&rpc, b"SessionCommitteeManagement", b":__STORAGE_VERSION__:", &applied_hash)
+			.await,
+		Some(storage_version(2)),
+		"the committee/session-key migration must have run in the boundary block #{applied}",
+	);
+	assert_eq!(
+		storage_at(&rpc, b"Beefy", b"GenesisBlock", &applied_hash).await,
+		Some(vec![0]),
+		"the BEEFY genesis must be reset to None in the boundary block #{applied}",
+	);
+	eprintln!("[hardfork_e2e] committee storage v1 -> v2 and BEEFY genesis reset at #{applied}");
+
+	// 5c. The whole fork boundary must stay readable.
 	assert_ledger_state_readable(&rpc, applied - 1, "pre-fork").await;
 	assert_ledger_state_readable(&rpc, applied, "code-applied block").await;
 	assert_ledger_state_readable(&rpc, applied + 1, "post-migration").await;
 
-	// 5b. The cNIGHT dust generation replay (pallet-cnight-observation v1 -> v2)
-	//     arms itself in the code-applying block and then runs as a multi-block
-	//     migration. It must wind up: while it is in flight `process_tokens`
-	//     ignores every Cardano observation, so a replay that never finishes
-	//     silently strands the observer. Storage version 2 with the pre-fork key
-	//     cleared is exactly "wound up", by either the restore or the
-	//     self-cancel path.
-	//
-	//     Winding up is necessary but not sufficient, so the events say which
-	//     path it took. The fork-from chain-spec ships cNIGHT `UtxoOwners` with
-	//     matching ledger-8 dust generation entries, so the replay here is the
-	//     real restore — a `DustReapplySkipped`, or a `DustReapplyCompleted` that
-	//     applied nothing, means it fell short (both carry `applied`, so the log
-	//     line below says how far it got).
+	// 5d. The chain keeps going on the migrated state: the authority set the migration
+	//     rewrote must still produce and finalize blocks.
 	wait_for_finalized_block(&url, applied + 3, Duration::from_secs(60)).await;
-	let head_hash = block_hash_at(&rpc, applied + 3).await;
-	assert_eq!(
-		storage_at(&rpc, b"CNightObservation", b":__STORAGE_VERSION__:", &head_hash).await,
-		Some(vec![2, 0]),
-		"cnight-observation must reach storage version 2 (dust replay wound up) by #{}",
-		applied + 3,
-	);
-	assert_eq!(
-		storage_at(&rpc, b"CNightObservation", b"PreForkStateKey", &head_hash).await,
-		None,
-		"the pre-fork ledger state key must be cleared once the dust replay winds up",
-	);
 
-	let replay = dust_replay_events(&url, applied, applied + 3).await;
-	for (height, name, fields) in &replay {
-		eprintln!("[hardfork_e2e] #{height} CNightObservation::{name} {fields:?}");
-	}
-	let completed = replay
-		.iter()
-		.find(|(_, name, _)| name == "DustReapplyCompleted")
-		.unwrap_or_else(|| {
-			panic!("the dust replay must complete by #{}, saw {replay:?}", applied + 3)
-		});
-	let restored = completed
-		.2
-		.at("applied")
-		.and_then(|v| v.as_u128())
-		.expect("DustReapplyCompleted must carry an `applied` count");
-	assert!(
-		restored > 0,
-		"the dust replay restored nothing; the fork-from chain-spec's cNIGHT UtxoOwners \
-		 should have given it work to do ({completed:?})",
-	);
-	eprintln!(
-		"[hardfork_e2e] dust generation replay restored {restored} entries by #{}",
-		completed.0
-	);
-
-	// 5c. The fork wipes dust state, and the replay above only restores cNIGHT's
-	//     slice of it. The genesis wallets hold *native* NIGHT, so they cross the
-	//     fork still holding NIGHT but generating no DUST — and with no DUST they
-	//     cannot pay a fee. Re-register the source wallet's dust address to start
-	//     generation again. The registration funds itself from the retroactive DUST its
-	//     now-generationless NIGHT accrued, which is exactly the path a real
-	//     holder takes after the wipe.
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"register-dust-address",
-		"--wallet-seed",
-		SOURCE_SEED,
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	// The sender only returns once the registration is finalized, but the NIGHT it
-	// re-registered starts generating from *that* block's time — at the tip there
-	// is still nothing accrued to spend. Give it a couple of blocks.
-	let registered_at = finalized_height(&rpc).await;
-	wait_for_finalized_block(&url, registered_at + 2, Duration::from_secs(60)).await;
-	eprintln!("[hardfork_e2e] dust address re-registered by #{registered_at}");
-
-	// 6. Post-fork: run single-tx again to verify the node still works after the (future) upgrade
+	// 6. Post-fork: run single-tx again to verify the node still works after the upgrade
 	run_cli(&[
 		"generate-txs",
 		"--fetch-cache",
@@ -672,130 +490,4 @@ async fn hardfork_single_tx() {
 		&url,
 	])
 	.await;
-
-	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history, funded pre-fork in step 3b.
-
-	// 7a. Both pre-fork funds must have crossed the fork. The shielded coin is the regression: it
-	//     lives in replayed wallet state, so a wallet built at the fork reports zero.
-	let post_fork = wallet_state(&ecdsa_seed, &url).await;
-	assert!(
-		post_fork.coins.values().any(|c| c.value == PREFORK_SHIELDED),
-		"the shielded coin received before the fork must survive it; got {:?}",
-		post_fork.coins,
-	);
-	assert!(
-		post_fork.utxos.iter().any(|u| u.value == PREFORK_NIGHT),
-		"the NIGHT sent to the ECDSA address before the fork must survive it; got {:?}",
-		post_fork.utxos,
-	);
-	eprintln!("[hardfork_e2e] pre-fork NIGHT and shielded coin both survived the fork");
-
-	// 7b. Spend the pre-fork NIGHT before any post-fork funding exists. The ECDSA wallet has no
-	//     DUST after the fork, so the Schnorr wallet pays the fee.
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"single-tx",
-		"--source-seed",
-		&ecdsa_seed,
-		"--funding-seed",
-		SOURCE_SEED,
-		"--unshielded-amount",
-		&(PREFORK_NIGHT / 2).to_string(),
-		"--destination-address",
-		"mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r",
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	// 7c. Spend the pre-fork shielded coin. A zswap input is proved, not signed, so only the
-	//     replayed state matters.
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"single-tx",
-		"--source-seed",
-		&ecdsa_seed,
-		"--funding-seed",
-		SOURCE_SEED,
-		"--shielded-amount",
-		&(PREFORK_SHIELDED / 2).to_string(),
-		"--destination-address",
-		"mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d",
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	// 7d. Fund it again post-fork, from the Schnorr genesis wallet.
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"single-tx",
-		"--source-seed",
-		SOURCE_SEED,
-		"--unshielded-amount",
-		"1000",
-		"--destination-address",
-		&ecdsa_address,
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	// 7e. Spend that post-fork funding too.
-	run_cli(&[
-		"generate-txs",
-		"--fetch-cache",
-		"inmemory",
-		"single-tx",
-		"--source-seed",
-		&ecdsa_seed,
-		"--funding-seed",
-		SOURCE_SEED,
-		"--unshielded-amount",
-		"1",
-		"--destination-address",
-		"mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r",
-		"-s",
-		&url,
-		"-d",
-		&url,
-	])
-	.await;
-
-	// 7f. The read path resolves the identity too.
-	run_cli(&["show-wallet", "--fetch-cache", "inmemory", "--seed", &ecdsa_seed, "-s", &url]).await;
-
-	// 7g. A contract with an ECDSA maintenance committee.
-	if contract_artifacts_ready() {
-		run_cli(&[
-			"generate-txs",
-			"--fetch-cache",
-			"inmemory",
-			"contract-simple",
-			"deploy",
-			"--authority-seed",
-			&ecdsa_seed,
-			"-s",
-			&url,
-			"-d",
-			&url,
-		])
-		.await;
-	} else {
-		eprintln!(
-			"[hardfork_e2e] MIDNIGHT_LEDGER_TEST_STATIC_DIR unset; skipping ECDSA committee deploy"
-		);
-	}
 }
