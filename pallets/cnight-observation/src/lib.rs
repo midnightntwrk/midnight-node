@@ -27,7 +27,7 @@ use frame_support::{
 };
 use frame_system::pallet_prelude::*;
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, INHERENT_IDENTIFIER, InherentError, ObservationCostModel,
+	CardanoCursor, CardanoPosition, INHERENT_IDENTIFIER, InherentError, ObservationCostModel,
 };
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
 pub use pallet::*;
@@ -47,6 +47,9 @@ pub mod weights;
 ///  * `index`: index (zero based) of the next transaction to process in the
 ///    `block`.  If `index` equals the size of the block, it means that a block has
 ///    been processed in full.
+///  * `utxo_offset`: how many UTXOs of the transaction at `index`, in the observation
+///    order, are processed. Non-zero only when a batch ended inside that transaction,
+///    which keeps the header unique per batch.
 ///
 /// See spec for more details:
 /// https://github.com/midnightntwrk/midnight-ledger/blob/main/spec/cardano-system-transactions.md#cmst-header
@@ -56,6 +59,8 @@ pub struct CmstHeader {
 	pub block_hash: McBlockHash,
 	/// The index of the next transaction to process in the block
 	pub tx_index_in_block: u32,
+	/// UTXOs of the transaction at `tx_index_in_block` already processed
+	pub utxo_offset: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -79,7 +84,8 @@ pub mod pallet {
 	};
 	use midnight_primitives_cnight_observation::{
 		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
-		CardanoRewardAddressBytes, DustPublicKeyBytes,
+		CardanoRewardAddressBytes, DustPublicKeyBytes, ObservationBatch,
+		cmp_observed_utxos_by_data,
 	};
 	use midnight_primitives_mainchain_follower::{
 		CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -198,14 +204,14 @@ pub mod pallet {
 		},
 		/// `process_tokens` ignored this block's Cardano observations because a
 		/// multi-block migration of this pallet's storage is still running.
-		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the
+		/// `NextCardanoCursor` is left unchanged, so nothing is lost — the
 		/// observer re-delivers these UTXOs once the migration winds up. Emitted
 		/// once per block for as long as the gate holds; the exact versions are
 		/// in the node log.
 		ObservationsSkippedForMigration,
 		/// The ledger refused this block's cNIGHT-generates-DUST update as over the
 		/// block limit, so the native cost estimate disagrees with the ledger. The batch
-		/// was rolled back and `NextCardanoPosition` left unchanged: observation stalls
+		/// was rolled back and `NextCardanoCursor` left unchanged: observation stalls
 		/// until a runtime upgrade fixes the estimate.
 		ObservationsDeferred,
 	}
@@ -293,8 +299,9 @@ pub mod pallet {
 		StorageMap<_, Blake2_128Concat, T::Hash, DustPublicKeyBytes, OptionQuery>;
 
 	#[pallet::storage]
-	// The next Cardano position to look for new transactions
-	pub type NextCardanoPosition<T: Config> = StorageValue<_, CardanoPosition, ValueQuery>;
+	/// Where the next batch starts. Its `utxo_offset` counts in the order of
+	/// [`cmp_observed_utxos_by_data`]: a batch may end inside a Cardano transaction.
+	pub type NextCardanoCursor<T: Config> = StorageValue<_, CardanoCursor, ValueQuery>;
 
 	#[pallet::storage]
 	// A full identifier for a native asset on Cardano: (policy id, asset name)
@@ -436,7 +443,10 @@ pub mod pallet {
 				UtxoOwners::<T>::insert(H256(*k), v);
 			}
 
-			NextCardanoPosition::<T>::set(self.config.next_cardano_position.clone());
+			NextCardanoCursor::<T>::set(CardanoCursor {
+				position: self.config.next_cardano_position.clone(),
+				utxo_offset: 0,
+			});
 		}
 	}
 
@@ -582,11 +592,26 @@ pub mod pallet {
 		/// Everything `process_tokens` does once the per-block guards have passed.
 		/// Runs inside a storage layer so the caller can roll it back as a whole.
 		fn apply_observations(
-			utxos: Vec<ObservedUtxo>,
+			utxos: ObservationBatch,
 			next_cardano_position: CardanoPosition,
 		) -> DispatchResult {
-			let prev = NextCardanoPosition::<T>::get();
-			ensure!(next_cardano_position >= prev, Error::<T>::CardanoPositionRegression);
+			let prev = NextCardanoCursor::<T>::get();
+			ensure!(next_cardano_position >= prev.position, Error::<T>::CardanoPositionRegression);
+			if utxos
+				.windows(2)
+				.any(|pair| cmp_observed_utxos_by_data(&pair[0], &pair[1]).is_ge())
+			{
+				log::error!(
+					"cNIGHT observation batch is not strictly ascending in the observation order; the offset may count the wrong UTXOs"
+				);
+			}
+			let ends_inside = utxos
+				.iter()
+				.rev()
+				.take_while(|utxo| utxo.header.tx_position == next_cardano_position)
+				.count() as u32;
+			let carried = if next_cardano_position == prev.position { prev.utxo_offset } else { 0 };
+			let utxo_offset = carried.saturating_add(ends_inside);
 
 			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
 
@@ -624,7 +649,10 @@ pub mod pallet {
 				}
 			}
 
-			NextCardanoPosition::<T>::set(next_cardano_position.clone());
+			NextCardanoCursor::<T>::set(CardanoCursor {
+				position: next_cardano_position.clone(),
+				utxo_offset,
+			});
 
 			if !events.is_empty() {
 				// Construct the Ledger system transaction
@@ -641,6 +669,7 @@ pub mod pallet {
 						header: CmstHeader {
 							block_hash: next_cardano_position.block_hash,
 							tx_index_in_block: next_cardano_position.tx_index_in_block,
+							utxo_offset,
 						},
 						system_transaction_hash,
 					};
@@ -870,7 +899,7 @@ pub mod pallet {
 		#[pallet::weight((Pallet::<T>::process_tokens_weight(utxos), DispatchClass::Mandatory))]
 		pub fn process_tokens(
 			origin: OriginFor<T>,
-			utxos: Vec<ObservedUtxo>,
+			utxos: ObservationBatch,
 			next_cardano_position: CardanoPosition,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
@@ -878,7 +907,7 @@ pub mod pallet {
 			InherentExecutedThisBlock::<T>::put(true);
 
 			// Skip observation processing entirely while any multi-block migration of
-			// this pallet's storage is in flight; `NextCardanoPosition` stays
+			// this pallet's storage is in flight; `NextCardanoCursor` stays
 			// unchanged so the next block's inherent re-presents the same UTXOs (plus
 			// any new ones) and we resume once the migration finishes.
 			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
@@ -903,7 +932,7 @@ pub mod pallet {
 				Ok(()) => {},
 				Err(e) if T::MidnightSystemTransactionExecutor::is_block_limit_exceeded(&e) => {
 					log::error!(
-						"ObservationsDeferred: the ledger refused the cNIGHT-generates-DUST update as over the block limit although the batch was sized to fit; the native cost estimate disagrees with the ledger (bug). Batch rolled back, NextCardanoPosition unchanged."
+						"ObservationsDeferred: the ledger refused the cNIGHT-generates-DUST update as over the block limit although the batch was sized to fit; the native cost estimate disagrees with the ledger (bug). Batch rolled back, NextCardanoCursor unchanged."
 					);
 					Self::deposit_event(Event::<T>::ObservationsDeferred);
 				},

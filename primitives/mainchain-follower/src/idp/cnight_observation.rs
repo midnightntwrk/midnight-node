@@ -15,11 +15,10 @@
 
 use crate::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservationBound,
-	ObservedUtxo,
 };
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
-	TimestampUnixMillis,
+	CNightAddresses, CNightObservationApi, CardanoCursor, CardanoPosition, INHERENT_IDENTIFIER,
+	InherentError, ObservationBatch, TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
@@ -30,33 +29,31 @@ use std::{error::Error, string::FromUtf8Error, sync::Arc};
 
 pub const DEFAULT_CARDANO_BLOCK_WINDOW_SIZE: u32 = 10000;
 
-/// Runtime export of `get_utxo_capacity_per_block`, which only version 1 of
-/// `CNightObservationApi` declares, so the generated client cannot call it.
+/// Runtime exports of methods only version 1 of `CNightObservationApi` declares,
+/// so the generated client cannot call them.
 const UTXO_CAPACITY_PER_BLOCK_V1: &str = "CNightObservationApi_get_utxo_capacity_per_block";
+const NEXT_CARDANO_POSITION_V1: &str = "CNightObservationApi_get_next_cardano_position";
 
-fn utxo_capacity_per_block_v1<Block: BlockT, C: CallApiAt<Block>>(
+fn call_v1<Block: BlockT, C: CallApiAt<Block>, R: Decode>(
 	client: &C,
 	at: Block::Hash,
-) -> Result<u32, ApiError> {
+	function: &'static str,
+) -> Result<R, ApiError> {
 	let raw = client.call_api_at(CallApiAtParams {
 		at,
-		function: UTXO_CAPACITY_PER_BLOCK_V1,
+		function,
 		arguments: Vec::new(),
 		overlayed_changes: &Default::default(),
 		call_context: CallContext::Offchain,
 		recorder: &None,
 		extensions: &Default::default(),
 	})?;
-	let decoded = u32::decode(&mut &raw[..]);
-	decoded.map_err(|error| ApiError::FailedToDecodeReturnValue {
-		function: UTXO_CAPACITY_PER_BLOCK_V1,
-		error,
-		raw,
-	})
+	let decoded = R::decode(&mut &raw[..]);
+	decoded.map_err(|error| ApiError::FailedToDecodeReturnValue { function, error, raw })
 }
 
 pub struct MidnightCNightObservationInherentDataProvider {
-	pub utxos: Vec<ObservedUtxo>,
+	pub utxos: ObservationBatch,
 	pub next_cardano_position: CardanoPosition,
 }
 
@@ -99,7 +96,7 @@ impl MidnightCNightObservationInherentDataProvider {
 			Self::new(client, data_source, parent_hash, mc_hash).await
 		} else {
 			Ok(Self {
-				utxos: vec![],
+				utxos: ObservationBatch::default(),
 				next_cardano_position: CardanoPosition {
 					block_hash: McBlockHash([0; 32]),
 					block_number: 0,
@@ -130,30 +127,34 @@ impl MidnightCNightObservationInherentDataProvider {
 			.get_auth_token_asset_name(parent_hash)?
 			.try_into()
 			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
-		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
 		let spec_version = api.version(parent_hash)?.spec_version;
 
-		// Version 1 runtimes have no cost model; the count bound then builds the same
-		// batch as nodes without it, which check our inherent against their own.
-		let bound = match api.api_version::<dyn CNightObservationApi<Block>>(parent_hash)? {
-			Some(version) if version >= 2 => match api.get_observation_cost_model(parent_hash)? {
-				Some(model) if model.utxo_gas > 0 => ObservationBound::Cost(model),
+		// On version 1 runtimes the count bound keeps the batch byte-identical to what
+		// nodes without the cost model build and check our inherent against.
+		let version_2 = api
+			.api_version::<dyn CNightObservationApi<Block>>(parent_hash)?
+			.is_some_and(|version| version >= 2);
+		let (bound, start) = if version_2 {
+			let start = api.get_next_cardano_cursor(parent_hash)?;
+			match api.get_observation_cost_model(parent_hash)? {
+				Some(model) if model.utxo_gas > 0 => (ObservationBound::Cost(model), start),
 				// Not the count bound, which can skip rows: an empty batch holding the
 				// cursor loses nothing until a runtime upgrade restores pricing.
 				model => {
 					log::error!(
 						target: "cnight-observation",
-						"runtime could not price the observation batch ({model:?}); cNIGHT observation halted at {cardano_position_start:?}"
+						"runtime could not price the observation batch ({model:?}); cNIGHT observation halted at {start:?}"
 					);
 					return Ok(Self {
-						utxos: vec![],
-						next_cardano_position: cardano_position_start,
+						utxos: ObservationBatch::default(),
+						next_cardano_position: start.position,
 					});
 				},
-			},
-			_ => {
-				ObservationBound::Count(utxo_capacity_per_block_v1(&*client, parent_hash)? as usize)
-			},
+			}
+		} else {
+			let capacity: u32 = call_v1(&*client, parent_hash, UTXO_CAPACITY_PER_BLOCK_V1)?;
+			let position = call_v1(&*client, parent_hash, NEXT_CARDANO_POSITION_V1)?;
+			(ObservationBound::Count(capacity as usize), CardanoCursor { position, utxo_offset: 0 })
 		};
 		log::debug!(target: "cnight-observation", "observation bound: {bound:?}");
 
@@ -171,7 +172,8 @@ impl MidnightCNightObservationInherentDataProvider {
 		let observed_utxos = data_source
 			.get_utxos_up_to_capacity(
 				&config,
-				&cardano_position_start,
+				&start.position,
+				start.utxo_offset,
 				mc_hash,
 				&bound,
 				spec_version,

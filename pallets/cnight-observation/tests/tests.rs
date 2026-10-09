@@ -27,8 +27,9 @@ use midnight_node_ledger_helpers::{
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
 	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
-	INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DATA_ORDERED_UTXOS_SPEC_VERSION,
+	DustPublicKeyBytes, INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement,
+	ObservationBatch, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -42,6 +43,10 @@ use rand::prelude::*;
 use sidechain_domain::{McBlockHash, McTxHash, UtxoId};
 use test_log::test;
 
+fn batch(utxos: Vec<ObservedUtxo>) -> ObservationBatch {
+	ObservationBatch::new(utxos, DATA_ORDERED_UTXOS_SPEC_VERSION)
+}
+
 fn create_inherent(
 	utxos: Vec<ObservedUtxo>,
 	next_cardano_position: CardanoPosition,
@@ -50,7 +55,7 @@ fn create_inherent(
 	inherent_data
 		.put_data(
 			INHERENT_IDENTIFIER,
-			&MidnightObservationTokenMovement { utxos, next_cardano_position },
+			&MidnightObservationTokenMovement { utxos: batch(utxos), next_cardano_position },
 		)
 		.expect("inherent data insertion should not fail");
 	inherent_data
@@ -358,10 +363,10 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 
 		assert_eq!(stored, vec![dust_public_key]);
 
-		let last_processed_block = NextCardanoPosition::<Test>::get();
+		let last_processed_position = NextCardanoCursor::<Test>::get().position;
 		assert_eq!(
 			test_position(3, 0),
-			last_processed_block,
+			last_processed_position,
 			"Last processed block not updated correctly"
 		);
 	});
@@ -1238,7 +1243,7 @@ fn duplicate_inherent_protection_works() {
 
 		// Second call in same block fails
 		let call2 = Call::process_tokens {
-			utxos: utxos.clone(),
+			utxos: batch(utxos.clone()),
 			next_cardano_position: test_position(3, 0),
 		};
 		assert_noop!(
@@ -1381,7 +1386,7 @@ fn asset_spend_without_create_should_not_emit_destroy_event() {
 	});
 }
 
-/// Dispatches `process_tokens` with empty UTXOs to set `NextCardanoPosition`,
+/// Dispatches `process_tokens` with empty UTXOs to set `NextCardanoCursor`,
 /// then advances the block so a subsequent dispatch can test the guards.
 fn establish_position(block_number: u32, tx_index_in_block: u32) {
 	let inherent = create_inherent(vec![], test_position(block_number, tx_index_in_block));
@@ -1396,8 +1401,10 @@ fn position_regression_lower_block_number_is_rejected() {
 		init_ledger_state();
 		establish_position(10, 5);
 
-		let call =
-			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(5, 0) };
+		let call = Call::process_tokens {
+			utxos: ObservationBatch::default(),
+			next_cardano_position: test_position(5, 0),
+		};
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
@@ -1423,8 +1430,10 @@ fn position_regression_same_block_lower_tx_index_is_rejected() {
 		init_ledger_state();
 		establish_position(10, 5);
 
-		let call =
-			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(10, 4) };
+		let call = Call::process_tokens {
+			utxos: ObservationBatch::default(),
+			next_cardano_position: test_position(10, 4),
+		};
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
@@ -1507,7 +1516,10 @@ fn position_guard_works_with_utxos_present() {
 				dust_public_key,
 			}),
 		}];
-		let call = Call::process_tokens { utxos, next_cardano_position: test_position(5, 0) };
+		let call = Call::process_tokens {
+			utxos: batch(utxos),
+			next_cardano_position: test_position(5, 0),
+		};
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
@@ -1524,7 +1536,7 @@ fn position_guard_works_with_utxos_present() {
 /// This test forces `on_chain_storage_version` back to 0, then to 1, to simulate
 /// blocks where either MBM is mid-flight, and asserts that an inherent carrying
 /// real UTXOs:
-/// - leaves `NextCardanoPosition` unchanged,
+/// - leaves `NextCardanoCursor` unchanged,
 /// - writes nothing to `Mapping`,
 /// - emits no pallet events.
 /// After flipping the version to 2 (both migrations complete), the same call
@@ -1546,16 +1558,16 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 			}),
 		}];
 
-		let position_before = NextCardanoPosition::<Test>::get();
+		let position_before = NextCardanoCursor::<Test>::get().position;
 
 		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
 		let call = CNightObservation::create_inherent(&inherent).unwrap();
 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
 
 		assert_eq!(
-			NextCardanoPosition::<Test>::get(),
+			NextCardanoCursor::<Test>::get().position,
 			position_before,
-			"NextCardanoPosition must not advance during MBM",
+			"NextCardanoCursor must not advance during MBM",
 		);
 		assert_eq!(
 			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
@@ -1587,7 +1599,7 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 		// `InherentExecutedThisBlock` check, so a second dispatch in the same block
 		// is rejected as before.
 		let dup = Call::process_tokens {
-			utxos: utxos.clone(),
+			utxos: batch(utxos.clone()),
 			next_cardano_position: test_position(10, 1),
 		};
 		assert_noop!(
@@ -1606,9 +1618,9 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
 
 		assert_eq!(
-			NextCardanoPosition::<Test>::get(),
+			NextCardanoCursor::<Test>::get().position,
 			position_before,
-			"NextCardanoPosition must not advance during the v1 -> v2 MBM",
+			"NextCardanoCursor must not advance during the v1 -> v2 MBM",
 		);
 		assert_eq!(
 			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
@@ -1626,7 +1638,7 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 		let call = CNightObservation::create_inherent(&inherent).unwrap();
 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
 
-		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(10, 1));
+		assert_eq!(NextCardanoCursor::<Test>::get().position, test_position(10, 1));
 		assert_eq!(
 			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect::<Vec<_>>(),
 			vec![dust_public_key],
@@ -1661,8 +1673,10 @@ fn position_guards_hold_across_multiple_advances() {
 		advance_block_and_reset_events();
 
 		// After 4 advances, regression to any prior position is rejected
-		let call =
-			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(30, 0) };
+		let call = Call::process_tokens {
+			utxos: ObservationBatch::default(),
+			next_cardano_position: test_position(30, 0),
+		};
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
@@ -1691,8 +1705,10 @@ fn create_inherent_with_malformed_data_returns_none() {
 fn check_inherent_with_malformed_data_returns_error() {
 	new_test_ext().execute_with(|| {
 		let malformed = create_malformed_inherent();
-		let call =
-			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(1, 0) };
+		let call = Call::process_tokens {
+			utxos: ObservationBatch::default(),
+			next_cardano_position: test_position(1, 0),
+		};
 		let result = CNightObservation::check_inherent(&call, &malformed);
 		assert_eq!(result, Err(InherentError::DecodeFailed));
 	});
@@ -2058,14 +2074,14 @@ fn batch_over_the_block_limit_is_deferred_not_fatal() {
 		init_ledger_state();
 		let model = CNightObservation::observation_cost_model().unwrap();
 		let fits = (model.full_gas / model.create_gas) as u32;
-		let cursor_before = NextCardanoPosition::<Test>::get();
+		let cursor_before = NextCardanoCursor::<Test>::get().position;
 
 		let (utxos, owner) = registered_creates(fits + 1);
 		dispatch_observations(utxos, test_position(3, 0));
 
 		assert!(observations_deferred());
 		assert_eq!(applied_dust_event_count(), 0);
-		assert_eq!(NextCardanoPosition::<Test>::get(), cursor_before);
+		assert_eq!(NextCardanoCursor::<Test>::get().position, cursor_before);
 		assert!(
 			!CNightObservation::is_registered(&owner),
 			"the registration in the deferred batch must roll back with it"
@@ -2085,7 +2101,87 @@ fn batch_at_the_block_limit_applies() {
 
 		assert!(!observations_deferred());
 		assert_eq!(applied_dust_event_count(), fits as usize);
-		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(3, 0));
+		assert_eq!(NextCardanoCursor::<Test>::get().position, test_position(3, 0));
 		assert!(CNightObservation::is_registered(&owner));
+	});
+}
+
+/// Creates for `owner` at outputs `indices` of the one Cardano transaction at (2, 0).
+fn creates_in_one_tx(
+	owner: CardanoRewardAddressBytes,
+	indices: core::ops::Range<u16>,
+) -> Vec<ObservedUtxo> {
+	indices
+		.map(|index| ObservedUtxo {
+			header: test_header(2, 0, index, None),
+			data: ObservedUtxoData::AssetCreate(CreateData {
+				value: 100,
+				owner,
+				utxo_tx_hash: tx_hash(2, 0),
+				utxo_tx_index: index,
+			}),
+		})
+		.collect()
+}
+
+fn cmst_utxo_offsets() -> Vec<u32> {
+	System::events()
+		.iter()
+		.filter_map(|record| match &record.event {
+			RuntimeEvent::CNightObservation(Event::SystemTransactionApplied(applied)) => {
+				Some(applied.header.utxo_offset)
+			},
+			_ => None,
+		})
+		.collect()
+}
+
+#[test]
+fn utxo_offset_tracks_a_batch_ending_inside_a_transaction() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (owner, dust_public_key) = test_wallet_pairing();
+		let registration = ObservedUtxo {
+			header: test_header(1, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address: owner,
+				dust_public_key,
+			}),
+		};
+
+		let first = [vec![registration], creates_in_one_tx(owner, 0..3)].concat();
+		dispatch_observations(first, test_position(2, 0));
+		assert_eq!(NextCardanoCursor::<Test>::get().utxo_offset, 3);
+		assert_eq!(cmst_utxo_offsets(), vec![3]);
+
+		advance_block_and_reset_events();
+		dispatch_observations(creates_in_one_tx(owner, 3..5), test_position(2, 0));
+		assert_eq!(
+			NextCardanoCursor::<Test>::get().utxo_offset,
+			5,
+			"offsets accumulate in one transaction"
+		);
+		assert_eq!(cmst_utxo_offsets(), vec![5]);
+
+		advance_block_and_reset_events();
+		let model = CNightObservation::observation_cost_model().unwrap();
+		let over = (model.full_gas / model.create_gas) as u16 + 1;
+		dispatch_observations(creates_in_one_tx(owner, 5..5 + over), test_position(2, 0));
+		assert!(observations_deferred());
+		assert_eq!(
+			NextCardanoCursor::<Test>::get().utxo_offset,
+			5,
+			"a deferred batch leaves the offset"
+		);
+
+		advance_block_and_reset_events();
+		dispatch_observations(creates_in_one_tx(owner, 5..6), test_position(3, 0));
+		assert_eq!(NextCardanoCursor::<Test>::get().position, test_position(3, 0));
+		assert_eq!(
+			NextCardanoCursor::<Test>::get().utxo_offset,
+			0,
+			"past the transaction it resets"
+		);
+		assert_eq!(cmst_utxo_offsets(), vec![0]);
 	});
 }

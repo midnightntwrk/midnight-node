@@ -25,8 +25,8 @@ use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
 	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
-	UtxoIndexInTx,
+	CardanoPosition, CardanoRewardAddressBytes, DATA_ORDERED_UTXOS_SPEC_VERSION,
+	DustPublicKeyBytes, ObservationBatch, TimestampUnixMillis, UtxoIndexInTx,
 };
 use midnight_primitives_mainchain_follower::{
 	ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData,
@@ -77,11 +77,14 @@ fn reset_benchmark_state<T: Config>() {
 	let _ = Mapping::<T>::clear(u32::MAX, None);
 	let _ = UtxoOwners::<T>::clear(u32::MAX, None);
 	InherentExecutedThisBlock::<T>::kill();
-	NextCardanoPosition::<T>::set(CardanoPosition {
-		block_hash: McBlockHash([0u8; 32]),
-		block_number: 1,
-		block_timestamp: TimestampUnixMillis(20_000),
-		tx_index_in_block: 0,
+	NextCardanoCursor::<T>::set(CardanoCursor {
+		position: CardanoPosition {
+			block_hash: McBlockHash([0u8; 32]),
+			block_number: 1,
+			block_timestamp: TimestampUnixMillis(20_000),
+			tx_index_in_block: 0,
+		},
+		utxo_offset: 0,
 	});
 }
 
@@ -96,7 +99,8 @@ mod benchmarks {
 	fn process_tokens(n: Linear<0, MAX_UTXO_COUNT>) {
 		reset_benchmark_state::<T>();
 
-		let utxos = generate_registration_utxos(n);
+		let utxos =
+			ObservationBatch::new(generate_registration_utxos(n), DATA_ORDERED_UTXOS_SPEC_VERSION);
 
 		let next_position = CardanoPosition {
 			block_hash: McBlockHash([1u8; 32]),
@@ -108,7 +112,7 @@ mod benchmarks {
 		#[extrinsic_call]
 		process_tokens(RawOrigin::None, utxos, next_position);
 
-		assert_eq!(NextCardanoPosition::<T>::get().block_number, 2);
+		assert_eq!(NextCardanoCursor::<T>::get().position.block_number, 2);
 	}
 
 	/// Benchmark `set_mapping_validator_contract_address` with a maximum-length address.

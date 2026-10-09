@@ -159,6 +159,28 @@ pub struct CardanoPosition {
 	pub tx_index_in_block: u32,
 }
 
+/// Where cNIGHT observation resumes: the Cardano transaction at `position`, after
+/// its first `utxo_offset` UTXOs in the order of [`cmp_observed_utxos_by_data`].
+#[derive(
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	TypeInfo,
+	MaxEncodedLen,
+	Clone,
+	Eq,
+	PartialEq,
+	Debug,
+	Default,
+)]
+pub struct CardanoCursor {
+	pub position: CardanoPosition,
+	/// How many UTXOs of the transaction at `position` are already observed, which
+	/// is also the index of the next one to observe. Non-zero only when a batch
+	/// ended inside that transaction.
+	pub utxo_offset: u32,
+}
+
 impl core::fmt::Display for CardanoPosition {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
 		write!(
@@ -235,7 +257,7 @@ impl sp_inherents::IsFatalError for InherentError {
 
 #[derive(Decode, DecodeWithMemTracking, Debug, Encode, Clone)]
 pub struct MidnightObservationTokenMovement {
-	pub utxos: Vec<ObservedUtxo>,
+	pub utxos: ObservationBatch,
 	pub next_cardano_position: CardanoPosition,
 }
 
@@ -268,7 +290,7 @@ pub struct ObservedUtxos {
 	pub start: CardanoPosition,
 	// End position (inclusive)
 	pub end: CardanoPosition,
-	pub utxos: Vec<ObservedUtxo>,
+	pub utxos: ObservationBatch,
 }
 
 #[derive(
@@ -324,7 +346,8 @@ pub struct SpendData {
 
 /// Header for an observed UTXO
 /// This header can be used for both create and spend events for UTXOs.
-/// The ordering assumes that each header is unique per TX i.e. that only one relevant UTXO is included in each transaction
+/// One Cardano output can yield two UTXOs with equal headers; [`cmp_observed_utxos_by_data`]
+/// separates them by kind.
 #[derive(
 	Debug, Clone, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Serialize, Deserialize,
 )]
@@ -417,7 +440,10 @@ impl ObservedUtxoData {
 	}
 }
 
-/// Total order over observed UTXOs.
+/// Total order over observed UTXOs, and from `CNightObservationApi` version 2 the
+/// order [`CardanoCursor::utxo_offset`] counts UTXOs of one Cardano transaction in:
+/// it must not change without a new API version that takes effect at offset 0.
+/// Strict, unlike the legacy `Ord for ObservedUtxo`.
 ///
 /// `tx_position` stays the primary key and the variant rank must never be
 /// promoted above it: a single inherent's batch spans a whole observation
@@ -452,13 +478,71 @@ pub fn sort_observed_utxos(utxos: &mut [ObservedUtxo], spec_version: u32) {
 	}
 }
 
+/// Observed UTXOs in the order `process_tokens` of the runtime they are built for
+/// processes them. Encodes, and appears in metadata, as a plain `Vec<ObservedUtxo>`;
+/// decoding and deserializing do not check the order.
+#[derive(
+	Debug,
+	Clone,
+	Default,
+	PartialEq,
+	Eq,
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	Serialize,
+	Deserialize,
+)]
+#[serde(transparent)]
+pub struct ObservationBatch(Vec<ObservedUtxo>);
+
+impl ObservationBatch {
+	pub fn new(mut utxos: Vec<ObservedUtxo>, spec_version: u32) -> Self {
+		sort_observed_utxos(&mut utxos, spec_version);
+		Self(utxos)
+	}
+
+	pub fn truncate(&mut self, len: usize) {
+		self.0.truncate(len);
+	}
+
+	pub fn remove_prefix(&mut self, len: usize) {
+		self.0.drain(..len);
+	}
+}
+
+impl core::ops::Deref for ObservationBatch {
+	type Target = [ObservedUtxo];
+
+	fn deref(&self) -> &[ObservedUtxo] {
+		&self.0
+	}
+}
+
+impl IntoIterator for ObservationBatch {
+	type Item = ObservedUtxo;
+	type IntoIter = alloc::vec::IntoIter<ObservedUtxo>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.into_iter()
+	}
+}
+
+impl TypeInfo for ObservationBatch {
+	type Identity = <Vec<ObservedUtxo> as TypeInfo>::Identity;
+
+	fn type_info() -> scale_info::Type {
+		Vec::<ObservedUtxo>::type_info()
+	}
+}
+
 /// Prices for bounding one block's cNIGHT observation batch, in the
 /// `max_block.ref_time` gas units `get_transaction_cost` returns.
 ///
 /// A batch is priced at `utxo_gas` per UTXO plus `create_gas` per `AssetCreate` and
-/// `destroy_gas` per `AssetSpend`: the pallet's weight plus the cNIGHT-generates-DUST
-/// update's ledger price, which depends only on the event counts. Summing the two
-/// resources is pessimistic and safe.
+/// `destroy_gas` per `AssetSpend`, registered or not: the pallet's weight plus the
+/// cNIGHT-generates-DUST update's ledger price, which depends only on the event
+/// counts. Summing the two resources is pessimistic and safe.
 #[derive(Encode, Decode, TypeInfo, Clone, Debug, PartialEq, Eq)]
 pub struct ObservationCostModel {
 	/// Pallet weight (`ref_time`) of processing one observed UTXO of any kind.
@@ -469,7 +553,7 @@ pub struct ObservationCostModel {
 	pub destroy_gas: u64,
 	/// Share of the block the observation batch may consume.
 	pub budget_gas: u64,
-	/// The whole block: the ceiling for a lone Cardano transaction.
+	/// The whole block.
 	pub full_gas: u64,
 }
 
@@ -484,12 +568,15 @@ decl_runtime_apis! {
 		/// Get the Cardano CNight token identifier
 		fn get_cnight_token_identifier() -> (Vec<u8>, Vec<u8>);
 
-		fn get_next_cardano_position() -> CardanoPosition;
-
 		/// Prices for cutting the observation batch by cost. `None` when the runtime
 		/// could not price a cNIGHT-generates-DUST update; callers then halt
 		/// observation.
 		#[api_version(2)]
 		fn get_observation_cost_model() -> Option<ObservationCostModel>;
+
+		/// Where the next batch starts. Version 1 exported only the position, as
+		/// `get_next_cardano_position`.
+		#[api_version(2)]
+		fn get_next_cardano_cursor() -> CardanoCursor;
 	}
 }

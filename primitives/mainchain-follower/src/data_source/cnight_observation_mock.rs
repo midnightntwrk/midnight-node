@@ -16,7 +16,8 @@ use crate::{
 	ObservedUtxoHeader, RegistrationData, UtxoIndexInTx,
 };
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	ObservationBatch, ObservedUtxos,
 };
 use sidechain_domain::{McBlockHash, McTxHash};
 
@@ -110,9 +111,10 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		&self,
 		_config: &CNightAddresses,
 		start: &CardanoPosition,
+		_start_offset: u32,
 		_current_tip: McBlockHash,
 		_bound: &ObservationBound,
-		_spec_version: u32,
+		spec_version: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Calculate deterministic end position
 		let mut end = start.clone();
@@ -121,7 +123,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		end.block_hash = McBlockHash(Self::deterministic_hash(end.block_number, 0));
 
 		// Return deterministic UTXOs - same data on all nodes for the same block
-		let utxos = Self::deterministic_utxos(start);
+		let utxos = ObservationBatch::new(Self::deterministic_utxos(start), spec_version);
 
 		Ok(ObservedUtxos { start: start.clone(), end, utxos })
 	}
@@ -180,6 +182,7 @@ mod tests {
 			.get_utxos_up_to_capacity(
 				&config,
 				&start,
+				0,
 				McBlockHash([0u8; 32]),
 				&ObservationBound::Count(100),
 				0,
@@ -191,6 +194,7 @@ mod tests {
 			.get_utxos_up_to_capacity(
 				&config,
 				&start,
+				0,
 				McBlockHash([0u8; 32]),
 				&ObservationBound::Count(100),
 				0,
@@ -229,6 +233,7 @@ mod tests {
 			.get_utxos_up_to_capacity(
 				&config,
 				&start1,
+				0,
 				McBlockHash([0u8; 32]),
 				&ObservationBound::Count(100),
 				0,
@@ -240,6 +245,7 @@ mod tests {
 			.get_utxos_up_to_capacity(
 				&config,
 				&start2,
+				0,
 				McBlockHash([0u8; 32]),
 				&ObservationBound::Count(100),
 				0,

@@ -24,8 +24,8 @@ use frame_support::{
 };
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
-	UtxoIndexInTx,
+	CardanoPosition, CardanoRewardAddressBytes, DATA_ORDERED_UTXOS_SPEC_VERSION,
+	DustPublicKeyBytes, ObservationBatch, TimestampUnixMillis, UtxoIndexInTx,
 };
 use midnight_primitives_mainchain_follower::{
 	ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData,
@@ -85,14 +85,15 @@ fn test_process_tokens_accepts_utxos_above_old_count_bound() {
 	new_test_ext().execute_with(|| {
 		let utxos = generate_registration_utxos(200 * 64 + 1);
 
+		let utxos = ObservationBatch::new(utxos, DATA_ORDERED_UTXOS_SPEC_VERSION);
 		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
 		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
 
 		assert_eq!(
-			NextCardanoPosition::<Test>::get().block_number,
+			NextCardanoCursor::<Test>::get().position.block_number,
 			2,
-			"NextCardanoPosition should be updated on success"
+			"NextCardanoCursor should be updated on success"
 		);
 	});
 }
@@ -125,6 +126,7 @@ fn test_process_tokens_returns_actual_weight() {
 		let utxos = generate_registration_utxos(n);
 
 		let expected_weight = Pallet::<Test>::process_tokens_weight(&utxos);
+		let utxos = ObservationBatch::new(utxos, DATA_ORDERED_UTXOS_SPEC_VERSION);
 		let call = Call::<Test>::process_tokens { utxos, next_cardano_position: next_position() };
 
 		let result = RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into());
