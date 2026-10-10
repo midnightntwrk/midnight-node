@@ -23,6 +23,11 @@ use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand}
 use sc_cli::SubstrateCli;
 use sidechain_domain::McBlockHash;
 
+/// Definition of the BEEFY key, matching `sp_runtime::key_types::BEEFY` and the runtime's
+/// `SessionKeys::beefy` (ECDSA).
+const BEEFY: KeyDefinition<'static> =
+	KeyDefinition { name: "BEEFY", scheme: "ecdsa", key_type: "beef" };
+
 /// The `run` command used to run a node
 #[derive(Debug, Clone, clap::Parser)]
 pub struct RunMidnight {
@@ -513,8 +518,7 @@ impl PartnerChainRuntime for MidnightRuntime {
 	}
 
 	fn key_definitions() -> Vec<KeyDefinition<'static>> {
-		// TODO: BEEFY(follow up pr)
-		vec![AURA, BABE, GRANDPA, CROSS_CHAIN]
+		vec![AURA, BABE, GRANDPA, BEEFY, CROSS_CHAIN]
 	}
 }
 
