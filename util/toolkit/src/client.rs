@@ -11,11 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
+use std::{
+	collections::HashMap,
+	sync::{Arc, RwLock},
+	time::Duration,
+};
 
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
-use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
+use midnight_ledger_unsafe_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Decode;
 use subxt::config::HashFor;
@@ -34,8 +38,18 @@ use crate::fetcher::runtimes::{RuntimeVersion, RuntimeVersionError};
 /// Set generously to handle rate-limiting (429) during concurrent connection attempts.
 const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// subxt asks the config for metadata each time an at-block handle is created
+/// and, when the config has none, downloads the full metadata (~130KB) from the
+/// node for that block. Without this cache a chain sync fetched it once per
+/// block, which dominated the fetch time.
+///
+/// The cache lives in the config instance, so it is scoped to the client (and
+/// therefore the chain) it was created for: spec versions are not unique across
+/// chains, and one process may talk to several.
 #[derive(Clone, Debug, Default)]
-pub struct MidnightNodeClientConfig;
+pub struct MidnightNodeClientConfig {
+	metadata: Arc<RwLock<HashMap<u32, subxt::metadata::ArcMetadata>>>,
+}
 
 impl Config for MidnightNodeClientConfig {
 	type AccountId = AccountId32;
@@ -45,6 +59,20 @@ impl Config for MidnightNodeClientConfig {
 	type Header = SubstrateHeader<<Self::Hasher as subxt::config::Hasher>::Hash>;
 	type TransactionExtensions = SubstrateExtrinsicParams<Self>;
 	type AssetId = u32;
+
+	fn metadata_for_spec_version(&self, spec_version: u32) -> Option<subxt::metadata::ArcMetadata> {
+		self.metadata.read().ok()?.get(&spec_version).cloned()
+	}
+
+	fn set_metadata_for_spec_version(
+		&self,
+		spec_version: u32,
+		metadata: subxt::metadata::ArcMetadata,
+	) {
+		if let Ok(mut cache) = self.metadata.write() {
+			cache.insert(spec_version, metadata);
+		}
+	}
 }
 
 impl subxt::rpcs::RpcConfig for MidnightNodeClientConfig {
@@ -95,24 +123,11 @@ impl MidnightNodeClient {
 		Ok(network_id)
 	}
 
-	pub async fn get_state_root_at(
-		&self,
-		at: Option<HashFor<MidnightNodeClientConfig>>,
-		runtime_version: Option<RuntimeVersion>,
+	/// Fetch the Midnight state root via an existing at-block handle.
+	pub async fn state_root_from(
+		at_block: &subxt::client::OnlineClientAtBlock<MidnightNodeClientConfig>,
+		runtime_version: RuntimeVersion,
 	) -> Result<Option<Vec<u8>>, ClientError> {
-		let at_block = match at {
-			Some(hash) => self.api.at_block(hash).await?,
-			None => self.api.at_current_block().await?,
-		};
-
-		let runtime_version = match runtime_version {
-			Some(v) => v,
-			None => {
-				let header = at_block.block_header().await?;
-				RuntimeVersion::from_header(&header)?
-			},
-		};
-
 		match runtime_version {
 			RuntimeVersion::V0_21_0 => {
 				// V0_21_0 predates the `get_ledger_state_root` runtime API and stores

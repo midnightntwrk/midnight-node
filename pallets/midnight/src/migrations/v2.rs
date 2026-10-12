@@ -20,7 +20,7 @@
 //! itself lives in the ledger arena (parity-db). This migration hands the v8
 //! root to the [`migrate_state_v8_to_v9`](midnight_node_ledger::host_api::migration_8_to_9)
 //! host function, which walks the v8 state, translates it into the v9 shape
-//! (see [`midnight_node_ledger::state_translation_v8_to_v9`]), re-persists it,
+//! (see the `v8-to-v9-state-translation` crate), re-persists it,
 //! and returns the new v9 root — which we write back into `StateKey`.
 //!
 //! It is a single-block migration: the host call translates the whole state in

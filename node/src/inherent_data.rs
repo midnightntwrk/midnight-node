@@ -15,6 +15,7 @@ use crate::cfg::midnight_cfg::invariants::{
 	ConsensusConfigCoherenceError, MainchainEpochConfigError, check_mainchain_epoch_invariants,
 	check_sidechain_mainchain_coherence,
 };
+use crate::engine_digests::slot_of;
 use async_trait::async_trait;
 use authority_selection_inherents::CommitteeMember;
 use authority_selection_inherents::{
@@ -29,7 +30,7 @@ use midnight_node_runtime::{
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_cnight_observation::CNightObservationApi;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationApi;
-use sc_consensus_aura::{SlotDuration, find_pre_digest};
+use sc_consensus_aura::SlotDuration;
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
 use sidechain_mc_hash::McHashDataSource;
@@ -38,8 +39,7 @@ use sidechain_mc_hash::McHashInherentError;
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_consensus_aura::{Slot, sr25519::AuthorityPair as AuraPair};
-use sp_core::Pair;
+use sp_consensus_aura::Slot;
 use sp_inherents::CreateInherentDataProviders;
 use sp_partner_chains_bridge::{
 	TokenBridgeDataSource, TokenBridgeIDPRuntimeApi, TokenBridgeInherentDataProvider,
@@ -224,6 +224,23 @@ pub struct VerifierCIDP<T> {
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
+// Manual impl: a derive would require `T: Clone`, but the client is only ever held behind an `Arc`.
+impl<T> Clone for VerifierCIDP<T> {
+	fn clone(&self) -> Self {
+		Self {
+			config: self.config.clone(),
+			client: self.client.clone(),
+			mc_hash_data_source: self.mc_hash_data_source.clone(),
+			authority_selection_data_source: self.authority_selection_data_source.clone(),
+			cnight_observation_data_source: self.cnight_observation_data_source.clone(),
+			federated_authority_observation_data_source: self
+				.federated_authority_observation_data_source
+				.clone(),
+			bridge_data_source: self.bridge_data_source.clone(),
+		}
+	}
+}
+
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
 where
@@ -358,15 +375,19 @@ where
 	}
 }
 
+/// The slot of the block with this `header`, or `None` for genesis, which has no slot.
+///
+/// Across the AURA→BABE migration a parent may have been authored by either engine; which one,
+/// and which pre-runtime digest therefore holds the slot, is decided by
+/// [`crate::engine_digests::slot_of`], the single place in the node that reads engine digests.
 pub fn slot_from_predigest(
 	header: &<Block as BlockT>::Header,
 ) -> Result<Option<Slot>, Box<dyn Error + Send + Sync>> {
 	if header.number().is_zero() {
 		// genesis block doesn't have a slot
-		Ok(None)
-	} else {
-		Ok(Some(find_pre_digest::<Block, <AuraPair as Pair>::Signature>(header)?))
+		return Ok(None);
 	}
+	slot_of::<Block>(header).map(Some).map_err(Into::into)
 }
 
 #[derive(Clone)]

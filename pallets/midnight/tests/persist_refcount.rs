@@ -87,13 +87,13 @@ fn current_state_key() -> Vec<u8> {
 #[test]
 fn keep_alive_invariants() {
 	let (deploy_tx, deploy_ctx) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let (store_tx, store_ctx) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 	let (check_tx, check_ctx) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(CHECK_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(CHECK_TX);
 	let (maintenance_tx, maintenance_ctx) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(MAINTENANCE_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(MAINTENANCE_TX);
 
 	let deploy_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: deploy_tx.clone() };
 	let store_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: store_tx.clone() };

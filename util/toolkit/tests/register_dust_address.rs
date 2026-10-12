@@ -20,8 +20,7 @@
 //! transactions carry no ZK proofs.
 
 use async_trait::async_trait;
-use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	CostModel, DefaultDB, HashOutput, IntentHash, KeyLocation, LedgerContext, NIGHT,
 	PedersenRandomness, ProofMarker, ProofPreimage, ProofPreimageMarker, ProvingKeyMaterial,
 	Resolver, ResolverTrait, Signature, Sp, StdRng, Timestamp, Transaction, TransactionResult,
@@ -31,6 +30,7 @@ use midnight_node_ledger_helpers::{
 	transient_crypto::commitment::PureGeneratorPedersen,
 	transient_crypto::proofs::{Proof, ProvingProvider},
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use midnight_node_toolkit::{
 	serde_def::SourceTransactions,
 	tx_generator::builder::{
@@ -56,7 +56,7 @@ impl ProvingProvider for NoProofs {
 	async fn prove(
 		self,
 		_preimage: &ProofPreimage,
-		_overwrite_binding_input: Option<midnight_node_ledger_helpers::Fr>,
+		_overwrite_binding_input: Option<midnight_ledger_unsafe_helpers::Fr>,
 	) -> Result<Proof, anyhow::Error> {
 		anyhow::bail!("register-dust-address transactions must not contain proofs")
 	}
@@ -77,7 +77,7 @@ impl ResolverTrait for NoProofs {
 struct NoProofsProvider;
 
 #[async_trait]
-impl midnight_node_ledger_helpers::ProofProvider<DefaultDB> for NoProofsProvider {
+impl midnight_ledger_unsafe_helpers::ProofProvider<DefaultDB> for NoProofsProvider {
 	async fn prove(
 		&self,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, DefaultDB>,

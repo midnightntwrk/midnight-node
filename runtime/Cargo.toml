@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-runtime"
-version = "2.1.0"
+version = "3.0.0"
 description = "A fresh FRAME-based Substrate node, ready for hacking."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 edition = "2024"
@@ -31,6 +31,7 @@ pallet-mmr.workspace = true
 pallet-scheduler.workspace = true
 pallet-timestamp.workspace = true
 pallet-tx-pause.workspace = true
+pallet-safe-mode.workspace = true
 pallet-migrations.workspace = true
 pallet-membership.workspace = true
 pallet-collective.workspace = true
@@ -106,6 +107,18 @@ substrate-wasm-builder = { workspace = true, optional = true, default-features =
 
 [features]
 default = ["std"]
+
+# Relaxes block verification at exactly one block height so a node can sync a
+# locally forked chain from true genesis. See `src/fork_transition.rs`.
+#
+# A runtime built with this feature must NEVER be released: it reports an
+# authority set that is not in state and skips inherent checks. Build it only
+# for a throwaway fork, with MIDNIGHT_FORK_HEIGHT and
+# MIDNIGHT_FORK_AURA_AUTHORITIES set from the tool's `fork-bundle.json`;
+# `build.rs` fails the build without them. Never enable it from another crate's
+# dependency declaration: feature unification would turn it on for the whole
+# build. Release builds reject it (`scripts/assert-no-fork-transition.sh`).
+fork-transition = []
 std = [
     "binary-merkle-tree/std",
     "authority-selection-inherents/std",
@@ -168,6 +181,7 @@ std = [
     "pallet-session/std",
     "pallet-session-validator-management/std",
     "pallet-tx-pause/std",
+    "pallet-safe-mode/std",
     "sidechain-domain/std",
     "sidechain-slots/std",
     "sp-io/std",
@@ -196,6 +210,8 @@ runtime-benchmarks = [
     "pallet-scheduler/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
+    "pallet-safe-mode/runtime-benchmarks",
+    "pallet-version/runtime-benchmarks",
     "pallet-migrations/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",
@@ -223,6 +239,7 @@ try-runtime = [
     "pallet-scheduler/try-runtime",
     "pallet-timestamp/try-runtime",
     "pallet-tx-pause/try-runtime",
+    "pallet-safe-mode/try-runtime",
     "pallet-migrations/try-runtime",
     "pallet-membership/try-runtime",
     "pallet-collective/try-runtime",

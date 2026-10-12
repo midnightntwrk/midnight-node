@@ -14,10 +14,16 @@
 import path from "path";
 import fs, { existsSync } from "fs";
 import { globSync } from "glob";
-import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
-import { mockOverridePath } from "../lib/mockComposeOverride";
+import { ensureImageAvailable } from "../lib/docker";
+import { applyEnvFileOverrides } from "../lib/envFile";
+import { discoverValidators } from "../lib/discoverValidators";
+import {
+  mockOverridePath,
+  readMockValidatorSelection,
+} from "../lib/mockComposeOverride";
+import { writeForkManifest } from "../lib/forkManifest";
 
 // Command functionality we can depend on
 import { run } from "./run";
@@ -42,18 +48,10 @@ export async function imageUpgrade(
   const healthTimeoutSec = opts.healthTimeoutSec ?? 180;
   const requireHealthy = opts.requireHealthy ?? true;
 
-  let env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-  };
-
-  for (const envFilePath of opts.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  const env = applyEnvFileOverrides(
+    process.env as Record<string, string>,
+    opts.envFile,
+  );
 
   console.log(`Ensuring network is up with starting tag ${fromTag}`);
   env[imageEnvVar] = fromTag;
@@ -62,6 +60,7 @@ export async function imageUpgrade(
     profiles: opts.profiles,
     envFile: opts.envFile,
     fromSnapshot: opts.fromSnapshot,
+    numValidators: opts.numValidators,
   });
 
   const composeFile = resolveNetworkCompose(namespace);
@@ -75,7 +74,12 @@ export async function imageUpgrade(
     ? [composeFile, overridePath]
     : [composeFile];
 
-  const services = opts.services ?? (await listServices(composeFiles, env));
+  let services = opts.services ?? (await listServices(composeFiles, env));
+  const mockSelection = readMockValidatorSelection(overridePath);
+  if (mockSelection) {
+    const disabled = new Set(mockSelection.disabledValidatorServices);
+    services = services.filter((service) => !disabled.has(service));
+  }
   if (!services.length) {
     throw new Error(
       "No services discovered to roll out. Provide ImageUpgradeOptions.services explicitly or check your compose file.",
@@ -95,6 +99,8 @@ export async function imageUpgrade(
   for (const svc of services) {
     console.log(`\n Upgrading service: ${svc}`);
     env[imageEnvVar] = toTag;
+
+    await ensureImageAvailable(toTag, env);
 
     // Only re-create this one service, do not bounce dependencies.
     await dockerCompose(
@@ -128,9 +134,32 @@ export async function imageUpgrade(
     if (waitBetweenMs > 0) await sleep(waitBetweenMs);
   }
 
-  console.log(
-    `\n Rollout complete! All selected services are now on ${toTag}.`,
-  );
+  console.log(`\n Rollout complete! Selected services are now on ${toTag}.`);
+
+  const primaryValidator = discoverValidators(composeFile)[0].name;
+  if (shouldRefreshForkManifest(services, primaryValidator)) {
+    // The manifest written during the initial `run()` records the starting
+    // image. Its bare node endpoint describes the primary validator, so refresh
+    // the advertised image only when that validator was rolled. `writeForkManifest`
+    // reads the node image from `env.NODE_IMAGE`, so update it there regardless
+    // of which env var drove the rollout.
+    env[imageEnvVar] = toTag;
+    env.NODE_IMAGE = toTag;
+    const manifestPath = writeForkManifest({ namespace, composeFile, env });
+    console.log(`Fork manifest refreshed with rolled image: ${manifestPath}`);
+  } else {
+    console.log(
+      `Fork manifest left unchanged: primary validator ${primaryValidator} was not rolled.`,
+    );
+  }
+}
+
+/** The global manifest image describes the primary validator endpoint. */
+export function shouldRefreshForkManifest(
+  rolledServices: readonly string[],
+  primaryValidator: string,
+): boolean {
+  return rolledServices.includes(primaryValidator);
 }
 
 function resolveNetworkCompose(namespace: string): string {

@@ -65,6 +65,7 @@ pub struct DbPoolCfg {
 	max_connections: u32,
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	cfg: MidnightCfg,
 	mc_metrics_opt: Option<McFollowerMetrics>,
