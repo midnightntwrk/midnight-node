@@ -14,4 +14,4 @@ block still share a single read, so a polling burst on a fresh block touches the
 arena once, but the single-flight is per block hash rather than one global lock,
 so callers for different blocks proceed independently.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/
+PR: https://github.com/midnightntwrk/midnight-node/pull/2289
