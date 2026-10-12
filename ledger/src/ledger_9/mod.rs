@@ -787,7 +787,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -797,7 +797,8 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		retain_transient(&event.state_root, &ledger);
+		release_transient::<D>(state_key);
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -1962,6 +1963,65 @@ mod tests {
 		assert_eq!(over_one, max_weight);
 		assert!(half >= zero);
 		assert!(one >= half);
+	}
+
+	/// The untyped `apply_system_transaction` must follow the same keep-alive contract as
+	/// the typed paths: the new state is retained, not rooted, and the predecessor's
+	/// claim is released. (It used to `persist()`, rooting every intra-block state.)
+	#[test]
+	fn untyped_system_transaction_keeps_state_live_without_rooting() {
+		use mn_ledger_local::dust::DustPublicKey;
+		use transient_crypto_local::curve::Fr;
+
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+		let genesis = midnight_node_res::networks::MidnightNetwork::genesis_state(
+			&midnight_node_res::networks::UndeployedNetwork,
+		);
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+
+		let tx = api
+			.tagged_serialize(&SystemTransaction::CNightGeneratesDustUpdate {
+				events: vec![CNightGeneratesDustEvent {
+					value: 1_000,
+					owner: DustPublicKey(Fr::from(7u64)),
+					time: Timestamp::from_secs(1_800_000_000),
+					action: CNightGeneratesDustActionType::Create,
+					nonce: InitialNonce(HashOutput([1; 32])),
+				}],
+			})
+			.expect("serialize system tx");
+
+		let mut ext = sp_io::TestExternalities::default();
+		let event = TestBridge::apply_system_transaction(
+			&mut ext.ext(),
+			&state_key,
+			&tx,
+			BlockContext::default(),
+		)
+		.expect("system tx applies");
+
+		let typed: ledger_storage_local::arena::TypedArenaKey<Ledger<DefaultDB>, _> =
+			midnight_serialize_local::tagged_deserialize(&mut &event.state_root[..]).unwrap();
+		let key: ledger_storage_local::arena::ArenaKey<_> = typed.into();
+		let root_count = default_storage::<DefaultDB>()
+			.with_backend(|backend| backend.get_roots().get(key.hash()).copied());
+		assert_eq!(root_count, None, "an intra-block intermediate must never be a GC root");
+		assert!(
+			TRANSIENT_LEDGER_STATES
+				.contains_key(&StateCacheKey::new::<DefaultDB>(&event.state_root)),
+			"the intermediate must be retained for its successor"
+		);
 	}
 
 	/// `pallet_cnight_observation::migrations::v2` prices its

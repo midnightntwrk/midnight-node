@@ -8104,6 +8104,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sp-externalities",
+ "sp-io",
  "sp-runtime",
  "sp-runtime-interface",
  "sp-tracing",
