@@ -35,6 +35,8 @@ Two caches, with different contracts:
 per block at the post-block flush. `transient` must read 0 there; a persistent non-zero
 value is a leaked intra-block state.
 
+Both the ledger 8 and ledger 9 bridges are covered; each keeps its own copy of the two caches. The ledger-8 caches report as `ledger_state_cache_size{cache_type="transient_ledger_8"|"anchored_ledger_8"}` so they don't collide with the ledger-9 gauges. The unused `pre_fetch_storage` bridge method is removed from ledger 8.
+
 Also fixes `has_ledger_state`, which is documented to return `false` for an unresolvable
 state key but reached that branch by panic: `get_ledger` now probes the arena root before
 handing back a lazy pointer that panics on first deref.

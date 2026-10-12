@@ -27,6 +27,16 @@ type DbSeparate = ParityDb;
 type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 pub fn drop_default_storage_if_exists() {
+	// Required, not tidiness: every retained `Sp` holds `Arc`s into `Storage<D>`, so a
+	// surviving keep-alive entry keeps the parity-db handle — and its exclusive file
+	// lock — alive past the drop.
+	//
+	// Unconditional, and deliberately not inside the branches below: ledger 8 and 9
+	// share one storage backend, and `ledger_9::storage::drop_default_storage_if_exists`
+	// may be the call that finds and drops it. Only the ledger-8 caches are cleared here;
+	// ledger 9 clears its own.
+	super::clear_ledger_state_caches();
+
 	if try_get_default_storage::<DbSeparate>().is_some() {
 		unsafe_drop_default_storage::<DbSeparate>();
 		log::info!(
@@ -131,12 +141,51 @@ where
 	let state = Ledger::new(state);
 
 	let mut state = default_storage::<D>().arena.alloc(state);
+	// Genesis is an anchored state: persisted once at rc=1 and never unpersisted, so it
+	// is retained for history.
 	state.persist();
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	crate::ledger_8::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
 		.unwrap();
+	// Keep it live so block 1's first apply doesn't re-materialise it.
+	super::retain_anchored(&bytes, &state);
 	bytes
+}
+
+/// Returns the persist refcount for the ledger state addressed by `state_key`,
+/// or `None` if the state is not currently a GC root (refcount zero).
+///
+/// Test-only inspection helper: lets tests verify that intra-block intermediates are
+/// never rooted and post-block tips always are. Queries `ParityDb`-backed storage to
+/// match what `init_storage_paritydb_separate` sets up.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
+	use crate::ledger_8::api::Ledger;
+	use crate::ledger_8::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		crate::ledger_8::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	default_storage::<ParityDb>()
+		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+}
+
+/// Whether the ledger state addressed by `state_key` is currently held by the
+/// intra-block keep-alive cache.
+///
+/// Test-only inspection helper: lets tests verify that an intermediate stays addressable
+/// between its `apply_transaction` and its successor call, and is released after. Same
+/// `ParityDb` hard-wiring as [`get_state_root_count`].
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn transient_state_is_retained(state_key: &[u8]) -> bool {
+	use crate::ledger_8::ledger_storage_local::db::ParityDb;
+
+	super::TRANSIENT_LEDGER_STATES.contains_key(&super::StateCacheKey::new::<ParityDb>(state_key))
 }
 
 #[cfg(feature = "std")]
