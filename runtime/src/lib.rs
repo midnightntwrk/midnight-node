@@ -430,7 +430,9 @@ impl pallet_babe::Config for Runtime {
 	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
 	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
 	type DisabledValidators = ();
-	// TODO: Issue #1863
+	// Default weights implemented by `()` are the best thing we have for BABE.
+	// Pallet does not define benchmarks for methods in the `WeightInfo`, so
+	// running benchmarks does not add any value.
 	type WeightInfo = ();
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
