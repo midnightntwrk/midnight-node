@@ -13,10 +13,10 @@
 
 use crate::ledger_8::{
 	BindingKind, BlockContext, ContractAddress, ContractState, DB, DUST_EXPECTED_FILES,
-	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, MidnightDataProvider,
-	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
-	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
-	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
+	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, MidnightDataProvider, Offer,
+	OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen, Resolver,
+	SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged, Timestamp,
+	Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
 	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState,
 	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
 };
@@ -709,8 +709,8 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 
 #[cfg(test)]
 mod tests {
-	use crate::ledger_8::mn_ledger_storage as storage;
 	use super::*;
+	use crate::ledger_8::mn_ledger_storage as storage;
 	use std::{
 		sync::{
 			Arc,
