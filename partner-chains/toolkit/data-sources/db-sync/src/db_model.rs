@@ -11,8 +11,9 @@ use sidechain_domain::{
 };
 use sqlx::{
 	Decode, PgPool, Pool, Postgres, database::Database, error::BoxDynError, postgres::PgTypeInfo,
-	types::JsonValue,
 };
+#[cfg(feature = "bridge")]
+use sqlx::{ValueRef, types::JsonValue};
 use std::{cell::OnceCell, str::FromStr, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -597,6 +598,42 @@ mod tests {
 	}
 }
 
+/// Decodes transaction metadata that is NULL or not valid JSON as `None`
+///
+/// Anyone can pay to the illiquid circulating supply address and attach whatever metadata they
+/// like, so one unreadable metadatum must not fail the whole query. In particular, serde_json
+/// rejects JSON nested 128 levels or deeper, which a metadatum of 128 nested lists reaches.
+#[cfg(feature = "bridge")]
+pub(crate) struct C2mMetadataIfValid(Option<JsonValue>);
+
+#[cfg(feature = "bridge")]
+impl sqlx::Type<Postgres> for C2mMetadataIfValid {
+	fn type_info() -> <Postgres as Database>::TypeInfo {
+		<JsonValue as sqlx::Type<Postgres>>::type_info()
+	}
+
+	fn compatible(ty: &<Postgres as Database>::TypeInfo) -> bool {
+		<JsonValue as sqlx::Type<Postgres>>::compatible(ty)
+	}
+}
+
+#[cfg(feature = "bridge")]
+impl<'r> Decode<'r, Postgres> for C2mMetadataIfValid {
+	fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+		if value.is_null() {
+			return Ok(Self(None));
+		}
+		Ok(Self(<JsonValue as Decode<Postgres>>::decode(value).ok()))
+	}
+}
+
+#[cfg(feature = "bridge")]
+impl From<C2mMetadataIfValid> for Option<JsonValue> {
+	fn from(metadata: C2mMetadataIfValid) -> Self {
+		metadata.0
+	}
+}
+
 #[cfg(feature = "bridge")]
 #[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
 pub(crate) struct BridgeTx {
@@ -605,6 +642,10 @@ pub(crate) struct BridgeTx {
 	pub(crate) tx_hash: TxHash,
 	/// Value of transaction metadata with a specific C-to-M key.
 	/// Not the full metadata JSON. Db-sync metadata uses a separate row per metadata key.
+	///
+	/// Metadata that cannot be decoded is read as `None`, which makes the transfer's recipient
+	/// [sp_partner_chains_bridge::TransferRecipient::Invalid], same as any other unusable value.
+	#[sqlx(try_from = "C2mMetadataIfValid")]
 	pub(crate) c2m_metadata: Option<JsonValue>,
 	/// Sum of bridge token amounts in inputs at bridge address for given tx
 	pub(crate) bridge_in: NativeTokenAmount,
