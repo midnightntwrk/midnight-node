@@ -64,7 +64,11 @@ pub struct MidnightCfg {
 
 	/// Mock ariadne parameters
 	pub use_main_chain_follower_mock: bool,
-	/// Required if use_main_chain_follower_mock is true
+	/// Use existing validator and governance mocks while retaining real Cardano observations.
+	/// Ignored when use_main_chain_follower_mock already enables all mock sources.
+	#[serde(default)]
+	pub use_main_chain_follower_mock_authorities: bool,
+	/// Required if either main-chain follower mock option is true
 	/// Used in the sidechains library
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub mock_registrations_file: Option<String>,
@@ -140,6 +144,12 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 		))
 	};
 
+	if cfg.use_main_chain_follower_mock_authorities && cfg.mock_registrations_file.is_none() {
+		return Err(validation::Error::Custom(
+			"mock_registrations_file must be defined if use_main_chain_follower_mock_authorities is true.".to_string(),
+		));
+	}
+
 	if cfg.use_main_chain_follower_mock {
 		if cfg.mock_registrations_file.is_none() {
 			return Err(validation::Error::Custom(
@@ -201,6 +211,54 @@ impl From<MidnightCfg> for MainchainEpochConfig {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn authority_mock_defaults_to_false_for_existing_configs() {
+		let mut value = serde_json::to_value(MidnightCfg::default()).unwrap();
+		value
+			.as_object_mut()
+			.unwrap()
+			.remove("use_main_chain_follower_mock_authorities");
+		let cfg: MidnightCfg = serde_json::from_value(value).unwrap();
+		assert!(!cfg.use_main_chain_follower_mock_authorities);
+	}
+
+	#[test]
+	fn authority_mock_requires_registrations_and_real_database_configuration() {
+		let mut cfg =
+			MidnightCfg { use_main_chain_follower_mock_authorities: true, ..Default::default() };
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("mock_registrations_file")
+		);
+		cfg.mock_registrations_file = Some("registrations.json".into());
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("db_sync_postgres_connection_string")
+		);
+		cfg.db_sync_postgres_connection_string = Some("postgresql://localhost/test".into());
+		cfg.cardano_security_parameter = Some(2160);
+		cfg.cardano_active_slots_coeff = Some(0.05);
+		cfg.block_stability_margin = Some(30);
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
+
+	#[test]
+	fn full_mock_still_does_not_require_a_database() {
+		for mock_authorities in [false, true] {
+			let cfg = MidnightCfg {
+				use_main_chain_follower_mock: true,
+				use_main_chain_follower_mock_authorities: mock_authorities,
+				mock_registrations_file: Some("registrations.json".into()),
+				..Default::default()
+			};
+			assert!(main_chain_follower_vars(&cfg).is_ok());
+		}
+	}
 
 	/// A `MidnightCfg` whose mainchain timing fields are internally coherent (1000 ms slots, a
 	/// 5-day epoch divisible by the slot duration and at least one second). Other fields are left at
