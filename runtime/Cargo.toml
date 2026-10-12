@@ -68,8 +68,6 @@ frame-system-benchmarking = { workspace = true, optional = true }
 
 # Sidechain Dependencies
 authority-selection-inherents.workspace = true
-#pallet-block-rewards.workspace = true
-#sp-block-rewards.workspace = true
 pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
@@ -156,7 +154,6 @@ std = [
     "pallet-federated-authority/std",
     "sp-api/std",
     "sp-block-builder/std",
-    #"sp-block-rewards/std",
     "sp-consensus-aura/std",
     "sp-consensus-babe/std",
     "sp-consensus-beefy/std",
@@ -176,7 +173,6 @@ std = [
     "sp-storage/std",
     "sp-genesis-builder/std",
     "substrate-wasm-builder",
-    #"pallet-block-rewards/std",
     "pallet-sidechain/std",
     "pallet-session/std",
     "pallet-session-validator-management/std",

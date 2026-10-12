@@ -79,8 +79,6 @@ use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
-//#[cfg(feature = "experimental")]
-//use sp_block_rewards::GetBlockRewardPoints;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
@@ -676,14 +674,6 @@ impl pallet_session_validator_management::Config for Runtime {
 
 pub struct LogBeneficiaries;
 impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
-	#[cfg(feature = "experimental")]
-	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
-		//let rewards = BlockRewards::get_rewards_and_clear();
-		//log::info!("Rewards accrued in epoch {old_epoch}: {rewards:?}");
-
-		ParityDbWeight::get().reads_writes(1, 1)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
 		Weight::zero()
 	}
@@ -704,43 +694,12 @@ pub type BeneficiaryId = midnight_node_ledger::types::Hash;
 pub type BlockRewardPoints = u128;
 pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
 
-/*
-#[cfg(feature = "experimental")]
-pub struct LedgerBlockRewardPoints;
-#[cfg(feature = "experimental")]
-impl GetBlockRewardPoints<BlockRewardPoints> for LedgerBlockRewardPoints {
-	fn get_block_reward() -> BlockRewardPoints {
-		BLOCK_REWARD_POINTS
-	}
-}
-*/
-
 pub struct LedgerBlockReward;
 impl Get<BlockReward> for LedgerBlockReward {
-	#[cfg(feature = "experimental")]
-	fn get() -> BlockReward {
-		/*
-		(
-			<Runtime as pallet_block_rewards::Config>::GetBlockRewardPoints::get_block_reward(),
-			pallet_block_rewards::CurrentBlockBeneficiary::<Runtime>::get(),
-		)
-		*/
-		(0, None)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn get() -> BlockReward {
 		(0, None)
 	}
 }
-
-/*
-#[cfg(feature = "experimental")]
-impl pallet_block_rewards::Config for Runtime {
-	type BeneficiaryId = BeneficiaryId;
-	type BlockRewardPoints = BlockRewardPoints;
-	type GetBlockRewardPoints = LedgerBlockRewardPoints;
-}
-*/
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
@@ -1163,8 +1122,6 @@ mod runtime {
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
-	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
