@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{
-	collections::{HashMap, hash_map::Entry},
+	collections::HashMap,
 	hash::Hash,
 	marker::PhantomData,
 	sync::{Arc, Mutex, MutexGuard, PoisonError},
@@ -183,15 +183,38 @@ struct SingleFlightMemo<K, V> {
 	inflight: Mutex<HashMap<K, Arc<OnceCell<V>>>>,
 }
 
+/// A panic while one of the memo's locks is held poisons it. Losing the memo is
+/// survivable; refusing every later call is not, so poisoning is ignored.
+fn lock_ignoring_poison<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+	m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Removes an in-flight entry when dropped, so it goes whether the fill
+/// completed, failed, or never finished: jsonrpsee can drop a call's future
+/// mid-flight (server shutdown, HTTP connection closed), and an entry that
+/// outlived its fill would otherwise leak, one per abandoned hash.
+///
+/// Only *this* caller's cell is removed. A late caller could have found the
+/// entry gone already (another finisher removed it) and registered a fresh one
+/// that is mid-fill; that one must stay.
+struct RetireOnDrop<'a, K: Hash + Eq, V> {
+	inflight: &'a Mutex<HashMap<K, Arc<OnceCell<V>>>>,
+	key: K,
+	cell: Arc<OnceCell<V>>,
+}
+
+impl<K: Hash + Eq, V> Drop for RetireOnDrop<'_, K, V> {
+	fn drop(&mut self) {
+		let mut inflight = lock_ignoring_poison(self.inflight);
+		if inflight.get(&self.key).is_some_and(|c| Arc::ptr_eq(c, &self.cell)) {
+			inflight.remove(&self.key);
+		}
+	}
+}
+
 impl<K: Hash + Eq + Clone, V: Clone> SingleFlightMemo<K, V> {
 	fn new() -> Self {
 		Self { last: Mutex::new(None), inflight: Mutex::new(HashMap::new()) }
-	}
-
-	/// A panic while one of these locks is held poisons it. Losing the memo is
-	/// survivable; refusing every later call is not, so poisoning is ignored.
-	fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-		m.lock().unwrap_or_else(PoisonError::into_inner)
 	}
 
 	async fn get_or_fill<E, F, Fut>(&self, key: K, fill: F) -> Result<V, E>
@@ -199,26 +222,22 @@ impl<K: Hash + Eq + Clone, V: Clone> SingleFlightMemo<K, V> {
 		F: FnOnce() -> Fut,
 		Fut: Future<Output = Result<V, E>>,
 	{
-		if let Some((k, v)) = Self::lock(&self.last).as_ref()
+		if let Some((k, v)) = lock_ignoring_poison(&self.last).as_ref()
 			&& *k == key
 		{
 			return Ok(v.clone());
 		}
 
-		let cell = Self::lock(&self.inflight).entry(key.clone()).or_default().clone();
+		let cell = lock_ignoring_poison(&self.inflight).entry(key.clone()).or_default().clone();
+		let _retire =
+			RetireOnDrop { inflight: &self.inflight, key: key.clone(), cell: cell.clone() };
+
+		// If this caller is the one running `fill` and its future is dropped
+		// part-way, the cell stays empty and the next waiter runs its own `fill`.
 		let result = cell.get_or_try_init(fill).await.cloned();
 
 		if let Ok(v) = &result {
-			*Self::lock(&self.last) = Some((key.clone(), v.clone()));
-		}
-
-		// Retire the in-flight entry — but only *our* cell. A late caller could have
-		// found the entry gone already (another finisher removed it) and registered a
-		// fresh one that is mid-fill; that one must stay.
-		if let Entry::Occupied(e) = Self::lock(&self.inflight).entry(key)
-			&& Arc::ptr_eq(e.get(), &cell)
-		{
-			e.remove();
+			*lock_ignoring_poison(&self.last) = Some((key, v.clone()));
 		}
 
 		result
@@ -424,5 +443,50 @@ mod tests {
 			"the success, not the failure, is what got memoised"
 		);
 		assert_eq!(fills.load(Ordering::SeqCst), 2);
+	}
+
+	#[tokio::test]
+	async fn cancelled_fill_retires_its_entry_and_a_waiter_takes_over() {
+		let memo = Arc::new(SingleFlightMemo::<u8, u32>::new());
+		let fills = Fills::default();
+		let gate = Gate::new(Semaphore::new(0));
+
+		let leader = {
+			let (memo, fills, gate) = (memo.clone(), fills.clone(), gate.clone());
+			tokio::spawn(
+				async move { memo.get_or_fill(1, || gated_fill(&fills, &gate, Ok(1))).await },
+			)
+		};
+		settle().await;
+		assert_eq!(fills.load(Ordering::SeqCst), 1);
+
+		// A sole caller abandoned mid-fill must not leave its entry behind.
+		leader.abort();
+		assert!(leader.await.unwrap_err().is_cancelled());
+		assert!(memo.inflight.lock().unwrap().is_empty(), "entry retired on cancel");
+
+		// With a waiter queued, the waiter runs its own fill once the leader is gone.
+		let leader = {
+			let (memo, fills, gate) = (memo.clone(), fills.clone(), gate.clone());
+			tokio::spawn(
+				async move { memo.get_or_fill(1, || gated_fill(&fills, &gate, Ok(2))).await },
+			)
+		};
+		settle().await;
+		let waiter = {
+			let (memo, fills, gate) = (memo.clone(), fills.clone(), gate.clone());
+			tokio::spawn(
+				async move { memo.get_or_fill(1, || gated_fill(&fills, &gate, Ok(3))).await },
+			)
+		};
+		settle().await;
+		assert_eq!(fills.load(Ordering::SeqCst), 2, "waiter is queued, not filling");
+
+		leader.abort();
+		assert!(leader.await.unwrap_err().is_cancelled());
+		gate.add_permits(1);
+		assert_eq!(waiter.await.unwrap(), Ok(3));
+		assert_eq!(fills.load(Ordering::SeqCst), 3);
+		assert!(memo.inflight.lock().unwrap().is_empty());
 	}
 }
