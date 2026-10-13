@@ -25,7 +25,28 @@ Existing boolean configuration values and environment strings `true` and
 Use the same configuration on every node participating in the test chain.
 This option uses known test keys and is intended only for isolated test chains.
 
-This selects data sources; it does not convert a snapshot or rewrite consensus
-state. Clone tooling must separately install matching test authorities and
-preserve valid Cardano references and observation positions for the selected
-network. Existing database permissions and query prerequisites still apply.
+## Starting from a real-network snapshot
+
+This setting alone cannot start an untouched snapshot with different validator
+keys. The snapshot already contains its current committee and consensus
+state. Changing the candidate source does not replace that committee: an
+existing authority must produce blocks before a new committee can take over.
+
+The clone preparation and node configuration therefore serve different roles:
+
+1. Before starting validators, prepare an isolated copy of the snapshot with
+   the test committee, matching consensus/finality state and local keystores.
+   Keep the snapshot's genuine Cardano reference and observation positions.
+2. Start every clone node from that same prepared state, using
+   `USE_MAIN_CHAIN_FOLLOWER_MOCK=authorities` and matching test registrations.
+   The prepared committee can produce the first blocks; the mock candidate
+   source supplies test keys for subsequent committee selection.
+3. Verify advancing finality and real Cardano observations across a committee
+   transition. Successful startup alone does not establish this.
+
+The `mock-authorities` converter in `shieldedtech/midnight-node-ops` performs
+snapshot authority replacement. Its real-Cardano conversion support preserves
+source references rather than substituting synthetic ones. Check the
+converter's supported snapshot consensus and storage layouts before use.
+The node setting performs neither snapshot conversion nor consensus-state
+repair. Existing database permissions and query prerequisites still apply.
