@@ -1,14 +1,19 @@
 use crate::candidates::CandidatesDataSourceImpl;
-use crate::db_model::{DbSyncConfigurationProvider, TxInConfiguration, index_exists_unsafe};
+use crate::db_model::{DbSyncConfigurationProvider, index_exists_unsafe};
 use crate::metrics::mock::test_metrics;
+use crate::tests::normalize_tx_out_addresses;
 use authority_selection_inherents::AuthoritySelectionDataSource;
+use db_sync_sqlx::{
+	DbSyncAddressMode, DbSyncQueryConfig, DbSyncSchemaMode, DbSyncTxInputMode,
+	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
+};
 use hex_literal::hex;
 use sidechain_domain::*;
 use sqlx::PgPool;
-use std::cell::OnceCell;
 use std::str::FromStr;
-use std::sync::Arc;
 use tokio_test::assert_err;
+
+type TxInConfiguration = ResolvedDbSyncTxInputMode;
 
 const D_PARAM_POLICY: [u8; 28] = hex!("500000000000000000000000000000000000434845434b504f494e69");
 const PERMISSIONED_CANDIDATES_POLICY: [u8; 28] =
@@ -22,7 +27,7 @@ macro_rules! with_migration_versions {
 
 			#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
 			async fn $name_v1($pool: PgPool) {
-				$name($pool, TxInConfiguration::Enabled).await
+				$name($pool, TxInConfiguration::TxIn).await
 			}
 
 			#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -173,6 +178,33 @@ with_migration_versions! {
 		assert!(index_exists_unsafe(&pool, "idx_ma_tx_out_ident").await);
 		assert!(index_exists_unsafe(&pool, "idx_tx_out_address").await);
 	}
+}
+
+async fn assert_address_table_candidate_flow(pool: PgPool, tx_input_mode: DbSyncTxInputMode) {
+	normalize_tx_out_addresses(&pool).await;
+	let source = CandidatesDataSourceImpl::new_with_db_sync_config(
+		pool,
+		None,
+		DbSyncQueryConfig { tx_input_mode, address_mode: DbSyncAddressMode::AddressTable },
+		DbSyncSchemaMode::Apply,
+	)
+	.await
+	.unwrap();
+
+	let mut candidates =
+		source.get_candidates(McEpochNumber(195), candidates_address()).await.unwrap();
+	candidates.sort_by_key(|candidate| candidate.mainchain_pub_key().0);
+	assert_eq!(candidates, vec![leader_candidate_spo_c(), leader_candidate_spo_b()]);
+}
+
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
+async fn test_get_candidates_address_table_tx_in(pool: PgPool) {
+	assert_address_table_candidate_flow(pool, DbSyncTxInputMode::TxIn).await;
+}
+
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
+async fn test_get_candidates_address_table_consumed(pool: PgPool) {
+	assert_address_table_candidate_flow(pool, DbSyncTxInputMode::Consumed).await;
 }
 
 mod candidate_caching {
@@ -326,10 +358,13 @@ fn make_source(pool: PgPool, tx_in_config: TxInConfiguration) -> CandidatesDataS
 	CandidatesDataSourceImpl {
 		pool: pool.clone(),
 		metrics_opt: Some(test_metrics()),
-		db_sync_config: DbSyncConfigurationProvider {
+		db_sync_config: DbSyncConfigurationProvider::from_resolved(
 			pool,
-			tx_in_config: Arc::new(tokio::sync::Mutex::new(OnceCell::from(tx_in_config))),
-		},
+			ResolvedDbSyncQueryConfig {
+				tx_input_mode: tx_in_config,
+				address_mode: ResolvedDbSyncAddressMode::Inline,
+			},
+		),
 	}
 }
 

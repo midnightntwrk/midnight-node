@@ -6,6 +6,7 @@ use crate::db_model::{
 };
 use crate::metrics::{McFollowerMetrics, observed_async_trait};
 use authority_selection_inherents::*;
+use db_sync_sqlx::{DbSyncQueryConfig, DbSyncSchemaMode, candidate_index_specs, manage_indexes};
 use itertools::Itertools;
 use log::error;
 use partner_chains_plutus_data::{
@@ -126,12 +127,28 @@ impl CandidatesDataSourceImpl {
 		pool: PgPool,
 		metrics_opt: Option<McFollowerMetrics>,
 	) -> Result<CandidatesDataSourceImpl, Box<dyn std::error::Error + Send + Sync>> {
-		db_model::create_idx_ma_tx_out_ident(&pool).await?;
-		db_model::create_idx_tx_out_address(&pool).await?;
+		Self::new_with_db_sync_config(
+			pool,
+			metrics_opt,
+			DbSyncQueryConfig::default(),
+			DbSyncSchemaMode::Apply,
+		)
+		.await
+	}
+
+	/// Creates a data source for a selected db-sync layout and schema-management mode.
+	pub async fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<McFollowerMetrics>,
+		query_config: DbSyncQueryConfig,
+		schema_mode: DbSyncSchemaMode,
+	) -> Result<CandidatesDataSourceImpl, Box<dyn std::error::Error + Send + Sync>> {
+		let resolved = query_config.resolve(&pool).await?;
+		manage_indexes(&pool, schema_mode, &candidate_index_specs(resolved)).await?;
 		Ok(Self {
 			pool: pool.clone(),
 			metrics_opt,
-			db_sync_config: DbSyncConfigurationProvider::new(pool),
+			db_sync_config: DbSyncConfigurationProvider::from_resolved(pool, resolved),
 		})
 	}
 
@@ -165,7 +182,7 @@ impl CandidatesDataSourceImpl {
 					&self.pool,
 					&address,
 					block,
-					self.db_sync_config.get_tx_in_config().await?,
+					self.db_sync_config.get_config().await?,
 				)
 				.await?
 			},

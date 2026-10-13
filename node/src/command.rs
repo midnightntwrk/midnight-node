@@ -696,6 +696,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				let pool =
 					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
 						.await?;
+				let db_sync_config = crate::main_chain_follower::resolve_db_sync_query_config(
+					&pool,
+					&cfg.midnight_cfg,
+				)
+				.await
+				.map_err(|error| sc_cli::Error::Application(Box::new(error)))?;
 
 				let ics_addresses_str = std::fs::read_to_string(&ics_addresses)?;
 				let addresses: IcsAddresses =
@@ -704,11 +710,15 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							"failed to read ICS addresses file as json: {e:?}"
 						))
 					})?;
-				generate_ics_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
-					.await
-					.map_err(|e| {
-						sc_cli::Error::Input(format!("ICS genesis generation failed: {e}"))
-					})?;
+				generate_ics_genesis(
+					addresses,
+					&pool,
+					cmd.cardano_tip.clone(),
+					db_sync_config,
+					&output,
+				)
+				.await
+				.map_err(|e| sc_cli::Error::Input(format!("ICS genesis generation failed: {e}")))?;
 
 				Ok(())
 			})
@@ -731,6 +741,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				let pool =
 					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
 						.await?;
+				let db_sync_config = crate::main_chain_follower::resolve_db_sync_query_config(
+					&pool,
+					&cfg.midnight_cfg,
+				)
+				.await
+				.map_err(|error| sc_cli::Error::Application(Box::new(error)))?;
 
 				let reserve_addresses_str = std::fs::read_to_string(&reserve_addresses)?;
 				let addresses: ReserveAddresses = serde_json::from_str(&reserve_addresses_str)
@@ -739,11 +755,17 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							"failed to read reserve addresses file as json: {e:?}"
 						))
 					})?;
-				generate_reserve_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
-					.await
-					.map_err(|e| {
-						sc_cli::Error::Input(format!("Reserve genesis generation failed: {e}"))
-					})?;
+				generate_reserve_genesis(
+					addresses,
+					&pool,
+					cmd.cardano_tip.clone(),
+					db_sync_config,
+					&output,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Reserve genesis generation failed: {e}"))
+				})?;
 
 				Ok(())
 			})
@@ -1068,6 +1090,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				let reserve_pool =
 					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
 						.await?;
+				let db_sync_config = crate::main_chain_follower::resolve_db_sync_query_config(
+					&reserve_pool,
+					&cfg.midnight_cfg,
+				)
+				.await
+				.map_err(|error| sc_cli::Error::Application(Box::new(error)))?;
 
 				let reserve_addresses_str = std::fs::read_to_string(&reserve_addresses)?;
 				let reserve_addresses_parsed: ReserveAddresses =
@@ -1081,6 +1109,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					reserve_addresses_parsed,
 					&reserve_pool,
 					cmd.cardano_tip.clone(),
+					db_sync_config,
 					&reserve_output,
 				)
 				.await

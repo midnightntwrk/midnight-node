@@ -153,6 +153,9 @@ The `cardano-tip.json` file in each network's `res/<network>/` directory stores 
 2. **Cardano db-sync access**:
    - Local: `postgres://postgres:postgres@localhost:5432/cexplorer`
    - Set `DB_SYNC_POSTGRES_CONNECTION_STRING` environment variable
+   - Select the database layout and schema policy described in
+     [Cardano db-sync compatibility](../configuration-guide.md#cardano-db-sync-compatibility).
+     A read-only login requires `DB_SYNC_SCHEMA_MODE=verify` and operator-managed indexes.
 
 3. **For verification**: Generated chain specification files
 
