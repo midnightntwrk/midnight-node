@@ -482,7 +482,7 @@ midnight-onchain-runtime      = { git = "https://github.com/midnightntwrk/midnig
 midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-2.2.0-rc.4" }
 midnight-serialize            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.2" }
 midnight-storage              = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-2.0.4-rc.1" }
-midnight-storage-core         = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.2-rc.1" }
+midnight-storage-core         = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "fda17697248a7168aa943050866492aaf37c9764" }
 
 [workspace.metadata.cargo-shear]
 ignored = []
