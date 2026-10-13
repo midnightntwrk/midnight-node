@@ -4,8 +4,7 @@
 sources. For isolated test chains that need real Cardano observations, set:
 
 ```sh
-USE_MAIN_CHAIN_FOLLOWER_MOCK=false
-USE_MAIN_CHAIN_FOLLOWER_MOCK_AUTHORITIES=true
+USE_MAIN_CHAIN_FOLLOWER_MOCK=authorities
 MOCK_REGISTRATIONS_FILE=/path/to/test-registrations.json
 ```
 
@@ -14,13 +13,15 @@ The node reuses the existing validator-registration and federated-governance
 mocks, while block references, sidechain RPC, cNight observations and bridge
 transfers continue to use db-sync.
 
-| Full mock | Mock authorities | Observations | Authorities |
-|---|---|---|---|
-| false | false (default) | db-sync | db-sync |
-| false | true | db-sync | Existing test mocks |
-| true | either | Existing mocks | Existing test mocks |
+| Setting | Observations | Authorities |
+|---|---|---|
+| `false` (default) | db-sync | db-sync |
+| `true` | Existing mocks | Existing test mocks |
+| `authorities` | db-sync | Existing test mocks |
 
-The new option defaults to false. Existing configurations keep their behavior.
+Existing boolean configuration values and environment strings `true` and
+`false` retain their behavior. For TOML, the new value is the quoted string
+`use_main_chain_follower_mock = "authorities"`. Unknown values are rejected.
 Use the same configuration on every node participating in the test chain.
 This option uses known test keys and is intended only for isolated test chains.
 

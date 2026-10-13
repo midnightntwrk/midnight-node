@@ -8,7 +8,6 @@
 
 wipe_chain_state = false
 use_main_chain_follower_mock = false
-use_main_chain_follower_mock_authorities = false
 show_config = false
 show_secrets = false
 validator = false

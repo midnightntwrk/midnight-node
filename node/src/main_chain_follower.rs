@@ -28,7 +28,7 @@ use sidechain_mc_hash::McHashDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 use sqlx::{Pool, Postgres};
 
-use super::cfg::midnight_cfg::MidnightCfg;
+use super::cfg::midnight_cfg::{MainChainFollowerMock, MidnightCfg};
 use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -68,7 +68,7 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> std::result::Result<DataSources, ServiceError> {
-	if cfg.use_main_chain_follower_mock {
+	if cfg.use_main_chain_follower_mock == MainChainFollowerMock::All {
 		let mock = create_mock_data_sources(cfg.clone()).await.map_err(|err| {
 			ServiceError::Application(
 				format!("Failed to create main chain follower mock: {err}. Check configuration.")
@@ -237,7 +237,7 @@ pub async fn create_cached_data_sources(
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
-	let mock_sources = if cfg.use_main_chain_follower_mock_authorities {
+	let mock_sources = if cfg.use_main_chain_follower_mock == MainChainFollowerMock::Authorities {
 		Some(create_mock_data_sources(cfg.clone()).await?)
 	} else {
 		None
@@ -545,7 +545,7 @@ mod tests {
 
 	fn mock_authorities_cfg() -> MidnightCfg {
 		MidnightCfg {
-			use_main_chain_follower_mock_authorities: true,
+			use_main_chain_follower_mock: MainChainFollowerMock::Authorities,
 			mock_registrations_file: Some(
 				concat!(
 					env!("CARGO_MANIFEST_DIR"),
@@ -559,15 +559,12 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn full_mock_takes_precedence_without_opening_a_database() {
-		for mock_authorities in [false, true] {
-			let cfg = MidnightCfg {
-				use_main_chain_follower_mock: true,
-				use_main_chain_follower_mock_authorities: mock_authorities,
-				..mock_authorities_cfg()
-			};
-			assert!(create_cached_main_chain_follower_data_sources(cfg, None, None).await.is_ok());
-		}
+	async fn full_mock_does_not_open_a_database() {
+		let cfg = MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::All,
+			..mock_authorities_cfg()
+		};
+		assert!(create_cached_main_chain_follower_data_sources(cfg, None, None).await.is_ok());
 	}
 
 	#[tokio::test]
