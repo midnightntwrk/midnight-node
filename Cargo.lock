@@ -11151,6 +11151,7 @@ dependencies = [
  "ogmios-client",
  "partner-chains-plutus-data",
  "plutus",
+ "plutus-datum-derive",
  "pretty_assertions",
  "proptest",
  "raw-scripts",
