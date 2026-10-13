@@ -79,8 +79,6 @@ use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
-//#[cfg(feature = "experimental")]
-//use sp_block_rewards::GetBlockRewardPoints;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
@@ -165,9 +163,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ecdsa, ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -220,8 +218,7 @@ pub mod opaque {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
 			pub babe: Babe,
-			// todo: add the beefy
-			// pub beefy: Beefy,
+			pub beefy: Beefy,
 		}
 	}
 
@@ -233,7 +230,14 @@ pub mod opaque {
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
 			let babe = keys.find(BABE)?;
 			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
+			let beefy = keys.find(BEEFY)?;
+			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
+			Some(Self {
+				aura: aura.into(),
+				grandpa: grandpa.into(),
+				babe: babe.into(),
+				beefy: beefy.into(),
+			})
 		}
 	}
 
@@ -252,6 +256,7 @@ pub mod opaque {
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
+				sidechain_domain::CandidateKey::new(BEEFY, value.beefy.into_inner().to_raw_vec()),
 			])
 		}
 	}
@@ -395,16 +400,16 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes QueuedCommittee (v1 -> v2), adds BABE keys, and activates the
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE and BEEFY keys, and activates the
 		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
 		// `on_initialize` sees the first BABE pre-digest).
-		crate::migrations::authority_keys::MigrateV1ToV2AddBabeSessionKeys,
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
 	type PostInherents = ();
 	type PostTransactions = ();
-	type ExtensionsWeightInfo = ();
+	type ExtensionsWeightInfo = weights::frame_system_extensions::WeightInfo<Runtime>;
 }
 
 impl pallet_aura::Config for Runtime {
@@ -425,7 +430,9 @@ impl pallet_babe::Config for Runtime {
 	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
 	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
 	type DisabledValidators = ();
-	// TODO: Issue #1863
+	// Default weights implemented by `()` are the best thing we have for BABE.
+	// Pallet does not define benchmarks for methods in the `WeightInfo`, so
+	// running benchmarks does not add any value.
 	type WeightInfo = ();
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
@@ -669,14 +676,6 @@ impl pallet_session_validator_management::Config for Runtime {
 
 pub struct LogBeneficiaries;
 impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
-	#[cfg(feature = "experimental")]
-	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
-		//let rewards = BlockRewards::get_rewards_and_clear();
-		//log::info!("Rewards accrued in epoch {old_epoch}: {rewards:?}");
-
-		ParityDbWeight::get().reads_writes(1, 1)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
 		Weight::zero()
 	}
@@ -697,43 +696,12 @@ pub type BeneficiaryId = midnight_node_ledger::types::Hash;
 pub type BlockRewardPoints = u128;
 pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
 
-/*
-#[cfg(feature = "experimental")]
-pub struct LedgerBlockRewardPoints;
-#[cfg(feature = "experimental")]
-impl GetBlockRewardPoints<BlockRewardPoints> for LedgerBlockRewardPoints {
-	fn get_block_reward() -> BlockRewardPoints {
-		BLOCK_REWARD_POINTS
-	}
-}
-*/
-
 pub struct LedgerBlockReward;
 impl Get<BlockReward> for LedgerBlockReward {
-	#[cfg(feature = "experimental")]
-	fn get() -> BlockReward {
-		/*
-		(
-			<Runtime as pallet_block_rewards::Config>::GetBlockRewardPoints::get_block_reward(),
-			pallet_block_rewards::CurrentBlockBeneficiary::<Runtime>::get(),
-		)
-		*/
-		(0, None)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn get() -> BlockReward {
 		(0, None)
 	}
 }
-
-/*
-#[cfg(feature = "experimental")]
-impl pallet_block_rewards::Config for Runtime {
-	type BeneficiaryId = BeneficiaryId;
-	type BlockRewardPoints = BlockRewardPoints;
-	type GetBlockRewardPoints = LedgerBlockRewardPoints;
-}
-*/
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
@@ -749,7 +717,7 @@ impl pallet_midnight_system::Config for Runtime {
 
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
-	type WeightInfo = pallet_version::VersionWeight<Runtime>;
+	type WeightInfo = weights::pallet_version::WeightInfo<Runtime>;
 	type RuntimeVersion = Version;
 }
 
@@ -806,7 +774,7 @@ impl pallet_safe_mode::Config for Runtime {
 	type ForceDepositOrigin = EnsureRoot<AccountId>;
 	type Notify = ();
 	type ReleaseDelay = ();
-	type WeightInfo = pallet_safe_mode::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_safe_mode::WeightInfo<Runtime>;
 }
 
 pub const MOTION_DURATION: BlockNumber = 5 * DAYS;
@@ -987,7 +955,7 @@ parameter_types! {
 	pub const MaxBytes: u64 = 10 * 1024 * 1024;
 	/// Maximum transactions a single account can submit within a throttle window
 	pub const MaxTxs: u64 = 100;
-	/// Number of blocks that define a throttle window (1 day at 6s/block).
+	/// Number of blocks that define a throttle window (1 hour: 600 blocks at 6 s/block).
 	pub const WindowSize: u32 = HOURS;
 }
 
@@ -1156,8 +1124,6 @@ mod runtime {
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
-	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1271,6 +1237,13 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
+	// on the unsigned mandatory block 1 since launch, and the session-key migration above
+	// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
+	// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
+	// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
+	// re-enabled (see `migrations::beefy_genesis`).
+	migrations::beefy_genesis::ResetBeefyGenesis,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
@@ -1380,6 +1353,11 @@ mod benches {
 	define_benchmarks!(
 		[frame_benchmarking, BaselineBench::<Runtime>]
 		[frame_system, SystemBench::<Runtime>]
+		// The `TxExtension` checks every signed transaction pays for. Without this
+		// entry `frame_system::Config::ExtensionsWeightInfo` falls back to upstream's
+		// `()` impl, whose numbers are Parity's reference hardware and RocksDB —
+		// this runtime is ParityDb.
+		[frame_system_extensions, SystemExtensionsBench::<Runtime>]
 		[pallet_beefy_mmr, BeefyMmrLeaf]
 		[pallet_grandpa, Grandpa]
 		[pallet_timestamp, Timestamp]
@@ -1388,6 +1366,10 @@ mod benches {
 		[pallet_preimage, Preimage]
 		[pallet_scheduler, Scheduler]
 		[pallet_tx_pause, TxPause]
+		// Load-bearing since #2079 made safe mode the failed-migration handler.
+		// `enter`/`extend`/`release_deposit` report Weightless here: deposits are
+		// disabled in this runtime, so those calls are unusable by design.
+		[pallet_safe_mode, SafeMode]
 		[pallet_collective, Council]
 		[pallet_collective, TechnicalCommittee]
 		[pallet_membership, CouncilMembership]
@@ -1399,6 +1381,8 @@ mod benches {
 		[pallet_cnight_observation, CNightObservation]
 		[pallet_c2m_bridge, C2MBridge]
 		[pallet_partner_chains_bridge, Bridge]
+		// No extrinsics; the benchmark measures the per-block `on_initialize` digest write.
+		[pallet_version, NodeVersion]
 	);
 }
 
@@ -1534,6 +1518,28 @@ impl_runtime_apis! {
 			#[cfg(feature = "fork-transition")]
 			if crate::fork_transition::is_fork_block(&block) {
 				return sp_inherents::CheckInherentsResult::new();
+			}
+
+			// Verifiers check the first block after a runtime upgrade with this, the new,
+			// runtime (the node calls this API in the on-chain context, which resolves the
+			// upgrade staged in `:pending_code`), against the parent state the old runtime
+			// left behind. Apply the pending migrations first, so the checks read storage in
+			// the layout they expect. The runtime storage writes are discarded with the
+			// runtime API call; the block's own execution runs the migrations again, for real.
+			//
+			// Host-side effects are NOT discarded: anything a migration does through a host
+			// function (e.g. the ledger v8->v9 translation persisting the translated state in
+			// the ledger arena) happens once per run, and a verifying node runs the migrations
+			// twice for the first post-upgrade block (here, then in `execute_block`). Every
+			// migration must therefore be deterministic and idempotent on the host side. This
+			// was already required (competing children of the upgrade block, abandoned
+			// proposals and resyncs re-run them on the same host state), but it is now the
+			// normal path rather than an edge case.
+			let upgraded = frame_system::LastRuntimeUpgrade::<Runtime>::get()
+				.map(|last| last.was_upgraded(&VERSION))
+				.unwrap_or(true);
+			if upgraded {
+				Executive::execute_on_runtime_upgrade();
 			}
 
 			data.check_extrinsics(&block)
@@ -1807,6 +1813,7 @@ impl_runtime_apis! {
 			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
@@ -1825,6 +1832,7 @@ impl_runtime_apis! {
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}

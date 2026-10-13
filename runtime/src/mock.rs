@@ -30,7 +30,7 @@ use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
 	BuildStorage, Digest, DigestItem, impl_opaque_keys,
-	key_types::{AURA, BABE, GRANDPA},
+	key_types::{AURA, BABE, BEEFY, GRANDPA},
 	traits::{BlakeTwo256, ConvertInto, IdentityLookup, OpaqueKeys},
 };
 use std::cmp::max;
@@ -61,6 +61,7 @@ type Block = frame_system::mocking::MockBlock<Test>;
 pub struct AccountKeys {
 	pub aura: [u8; 32],
 	pub babe: [u8; 32],
+	pub beefy: ecdsa::Public,
 	pub grandpa: [u8; 32],
 }
 
@@ -72,9 +73,13 @@ impl AccountKeys {
 		babe.resize(32, 0);
 		let mut grandpa = format!("grandpa-{seed}").into_bytes();
 		grandpa.resize(32, 0);
+		let beefy = ecdsa::Pair::from_string(seed, None)
+			.expect("static values are valid; qed")
+			.public();
 		AccountKeys {
 			aura: aura.try_into().unwrap(),
 			babe: babe.try_into().unwrap(),
+			beefy,
 			grandpa: grandpa.try_into().unwrap(),
 		}
 	}
@@ -488,6 +493,7 @@ impl MockValidator {
 		CandidateKeys(vec![
 			CandidateKey::new(AURA, keys.aura.to_vec()),
 			CandidateKey::new(BABE, keys.babe.to_vec()),
+			CandidateKey::new(BEEFY, keys.beefy.to_vec()),
 			CandidateKey::new(GRANDPA, keys.grandpa.to_vec()),
 		])
 	}
