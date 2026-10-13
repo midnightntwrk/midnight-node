@@ -166,6 +166,7 @@ that we are still in the process of being release. As such:
 - [OpenRPC API Specification](docs/openrpc.md) - Machine-readable API schema via `rpc.discover`
 - [Configuration Guide](docs/configuration-guide.md) - Comprehensive configuration guide for SREs
 - [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
+- [Mock Authorities](docs/mock-authorities.md) - Existing test keys with real Cardano observations
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
