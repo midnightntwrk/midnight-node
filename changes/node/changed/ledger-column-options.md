@@ -20,5 +20,5 @@ open, and opening a database in the other mode than it was created in fails with
 `storage_separation` error, as it did before. For a database that predates the record,
 the presence of the separate-mode `ledger_storage/` directory decides.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2300
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2294
