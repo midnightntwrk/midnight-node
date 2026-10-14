@@ -73,7 +73,22 @@ becomes active.
 
 Query `systemParameters_getAriadneParameters` with the current Cardano
 epoch as parameter on a RPC Midnight node and confirm each candidate entry
-carries a `babe` key and that no two candidates share the same key.
+carries a `babe` key, that no two candidates share the same key, and that
+each `babe` key differs from the candidate's `aura` key (the chain accepts a
+reused Aura key, so this gate is the only check):
+
+```bash
+curl -s -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"systemParameters_getAriadneParameters","params":[<MC_EPOCH>]}' <RPC_URL> \
+| jq '.result.permissionedCandidates | {
+    total: length,
+    valid: map(select(.isValid)) | length,
+    with_babe: map(select(.keys.babe)) | length,
+    babe_ne_aura: map(select(.keys.babe and .keys.babe != .keys.aura)) | length,
+    duplicate_babe: map(.keys.babe // empty) | group_by(.) | map(select(length > 1)) | length }'
+```
+
+Pass: `valid`, `with_babe` and `babe_ne_aura` all equal `total`, and `duplicate_babe == 0`.
 
 ## Phase 1 — Binary rollout
 
