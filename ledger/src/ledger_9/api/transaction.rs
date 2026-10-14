@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::num::TryFromIntError;
 
 use crate::ledger_9::{
@@ -148,6 +148,23 @@ impl UnshieldedUtxos {
 		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
+	/// Drops every UTXO that this transaction both creates and spends.
+	///
+	/// Intents apply in segment order, so a later intent may spend an output of an
+	/// earlier one. Such a UTXO is in neither the initial nor the final ledger state,
+	/// and [`Self::check_utxos_response_integrity`] would reject it as a missing
+	/// output. Pairs match on [`UtxoInfo::id`]: the ledger has already matched owner,
+	/// type and value when it applied the spend. Call this after the failed segments
+	/// are gone, so a spend whose creating segment failed is not netted away.
+	pub fn net_intra_tx_utxos(&mut self) {
+		let spent: HashSet<_> = self.inputs.values().flatten().map(UtxoInfo::id).collect();
+		let created = self.outputs.values().flatten().map(UtxoInfo::id);
+		let both: HashSet<_> = created.filter(|id| spent.contains(id)).collect();
+		for utxos in self.outputs.values_mut().chain(self.inputs.values_mut()) {
+			utxos.retain(|u| !both.contains(&u.id()));
+		}
+	}
+
 	pub fn outputs(&self) -> Vec<UtxoInfo> {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
@@ -159,6 +176,10 @@ impl UnshieldedUtxos {
 	/// - All returned UTXO inputs have been removed from the Ledger state.
 	/// - The final number of UTXOs in the Ledger matches the expected size
 	///   after applying the additions and deletions.
+	///
+	/// A UTXO both created and spent in this transaction is in neither state, so
+	/// callers must run [`Self::net_intra_tx_utxos`] first; `apply_transaction` does
+	/// from runtime `spec_version` 2.1.100.
 	pub fn check_utxos_response_integrity<D: DB>(
 		&self,
 		initial_utxos_size: usize,
@@ -649,6 +670,74 @@ mod tests {
 		);
 		assert_eq!(info.value, value, "minted UTXO value must equal the claimed amount");
 		assert_eq!(info.output_no, 0);
+	}
+
+	fn utxo_info(intent_byte: u8, output_no: u32) -> UtxoInfo {
+		UtxoInfo {
+			address: [1u8; PERSISTENT_HASH_BYTES],
+			token_type: NIGHT.0.0,
+			intent_hash: [intent_byte; PERSISTENT_HASH_BYTES],
+			value: 1_000_000,
+			output_no,
+		}
+	}
+
+	/// Audit finding H-4 (NODE-342): intent A creates UTXO Y, a later intent spends it.
+	/// The ledger applies that in segment order, so Y is in neither the initial nor the
+	/// final state. Reporting Y as both an output and an input must net to nothing
+	/// instead of failing the integrity check.
+	#[test]
+	fn integrity_check_nets_a_utxo_created_and_spent_in_the_same_tx() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+		let y = utxo_info(0xAA, 0);
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(1, vec![y.clone()]);
+		utxos.inputs.insert(2, vec![y.clone()]);
+
+		assert!(
+			utxos.check_utxos_response_integrity(initial, &Sp::new(ledger.clone())).is_err(),
+			"un-netted: Y is reported as created but is absent from the final state"
+		);
+
+		utxos.net_intra_tx_utxos();
+		assert!(utxos.outputs().is_empty() && utxos.inputs().is_empty());
+		let (outputs, inputs) = utxos
+			.check_utxos_response_integrity(initial, &Sp::new(ledger))
+			.expect("netted: nothing left to verify");
+		assert!(outputs.is_empty() && inputs.is_empty());
+	}
+
+	/// Netting only removes exact pairs: a genuine output or input, and a UTXO that
+	/// merely shares an intent hash, stay reported.
+	#[test]
+	fn netting_keeps_unpaired_utxos() {
+		let y = utxo_info(0xAA, 0);
+		let sibling = utxo_info(0xAA, 1);
+		let other_spend = utxo_info(0xBB, 0);
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(0, vec![y.clone(), sibling.clone()]);
+		utxos.inputs.insert(1, vec![other_spend.clone(), y]);
+
+		utxos.net_intra_tx_utxos();
+		assert_eq!(utxos.outputs(), vec![sibling]);
+		assert_eq!(utxos.inputs(), vec![other_spend]);
+	}
+
+	/// A reported output that is genuinely missing from the state is still an error
+	/// after netting: netting is not a licence to drop mismatches.
+	#[test]
+	fn netting_does_not_hide_a_missing_output() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(0, vec![utxo_info(0xAA, 0)]);
+
+		utxos.net_intra_tx_utxos();
+		assert!(utxos.check_utxos_response_integrity(initial, &Sp::new(ledger)).is_err());
 	}
 }
 // grcov-excl-stop

@@ -277,6 +277,14 @@ pub struct UtxoInfo {
 	pub output_no: u32,
 }
 
+impl UtxoInfo {
+	/// What makes a UTXO unique in the ledger: the intent that created it and its
+	/// output index. Owner, type and value are attributes of that identity.
+	pub fn id(&self) -> (Hash, u32) {
+		(self.intent_hash, self.output_no)
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeCountError {
 	TagNotFound,
