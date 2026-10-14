@@ -130,6 +130,33 @@ mod tests {
 	}
 
 	#[test]
+	fn gc_marker_is_written_only_for_a_fresh_ledger_storage() {
+		use custom_parity_db::ledger_gc_tagged_from_genesis as tagged;
+		// Fresh main database and fresh ledger directory: marked.
+		let base = TempDir::new().unwrap();
+		let cfg = separate_storage_init(base.path().join("ledger_storage"));
+		let (db, storage, _) = open_paritydb(&base.path().join("paritydb"), &cfg).unwrap();
+		assert!(tagged(&db.0).unwrap());
+		drop((db, storage));
+		// Reopening keeps it.
+		let (db, storage, _) = open_paritydb(&base.path().join("paritydb"), &cfg).unwrap();
+		assert!(tagged(&db.0).unwrap());
+		drop((db, storage));
+
+		// Fresh main database but a pre-existing ledger directory (an old ledger
+		// storage): not marked, and a reopen never adds the marker.
+		let base = TempDir::new().unwrap();
+		let ledger_path = base.path().join("ledger_storage");
+		std::fs::create_dir_all(&ledger_path).unwrap();
+		let cfg = separate_storage_init(ledger_path);
+		let (db, storage, _) = open_paritydb(&base.path().join("paritydb"), &cfg).unwrap();
+		assert!(!tagged(&db.0).unwrap());
+		drop((db, storage));
+		let (db, _storage, _) = open_paritydb(&base.path().join("paritydb"), &cfg).unwrap();
+		assert!(!tagged(&db.0).unwrap());
+	}
+
+	#[test]
 	fn column_count_constants_are_consistent() {
 		use midnight_storage_core::db::paritydb::NUM_COLUMNS as NUM_COLUMNS_LEDGER;
 
