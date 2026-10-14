@@ -150,12 +150,11 @@ impl UnshieldedUtxos {
 
 	/// Drops every UTXO that this transaction both creates and spends.
 	///
-	/// Intents apply in segment order, so a later intent may spend an output of an
-	/// earlier one. Such a UTXO is in neither the initial nor the final ledger state,
-	/// and [`Self::check_utxos_response_integrity`] would reject it as a missing
-	/// output. Pairs match on [`UtxoInfo::id`]: the ledger has already matched owner,
-	/// type and value when it applied the spend. Call this after the failed segments
-	/// are gone, so a spend whose creating segment failed is not netted away.
+	/// A later intent may spend an earlier intent's output. That UTXO is in neither the
+	/// initial nor the final ledger state, so [`Self::check_utxos_response_integrity`]
+	/// would reject it. Matching on [`UtxoInfo::id`] suffices: the ledger already
+	/// checked owner, type and value when it applied the spend. Call after removing
+	/// failed segments, so a spend whose creating segment failed is not netted away.
 	pub fn net_intra_tx_utxos(&mut self) {
 		let spent: HashSet<_> = self.inputs.values().flatten().map(UtxoInfo::id).collect();
 		let created = self.outputs.values().flatten().map(UtxoInfo::id);
@@ -177,9 +176,8 @@ impl UnshieldedUtxos {
 	/// - The final number of UTXOs in the Ledger matches the expected size
 	///   after applying the additions and deletions.
 	///
-	/// A UTXO both created and spent in this transaction is in neither state, so
-	/// callers must run [`Self::net_intra_tx_utxos`] first; `apply_transaction` does
-	/// from runtime `spec_version` 2.1.100.
+	/// A UTXO created and spent within this transaction fails the check unless
+	/// [`Self::net_intra_tx_utxos`] ran first.
 	pub fn check_utxos_response_integrity<D: DB>(
 		&self,
 		initial_utxos_size: usize,
@@ -682,10 +680,7 @@ mod tests {
 		}
 	}
 
-	/// Audit finding H-4 (NODE-342): intent A creates UTXO Y, a later intent spends it.
-	/// The ledger applies that in segment order, so Y is in neither the initial nor the
-	/// final state. Reporting Y as both an output and an input must net to nothing
-	/// instead of failing the integrity check.
+	/// Audit H-4 (NODE-342): Y is in neither the initial nor the final state.
 	#[test]
 	fn integrity_check_nets_a_utxo_created_and_spent_in_the_same_tx() {
 		let ledger = prepare_ledger();
@@ -709,8 +704,6 @@ mod tests {
 		assert!(outputs.is_empty() && inputs.is_empty());
 	}
 
-	/// Netting only removes exact pairs: a genuine output or input, and a UTXO that
-	/// merely shares an intent hash, stay reported.
 	#[test]
 	fn netting_keeps_unpaired_utxos() {
 		let y = utxo_info(0xAA, 0);
@@ -726,8 +719,6 @@ mod tests {
 		assert_eq!(utxos.inputs(), vec![other_spend]);
 	}
 
-	/// A reported output that is genuinely missing from the state is still an error
-	/// after netting: netting is not a licence to drop mismatches.
 	#[test]
 	fn netting_does_not_hide_a_missing_output() {
 		let ledger = prepare_ledger();
