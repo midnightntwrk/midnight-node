@@ -60,6 +60,18 @@ pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 /// META-column key recording which `storage_separation` mode a database was created in.
 const STORAGE_SEPARATION_KEY: &[u8] = b"midnight:storage_separation";
 
+/// META-column key written when the ledger storage is created by a node that persists every
+/// ledger root through the tagged-root wrapper. Its absence means the ledger storage was created
+/// by an older node and holds roots the ledger GC can never release, so the GC does not run
+/// (`ledger_gc::try_spawn`). One point read; no root is ever iterated to decide this.
+const LEDGER_GC_TAGGED_KEY: &[u8] = b"midnight:ledger_gc_tagged_roots";
+
+/// Whether this database was created with tagged ledger roots from genesis (see
+/// [`LEDGER_GC_TAGGED_KEY`]).
+pub fn ledger_gc_tagged_from_genesis(db: &parity_db::Db) -> parity_db::Result<bool> {
+	Ok(db.get(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY)?.is_some())
+}
+
 fn separation_marker(separation: StorageSeparation) -> &'static [u8] {
 	match separation {
 		StorageSeparation::Separate => b"separate",
@@ -149,6 +161,8 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	// Column options are fixed when a database is created, and parity-db refuses to open an
 	// existing one with different options (`IncompatibleColumnConfig`), so an existing DB
 	// keeps the ledger column options it was created with; only new databases get these.
+	// The node then starts normally and the ledger GC fails closed on the unindexed columns,
+	// asking for a resync (`ledger_gc::try_spawn`).
 	midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
 		&mut config,
 		NUM_COLUMNS_POLKADOT,
@@ -169,8 +183,20 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		}
 	}
 
+	// The ledger storage is fresh when the main database is new and, in separate mode, the
+	// ledger directory does not exist yet either (decided before `init_ledger_storage_separate`
+	// creates it). A fresh ledger storage only ever receives tagged roots.
+	let ledger_fresh = existing_meta.is_none()
+		&& match storage_config.separation {
+			StorageSeparation::Separate => !storage_config.db_path.is_dir(),
+			StorageSeparation::Unified => true,
+		};
+
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
 	check_storage_separation(&db, existing_meta.is_some(), storage_config)?;
+	if ledger_fresh {
+		db.commit([(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY, Some(b"1".to_vec()))])?;
+	}
 
 	match storage_config.separation {
 		StorageSeparation::Separate => {
