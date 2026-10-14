@@ -282,11 +282,12 @@ where
 	/// # Persist / keep-alive contract
 	///
 	/// During block execution the post-block tip is the one state per block that is
-	/// `persist()`ed: a GC root kept for RPC and history. Nothing unpersists it, so sibling
-	/// forks persisting the same tip each hold their own count. Then every intermediate held
+	/// persisted, through a tagged-root wrapper tagged with the parent block hash (see
+	/// [`crate::tagged_root`]): the wrapper is the GC root, kept for RPC and history until the
+	/// ledger GC releases it by block liveness. Then every intermediate held
 	/// in [`LedgerStatesExt`](midnight_primitives_ledger::LedgerStatesExt) is dropped, the input included, so the following storage flush
 	/// `uncache`s them instead of writing them to disk. Off-chain the tip is held like any
-	/// other off-chain state (see [`crate::ephemeral::retain`]).
+	/// other off-chain state (see [`crate::ephemeral::retain_tip`]).
 	pub fn post_block_update(
 		externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -311,6 +312,7 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
+		let parent_block_hash = block_context.parent_block_hash.clone();
 		let ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
@@ -331,7 +333,9 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		crate::ephemeral::retain(externalities, &state_root, ledger);
+		// On-chain: persist the tip under a tagged root (tag = parent block hash); the wrapper is
+		// the GC root, the tip is pinned through it. The returned state key stays the tip's.
+		crate::ephemeral::retain_tip(externalities, &state_root, ledger, parent_block_hash);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -356,9 +360,12 @@ where
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
+		let parent_block_hash = block_context.parent_block_hash.clone();
 		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		crate::ephemeral::retain(externalities, &state_root, ledger);
+		// On-chain: persist the tip under a tagged root (tag = parent block hash); the wrapper is
+		// the GC root, the tip is pinned through it. The returned state key stays the tip's.
+		crate::ephemeral::retain_tip(externalities, &state_root, ledger, parent_block_hash);
 		Ok(state_root)
 	}
 
@@ -1105,9 +1112,12 @@ where
 	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
 	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
 	/// executes against the arena concurrently — the arena is single-writer.
+	///
+	/// `parent_hash` is the parent block hash of the snapshot's block; it tags the root wrapper.
 	pub fn import_verified_ledger_snapshot(
 		blob: &[u8],
 		expected_state_key: &[u8],
+		parent_hash: [u8; 32],
 	) -> Result<(), crate::SnapshotImportError> {
 		use crate::SnapshotImportError;
 
@@ -1120,7 +1130,7 @@ where
 		// arena; re-allocating the loaded value yields the persistable `Sp`.
 		let ledger: Ledger<D> =
 			helpers_local::deserialize(blob).map_err(SnapshotImportError::Deserialize)?;
-		let mut sp = default_storage::<D>().arena.alloc(ledger);
+		let sp = default_storage::<D>().arena.alloc(ledger);
 
 		// Cryptographic bind to the trie anchor: the reconstructed root must equal the on-chain
 		// `StateKey`. This is the whole security argument — reject anything else.
@@ -1129,7 +1139,14 @@ where
 			return Err(SnapshotImportError::RootMismatch);
 		}
 
-		sp.persist();
+		// Rooted through a tagged wrapper (tag = parent hash of the target block). Always
+		// persists: re-importing the same snapshot bumps the wrapper's count by one, which
+		// only ever leaks, never loses.
+		crate::tagged_root::persist_tagged(
+			&default_storage::<D>().arena,
+			parent_hash.to_vec(),
+			&sp,
+		);
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
 		Ok(())
@@ -2105,6 +2122,8 @@ mod tests {
 	/// input. That input must still resolve, so no apply may release it.
 	#[test]
 	fn intermediate_states_survive_rollback_until_post_block_update() {
+		// The GC tests flush the shared arena, which would persist the held intermediates.
+		let _serial = crate::gc::tests::serial();
 		use mn_ledger_local::dust::DustPublicKey;
 		use transient_crypto_local::curve::Fr;
 
@@ -2170,7 +2189,18 @@ mod tests {
 		let tip =
 			TestBridge::apply_post_block_update(&mut ext.ext(), &third, BlockContext::default())
 				.expect("post-block update applies");
-		assert_eq!(root_count(&tip), Some(1), "the post-block tip is persisted at rc=1");
+		assert_eq!(root_count(&tip), None, "the post-block tip is never a raw GC root");
+		let tip_typed: TypedArenaKey<Ledger<DefaultDB>, _> =
+			midnight_serialize_local::tagged_deserialize(&mut &tip[..]).unwrap();
+		let tip_key: ArenaKey<_> = tip_typed.into();
+		assert_eq!(
+			crate::tagged_root::tagged_pin_count(
+				&default_storage::<DefaultDB>().arena,
+				tip_key.hash()
+			),
+			Some(1),
+			"the post-block tip is pinned once through its tagged root"
+		);
 		for state_key in [&first, &rolled_back, &third] {
 			assert!(!resolves(state_key), "the post-block update must drop every intermediate");
 		}
