@@ -57,6 +57,69 @@ pub(crate) mod columns_polkadot {
 
 pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
+/// META-column key recording which `storage_separation` mode a database was created in.
+const STORAGE_SEPARATION_KEY: &[u8] = b"midnight:storage_separation";
+
+/// META-column key written when the ledger storage is created by a node that persists every
+/// ledger root through the tagged-root wrapper. Its absence means the ledger storage was created
+/// by an older node and holds roots the ledger GC can never release, so the GC does not run
+/// (`ledger_gc::try_spawn`). One point read; no root is ever iterated to decide this.
+const LEDGER_GC_TAGGED_KEY: &[u8] = b"midnight:ledger_gc_tagged_roots";
+
+/// Whether this database was created with tagged ledger roots from genesis (see
+/// [`LEDGER_GC_TAGGED_KEY`]).
+pub fn ledger_gc_tagged_from_genesis(db: &parity_db::Db) -> parity_db::Result<bool> {
+	Ok(db.get(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY)?.is_some())
+}
+
+fn separation_marker(separation: StorageSeparation) -> &'static [u8] {
+	match separation {
+		StorageSeparation::Separate => b"separate",
+		StorageSeparation::Unified => b"unified",
+	}
+}
+
+/// Refuse to open a database in the other `storage_separation` mode than it was created in.
+///
+/// Switching modes on an existing data directory would silently reinitialise ledger state
+/// from genesis (separate -> unified leaves `ledger_storage/` orphaned and starts on empty
+/// ledger columns; the reverse starts a fresh `ledger_storage/`). Both modes now use the same
+/// ledger column options, so the parity-db column check that used to catch this no longer
+/// does; the mode is recorded explicitly in the META column on first open instead. For a
+/// database that predates the marker, the presence of the separate-mode ledger directory
+/// decides: separate mode always creates it, unified mode never does.
+fn check_storage_separation(
+	db: &parity_db::Db,
+	existed: bool,
+	storage_config: &StorageInit,
+) -> parity_db::Result<()> {
+	let want = separation_marker(storage_config.separation);
+	let recorded = db.get(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY)?;
+	let created_as: Option<&[u8]> = match &recorded {
+		Some(v) => Some(v.as_slice()),
+		None if existed => {
+			Some(if storage_config.db_path.is_dir() { b"separate" } else { b"unified" })
+		},
+		None => None,
+	};
+	if let Some(created_as) = created_as
+		&& created_as != want
+	{
+		return Err(parity_db::Error::IncompatibleColumnConfig {
+			id: NUM_COLUMNS_POLKADOT,
+			reason: format!(
+				"database was created with storage_separation={}, now configured {}",
+				String::from_utf8_lossy(created_as),
+				String::from_utf8_lossy(want)
+			),
+		});
+	}
+	if recorded.is_none() {
+		db.commit([(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY, Some(want.to_vec()))])?;
+	}
+	Ok(())
+}
+
 /// Wrap parity-db database into a trait object that implements `sp_database::Database`
 pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
@@ -89,13 +152,26 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.preimage = true;
 	tx_col.uniform = true;
 
-	// Set init options for ParityDb backend
-	if storage_config.separation == StorageSeparation::Separate {
-		midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
-			&mut config,
-			NUM_COLUMNS_POLKADOT,
-			true,
-		);
+	// Set storage-core's options on the ledger columns in BOTH modes. Unified mode is the
+	// one that actually uses these columns, and without `btree_index` on the root and node
+	// columns storage-core cannot iterate them (`get_roots`, the GC sweep's `scan`): see
+	// issue #2294. Separate mode keeps its own ledger DB (configured by storage-core
+	// itself) and leaves these columns unused, so the options are harmless there.
+	// An existing unified DB created without the index cannot be converted in place (parity-db
+	// would refuse to open it with `IncompatibleColumnConfig`), so an existing DB keeps the
+	// ledger column options it was created with. The node then starts normally and the ledger
+	// GC fails closed on the unindexed columns, asking for a resync (`ledger_gc::try_spawn`).
+	midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
+		&mut config,
+		NUM_COLUMNS_POLKADOT,
+		true,
+	);
+	let existing_meta = parity_db::Options::load_metadata(path)?;
+	if let Some(meta) = &existing_meta {
+		let ledger_cols = NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize;
+		if let Some(stored) = meta.columns.get(ledger_cols.clone()) {
+			config.columns[ledger_cols].clone_from_slice(stored);
+		}
 	}
 
 	if upgrade {
@@ -105,7 +181,20 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		}
 	}
 
+	// The ledger storage is fresh when the main database is new and, in separate mode, the
+	// ledger directory does not exist yet either (decided before `init_ledger_storage_separate`
+	// creates it). A fresh ledger storage only ever receives tagged roots.
+	let ledger_fresh = existing_meta.is_none()
+		&& match storage_config.separation {
+			StorageSeparation::Separate => !storage_config.db_path.is_dir(),
+			StorageSeparation::Unified => true,
+		};
+
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
+	check_storage_separation(&db, existing_meta.is_some(), storage_config)?;
+	if ledger_fresh {
+		db.commit([(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY, Some(b"1".to_vec()))])?;
+	}
 
 	match storage_config.separation {
 		StorageSeparation::Separate => {
