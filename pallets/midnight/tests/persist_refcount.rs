@@ -18,7 +18,9 @@
 
 use frame_support::{assert_ok, storage::with_storage_layer, traits::OnFinalize};
 use midnight_node_ledger::{
-	has_ledger_state, latest::storage::get_state_root_count, types::active_version::BlockContext,
+	has_ledger_state,
+	latest::storage::{get_state_root_count, tagged_pin_count},
+	types::active_version::BlockContext,
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -78,6 +80,7 @@ fn keep_alive_invariants() {
 	let (maintenance_tx, maintenance_ctx) =
 		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(MAINTENANCE_TX);
 
+	let replay_deploy_tx = deploy_tx.clone();
 	let deploy_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: deploy_tx.clone() };
 	let store_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: store_tx.clone() };
 
@@ -87,8 +90,13 @@ fn keep_alive_invariants() {
 		let genesis_key = current_state_key();
 		assert_eq!(
 			get_state_root_count(&genesis_key),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&genesis_key),
 			Some(1),
-			"genesis is persisted at rc=1 by alloc_with_initial_state"
+			"genesis is pinned by a tagged root by alloc_with_initial_state"
 		);
 
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
@@ -99,8 +107,13 @@ fn keep_alive_invariants() {
 		assert_eq!(current_state_key(), genesis_key);
 		assert_eq!(
 			get_state_root_count(&genesis_key),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&genesis_key),
 			Some(1),
-			"validation must not change the tip's root count"
+			"validation must not change the tip's pin count"
 		);
 
 		// Block 1: apply DEPLOY.
@@ -118,6 +131,11 @@ fn keep_alive_invariants() {
 		);
 		assert_eq!(
 			get_state_root_count(&genesis_key),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&genesis_key),
 			Some(1),
 			"the persisted genesis tip must be untouched by apply_transaction"
 		);
@@ -150,6 +168,11 @@ fn keep_alive_invariants() {
 		assert_ne!(post_block_1_key, post_deploy_key);
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
 			"the post-block tip is the one state per block that is persisted"
 		);
@@ -171,25 +194,111 @@ fn keep_alive_invariants() {
 		assert!(has_ledger_state(false, &post_store_key));
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
 			"the previous block's persisted tip must not be unpersisted by the next apply"
 		);
 		process_block(2, check_ctx.clone().into());
 		assert!(!has_ledger_state(false, &post_store_key));
 
-		// Block 3: apply CHECK, then finalize into the parent of the fork below.
+		// Block 3: apply CHECK, then finalize into the parent of the rollback below.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), check_tx));
 		let post_check_key = current_state_key();
 		assert_eq!(get_state_root_count(&post_check_key), None);
 		assert!(has_ledger_state(false, &post_check_key));
-		assert_eq!(get_state_root_count(&genesis_key), Some(1), "genesis still rooted");
+		assert_eq!(get_state_root_count(&genesis_key), None);
+		assert_eq!(tagged_pin_count(&genesis_key), Some(1), "genesis still pinned");
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
-			"older post-block tips stay rooted for history"
+			"older post-block tips stay pinned for history"
 		);
 		process_block(3, maintenance_ctx.clone().into());
 		assert!(!has_ledger_state(false, &post_check_key));
+
+		// --- The release path on a real post-block tip ---
+		//
+		// Replay block 1 on a second branch: rewind to genesis and finalize the same
+		// block again. Same parent context, hence the same tag, hence the same wrapper:
+		// the count goes 1 -> 2 and no second wrapper appears. The returned state key
+		// stays the tip's own (inner) key.
+		let tip3 = current_state_key();
+		assert_eq!(tagged_pin_count(&post_block_1_key), Some(1), "one branch so far");
+		pallet_midnight::StateKey::<Test>::put(genesis_key.clone());
+		mock::System::set_block_number(1);
+		mock::Timestamp::set_timestamp(BlockContext::from(deploy_ctx.clone()).tblock * 1000);
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), replay_deploy_tx));
+		mock::Midnight::on_finalize(1);
+		assert_eq!(
+			current_state_key(),
+			post_block_1_key,
+			"the same block on both branches yields the same tip key"
+		);
+		assert_eq!(get_state_root_count(&post_block_1_key), None, "never a raw root");
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
+			Some(2),
+			"same-parent forks share one wrapper, persisted once per branch"
+		);
+		// Back on the main chain.
+		pallet_midnight::StateKey::<Test>::put(tip3.clone());
+		mock::System::set_block_number(4);
+		mock::Timestamp::set_timestamp(BlockContext::from(maintenance_ctx.clone()).tblock * 1000);
+
+		// The only wrapper persisted twice is block 1's; find it through the DB-only scan.
+		let (roots, _hold) = midnight_node_ledger::gc::tagged_roots();
+		let mut twice: Vec<_> = roots.into_iter().filter(|r| r.count == 2).collect();
+		assert_eq!(twice.len(), 1, "exactly one wrapper is persisted twice: {twice:?}");
+		let wrapper = twice.remove(0);
+		assert_eq!(wrapper.tag.len(), 32, "the tag is the 32-byte parent block hash");
+
+		let (released, _hold) =
+			midnight_node_ledger::gc::release_to_zero(&[(wrapper.wrapper.clone(), wrapper.count)]);
+		assert_eq!(released, 1);
+		// Staged only; durable at the next flush, exactly as on a block boundary.
+		midnight_node_ledger::latest::storage::flush_default_storage_for_test();
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
+			None,
+			"released to zero: no wrapper pins the tip any more"
+		);
+		assert!(
+			!midnight_node_ledger::gc::tagged_roots()
+				.0
+				.iter()
+				.any(|r| r.wrapper == wrapper.wrapper),
+			"the released wrapper is gone (a replay of the list has nothing to do)"
+		);
+		assert_eq!(tagged_pin_count(&genesis_key), Some(1), "other wrappers are untouched");
+		assert_eq!(tagged_pin_count(&tip3), Some(1));
+
+		// No intermediate is held here (`on_finalize` dropped `LedgerStatesExt`'s holds), so
+		// only the arena decides. A slice is a no-op on a dirty write cache, so flush and retry.
+		let mut reclaimed = false;
+		for _ in 0..200 {
+			midnight_node_ledger::latest::storage::flush_default_storage_for_test();
+			midnight_node_ledger::gc::collect_garbage(std::time::Duration::from_millis(250))
+				.expect("storage initialised");
+			if !midnight_node_ledger::has_ledger_state(false, &post_block_1_key) {
+				reclaimed = true;
+				break;
+			}
+		}
+		assert!(reclaimed, "the released tip must be swept from the arena");
+		assert!(
+			midnight_node_ledger::has_ledger_state(false, &tip3),
+			"a still-pinned tip survives the sweep"
+		);
+		assert!(midnight_node_ledger::has_ledger_state(false, &genesis_key));
 
 		// --- Storage rollback ---
 		//
@@ -209,12 +318,20 @@ fn keep_alive_invariants() {
 		assert_eq!(get_state_root_count(&replayed_key), None, "still never rooted");
 
 		mock::Midnight::on_finalize(4);
+		let fork_tip = current_state_key();
+		assert_eq!(get_state_root_count(&fork_tip), None, "tip is never a raw root");
+		assert_eq!(tagged_pin_count(&fork_tip), Some(1), "one branch finalized: one pin");
 		assert!(
 			!has_ledger_state(false, &replayed_key),
 			"both holds must be dropped before the block's storage flush"
 		);
 		assert_eq!(
 			get_state_root_count(&fork_parent),
+			None,
+			"must not be a raw GC root, it is pinned by a tagged root"
+		);
+		assert_eq!(
+			tagged_pin_count(&fork_parent),
 			Some(1),
 			"the persisted parent must survive the rollback"
 		);
