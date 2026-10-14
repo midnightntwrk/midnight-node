@@ -69,26 +69,29 @@ and drives governance motion submit it to Cardano. Two Cardano epoch
 boundaries after update operation have to be observed before the list
 becomes active.
 
+**Gate — before running `change-federated-ops`:** check the
+`PERMISSIONED_CANDIDATES` value it will submit. Stop and fix the list if:
+
+- any candidate has no `babe_pub_key` — it is dropped from the committee from
+  the first rotation after the runtime upgrade (no fallback to its AURA key);
+- two candidates share any session key — from the first rotation after the
+  runtime upgrade the committee stops rotating (`DuplicatedKey`) until the
+  list is fixed;
+- a candidate's BABE key is another candidate's AURA key — the runtime upgrade
+  copies every AURA key into the BABE slot, so the two can collide.
+
+A candidate reusing its own AURA key as BABE works but breaks the fresh-key
+rule of 0.1: decide and record before submitting — accept, or ask for a fresh
+key.
+
 ### 0.3 Gate: permissioned-candidates with BABE keys observed by the Midnight nodes
 
-Query `systemParameters_getAriadneParameters` with the current Cardano
-epoch as parameter on a RPC Midnight node and confirm each candidate entry
-carries a `babe` key, that no two candidates share the same key, and that
-each `babe` key differs from the candidate's `aura` key (the chain accepts a
-reused Aura key, so this gate is the only check):
-
-```bash
-curl -s -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"systemParameters_getAriadneParameters","params":[<MC_EPOCH>]}' <RPC_URL> \
-| jq '.result.permissionedCandidates | {
-    total: length,
-    valid: map(select(.isValid)) | length,
-    with_babe: map(select(.keys.babe)) | length,
-    babe_ne_aura: map(select(.keys.babe and .keys.babe != .keys.aura)) | length,
-    duplicate_babe: map(.keys.babe // empty) | group_by(.) | map(select(length > 1)) | length }'
-```
-
-Pass: `valid`, `with_babe` and `babe_ne_aura` all equal `total`, and `duplicate_babe == 0`.
+After the two Cardano epoch boundaries, query
+`systemParameters_getAriadneParameters` with the current Cardano epoch on any
+Midnight RPC node (a 2.1 node works). Repeat the 0.2 checks, confirm every
+entry has `isValid: true`, and confirm the observed list matches the one you
+submitted. A difference means the list was changed or lost on the way to
+Cardano — do not continue to Phase 1 until it is explained.
 
 ## Phase 1 — Binary rollout
 
