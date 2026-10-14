@@ -564,6 +564,91 @@ mod tests {
 		assert!(!inner_present(), "inner node must be gone after the pin is dropped");
 	}
 
+	/// storage-core forces a root rescan on every flush that changes a root count,
+	/// and `gc()` marks every unmarked root before it resumes sweeping. So a wrapper
+	/// persisted and flushed in the middle of a multi-slice sweep survives that
+	/// sweep with no `Sp` (pin or keep-alive cache) holding it. The worker's pins
+	/// are a defence on top of this; if this test fails after a storage-core bump,
+	/// the pins are load-bearing.
+	#[test]
+	fn wrapper_flushed_mid_sweep_survives_without_pins() {
+		let _g = serial();
+		let present = |h: &ArenaHash<<DefaultDB as DB>::Hasher>| {
+			default_storage::<DefaultDB>().with_backend(|b| b.get(h).is_some())
+		};
+		// Enough on-disk garbage that one call cannot sweep it all (the scan batch
+		// is capped at 4096 nodes per budget check).
+		let garbage: Vec<_> = (0..20_000u64)
+			.map(|i| {
+				let mut leaf = arena().alloc(FatLeaf(0x6000_0000 + i));
+				leaf.persist();
+				leaf.hash()
+			})
+			.collect();
+		flush();
+		default_storage::<DefaultDB>().with_backend(|b| {
+			for h in &garbage {
+				b.unpersist(h);
+			}
+		});
+		flush();
+		crate::ledger_9::clear_ledger_state_caches();
+		let remaining = || garbage.iter().filter(|h| present(h)).count();
+		assert_eq!(remaining(), garbage.len());
+
+		// Drive the sweep until it has started culling but is not finished. The
+		// mark phase needs enough budget to get through the roots other tests left
+		// in the shared arena, so the budget grows until a call culls something.
+		let mut budget = Duration::from_micros(200);
+		let mut started = false;
+		'outer: for _ in 0..12 {
+			for _ in 0..200 {
+				flush();
+				let (culled, _) = collect_garbage(budget).expect("storage initialised");
+				if culled > 0 {
+					started = true;
+					break 'outer;
+				}
+			}
+			budget *= 2;
+		}
+		assert!(started, "the sweep never culled anything");
+		let left = remaining();
+		assert!(left > 0 && left < garbage.len(), "sweep must be mid-cycle, {left} left");
+
+		// Mid-sweep: persist a new wrapper, flush it, and hold nothing.
+		let inner_hash;
+		let w;
+		{
+			let inner = arena().alloc(FatLeaf(0x61));
+			inner_hash = inner.hash();
+			w = persist_tagged(&arena(), tag(1010), &inner).hash();
+		}
+		flush();
+		crate::ledger_9::clear_ledger_state_caches();
+
+		// Finish this cycle and run a few more full slices.
+		for _ in 0..2_000 {
+			flush();
+			collect_garbage(budget).expect("storage initialised");
+			if remaining() == 0 {
+				break;
+			}
+		}
+		assert_eq!(remaining(), 0, "the garbage must be fully swept");
+		for _ in 0..3 {
+			flush();
+			collect_garbage(Duration::from_secs(1)).expect("storage initialised");
+		}
+		assert!(present(&w), "wrapper flushed mid-sweep must not be culled");
+		assert!(present(&inner_hash), "its inner state must not be culled");
+		assert!(wrapper_is_root(&w.0.to_vec()));
+
+		// Tidy up: release it so later tests see a smaller root set.
+		assert_eq!(release_to_zero(&[(w.0.to_vec(), 1)]).0, 1);
+		flush();
+	}
+
 	#[test]
 	fn collect_garbage_skips_dirty_cache() {
 		let _g = serial();
