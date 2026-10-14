@@ -235,15 +235,25 @@ fn offchain_calls_match_block_execution_without_touching_shared_storage() {
 		run_block(&genesis, &v8_state, &tx, &system_tx, &ctx)
 	});
 	assert_eq!(offchain_outputs, onchain_outputs);
-	// Block execution persists only the post-block tips and the migration output; the
-	// intra-block states (the first two) are held, never made GC roots.
+	// Block execution persists only the post-block tips and the migration output, each
+	// through a tagged-root wrapper (never as a raw root); the intra-block states (the first
+	// two) are held, never made GC roots.
 	let (intermediates, durable) = produced.split_at(2);
 	for key in intermediates {
 		assert_eq!(in_shared(key).1, 0, "block execution persisted an intermediate state");
 	}
 	for key in durable {
 		let (known, roots) = in_shared(key);
-		assert!(known && roots > 0, "block execution did not persist its state");
+		assert!(known, "block execution did not store its state");
+		assert_eq!(roots, 0, "block execution rooted a ledger state raw");
+		assert!(
+			midnight_node_ledger::tagged_root::tagged_pin_count(
+				&default_storage::<Shared>().arena,
+				key
+			)
+			.is_some_and(|count| count > 0),
+			"block execution did not pin its state through a tagged root"
+		);
 	}
 	assert_eq!(flushes(&onchain_metrics), 1);
 	assert_eq!(held(&mut onchain), None);

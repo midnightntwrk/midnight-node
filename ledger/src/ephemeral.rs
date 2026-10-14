@@ -22,8 +22,8 @@
 //!
 //! A call counts as block execution when [`LedgerOnchainExt`] is registered, which the node's
 //! executor does for `CallContext::Onchain` only. During block execution only the post-block
-//! tip is persisted; intra-block states are held in [`LedgerStatesExt`] until the post-block
-//! update releases them.
+//! tip is persisted, under a tagged root; intra-block states are held in [`LedgerStatesExt`]
+//! until the post-block update releases them.
 
 use ledger_storage_ledger_8::{
 	Storage,
@@ -122,20 +122,30 @@ pub fn ensure_storage<D: DB>(mut ext: &mut dyn Externalities) -> Arc<Storage<Eph
 		.unwrap_or_else(|storage| storage)
 }
 
-/// Keep a newly produced post-block ledger state (the block's tip): persist it during block
-/// execution and drop every intermediate state held in [`LedgerStatesExt`], otherwise hold it for
-/// the rest of the execution. `state_root` must be its serialized key, taken before this call.
+/// Keep a newly produced post-block ledger state (the block's tip).
+///
+/// During block execution the tip is persisted under a tagged root
+/// ([`crate::tagged_root::persist_tagged`], tag = `tag`, the parent block hash): the wrapper is
+/// the GC root and the tip is pinned through it, never as a raw root. Every intermediate state
+/// held in [`LedgerStatesExt`] is then dropped. Otherwise the tip is held for the rest of the
+/// execution, like every off-chain state, and nothing reaches the shared storage. `state_root`
+/// must be the tip's own serialized key, taken before this call; it stays the consensus-visible
+/// `StateKey`.
 ///
 /// The released intermediates include this block's input state, so the following storage flush
 /// `uncache`s them instead of writing them to disk.
-pub fn retain<T, D>(ext: &mut dyn Externalities, state_root: &[u8], mut state: Sp<T, D>)
-where
+pub fn retain_tip<T, D>(
+	ext: &mut dyn Externalities,
+	state_root: &[u8],
+	state: Sp<T, D>,
+	tag: Vec<u8>,
+) where
 	T: ledger_storage_ledger_8::Storable<D>,
 	D: DB,
 	Sp<T, D>: Send,
 {
 	if is_onchain(ext) {
-		state.persist();
+		crate::tagged_root::persist_tagged(&default_storage::<D>().arena, tag, &state);
 		LedgerStatesExt::release_all(ext);
 		return;
 	}
@@ -146,7 +156,7 @@ where
 /// before this call.
 ///
 /// During block execution it is *not* persisted: [`LedgerStatesExt`] keeps it addressable until
-/// the post-block update ([`retain`]) releases it. The input state is not released, so a FRAME
+/// the post-block update ([`retain_tip`]) releases it. The input state is not released, so a FRAME
 /// storage rollback after the apply can still resolve the `StateKey` it reverts to. Otherwise it
 /// is held for the rest of the execution, like every off-chain state.
 pub fn retain_intermediate<T, D>(
@@ -168,7 +178,9 @@ where
 	Ok(())
 }
 
-fn hold_offchain<T, D>(mut ext: &mut dyn Externalities, state_root: &[u8], state: Sp<T, D>)
+/// Hold an off-chain ledger state for the rest of the execution in [`LedgerEphemeralExt`].
+/// Nothing is written to the shared storage. `state_root` must be its serialized key.
+pub fn hold_offchain<T, D>(mut ext: &mut dyn Externalities, state_root: &[u8], state: Sp<T, D>)
 where
 	T: ledger_storage_ledger_8::Storable<D>,
 	D: DB,

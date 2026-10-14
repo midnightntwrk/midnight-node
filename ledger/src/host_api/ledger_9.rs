@@ -857,25 +857,29 @@ pub trait Ledger9Bridge {
 		// runs in the Executive migrations tuple, before pallet_midnight's
 		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.
 		// `set_default_storage` is idempotent — a no-op if the pre-fork ledger-8
-		// blocks already set it (v8 and v9 share the same parity-db arena).
-		use crate::host_api::migration_8_to_9::migrate_state_v8_to_v9;
+		// blocks already set it (v8 and v9 share the same storage-core arena).
+		// On-chain the migration output is persisted under a tagged root; the tag is the
+		// overlay's `System::ParentHash`, which this early in the block is still the
+		// grandparent's hash (see `overlay_parent_hash`). Off-chain nothing is persisted.
+		use crate::host_api::migration_8_to_9::{migrate_state_v8_to_v9, overlay_parent_hash};
 
+		let parent_hash = overlay_parent_hash(*self);
 		let ephemeral = !is_onchain(*self);
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
 			if ephemeral {
 				ensure_storage::<DbUnified>(*self);
-				migrate_state_v8_to_v9::<EphemeralDb<DbUnified>>(*self, state_key)
+				migrate_state_v8_to_v9::<EphemeralDb<DbUnified>>(*self, state_key, parent_hash)
 			} else {
-				migrate_state_v8_to_v9::<DbUnified>(*self, state_key)
+				migrate_state_v8_to_v9::<DbUnified>(*self, state_key, parent_hash)
 			}
 		} else {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
 			if ephemeral {
 				ensure_storage::<DbSeparate>(*self);
-				migrate_state_v8_to_v9::<EphemeralDb<DbSeparate>>(*self, state_key)
+				migrate_state_v8_to_v9::<EphemeralDb<DbSeparate>>(*self, state_key, parent_hash)
 			} else {
-				migrate_state_v8_to_v9::<DbSeparate>(*self, state_key)
+				migrate_state_v8_to_v9::<DbSeparate>(*self, state_key, parent_hash)
 			}
 		}
 	}
