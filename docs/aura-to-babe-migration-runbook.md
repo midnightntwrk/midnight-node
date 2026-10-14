@@ -186,8 +186,10 @@ From it on, runtime rejects any block from a non-upgraded author.
 - [ ] The activation block (the block that executed the runtime upgrade)
       is **finalized** by GRANDPA. The runtime cannot check this itself.
       Network operator has to verify it.
-- [ ] `babe.authorities()` is non-empty (≥ 1 committee rotation since the
-      upgrade).
+- [ ] `babe.authorities()` equals the registered BABE keys of the current
+      committee (≥ 1 committee rotation since the upgrade). Copied AURA keys
+      or a missing member mean the committee did not rotate onto the
+      registered keys — do not schedule the flip.
 
 ---
 
