@@ -47,18 +47,18 @@
 //! for roots past the height gate. A very large `--state-pruning` window makes
 //! this proportionally more expensive; the hold-time warnings show it.
 //!
-//! # Why pin every scanned wrapper during the sweep
+//! # Pins during the sweep
 //!
 //! The storage crate's sweep culls every DB node that is not in its mark set and
-//! never consults root counts. A wrapper flushed after the sweep's root snapshot is
-//! protected only while an `Sp` holds it (`live_inserts`), and an incremental sweep
-//! of a large DB at `slice` per finality notification can outlast any fixed block
-//! window (the anchored cache holds only a few tips, for a few minutes). So every
-//! wrapper the scan returned is pinned across the slice's gc call. The storage crate
-//! only deletes inside `backend.gc()` and this worker is its only caller, so nothing
-//! is deleted between slices while a wrapper is unpinned; the only wrapper a slice can
-//! miss is one persisted between its scan and its gc hold, which the anchored
-//! keep-alive cache (capacity >= 1) holds for that call.
+//! never consults root counts, so a wrapper flushed in the middle of a multi-slice
+//! sweep must be marked before the sweep cursor moves on. storage-core guarantees
+//! that itself: every flush that changes a root count forces a root rescan, and the
+//! next `gc()` call greys and marks every unmarked root before it sweeps again
+//! (`gc::wrapper_flushed_mid_sweep_survives_without_pins` is the regression test;
+//! the guarantee is a `gc-v1` feature detail a dependency bump could drop). The
+//! worker additionally pins every scanned wrapper across its gc call (`live_inserts`
+//! is the other root source the sweep consults), which costs one lazy `Sp` per
+//! wrapper in the pruning window and makes the slice safe even without that rescan.
 //!
 //! # Legacy roots
 //!
