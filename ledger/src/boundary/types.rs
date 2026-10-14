@@ -305,8 +305,7 @@ pub struct LedgerStats {
 }
 
 impl UtxoInfo {
-	/// What makes a UTXO unique in the ledger: the intent that created it and its
-	/// output index. Owner, type and value are attributes of that identity.
+	/// Ledger identity of this UTXO; owner, type and value are not part of it.
 	pub fn id(&self) -> (Hash, u32) {
 		(self.intent_hash, self.output_no)
 	}
