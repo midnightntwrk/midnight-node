@@ -33,7 +33,8 @@ pub fn drop_default_storage_if_exists() {
 	//
 	// Unconditional, and deliberately not inside the branches below: ledger 8 and 9
 	// share one storage backend, and `ledger_8::storage::drop_default_storage_if_exists`
-	// may be the call that finds and drops it. Only the ledger-9 caches retain states.
+	// may be the call that finds and drops it. Only the ledger-9 caches are cleared here;
+	// ledger 8 clears its own.
 	super::clear_ledger_state_caches();
 
 	if try_get_default_storage::<DbSeparate>().is_some() {
@@ -139,16 +140,17 @@ where
 			.expect("failed to deserialize ledger genesis state");
 	let state = Ledger::new(state);
 
-	let mut state = default_storage::<D>().arena.alloc(state);
-	// Genesis is an anchored state: persisted once at rc=1 and never unpersisted, so it
-	// is retained for history.
-	state.persist();
+	let state = default_storage::<D>().arena.alloc(state);
+	// Genesis is an anchored state: persisted once under a tagged root (tag = 32 zero bytes,
+	// there is no parent block) and never released, so it is retained for history.
+	let wrapper =
+		crate::tagged_root::persist_tagged(&default_storage::<D>().arena, vec![0u8; 32], &state);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	crate::ledger_9::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
 		.unwrap();
 	// Keep it live so block 1's first apply doesn't re-materialise it.
-	super::retain_anchored(&bytes, &state);
+	super::retain_anchored(&bytes, &wrapper);
 	bytes
 }
 
@@ -245,4 +247,40 @@ pub fn init_storage_paritydb_unified<
 		crate::ledger_9::TransactionSignature,
 		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
 	>(genesis_state)
+}
+
+/// Returns the summed persist count of the tagged-root wrappers pinning the ledger state
+/// addressed by `state_key`, or `None` if no wrapper for it is currently a GC root.
+///
+/// Test-only: drop every keep-alive cache entry, so nothing but the arena itself keeps a
+/// state alive (the anchored cache otherwise pins recent tip wrappers in `live_inserts`).
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn clear_state_caches_for_test() {
+	super::clear_ledger_state_caches();
+}
+
+/// Test-only: flush all staged storage changes of the `ParityDb`-backed default storage,
+/// the way the block-boundary flush does.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn flush_default_storage_for_test() {
+	use crate::ledger_9::ledger_storage_local::{db::ParityDb, storage::default_storage};
+
+	default_storage::<ParityDb>().with_backend(|b| b.flush_all_changes_to_db());
+}
+
+/// Test-only inspection helper, the tagged-root counterpart of [`get_state_root_count`]:
+/// post-block tips are pinned by wrappers and are no longer raw roots themselves.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn tagged_pin_count(state_key: &[u8]) -> Option<u32> {
+	use crate::ledger_9::api::Ledger;
+	use crate::ledger_9::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		crate::ledger_9::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	crate::tagged_root::tagged_pin_count(&default_storage::<ParityDb>().arena, key.hash())
 }
