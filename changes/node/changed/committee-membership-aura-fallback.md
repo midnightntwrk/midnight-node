@@ -9,5 +9,5 @@ whose registered BABE key is its AURA key kept authoring but was reported as
 ahead of a rotation) was in the keystore. The check now resolves keys the same
 way authoring does and notes when the AURA fallback is in use.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2298
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2295
