@@ -26,7 +26,10 @@ use midnight_node::cfg::midnight_cfg::StorageSeparation;
 use midnight_node::service::StorageInit;
 use midnight_node_ledger::drop_all_default_storage;
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
-use midnight_primitives_ledger::LedgerStorageDb;
+use midnight_primitives_ledger::{LedgerStorageDb, NUM_COLUMNS_POLKADOT};
+use midnight_storage_core::db::paritydb::{
+	GC_ROOT_COLUMN, NODE_COLUMN, NUM_COLUMNS as NUM_COLUMNS_LEDGER,
+};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -37,6 +40,11 @@ fn storage_init(base: &Path, separation: StorageSeparation) -> StorageInit {
 		genesis_state: UndeployedNetwork.genesis_state().to_vec(),
 		cache_size: 10_000,
 	}
+}
+
+/// Index of a storage-core ledger column inside the shared database.
+fn ledger_column(col: u8) -> usize {
+	(NUM_COLUMNS_POLKADOT + col) as usize
 }
 
 fn paritydb_path(base: &Path) -> PathBuf {
@@ -62,9 +70,10 @@ fn storage_migration_scenarios() {
 		drop_all_default_storage();
 	}
 
-	// 2. Separate -> Unified on the same data dir must be rejected at the parity-db
-	//    layer. A silent success would leave the old `ledger_storage/` parity-db
-	//    orphaned and reinitialise ledger state from genesis.
+	// 2. Separate -> Unified on the same data dir must be rejected. A silent success
+	//    would leave the old `ledger_storage/` parity-db orphaned and reinitialise ledger
+	//    state from genesis. Both modes apply the same ledger column options, so the mode
+	//    recorded in the META column on first open is what catches this.
 	{
 		let base = TempDir::new().unwrap();
 		let path = paritydb_path(base.path());
@@ -88,7 +97,7 @@ fn storage_migration_scenarios() {
 	}
 
 	// 3. Unified -> Separate on the same data dir: same hazard in the opposite
-	//    direction. Parity-db again catches the config mismatch.
+	//    direction, caught by the same recorded mode.
 	{
 		let base = TempDir::new().unwrap();
 		let path = paritydb_path(base.path());
@@ -109,5 +118,62 @@ fn storage_migration_scenarios() {
 			"expected storage_separation hint in error, got: {msg}",
 		);
 		drop_all_default_storage();
+	}
+
+	// 4. A fresh Unified database gets storage-core's ledger column options: the root and
+	//    node columns are btree-indexed (storage-core iterates them) and the node column is
+	//    LZ4-compressed.
+	{
+		let base = TempDir::new().unwrap();
+		let path = paritydb_path(base.path());
+		let cfg = storage_init(base.path(), StorageSeparation::Unified);
+
+		let (db, storage, _) =
+			open_paritydb(&path, &cfg).unwrap_or_else(|e| panic!("fresh Unified open failed: {e}"));
+		drop((db, storage));
+		drop_all_default_storage();
+
+		let meta = parity_db::Options::load_metadata(&path).unwrap().expect("metadata");
+		let node = &meta.columns[ledger_column(NODE_COLUMN)];
+		assert!(node.btree_index, "ledger node column must be indexed");
+		assert!(
+			matches!(node.compression, parity_db::CompressionType::Lz4),
+			"ledger node column must be LZ4-compressed",
+		);
+		assert!(meta.columns[ledger_column(GC_ROOT_COLUMN)].btree_index);
+	}
+
+	// 5. A Unified database created before the ledger columns got options (plain parity-db
+	//    defaults) still opens, and keeps the options it was created with: parity-db cannot
+	//    change column options of an existing database.
+	{
+		let base = TempDir::new().unwrap();
+		let path = paritydb_path(base.path());
+		let cfg = storage_init(base.path(), StorageSeparation::Unified);
+
+		let (db, storage, _) =
+			open_paritydb(&path, &cfg).unwrap_or_else(|e| panic!("fresh Unified open failed: {e}"));
+		drop((db, storage));
+		drop_all_default_storage();
+
+		// Rewrite the stored ledger column options back to the defaults an older node
+		// created them with.
+		let meta = parity_db::Options::load_metadata(&path).unwrap().expect("metadata");
+		let mut old = parity_db::Options::with_columns(&path, meta.columns.len() as u8);
+		old.columns = meta.columns.clone();
+		for col in NODE_COLUMN..NUM_COLUMNS_LEDGER {
+			old.columns[ledger_column(col)] = parity_db::ColumnOptions::default();
+		}
+		old.write_metadata_with_version(&path, &meta.salt, Some(meta.version)).unwrap();
+
+		let (db, storage, _) = open_paritydb(&path, &cfg)
+			.unwrap_or_else(|e| panic!("reopening a pre-options Unified db failed: {e}"));
+		drop((db, storage));
+		drop_all_default_storage();
+
+		let meta = parity_db::Options::load_metadata(&path).unwrap().expect("metadata");
+		let node = &meta.columns[ledger_column(NODE_COLUMN)];
+		assert!(!node.btree_index, "existing db must keep its stored options");
+		assert!(matches!(node.compression, parity_db::CompressionType::NoCompression));
 	}
 }
