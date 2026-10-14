@@ -642,7 +642,7 @@ mod tests {
 		}
 		assert!(present(&w), "wrapper flushed mid-sweep must not be culled");
 		assert!(present(&inner_hash), "its inner state must not be culled");
-		assert!(wrapper_is_root(&w.0.to_vec()));
+		assert!(wrapper_is_root(&w.0));
 
 		// Tidy up: release it so later tests see a smaller root set.
 		assert_eq!(release_to_zero(&[(w.0.to_vec(), 1)]).0, 1);
