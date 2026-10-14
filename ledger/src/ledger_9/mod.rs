@@ -48,7 +48,7 @@ use sha2::digest::{OutputSizeUser, consts::U32};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use alloc::vec::Vec;
-use frame_support::{StorageHasher, Twox128};
+use frame_support::{Blake2_256, StorageHasher};
 use sp_externalities::{Externalities, ExternalitiesExt};
 
 pub mod types;
@@ -1319,7 +1319,7 @@ where
 	/// `runtime_version` is prepended to differentiate tx validity between versions
 	fn tx_validation_cache_key(runtime_version: u32, tx_serialized: &[u8]) -> WrappedHash {
 		let to_hash = [&runtime_version.to_le_bytes(), tx_serialized].concat();
-		Twox128::hash(&to_hash).into()
+		WrappedHash(Blake2_256::hash(&to_hash))
 	}
 
 	fn get_tx_type(tx: &Transaction<S, D>) -> &'static str {
