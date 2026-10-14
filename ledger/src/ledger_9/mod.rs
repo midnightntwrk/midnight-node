@@ -153,6 +153,14 @@ pub struct SoftTxValidationKey {
 	tx_hash: Hash,
 }
 
+/// First runtime `spec_version` at which a UTXO created and spent inside one
+/// transaction is netted out before the post-apply integrity check, instead of
+/// failing it (audit finding H-4, NODE-342). The verdict is consensus state: a
+/// block before this version that carried such a transaction recorded it as
+/// failed, so the netting is gated to keep those blocks replaying as they were.
+#[cfg(feature = "std")]
+const NETTED_INTRA_TX_UTXOS_SPEC_VERSION: u32 = 2_001_100;
+
 /// Set this high to ensure that even large mempool sizes don't cause performance issues due to
 /// unnecessary revalidation.
 #[cfg(feature = "std")]
@@ -461,6 +469,9 @@ where
 
 		// Capture segment counts before flattening — the HashMap→BTreeMap fix
 		// only changes ordering between segments, not within a single segment.
+		if runtime_version >= NETTED_INTRA_TX_UTXOS_SPEC_VERSION {
+			utxos.net_intra_tx_utxos();
+		}
 		let output_segments = utxos.outputs.len();
 		let input_segments = utxos.inputs.len();
 
