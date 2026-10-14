@@ -281,6 +281,7 @@ pub(crate) async fn get_stake_distribution(
 
 /// Returns the token data of the given policy at the given slot.
 /// Accepts a pre-resolved `multi_asset.id` (ident) to avoid joining the `multi_asset` table.
+/// Excludes outputs of failing script transactions (tx.valid_contract).
 pub(crate) async fn get_token_utxo_for_epoch(
 	pool: &Pool<Postgres>,
 	ident: i64,
@@ -300,6 +301,7 @@ pub(crate) async fn get_token_utxo_for_epoch(
         INNER JOIN block origin_block   ON origin_tx.block_id = origin_block.id
         LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
         WHERE ma_tx_out.ident = $1
+        AND origin_tx.valid_contract = true
         AND origin_block.epoch_no <= $2
         ORDER BY tx_block_no DESC, origin_tx.block_index DESC
         LIMIT 1";
