@@ -8078,6 +8078,7 @@ dependencies = [
  "serde_json",
  "subxt",
  "tempfile",
+ "thiserror 2.0.18",
  "tiny-bip39",
  "tokio",
  "tracing",
