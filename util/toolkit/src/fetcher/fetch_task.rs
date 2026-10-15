@@ -27,6 +27,7 @@ use crate::{
 		BLOCK_FETCH_TIMEOUT,
 		compute_task::ComputeTask,
 		fetch_storage::{FetchStorage, FetchedBlock},
+		runtimes::{RuntimeVersion, RuntimeVersionError},
 	},
 };
 
@@ -53,6 +54,8 @@ pub enum FetchTaskError {
 	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
 	#[error("block error: {0}")]
 	BlockError(#[from] subxt::error::BlockError),
+	#[error("runtime version error: {0}")]
+	RuntimeVersionError(#[from] RuntimeVersionError),
 	#[error("storage error: {0}")]
 	StorageError(#[from] subxt::error::StorageError),
 	#[error("block hash missing for block number {0}")]
@@ -156,7 +159,9 @@ impl FetchTask {
 		})
 		.await?;
 
-		let state_root = MidnightNodeClient::state_root_from(&block).await?;
+		let header = block.block_header().await?;
+		let runtime_version = RuntimeVersion::from_header(&header)?;
+		let state_root = MidnightNodeClient::state_root_from(&block, runtime_version).await?;
 		let raw_body: Vec<Vec<u8>> = block
 			.extrinsics()
 			.fetch()
@@ -166,7 +171,6 @@ impl FetchTask {
 			.map(|ext| ext.bytes().to_vec())
 			.collect();
 
-		let header = block.block_header().await?;
 		let state = if header.parent_hash.is_zero() {
 			let system_properties = client.get_system_properties().await?;
 			let genesis_state_value = system_properties

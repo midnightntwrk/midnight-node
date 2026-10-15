@@ -14,10 +14,7 @@
 use midnight_node_ledger_helpers::fork::raw_block_data::{
 	LedgerVersion, RawBlockData, RawTransaction,
 };
-use subxt::{
-	config::substrate::{ConsensusEngineId, DigestItem},
-	utils::H256,
-};
+use subxt::utils::H256;
 
 use crate::{
 	client::MidnightNodeClientConfig,
@@ -128,24 +125,12 @@ impl ComputeTask {
 
 	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
 		let header = &block.header;
-		let spec_version = header
-			.digest
-			.logs
-			.iter()
-			.find_map(|item| {
-				const VERSION_ID: ConsensusEngineId = *b"MNSV";
-				if let DigestItem::Consensus(VERSION_ID, data) = item {
-					Some(RuntimeVersion::try_from(data.as_slice()))
-				} else {
-					None
-				}
-			})
-			.expect("no runtime version found")?;
+		let spec_version = RuntimeVersion::from_header(header)?;
 		match spec_version {
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
@@ -153,7 +138,7 @@ impl ComputeTask {
 			RuntimeVersion::V0_22_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_22_0>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
@@ -161,7 +146,7 @@ impl ComputeTask {
 			RuntimeVersion::V1_0_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata1_0_0>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
@@ -169,7 +154,7 @@ impl ComputeTask {
 			RuntimeVersion::V1_0_3 => {
 				Self::process_block_with_protocol::<MidnightMetadata1_0_3>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
@@ -177,7 +162,7 @@ impl ComputeTask {
 			RuntimeVersion::V2_0_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata2_0_0>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
@@ -185,7 +170,7 @@ impl ComputeTask {
 			RuntimeVersion::V2_1_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata2_1_0>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
@@ -193,7 +178,7 @@ impl ComputeTask {
 			RuntimeVersion::V3_0_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata3_0_0>(
 					block,
-					&header,
+					header,
 					spec_version,
 				)
 				.await
