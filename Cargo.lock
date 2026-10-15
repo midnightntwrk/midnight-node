@@ -10997,7 +10997,7 @@ dependencies = [
 [[package]]
 name = "parity-db"
 version = "0.5.4"
-source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#d44ef4fafd15ed8326e74b88f2558afaf458f7f6"
+source = "git+https://github.com/midnightntwrk/parity-db.git?rev=d5eaab2857d296f4fabdf922fda71a1bca29ca6d#d5eaab2857d296f4fabdf922fda71a1bca29ca6d"
 dependencies = [
  "ahash 0.8.12",
  "blake2 0.10.6",
