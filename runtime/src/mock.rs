@@ -102,6 +102,7 @@ frame_support::construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management,
 		Aura: pallet_aura,
 		Babe: pallet_babe,
+		Authorship: pallet_authorship,
 		ConsensusEngine: pallet_consensus_engine,
 		Grandpa: pallet_grandpa,
 		Session: pallet_session,
@@ -274,6 +275,11 @@ parameter_types! {
 		};
 }
 
+impl pallet_authorship::Config for Test {
+	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
+	type EventHandler = ();
+}
+
 impl pallet_consensus_engine::Config for Test {
 	type GovernanceOrigin = EnsureRoot<AccountId32>;
 	type EpochDuration = ConstU64<{ SLOTS_PER_EPOCH as u64 }>;
@@ -349,8 +355,9 @@ pub fn initialize_block() {
 	System::on_initialize(System::block_number());
 	Aura::on_initialize(System::block_number());
 	Babe::on_initialize(System::block_number());
-	ConsensusEngine::on_initialize(System::block_number());
 	Grandpa::on_initialize(System::block_number());
+	Authorship::on_initialize(System::block_number());
+	ConsensusEngine::on_initialize(System::block_number());
 	SessionCommitteeManagement::on_initialize(System::block_number());
 	Session::on_initialize(System::block_number());
 
@@ -364,6 +371,7 @@ pub fn finalize_block() {
 	if System::block_number() > 0 {
 		Session::on_finalize(System::block_number());
 		SessionCommitteeManagement::on_finalize(System::block_number());
+		Authorship::on_finalize(System::block_number());
 		Grandpa::on_finalize(System::block_number());
 		Babe::on_finalize(System::block_number());
 		Aura::on_finalize(System::block_number());
@@ -559,7 +567,8 @@ pub fn charlie_mock_validator() -> MockValidator {
 
 /// The pre-runtime digests a migration-aware node puts on a block at `slot_number`: before the
 /// flip the AURA one followed by a BABE `SecondaryPlain` one naming the AURA author; after it the
-/// BABE one alone.
+/// BABE one alone, claiming `slot % n` under the epoch the block is signed in — the set BABE
+/// announced for it when the block opens an epoch, else the current one.
 fn initialize_with_slot_digest_and_increment_block_number(slot_number: u64) {
 	let slot = Slot::from(slot_number);
 	let babe = |authority_index: u32| {
@@ -577,7 +586,15 @@ fn initialize_with_slot_digest_and_increment_block_number(slot_number: u64) {
 				babe((slot_number % authorities) as u32),
 			]
 		},
-		ActiveEngine::Babe => vec![babe(0)],
+		ActiveEngine::Babe => {
+			let opens_epoch = slot_number.is_multiple_of(SLOTS_PER_EPOCH as u64);
+			let signers = if opens_epoch {
+				pallet_babe::NextAuthorities::<Test>::get().len()
+			} else {
+				pallet_babe::Authorities::<Test>::get().len()
+			};
+			vec![babe((slot_number % signers.max(1) as u64) as u32)]
+		},
 	};
 	let pre_digest = Digest { logs };
 

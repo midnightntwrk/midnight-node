@@ -1741,7 +1741,7 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl pallet_beefy_mmr::BeefyMmrApi<Block, Hash> for RuntimeApi {
+	impl pallet_beefy_mmr::BeefyMmrApi<Block, Hash> for Runtime {
 		fn authority_set_proof() -> sp_consensus_beefy::mmr::BeefyAuthoritySet<Hash> {
 			BeefyMmrLeaf::authority_set_proof()
 		}
@@ -2017,17 +2017,20 @@ mod tests {
 		assert_ok,
 		dispatch::PostDispatchInfo,
 		inherent::ProvideInherent,
-		traits::{UnfilteredDispatchable, WhitelistedStorageKeys},
+		traits::{FindAuthor, UnfilteredDispatchable, WhitelistedStorageKeys},
 	};
 	use frame_system::RawOrigin;
-	use pallet_consensus_engine::{EngineState, State};
+	use midnight_primitives_consensus_engine::ActiveEngine;
 	use parity_scale_codec::Decode;
 	use sidechain_domain::{
 		CandidateRegistrations, CrossChainPublicKey, CrossChainSignature, DParameter, EpochNonce,
 		MainchainSignature, PermissionedCandidateData, RegistrationData, ScEpochNumber,
 		SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
 	};
+	use sp_consensus_aura::AURA_ENGINE_ID;
+	use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 	use sp_consensus_babe::{BABE_ENGINE_ID, BabeAuthorityWeight, ConsensusLog};
+	use sp_core::crypto::AccountId32;
 	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
 	use sp_runtime::traits::Zero;
@@ -2190,86 +2193,274 @@ mod tests {
 		});
 	}
 
-	/// The node seeds BABE epoch 0 from `BabeApi::current_epoch` at the flip block. Epoch 0 is the
-	/// term of the committee the session manager has queued, which `pallet_session` activates at
-	/// the first BABE block, so at the flip all three must name the same validators, and the
-	/// first BABE block must install exactly that set.
+	/// What an observer of the chain sees across the flip must agree, block by block: the engine
+	/// the header's pre-runtime digests name, the signer those digests resolve to in every
+	/// authority view readable at the parent state (`AuraApi::authorities`, `BabeApi::current_epoch`
+	/// and `next_epoch`, the committee pallet's current and queued committees, `pallet_session`'s
+	/// validators), the author the runtime credits, and the epoch BABE announces for the session to
+	/// come. The committee changes at every rotation, so a stale or wrong set is a distinct answer.
+	///
+	/// Post-flip, a block that opens an epoch is signed under the epoch BABE announced one epoch
+	/// earlier, i.e. `BabeApi::next_epoch` at its parent; every other block under
+	/// `BabeApi::current_epoch` at its parent. At the flip block both name the first BABE epoch.
 	#[test]
-	fn babe_epoch_zero_is_the_committee_pallet_session_activates_at_the_first_babe_block() {
+	fn observers_see_coherent_signers_and_epochs_across_the_flip() {
 		new_test_ext().execute_with(|| {
 			// As the upgrade migration leaves an existing network.
 			ConsensusEngine::activate();
 			advance_block();
 
-			// A committee set in epoch N serves epoch N + 2: `[alice]` serves epoch 2, the first
-			// BABE epoch, and `[bob]` the one after it.
-			set_committee_through_inherent_data(&[alice()]);
-			until_epoch_after_finalizing(1, &|| {});
-			set_committee_through_inherent_data(&[bob()]);
-			assert_ok!(ConsensusEngine::schedule_flip(RawOrigin::Root.into()));
+			// A committee set in epoch N serves epoch N + 2. The flip commits at the end of epoch
+			// 1, so `[bob]` serves the first BABE epoch while `[alice, bob]` still signs epoch 1.
+			let plan = [
+				vec![bob()],
+				vec![alice()],
+				vec![alice(), bob()],
+				vec![bob(), alice()],
+				vec![alice()],
+			];
+			let mut planned = None;
+			let mut seen = std::collections::BTreeMap::<Kind, u32>::new();
+			let mut last = None;
+			// The activation block is observed too: the parent view is the genesis state.
+			let mut parent = View::capture();
+			loop {
+				advance_block();
+				let kind = match (last, observe(&parent)) {
+					(Some(Kind::Flip), Kind::BabeOpening) => Kind::FirstBabe,
+					(_, kind) => kind,
+				};
+				*seen.entry(kind).or_default() += 1;
+				last = Some(kind);
+				parent = View::capture();
 
-			// The flip commits at the last slot of epoch 1.
-			let blocks_to_flip = slots_to_epoch(2, SLOTS_PER_EPOCH) - 1;
-			for_next_n_blocks_after_finalizing(blocks_to_flip as u32, &|| {});
-			assert_current_epoch!(1);
-			assert_eq!(EngineState::<Test>::get(), State::Babe);
+				let epoch = (Sidechain::current_epoch_number().0 - ARBITRARY_FIRST_EPOCH) as usize;
+				if epoch > plan.len() {
+					break;
+				}
+				if planned != Some(epoch) {
+					if let Some(committee) = plan.get(epoch) {
+						set_committee_through_inherent_data(committee);
+					}
+					if epoch == 1 {
+						assert_ok!(ConsensusEngine::schedule_flip(RawOrigin::Root.into()));
+					}
+					planned = Some(epoch);
+				}
+			}
 
-			// The committee changes at the flip, so the outgoing set is a distinct wrong answer.
-			assert_aura_authorities!([alice(), bob()]);
-			let epoch_zero = Babe::current_epoch();
-			assert_eq!(epoch_zero.authorities, babe_authorities(&[alice()]));
-			assert_eq!(epoch_zero.authorities, session_queued_babe_authorities());
-			assert_eq!(epoch_zero.authorities, committee_babe_authorities(queued_committee()));
+			// Every kind of block the migration produces was checked, the singular ones once.
+			assert_eq!(seen[&Kind::Flip], 1);
+			assert_eq!(seen[&Kind::FirstBabe], 1);
+			assert!(seen[&Kind::PreFlip] > 1, "{seen:?}");
+			assert!(seen[&Kind::PreFlipOpening] >= 1, "{seen:?}");
+			assert!(seen[&Kind::BabeOpening] >= 3, "{seen:?}");
+			assert!(seen[&Kind::Babe] > 1, "{seen:?}");
+			assert_eq!(parent.engine, ActiveEngine::Babe);
 
-			// The first BABE block installs that set everywhere.
-			advance_block();
-			assert_current_epoch!(2);
-			assert_eq!(pallet_babe::Authorities::<Test>::get().to_vec(), epoch_zero.authorities);
-			assert_eq!(committee_babe_authorities(current_committee()), epoch_zero.authorities);
-			assert_aura_authorities!([alice()]);
-
-			// What it announces for epoch 1 is the set queued next, so the client's epochs keep
-			// following the session rotations.
-			let announced = babe_next_epoch_data().expect("the first BABE block announces epoch 1");
-			assert_eq!(announced, babe_authorities(&[bob()]));
-			assert_eq!(announced, pallet_babe::NextAuthorities::<Test>::get().to_vec());
-			assert_eq!(announced, session_queued_babe_authorities());
+			// `pallet_session::historical` records no session roots: the session manager is not
+			// wrapped in `NoteHistoricalRoot`, so no observer can obtain a key-ownership proof,
+			// and the consensus APIs answer `None` for them.
+			assert!(
+				pallet_session::historical::HistoricalSessions::<Test>::iter().next().is_none()
+			);
 		});
 
-		fn babe_authorities(
-			members: &[TestKeys],
-		) -> Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)> {
-			members.iter().map(|member| (member.babe.public(), 1)).collect()
+		/// The kinds of block the migration produces, each with its own observer rules.
+		#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+		enum Kind {
+			PreFlip,
+			PreFlipOpening,
+			Flip,
+			FirstBabe,
+			BabeOpening,
+			Babe,
+		}
+
+		type Member = <Test as pallet_session_validator_management::Config>::CommitteeMember;
+		type BabeAuthorities = Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)>;
+
+		/// The views an observer can read at a block's state, used for the block's child.
+		struct View {
+			engine: ActiveEngine,
+			session: u32,
+			aura: Vec<AuraId>,
+			babe: BabeAuthorities,
+			current_epoch: Option<sp_consensus_babe::Epoch>,
+			next_epoch: BabeAuthorities,
+			validators: Vec<AccountId32>,
+			queued_validators: Vec<AccountId32>,
+			committee: Vec<Member>,
+			queued_committee: Vec<Member>,
+		}
+
+		impl View {
+			fn capture() -> Self {
+				// `BabeApi::current_epoch` needs the epoch config the flip writes.
+				let current_epoch =
+					pallet_babe::EpochConfig::<Test>::get().map(|_| Babe::current_epoch());
+				View {
+					engine: ConsensusEngine::active_engine(),
+					session: Session::current_index(),
+					aura: pallet_aura::Authorities::<Test>::get().to_vec(),
+					babe: pallet_babe::Authorities::<Test>::get().to_vec(),
+					current_epoch,
+					next_epoch: pallet_babe::NextAuthorities::<Test>::get().to_vec(),
+					validators: Session::validators(),
+					queued_validators: pallet_session::QueuedKeys::<Test>::get()
+						.into_iter()
+						.map(|(validator, _)| validator)
+						.collect(),
+					committee: SessionCommitteeManagement::current_committee_storage()
+						.committee
+						.to_vec(),
+					queued_committee: SessionCommitteeManagement::queued_committee_storage()
+						.committee
+						.to_vec(),
+				}
+			}
+		}
+
+		/// Check the block just initialized against the views at its parent.
+		fn observe(parent: &View) -> Kind {
+			let block = System::block_number();
+			let logs = System::digest().logs;
+			let engines = logs
+				.iter()
+				.filter_map(|log| log.as_pre_runtime())
+				.map(|(engine, _)| engine)
+				.collect::<Vec<_>>();
+			let expected = match parent.engine {
+				ActiveEngine::Aura => vec![AURA_ENGINE_ID, BABE_ENGINE_ID],
+				ActiveEngine::Babe => vec![BABE_ENGINE_ID],
+			};
+			assert_eq!(engines, expected, "block {block}: pre-runtime digests");
+
+			let index = <ConsensusEngine as FindAuthor<u32>>::find_author(
+				logs.iter().filter_map(|log| log.as_pre_runtime()),
+			)
+			.expect("the digests name the author") as usize;
+			let opens_epoch = babe_next_epoch_data().is_some();
+			let rotated = Session::current_index() != parent.session;
+			assert_eq!(
+				opens_epoch, rotated,
+				"block {block}: BABE announces an epoch iff the session rotates"
+			);
+
+			// The signer: who the author index names under the set the block is signed in.
+			let (signer_babe, member, session_view) = match (parent.engine, opens_epoch) {
+				// AURA: `slot % n` in the AURA list; the BABE digest names the same member.
+				(ActiveEngine::Aura, _) => {
+					assert_eq!(parent.aura[index], parent.committee[index].authority_keys().aura);
+					(parent.babe[index].0.clone(), &parent.committee[index], &parent.validators)
+				},
+				(ActiveEngine::Babe, false) => {
+					let epoch = parent.current_epoch.as_ref().expect("post-flip epoch");
+					(
+						epoch.authorities[index].0.clone(),
+						&parent.committee[index],
+						&parent.validators,
+					)
+				},
+				(ActiveEngine::Babe, true) => (
+					parent.next_epoch[index].0.clone(),
+					&parent.queued_committee[index],
+					&parent.queued_validators,
+				),
+			};
+			let signer: AccountId32 = member.authority_id().into();
+			assert_eq!(signer_babe, member.authority_keys().babe, "block {block}: committee view");
+			assert_eq!(session_view[index], signer, "block {block}: pallet_session view");
+
+			// Post-flip the signer's set is this block's current set everywhere.
+			if parent.engine == ActiveEngine::Babe {
+				assert_eq!(Session::validators()[index], signer, "block {block}");
+				assert_eq!(
+					pallet_babe::Authorities::<Test>::get()[index].0,
+					signer_babe,
+					"block {block}"
+				);
+				let current: AccountId32 = current_committee()[index].authority_id().into();
+				assert_eq!(current, signer, "block {block}");
+			}
+
+			// The runtime's own credit. `pallet_authorship` runs before the session rotation in
+			// the same block, so on a block opening a BABE epoch it maps the index into the
+			// validators of the session that ends there, not into the signers.
+			let credited = Authorship::author().expect("the runtime credits an author");
+			match (parent.engine, opens_epoch) {
+				(ActiveEngine::Babe, true) => {
+					assert_eq!(credited, parent.validators[index], "block {block}: authorship lag")
+				},
+				_ => assert_eq!(credited, signer, "block {block}: credited author"),
+			}
+
+			// What BABE announces is the set the next rotation installs.
+			if let Some(announced) = babe_next_epoch_data() {
+				assert_eq!(
+					announced,
+					pallet_babe::NextAuthorities::<Test>::get().to_vec(),
+					"block {block}"
+				);
+				assert_eq!(announced, session_queued_babe_authorities(), "block {block}");
+				assert_eq!(
+					announced,
+					committee_babe_authorities(queued_committee()),
+					"block {block}"
+				);
+				if pallet_babe::EpochConfig::<Test>::get().is_some() {
+					assert_eq!(announced, Babe::next_epoch().authorities, "block {block}");
+				}
+			}
+
+			// The flip block: AURA-authored (its header says so) while its state already reports
+			// BABE, so observers must take the engine from the header. Its state seeds epoch 0 with
+			// the committee queued for the epoch it covers.
+			let flipped = parent.engine == ActiveEngine::Aura
+				&& ConsensusEngine::active_engine() == ActiveEngine::Babe;
+			if flipped {
+				assert!(!opens_epoch, "block {block}: the flip block ends an epoch");
+				let epoch_zero = Babe::current_epoch();
+				assert_eq!(
+					epoch_zero.authorities,
+					pallet_babe::NextAuthorities::<Test>::get().to_vec()
+				);
+				assert_eq!(epoch_zero.authorities, session_queued_babe_authorities());
+				assert_eq!(epoch_zero.authorities, committee_babe_authorities(queued_committee()));
+				assert_eq!(epoch_zero.authorities, Babe::next_epoch().authorities);
+				assert_ne!(epoch_zero.authorities, committee_babe_authorities(current_committee()));
+			}
+			match (parent.engine, opens_epoch, flipped) {
+				(_, _, true) => Kind::Flip,
+				(ActiveEngine::Aura, true, _) => Kind::PreFlipOpening,
+				(ActiveEngine::Aura, false, _) => Kind::PreFlip,
+				(ActiveEngine::Babe, true, _) => Kind::BabeOpening,
+				(ActiveEngine::Babe, false, _) => Kind::Babe,
+			}
 		}
 
 		/// The BABE keys `pallet_session` activates at its next rotation.
-		fn session_queued_babe_authorities()
-		-> Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)> {
+		fn session_queued_babe_authorities() -> BabeAuthorities {
 			pallet_session::QueuedKeys::<Test>::get()
 				.into_iter()
 				.map(|(_, keys)| (keys.babe, 1))
 				.collect()
 		}
 
-		fn queued_committee()
-		-> Vec<<Test as pallet_session_validator_management::Config>::CommitteeMember> {
+		fn queued_committee() -> Vec<Member> {
 			SessionCommitteeManagement::queued_committee_storage().committee.to_vec()
 		}
 
-		fn current_committee()
-		-> Vec<<Test as pallet_session_validator_management::Config>::CommitteeMember> {
+		fn current_committee() -> Vec<Member> {
 			SessionCommitteeManagement::current_committee_storage().committee.to_vec()
 		}
 
-		fn committee_babe_authorities(
-			committee: Vec<<Test as pallet_session_validator_management::Config>::CommitteeMember>,
-		) -> Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)> {
+		fn committee_babe_authorities(committee: Vec<Member>) -> BabeAuthorities {
 			committee.into_iter().map(|member| (member.authority_keys().babe, 1)).collect()
 		}
 
 		/// The authorities of the `NextEpochData` BABE consensus log in the current block, if any.
-		fn babe_next_epoch_data()
-		-> Option<Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)>> {
+		fn babe_next_epoch_data() -> Option<BabeAuthorities> {
 			System::digest().logs.iter().find_map(|log| {
 				let (engine, mut data) = log.as_consensus()?;
 				if engine != BABE_ENGINE_ID {
@@ -2280,6 +2471,320 @@ mod tests {
 					_ => None,
 				}
 			})
+		}
+	}
+
+	/// Observers read the chain through runtime APIs. Each one must be the pallet state the
+	/// coherence test above checks, with nothing in between.
+	mod runtime_api_views {
+		use crate::mock::{TestKeys, alice, bob};
+		use crate::{
+			AuraId, BABE_GENESIS_EPOCH_CONFIG, BeefyId, Block, GrandpaId, Hash, Runtime,
+			SLOT_DURATION, Sidechain, opaque,
+		};
+		use authority_selection_inherents::{AuthoritySelectionInputs, CommitteeMember};
+		use frame_support::{BoundedVec, WeakBoundedVec};
+		use midnight_primitives_consensus_engine::ActiveEngine;
+		use pallet_consensus_engine::{EngineState, State};
+		use pallet_session_validator_management::{
+			CommitteeInfo, CurrentCommittee, MainChainScriptsConfiguration, NextCommittee,
+			QueuedCommittee,
+		};
+		use parity_scale_codec::Encode;
+		use sidechain_domain::{MainchainAddress, PolicyId, ScEpochNumber};
+		use sp_consensus_beefy::mmr::BeefyAuthoritySet;
+		use sp_consensus_slots::{Slot, SlotDuration};
+		use sp_core::{ByteArray, Pair};
+		use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
+		use sp_session_validator_management::MainChainScripts;
+
+		type CommitteeMemberOf =
+			<Runtime as pallet_session_validator_management::Config>::CommitteeMember;
+
+		fn ext() -> sp_io::TestExternalities {
+			sp_io::TestExternalities::default()
+		}
+
+		fn babe_set(
+			seed: u8,
+		) -> WeakBoundedVec<
+			(sp_consensus_babe::AuthorityId, sp_consensus_babe::BabeAuthorityWeight),
+			<Runtime as pallet_babe::Config>::MaxAuthorities,
+		> {
+			let id = sp_consensus_babe::AuthorityId::from(sp_core::sr25519::Public::from_raw(
+				[seed; 32],
+			));
+			WeakBoundedVec::try_from(vec![(id, 1)]).expect("one authority fits")
+		}
+
+		fn beefy_id(keys: &TestKeys) -> BeefyId {
+			keys.cross_chain.public().into_inner().into()
+		}
+
+		fn member(keys: &TestKeys) -> CommitteeMemberOf {
+			CommitteeMember::permissioned(
+				keys.cross_chain.public(),
+				opaque::SessionKeys {
+					aura: keys.aura.public(),
+					grandpa: keys.grandpa.public(),
+					babe: keys.babe.public(),
+					beefy: beefy_id(keys),
+				},
+			)
+		}
+
+		fn committee(
+			epoch: u64,
+			members: &[TestKeys],
+		) -> CommitteeInfo<
+			ScEpochNumber,
+			CommitteeMemberOf,
+			<Runtime as pallet_session_validator_management::Config>::MaxValidators,
+		> {
+			CommitteeInfo {
+				epoch: ScEpochNumber(epoch),
+				committee: BoundedVec::truncate_from(members.iter().map(member).collect()),
+			}
+		}
+
+		#[test]
+		fn aura_api_reports_the_pallet_authorities_and_slot_duration() {
+			ext().execute_with(|| {
+				let authorities = vec![alice().aura.public(), bob().aura.public()];
+				pallet_aura::Authorities::<Runtime>::put(BoundedVec::truncate_from(
+					authorities.clone(),
+				));
+
+				use sp_consensus_aura::runtime_decl_for_aura_api::AuraApi;
+				assert_eq!(<Runtime as AuraApi<Block, AuraId>>::authorities(), authorities);
+				assert_eq!(
+					<Runtime as AuraApi<Block, AuraId>>::slot_duration(),
+					SlotDuration::from_millis(SLOT_DURATION)
+				);
+			});
+		}
+
+		#[test]
+		fn babe_api_reports_the_pallet_epochs_and_configuration() {
+			ext().execute_with(|| {
+				pallet_babe::EpochConfig::<Runtime>::put(BABE_GENESIS_EPOCH_CONFIG);
+				pallet_babe::Authorities::<Runtime>::put(babe_set(1));
+				pallet_babe::NextAuthorities::<Runtime>::put(babe_set(2));
+				pallet_babe::Randomness::<Runtime>::put([7; 32]);
+				pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(700u64));
+				pallet_babe::EpochIndex::<Runtime>::put(2);
+				let epoch_length = u64::from(Sidechain::slots_per_epoch().0);
+
+				use sp_consensus_babe::runtime_decl_for_babe_api::BabeApi;
+				let current = <Runtime as BabeApi<Block>>::current_epoch();
+				assert_eq!(current.authorities, babe_set(1).to_vec());
+				assert_eq!(current.epoch_index, 2);
+				assert_eq!(current.start_slot, Slot::from(700 + 2 * epoch_length));
+				assert_eq!(current.duration, epoch_length);
+				assert_eq!(current.config, BABE_GENESIS_EPOCH_CONFIG);
+				let next = <Runtime as BabeApi<Block>>::next_epoch();
+				assert_eq!(next.authorities, babe_set(2).to_vec());
+				assert_eq!(next.epoch_index, 3);
+				assert_eq!(next.start_slot, Slot::from(700 + 3 * epoch_length));
+				assert_eq!(
+					<Runtime as BabeApi<Block>>::current_epoch_start(),
+					Slot::from(700 + 2 * epoch_length)
+				);
+				let configuration = <Runtime as BabeApi<Block>>::configuration();
+				assert_eq!(configuration.authorities, babe_set(1).to_vec());
+				assert_eq!(configuration.randomness, [7; 32]);
+				assert_eq!(configuration.epoch_length, epoch_length);
+				assert_eq!(configuration.slot_duration, SLOT_DURATION);
+				assert_eq!(configuration.c, BABE_GENESIS_EPOCH_CONFIG.c);
+				assert_eq!(configuration.allowed_slots, BABE_GENESIS_EPOCH_CONFIG.allowed_slots);
+				assert!(
+					<Runtime as BabeApi<Block>>::generate_key_ownership_proof(
+						Slot::from(700u64),
+						babe_set(1)[0].0.clone()
+					)
+					.is_none()
+				);
+			});
+		}
+
+		#[test]
+		fn grandpa_api_reports_the_pallet_authorities_and_set_id() {
+			ext().execute_with(|| {
+				let authorities =
+					vec![(alice().grandpa.public(), 1u64), (bob().grandpa.public(), 1)];
+				pallet_grandpa::Authorities::<Runtime>::put(
+					WeakBoundedVec::try_from(authorities.clone()).expect("two authorities fit"),
+				);
+				pallet_grandpa::CurrentSetId::<Runtime>::put(3);
+
+				use sp_consensus_grandpa::runtime_decl_for_grandpa_api::GrandpaApi;
+				assert_eq!(<Runtime as GrandpaApi<Block>>::grandpa_authorities(), authorities);
+				assert_eq!(<Runtime as GrandpaApi<Block>>::current_set_id(), 3);
+				assert!(
+					<Runtime as GrandpaApi<Block>>::generate_key_ownership_proof(
+						3,
+						GrandpaId::from(alice().grandpa.public())
+					)
+					.is_none()
+				);
+			});
+		}
+
+		#[test]
+		fn beefy_api_reports_the_pallet_validator_set_and_genesis() {
+			ext().execute_with(|| {
+				let validators = vec![beefy_id(&alice()), beefy_id(&bob())];
+				pallet_beefy::Authorities::<Runtime>::put(BoundedVec::truncate_from(
+					validators.clone(),
+				));
+				pallet_beefy::ValidatorSetId::<Runtime>::put(2);
+				pallet_beefy::GenesisBlock::<Runtime>::put(Some(5));
+
+				use sp_consensus_beefy::runtime_decl_for_beefy_api::BeefyApi;
+				let set = <Runtime as BeefyApi<Block, BeefyId>>::validator_set().expect("a set");
+				assert_eq!(set.validators(), &validators[..]);
+				assert_eq!(set.id(), 2);
+				assert_eq!(<Runtime as BeefyApi<Block, BeefyId>>::beefy_genesis(), Some(5));
+				assert!(
+					<Runtime as BeefyApi<Block, BeefyId>>::generate_key_ownership_proof(
+						2,
+						beefy_id(&alice())
+					)
+					.is_none()
+				);
+			});
+		}
+
+		#[test]
+		fn beefy_stakes_api_reports_the_current_and_queued_sets() {
+			ext().execute_with(|| {
+				pallet_beefy::Authorities::<Runtime>::put(BoundedVec::truncate_from(vec![
+					beefy_id(&alice()),
+				]));
+				pallet_beefy::NextAuthorities::<Runtime>::put(BoundedVec::truncate_from(vec![
+					beefy_id(&bob()),
+				]));
+				CurrentCommittee::<Runtime>::put(committee(7, &[alice()]));
+				QueuedCommittee::<Runtime>::put(committee(7, &[bob()]));
+
+				use midnight_primitives_beefy::runtime_decl_for_beefy_stakes_api::BeefyStakesApi;
+				assert_eq!(
+					<Runtime as BeefyStakesApi<Block, Hash, BeefyId>>::current_beefy_stakes(),
+					vec![(beefy_id(&alice()), 1)]
+				);
+				assert_eq!(
+					<Runtime as BeefyStakesApi<Block, Hash, BeefyId>>::next_beefy_stakes(),
+					Some(vec![(beefy_id(&bob()), 1)])
+				);
+			});
+		}
+
+		#[test]
+		fn beefy_mmr_api_reports_the_authority_set_proofs() {
+			ext().execute_with(|| {
+				let current =
+					BeefyAuthoritySet { id: 2, len: 1, keyset_commitment: Hash::repeat_byte(2) };
+				let next =
+					BeefyAuthoritySet { id: 3, len: 2, keyset_commitment: Hash::repeat_byte(3) };
+				pallet_beefy_mmr::BeefyAuthorities::<Runtime>::put(current.clone());
+				pallet_beefy_mmr::BeefyNextAuthorities::<Runtime>::put(next.clone());
+
+				use pallet_beefy_mmr::runtime_decl_for_beefy_mmr_api::BeefyMmrApi;
+				assert_eq!(<Runtime as BeefyMmrApi<Block, Hash>>::authority_set_proof(), current);
+				assert_eq!(<Runtime as BeefyMmrApi<Block, Hash>>::next_authority_set_proof(), next);
+			});
+		}
+
+		#[test]
+		fn session_keys_api_decodes_the_opaque_keys_in_declaration_order() {
+			ext().execute_with(|| {
+				let keys = alice();
+				let encoded = opaque::SessionKeys {
+					aura: keys.aura.public(),
+					grandpa: keys.grandpa.public(),
+					babe: keys.babe.public(),
+					beefy: beefy_id(&keys),
+				}
+				.encode();
+
+				use sp_session::runtime_decl_for_session_keys::SessionKeys;
+				assert_eq!(
+					<Runtime as SessionKeys<Block>>::decode_session_keys(encoded),
+					Some(vec![
+						(keys.aura.public().to_raw_vec(), AURA),
+						(keys.grandpa.public().to_raw_vec(), GRANDPA),
+						(keys.babe.public().to_raw_vec(), BABE),
+						(beefy_id(&keys).to_raw_vec(), BEEFY),
+					])
+				);
+			});
+		}
+
+		#[test]
+		fn session_info_api_reports_the_session_index() {
+			ext().execute_with(|| {
+				pallet_session::CurrentIndex::<Runtime>::put(5);
+
+				use midnight_primitives_session_info::runtime_decl_for_session_info_api::SessionInfoApi;
+				assert_eq!(<Runtime as SessionInfoApi<Block>>::current_session_index(), 5);
+			});
+		}
+
+		#[test]
+		fn consensus_engine_api_reports_the_engine_state() {
+			ext().execute_with(|| {
+				use midnight_primitives_consensus_engine::runtime_decl_for_consensus_engine_api::ConsensusEngineApi;
+				assert_eq!(
+					<Runtime as ConsensusEngineApi<Block>>::active_engine(),
+					ActiveEngine::Aura
+				);
+				EngineState::<Runtime>::put(State::ScheduledFlip);
+				assert_eq!(
+					<Runtime as ConsensusEngineApi<Block>>::active_engine(),
+					ActiveEngine::Aura
+				);
+				EngineState::<Runtime>::put(State::Babe);
+				assert_eq!(
+					<Runtime as ConsensusEngineApi<Block>>::active_engine(),
+					ActiveEngine::Babe
+				);
+			});
+		}
+
+		#[test]
+		fn committee_api_reports_the_committees_epochs_and_scripts() {
+			ext().execute_with(|| {
+				let current = committee(7, &[alice()]);
+				let next = committee(8, &[alice(), bob()]);
+				CurrentCommittee::<Runtime>::put(current.clone());
+				QueuedCommittee::<Runtime>::put(committee(7, &[bob()]));
+				let scripts = MainChainScripts {
+					committee_candidate_address: MainchainAddress::default(),
+					d_parameter_policy_id: PolicyId([1; 28]),
+					permissioned_candidates_policy_id: PolicyId([2; 28]),
+				};
+				MainChainScriptsConfiguration::<Runtime>::put(scripts.clone());
+
+				use sp_session_validator_management::runtime_decl_for_session_validator_management_api::SessionValidatorManagementApi;
+				macro_rules! api {
+					($method:ident) => {
+						<Runtime as SessionValidatorManagementApi<
+							Block,
+							CommitteeMemberOf,
+							AuthoritySelectionInputs,
+							ScEpochNumber,
+						>>::$method()
+					};
+				}
+				assert_eq!(api!(get_current_committee), (ScEpochNumber(7), current.committee.to_vec()));
+				assert_eq!(api!(get_next_committee), None);
+				// With nothing selected yet, the next epoch to fill follows the queued one.
+				assert_eq!(api!(get_next_unset_epoch_number), ScEpochNumber(8));
+				NextCommittee::<Runtime>::put(next.clone());
+				assert_eq!(api!(get_next_committee), Some((ScEpochNumber(8), next.committee.to_vec())));
+				assert_eq!(api!(get_next_unset_epoch_number), ScEpochNumber(9));
+				assert_eq!(api!(get_main_chain_scripts), scripts);
+			});
 		}
 	}
 
