@@ -10,7 +10,9 @@
 - **`pallet-consensus-engine`** (index 10) drives the state machine `Aura` → `ScheduledFlip` →
   `Babe`. Governance calls `schedule_flip` (requires `Aura`, else `InvalidEngineState`); the flip
   commits automatically at the last block of an epoch, postponed while `pallet-babe` has no
-  authorities, and writes the BABE genesis slot and epoch config. `ConsensusEngineApi` exposes
+  queued authorities, and writes the BABE genesis slot and epoch config. BABE epoch 0 covers the
+  sidechain epoch after the flip, so it is seeded with the committee queued for that epoch
+  (`NextAuthorities`), not the outgoing one. `ConsensusEngineApi` exposes
   `active_engine`; `ConsensusEngine::current_slot()` reads the active engine's slot.
 - **BABE-compatible session rotation.** BABE accepts exactly one epoch-change announcement per
   epoch, in its first block. `pallet-session-validator-management` used to catch up skipped
