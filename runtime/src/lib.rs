@@ -47,7 +47,7 @@ pub use frame_support::{
 	},
 };
 pub use frame_system::Call as SystemCall;
-use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
+use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
@@ -832,7 +832,7 @@ impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -884,7 +884,7 @@ impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
