@@ -7975,7 +7975,7 @@ dependencies = [
  "pallet-system-parameters",
  "pallet-system-parameters-rpc",
  "pallet-throttle",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "parity-scale-codec",
  "partner-chains-cli",
  "partner-chains-db-sync-data-sources",
@@ -8124,7 +8124,7 @@ dependencies = [
  "midnight-zswap 8.1.3",
  "midnight-zswap 9.0.0",
  "moka 0.11.3",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "parity-scale-codec",
  "scale-info",
  "scale-info-derive",
@@ -8555,7 +8555,7 @@ name = "midnight-primitives-ledger"
 version = "0.1.0"
 dependencies = [
  "log",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "sp-externalities",
  "substrate-prometheus-endpoint",
 ]
@@ -8721,7 +8721,7 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-serialize",
  "midnight-storage-macros",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "serde",
@@ -10996,8 +10996,8 @@ dependencies = [
 
 [[package]]
 name = "parity-db"
-version = "0.5.4"
-source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#d44ef4fafd15ed8326e74b88f2558afaf458f7f6"
+version = "0.5.7"
+source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#a0f91c861c1ed2cca4cfbca629fb4f08930683a1"
 dependencies = [
  "ahash 0.8.12",
  "blake2 0.10.6",
