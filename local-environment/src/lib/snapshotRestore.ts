@@ -234,18 +234,33 @@ function untarArchive(
 }
 
 function discoverDataMounts(composeFile: string, dataRoot: string): string[] {
+  const mountPaths = new Set(
+    Array.from(
+      discoverServiceDataMounts(composeFile, dataRoot).values(),
+    ).flat(),
+  );
+  return Array.from(mountPaths).sort();
+}
+
+/** Maps each compose service to the host data dirs (under dataRoot) it mounts. */
+function discoverServiceDataMounts(
+  composeFile: string,
+  dataRoot: string,
+): Map<string, string[]> {
   const raw = fs.readFileSync(composeFile, "utf-8");
   const parsed = YAML.parse(raw);
   const composeDir = path.dirname(composeFile);
   const resolvedDataRoot = path.resolve(dataRoot);
-  const mountPaths = new Set<string>();
+  const mounts = new Map<string, string[]>();
 
   const services = parsed?.services;
   if (!services || typeof services !== "object") {
-    return [];
+    return mounts;
   }
 
-  for (const service of Object.values(services) as unknown[]) {
+  for (const [name, service] of Object.entries(
+    services as Record<string, unknown>,
+  )) {
     if (!service || typeof service !== "object") continue;
     const volumes = (service as Record<string, unknown>).volumes;
     if (!Array.isArray(volumes)) continue;
@@ -256,12 +271,12 @@ function discoverDataMounts(composeFile: string, dataRoot: string): string[] {
 
       const resolved = path.resolve(composeDir, hostPath);
       if (isUnderDataRoot(resolved, resolvedDataRoot)) {
-        mountPaths.add(resolved);
+        mounts.set(name, [...(mounts.get(name) ?? []), resolved]);
       }
     }
   }
 
-  return Array.from(mountPaths).sort();
+  return mounts;
 }
 
 function resolveVolumeSource(volume: unknown): string | undefined {
@@ -292,32 +307,71 @@ function isUnderDataRoot(candidate: string, dataRoot: string): boolean {
 }
 
 function replicateSnapshot(sourceDir: string, targets: string[]): void {
-  const entries = fs.readdirSync(sourceDir);
   for (const target of targets) {
-    fs.rmSync(target, { recursive: true, force: true });
-    fs.mkdirSync(target, { recursive: true });
+    cloneDir(sourceDir, target);
+  }
+}
 
-    for (const entry of entries) {
-      const src = path.join(sourceDir, entry);
-      const dest = path.join(target, entry);
-      // The snapshot is replicated once per node data dir; on APFS use
-      // copy-on-write clones (cp -c) so N replicas cost ~zero extra disk.
-      // Node's own COPYFILE_FICLONE falls back to a full copy on macOS.
-      if (process.platform === "darwin") {
-        const clone = spawnSync("cp", ["-Rc", src, dest], {
-          stdio: "inherit",
-        });
-        if (clone.status !== 0) {
-          throw new Error(`cp -Rc failed for ${src} -> ${dest}`);
-        }
-      } else {
-        fs.cpSync(src, dest, {
-          recursive: true,
-          mode: fs.constants.COPYFILE_FICLONE,
-        });
+/** Replaces target with a copy of sourceDir's contents. */
+function cloneDir(sourceDir: string, target: string): void {
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.mkdirSync(target, { recursive: true });
+
+  for (const entry of fs.readdirSync(sourceDir)) {
+    const src = path.join(sourceDir, entry);
+    const dest = path.join(target, entry);
+    // The snapshot is replicated once per node data dir; on APFS use
+    // copy-on-write clones (cp -c) so N replicas cost ~zero extra disk.
+    // Node's own COPYFILE_FICLONE falls back to a full copy on macOS.
+    if (process.platform === "darwin") {
+      const clone = spawnSync("cp", ["-Rc", src, dest], {
+        stdio: "inherit",
+      });
+      if (clone.status !== 0) {
+        throw new Error(`cp -Rc failed for ${src} -> ${dest}`);
       }
+    } else {
+      fs.cpSync(src, dest, {
+        recursive: true,
+        mode: fs.constants.COPYFILE_FICLONE,
+      });
     }
   }
+}
+
+/**
+ * mock-authorities only converts validator data dirs, so a non-validator peer
+ * (e.g. boot-node) keeps the original authority set and rejects the synthetic
+ * handover block. Copy the first converted validator's chain into each extra
+ * service's data dir, minus its keystore.
+ */
+export function syncConvertedDataToExtraServices(opts: {
+  composeFile: string;
+  chainId: string;
+  sourceService: string;
+  extraServices: string[];
+}): string[] {
+  const { composeFile, chainId, sourceService, extraServices } = opts;
+  if (extraServices.length === 0) return [];
+
+  const dataRoot = path.resolve(path.dirname(composeFile), "data");
+  const mounts = discoverServiceDataMounts(composeFile, dataRoot);
+  const [source] = mounts.get(sourceService) ?? [];
+  if (!source) {
+    throw new Error(
+      `No data dir found for validator service '${sourceService}' in ${composeFile}`,
+    );
+  }
+
+  const targets = extraServices.flatMap((svc) => mounts.get(svc) ?? []);
+  for (const target of targets) {
+    cloneDir(source, target);
+    fs.rmSync(path.join(target, "chains", chainId, "keystore"), {
+      recursive: true,
+      force: true,
+    });
+  }
+  return targets;
 }
 
 function determineArchiveName(snapshotUri: string): string {

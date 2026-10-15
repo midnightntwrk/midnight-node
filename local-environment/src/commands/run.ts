@@ -26,6 +26,7 @@ import { removeDockerComposeServices, runDockerCompose } from "../lib/docker";
 import {
   discoverComposeDataMounts,
   restoreSnapshot,
+  syncConvertedDataToExtraServices,
 } from "../lib/snapshotRestore";
 import {
   loadNetworkConfig,
@@ -149,6 +150,18 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
       numValidators: validatorSelection.numValidators,
       image: defaultMockAuthoritiesImage(),
     });
+
+    const syncedDirs = syncConvertedDataToExtraServices({
+      composeFile,
+      chainId: mock.chainId,
+      sourceService: validatorSelection.validatorServices[0],
+      extraServices: mock.extraServices ?? [],
+    });
+    if (syncedDirs.length > 0) {
+      console.log(
+        `Copied converted chain data from ${validatorSelection.validatorServices[0]} into ${syncedDirs.join(", ")}`,
+      );
+    }
 
     overridePath = generateMockComposeOverride({
       composeDir,

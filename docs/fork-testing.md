@@ -84,7 +84,9 @@ The restore flow:
 1. Downloads and extracts the archive.
 2. Replicates the extracted node state into every compose `data/` mount for the
    selected network.
-3. Runs `mock-authorities convert` over the restored state.
+3. Runs `mock-authorities convert` over the restored state, then copies the
+   first validator's converted data (minus its keystore) into non-validator
+   services such as `boot-node`, so every peer follows the forked chain.
 4. Generates a compose override that mounts the generated validator seeds and
    switches the main-chain follower into mock mode. When `--num-validators` is
    provided, the override also disables validator services above that count.
