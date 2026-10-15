@@ -43,8 +43,6 @@
     `CurrentCommittee` (the active set); BEEFY stakes are matched against these.
   - A failed `set_keys` aborts the rotation: the previous authority set is kept, the failed
     committee is consumed, and genesis panics if the initial committee cannot be registered.
-  - Block authors come from upstream `pallet_authorship` (index 9) via
-    `FindAccountFromAuthorIndex<Self, Aura>`.
 - The activation block must be finalized before `schedule_flip` (enforced by the runbook).
 
 Metadata is regenerated.

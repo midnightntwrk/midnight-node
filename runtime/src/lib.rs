@@ -420,11 +420,6 @@ impl pallet_aura::Config for Runtime {
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
-impl pallet_authorship::Config for Runtime {
-	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
-	type EventHandler = ();
-}
-
 impl pallet_babe::Config for Runtime {
 	type EpochDuration = SidechainEpochDuration;
 	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
@@ -1103,10 +1098,6 @@ mod runtime {
 
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
-
-	// Authorship must be before Session (polkadot-sdk hook order).
-	#[runtime::pallet_index(9)]
-	pub type Authorship = pallet_authorship::Pallet<Runtime>;
 
 	// Consensus engine transition state machine. Hook order (pallet index order) is
 	// load-bearing: its `on_initialize` digest guards must run after Babe (which
@@ -2382,17 +2373,6 @@ mod tests {
 				);
 				let current: AccountId32 = current_committee()[index].authority_id().into();
 				assert_eq!(current, signer, "block {block}");
-			}
-
-			// The runtime's own credit. `pallet_authorship` runs before the session rotation in
-			// the same block, so on a block opening a BABE epoch it maps the index into the
-			// validators of the session that ends there, not into the signers.
-			let credited = Authorship::author().expect("the runtime credits an author");
-			match (parent.engine, opens_epoch) {
-				(ActiveEngine::Babe, true) => {
-					assert_eq!(credited, parent.validators[index], "block {block}: authorship lag")
-				},
-				_ => assert_eq!(credited, signer, "block {block}: credited author"),
 			}
 
 			// What BABE announces is the set the next rotation installs.

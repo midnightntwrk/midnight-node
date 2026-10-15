@@ -102,7 +102,6 @@ frame_support::construct_runtime!(
 		SessionCommitteeManagement: pallet_session_validator_management,
 		Aura: pallet_aura,
 		Babe: pallet_babe,
-		Authorship: pallet_authorship,
 		ConsensusEngine: pallet_consensus_engine,
 		Grandpa: pallet_grandpa,
 		Session: pallet_session,
@@ -275,11 +274,6 @@ parameter_types! {
 		};
 }
 
-impl pallet_authorship::Config for Test {
-	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
-	type EventHandler = ();
-}
-
 impl pallet_consensus_engine::Config for Test {
 	type GovernanceOrigin = EnsureRoot<AccountId32>;
 	type EpochDuration = ConstU64<{ SLOTS_PER_EPOCH as u64 }>;
@@ -356,7 +350,6 @@ pub fn initialize_block() {
 	Aura::on_initialize(System::block_number());
 	Babe::on_initialize(System::block_number());
 	Grandpa::on_initialize(System::block_number());
-	Authorship::on_initialize(System::block_number());
 	ConsensusEngine::on_initialize(System::block_number());
 	SessionCommitteeManagement::on_initialize(System::block_number());
 	Session::on_initialize(System::block_number());
@@ -371,7 +364,6 @@ pub fn finalize_block() {
 	if System::block_number() > 0 {
 		Session::on_finalize(System::block_number());
 		SessionCommitteeManagement::on_finalize(System::block_number());
-		Authorship::on_finalize(System::block_number());
 		Grandpa::on_finalize(System::block_number());
 		Babe::on_finalize(System::block_number());
 		Aura::on_finalize(System::block_number());
