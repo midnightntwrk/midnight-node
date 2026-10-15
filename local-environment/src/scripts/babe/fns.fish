@@ -38,16 +38,32 @@ function savelogs -a tag
     end
 end
 
-function roll -a n img
-    # roll <n> [image]  — image defaults to $V3
-    set -q img[1]; and test -n "$img"; or set img $V3
-    # Same env the CLI gives compose: .env.default + generated secrets (shell/direnv vars win).
-    docker logs midnight-node-$n > $HOME/babe-run/pre-roll-node-$n-(date +%H%M%S).log 2>&1
-    env MIDNIGHT_NODE_IMAGE=$img \
-        LOCALENV_POSTGRES_PASSWORD=(cat localenv_postgres.password) \
+# docker compose for the running local-env, with the env the CLI gives it
+# (.env.default + generated secrets; shell/direnv vars win). Run from local-environment/.
+function lenv_compose
+    env LOCALENV_POSTGRES_PASSWORD=(cat localenv_postgres.password) \
         APP__INFRA__STORAGE__PASSWORD=(cat localenv_app_storage.password) \
         APP__INFRA__PUB_SUB__PASSWORD=(cat localenv_pubsub.password) \
         APP__INFRA__SECRET=(cat localenv_app_infra_secret.password) \
         docker compose -p local-env --env-file .env.default \
-        -f src/networks/local-env/docker-compose.yml up -d --no-deps midnight-node-$n
+        -f src/networks/local-env/docker-compose.yml \
+        -f $BABE_SCRIPTS/sync-nodes.override.yml $argv
+end
+
+function roll -a n img
+    # roll <n> [image]  — recreate midnight-node-<n> on another image (default $V3)
+    set -q img[1]; and test -n "$img"; or set img $V3
+    docker logs midnight-node-$n > $HOME/babe-run/pre-roll-node-$n-(date +%H%M%S).log 2>&1
+    MIDNIGHT_NODE_IMAGE=$img lenv_compose up -d --no-deps midnight-node-$n
+end
+
+function syncnode -a mode
+    # syncnode full|warp  — start a fresh node (empty volume) syncing from node-1 (S1 / S2)
+    # syncnode full|warp down  — remove it and its volume
+    if test "$argv[2]" = down
+        lenv_compose rm -sf midnight-node-sync-$mode
+        docker volume rm local-env_midnight-node-sync-$mode-data
+    else
+        lenv_compose up -d --no-deps midnight-node-sync-$mode
+    end
 end

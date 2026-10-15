@@ -1,0 +1,70 @@
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# S1 / S2: fresh nodes that sync across the AURA -> BABE flip.
+# Started by `syncnode full|warp` from fns.fish; BABE_SCRIPTS must be absolute.
+
+x-sync-node: &sync-node
+  image: ${MIDNIGHT_NODE_IMAGE}
+  platform: ${ARCHITECTURE}
+  security_opt:
+    - no-new-privileges:true
+  env_file:
+    - ./configurations/legacy-node-cfg.env
+  entrypoint: ["/bin/bash", "/sync-node.sh"]
+  labels:
+    io.midnight.role: sync-test
+  restart: "no"
+
+services:
+  midnight-node-sync-full:
+    <<: *sync-node
+    container_name: midnight-node-sync-full
+    volumes:
+      - midnight-node-sync-full-data:/data
+      - shared-volume:/shared
+      - ${BABE_SCRIPTS}/sync-node.sh:/sync-node.sh:ro
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SYNC_MODE: full
+      NODE_KEY: "0000000000000000000000000000000000000000000000000000000000000007"
+      P2P_PORT: "30339"
+      RPC_PORT: "9946"
+      PROMETHEUS_PORT: "9621"
+    ports:
+      - "9946:9946"
+      - "9621:9621"
+
+  midnight-node-sync-warp:
+    <<: *sync-node
+    container_name: midnight-node-sync-warp
+    volumes:
+      - midnight-node-sync-warp-data:/data
+      - shared-volume:/shared
+      - ${BABE_SCRIPTS}/sync-node.sh:/sync-node.sh:ro
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      SYNC_MODE: warp
+      NODE_KEY: "0000000000000000000000000000000000000000000000000000000000000008"
+      P2P_PORT: "30340"
+      RPC_PORT: "9947"
+      PROMETHEUS_PORT: "9622"
+    ports:
+      - "9947:9947"
+      - "9622:9622"
+
+volumes:
+  midnight-node-sync-full-data: {}
+  midnight-node-sync-warp-data: {}

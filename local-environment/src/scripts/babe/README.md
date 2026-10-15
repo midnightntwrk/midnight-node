@@ -6,7 +6,7 @@ on local-env, plus fish helpers to roll nodes one at a time. They reuse `createA
 
 ```fish
 cd local-environment
-source src/scripts/babe/fns.fish   # bstate, babe <script>, roll <n> [image], savelogs <tag>
+source src/scripts/babe/fns.fish   # bstate, babe <script>, roll <n> [image], syncnode full|warp [down], savelogs <tag>
 ```
 
 | Script       | Runbook phase    | Usage (`babe <script> …`) | Checks                                                                                                                                                                                                 |
