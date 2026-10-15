@@ -24,7 +24,7 @@ export interface MockAuthoritiesConvertOptions {
   chainId: string;
   /** Number of validators to materialize. */
   numValidators: number;
-  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:4d8d772). */
+  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:f6cbf91). */
   image: string;
 }
 
@@ -37,7 +37,12 @@ export interface MockAuthoritiesConvertOptions {
 // own), and finality stalls forever while AURA keeps producing blocks. 4d8d772
 // plants the post-rotation voter set directly in aux storage with the client
 // set-id == runtime CurrentSetId, so finality resumes immediately after restart.
-const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:4d8d772";
+//
+// Must also carry mock-authorities de2122f (merged as f6cbf91): the fork block
+// references a mock-follower main-chain hash instead of the snapshot's real
+// Cardano hash. On >=2.x nodes the real hash decodes to a far-future mock block
+// number, so peers reject every new block as regressing (midnight-node#2307).
+const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:f6cbf91";
 
 export function defaultMockAuthoritiesImage(): string {
   return process.env.MOCK_AUTHORITIES_IMAGE ?? DEFAULT_IMAGE;
