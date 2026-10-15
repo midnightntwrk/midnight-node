@@ -5,4 +5,4 @@
 Moves the `midnightntwrk/parity-db` fork pin to the refreshed `master` (upstream v0.5.7 merged, keeping the
 fork's 16 MiB flush threshold). The workspace `parity-db` requirement is raised to `0.5.7` to match.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2309
