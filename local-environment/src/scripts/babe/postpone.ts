@@ -19,15 +19,8 @@
 // the flip. Needs engineState = Aura and non-empty babe.authorities.
 // Usage: ts-node postpone.ts [ws]
 
-import { exec } from "child_process";
-import type { ApiPromise } from "@polkadot/api";
-import type { SubmittableExtrinsic } from "@polkadot/api/promise/types";
-import type { KeyringPair } from "@polkadot/keyring/types";
-import type { ISubmittableResult } from "@polkadot/types/types";
-import type { Header } from "@polkadot/types/interfaces";
-import { blake2AsHex } from "@polkadot/util-crypto";
-import { createKeyringPair } from "../../lib/runtimeUpgradeUtils";
-import { DEFAULT_WS, preDigests, run } from "./common";
+import { DEFAULT_WS, run } from "./common";
+import { approveScheduleFlip, engineState, log, sh, slotOf } from "./motion";
 
 /** AURA key prefix → local-env container index. */
 const NODE_BY_AURA: Record<string, number> = {
@@ -37,119 +30,19 @@ const NODE_BY_AURA: Record<string, number> = {
   "0xe855": 4,
   "0xb0eb": 5,
 };
-const WEIGHT = { refTime: 10_000_000_000, proofSize: 65_536 };
-
-const log = (msg: string) =>
-  console.log(`${new Date().toISOString().slice(11, 19)} ${msg}`);
-const sh = (cmd: string) =>
-  exec(cmd, (e, out, err) =>
-    log(`  $ ${cmd} → ${e ? `ERR ${err.trim()}` : out.trim()}`),
-  );
-
-function submit(
-  api: ApiPromise,
-  tx: SubmittableExtrinsic,
-  signer: KeyringPair,
-  label: string,
-): Promise<ISubmittableResult> {
-  return new Promise((resolve, reject) => {
-    tx.signAndSend(signer, { nonce: -1 }, (r) => {
-      if (r.dispatchError) {
-        const e = r.dispatchError.isModule
-          ? api.registry.findMetaError(r.dispatchError.asModule)
-          : null;
-        reject(
-          new Error(
-            `${label}: ${e ? `${e.section}.${e.name}` : r.dispatchError}`,
-          ),
-        );
-      } else if (r.status.isInBlock) resolve(r);
-    }).catch(reject);
-  });
-}
-
-async function approve(
-  api: ApiPromise,
-  name: "council" | "technicalCommittee",
-  call: SubmittableExtrinsic["method"],
-  lengthBound: number,
-  members: KeyringPair[],
-) {
-  const threshold = Math.ceil(
-    (((await api.query[name].members()).toJSON() as string[]).length * 2) / 3,
-  );
-  const r = await submit(
-    api,
-    api.tx[name].propose(threshold, call, lengthBound),
-    members[0],
-    `${name}.propose`,
-  );
-  const proposed = r.events.find(
-    ({ event }) => event.section === name && event.method === "Proposed",
-  );
-  if (!proposed) throw new Error(`${name}: no Proposed event`);
-  const ev = proposed.event;
-  const [index, hash] = [
-    ev.data[1].toPrimitive() as number,
-    ev.data[2].toHex(),
-  ];
-  for (const m of members)
-    await submit(api, api.tx[name].vote(hash, index, true), m, `${name}.vote`);
-  await submit(
-    api,
-    api.tx[name].close(
-      hash,
-      index,
-      api.createType("WeightV2", WEIGHT),
-      lengthBound,
-    ),
-    members[0],
-    `${name}.close`,
-  );
-  log(`${name}: proposal ${index} approved`);
-}
-
-const slotOf = (h: Header): bigint => {
-  const pre = preDigests(h);
-  const slot = pre.auraSlot ?? pre.babe?.slot;
-  if (slot === undefined) throw new Error(`#${h.number} has no slot digest`);
-  return slot;
-};
 
 /** AURA authority key prefixes (as hex) in authority-index order. */
 const auraKeys = (codec: { toJSON(): unknown }) =>
   (codec.toJSON() as string[]).map((k) => k.slice(0, 6));
 
 void run(process.argv[2] ?? DEFAULT_WS, async (api) => {
-  const engine = async (hash?: string) =>
-    (
-      await (
-        hash ? await api.at(hash) : api
-      ).query.consensusEngine.engineState()
-    ).toString();
+  const engine = (hash?: string) => engineState(api, hash);
   if ((await engine()) !== "Aura") throw new Error("engineState must be Aura");
   if (((await api.query.babe.authorities()).toJSON() as unknown[]).length === 0)
     throw new Error("babe.authorities is empty — wait for a rotation");
 
   const spe = BigInt(api.consts.babe.epochDuration.toString());
-  const keys = (uris: string[]) => uris.map((u) => createKeyringPair(u, u));
-  const inner = api.tx.consensusEngine.scheduleFlip();
-  const motion = api.tx.federatedAuthority.motionApprove(inner.method);
-  const lengthBound = motion.method.encodedLength;
-  await approve(
-    api,
-    "council",
-    motion.method,
-    lengthBound,
-    keys(["//Four", "//Five", "//Six"]),
-  );
-  await approve(
-    api,
-    "technicalCommittee",
-    motion.method,
-    lengthBound,
-    keys(["//One", "//Two", "//Three"]),
-  );
+  const closeMotion = await approveScheduleFlip(api);
 
   let closeAt: number | undefined;
   let closeSent = false;
@@ -182,13 +75,8 @@ void run(process.argv[2] ?? DEFAULT_WS, async (api) => {
         // (c) close right after the block before the last slot, so it lands in the last slot
         if (!closeSent && pos === spe - 2n) {
           closeSent = true;
-          const tx = api.tx.federatedAuthority.motionClose(
-            blake2AsHex(inner.method.toU8a()),
-            api.createType("WeightV2", WEIGHT),
-          );
-          submit(api, tx, createKeyringPair("//One", "executor"), "motionClose")
-            .then(async (r) => {
-              const hd = await api.rpc.chain.getHeader(r.status.asInBlock);
+          closeMotion()
+            .then(async (hd) => {
               closeAt = hd.number.toNumber();
               log(
                 `  motionClose in #${closeAt} pos=${slotOf(hd) % spe} engine-after=${await engine(hd.hash.toHex())}`,
