@@ -2020,14 +2020,18 @@ mod tests {
 		traits::{UnfilteredDispatchable, WhitelistedStorageKeys},
 	};
 	use frame_system::RawOrigin;
+	use pallet_consensus_engine::{EngineState, State};
+	use parity_scale_codec::Decode;
 	use sidechain_domain::{
 		CandidateRegistrations, CrossChainPublicKey, CrossChainSignature, DParameter, EpochNonce,
 		MainchainSignature, PermissionedCandidateData, RegistrationData, ScEpochNumber,
 		SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
 	};
+	use sp_consensus_babe::{BABE_ENGINE_ID, BabeAuthorityWeight, ConsensusLog};
 	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
 	use sp_runtime::traits::Zero;
+	use sp_session_validator_management::CommitteeMember as _;
 	use std::collections::HashSet;
 
 	#[test]
@@ -2186,6 +2190,99 @@ mod tests {
 		});
 	}
 
+	/// The node seeds BABE epoch 0 from `BabeApi::current_epoch` at the flip block. Epoch 0 is the
+	/// term of the committee the session manager has queued, which `pallet_session` activates at
+	/// the first BABE block, so at the flip all three must name the same validators, and the
+	/// first BABE block must install exactly that set.
+	#[test]
+	fn babe_epoch_zero_is_the_committee_pallet_session_activates_at_the_first_babe_block() {
+		new_test_ext().execute_with(|| {
+			// As the upgrade migration leaves an existing network.
+			ConsensusEngine::activate();
+			advance_block();
+
+			// A committee set in epoch N serves epoch N + 2: `[alice]` serves epoch 2, the first
+			// BABE epoch, and `[bob]` the one after it.
+			set_committee_through_inherent_data(&[alice()]);
+			until_epoch_after_finalizing(1, &|| {});
+			set_committee_through_inherent_data(&[bob()]);
+			assert_ok!(ConsensusEngine::schedule_flip(RawOrigin::Root.into()));
+
+			// The flip commits at the last slot of epoch 1.
+			let blocks_to_flip = slots_to_epoch(2, SLOTS_PER_EPOCH) - 1;
+			for_next_n_blocks_after_finalizing(blocks_to_flip as u32, &|| {});
+			assert_current_epoch!(1);
+			assert_eq!(EngineState::<Test>::get(), State::Babe);
+
+			// The committee changes at the flip, so the outgoing set is a distinct wrong answer.
+			assert_aura_authorities!([alice(), bob()]);
+			let epoch_zero = Babe::current_epoch();
+			assert_eq!(epoch_zero.authorities, babe_authorities(&[alice()]));
+			assert_eq!(epoch_zero.authorities, session_queued_babe_authorities());
+			assert_eq!(epoch_zero.authorities, committee_babe_authorities(queued_committee()));
+
+			// The first BABE block installs that set everywhere.
+			advance_block();
+			assert_current_epoch!(2);
+			assert_eq!(pallet_babe::Authorities::<Test>::get().to_vec(), epoch_zero.authorities);
+			assert_eq!(committee_babe_authorities(current_committee()), epoch_zero.authorities);
+			assert_aura_authorities!([alice()]);
+
+			// What it announces for epoch 1 is the set queued next, so the client's epochs keep
+			// following the session rotations.
+			let announced = babe_next_epoch_data().expect("the first BABE block announces epoch 1");
+			assert_eq!(announced, babe_authorities(&[bob()]));
+			assert_eq!(announced, pallet_babe::NextAuthorities::<Test>::get().to_vec());
+			assert_eq!(announced, session_queued_babe_authorities());
+		});
+
+		fn babe_authorities(
+			members: &[TestKeys],
+		) -> Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)> {
+			members.iter().map(|member| (member.babe.public(), 1)).collect()
+		}
+
+		/// The BABE keys `pallet_session` activates at its next rotation.
+		fn session_queued_babe_authorities()
+		-> Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)> {
+			pallet_session::QueuedKeys::<Test>::get()
+				.into_iter()
+				.map(|(_, keys)| (keys.babe, 1))
+				.collect()
+		}
+
+		fn queued_committee()
+		-> Vec<<Test as pallet_session_validator_management::Config>::CommitteeMember> {
+			SessionCommitteeManagement::queued_committee_storage().committee.to_vec()
+		}
+
+		fn current_committee()
+		-> Vec<<Test as pallet_session_validator_management::Config>::CommitteeMember> {
+			SessionCommitteeManagement::current_committee_storage().committee.to_vec()
+		}
+
+		fn committee_babe_authorities(
+			committee: Vec<<Test as pallet_session_validator_management::Config>::CommitteeMember>,
+		) -> Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)> {
+			committee.into_iter().map(|member| (member.authority_keys().babe, 1)).collect()
+		}
+
+		/// The authorities of the `NextEpochData` BABE consensus log in the current block, if any.
+		fn babe_next_epoch_data()
+		-> Option<Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)>> {
+			System::digest().logs.iter().find_map(|log| {
+				let (engine, mut data) = log.as_consensus()?;
+				if engine != BABE_ENGINE_ID {
+					return None;
+				}
+				match ConsensusLog::decode(&mut data).ok()? {
+					ConsensusLog::NextEpochData(descriptor) => Some(descriptor.authorities),
+					_ => None,
+				}
+			})
+		}
+	}
+
 	#[test]
 	// The effects of setting the d parameter are already well-tested, so we will not check that. We will check the selection to ensure that it simply respects d-parameter overriding
 	fn check_overridden_d_param_committee_rotation() {
@@ -2228,7 +2325,7 @@ mod tests {
 		expected_authorities: &[TestKeys],
 	) -> PostDispatchInfo {
 		let epoch = Sidechain::current_epoch_number();
-		let slot = *pallet_aura::CurrentSlot::<Test>::get();
+		let slot = *ConsensusEngine::current_slot();
 		println!(
 			"(slot {slot}, epoch {epoch}) Setting {} authorities for next epoch",
 			expected_authorities.len()
