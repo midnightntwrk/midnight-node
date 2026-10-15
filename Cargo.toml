@@ -287,7 +287,7 @@ sp-keystore = { default-features = false, git = "https://github.com/shieldedtech
 sp-keyring = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 
 # Backend/Database dependencies
-parity-db = "0.5.4"
+parity-db = "0.5.7"
 sc-client-db = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-database = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 
