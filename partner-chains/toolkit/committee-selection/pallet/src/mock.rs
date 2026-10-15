@@ -164,7 +164,7 @@ impl pallet_session::Config for Test {
 	type ValidatorIdOf = sp_runtime::traits::ConvertInto;
 	type ShouldEndSession = crate::Pallet<Test>;
 	type NextSessionRotation = ();
-	type SessionManager = crate::Pallet<Test>;
+	type SessionManager = pallet_session::historical::NoteHistoricalRoot<Test, crate::Pallet<Test>>;
 	type SessionHandler = TestSessionHandler;
 	type Keys = SessionKeys;
 	type DisablingStrategy = ();

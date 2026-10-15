@@ -175,7 +175,8 @@ impl pallet_session::Config for Test {
 	type ValidatorIdOf = ConvertInto;
 	type ShouldEndSession = SessionCommitteeManagement;
 	type NextSessionRotation = ();
-	type SessionManager = SessionCommitteeManagement;
+	type SessionManager =
+		pallet_session::historical::NoteHistoricalRoot<Self, SessionCommitteeManagement>;
 	type SessionHandler = <TestSessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = TestSessionKeys;
 	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;

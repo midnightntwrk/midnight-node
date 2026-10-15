@@ -451,7 +451,10 @@ impl pallet_session::Config for Runtime {
 	type ValidatorIdOf = ConvertInto;
 	type ShouldEndSession = SessionCommitteeManagement;
 	type NextSessionRotation = ();
-	type SessionManager = SessionCommitteeManagement;
+	// The wrapper records each session's validator trie root, which key-ownership proofs are
+	// checked against; the inner manager is what rotates committees.
+	type SessionManager =
+		pallet_session::historical::NoteHistoricalRoot<Self, SessionCommitteeManagement>;
 	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = opaque::SessionKeys;
 	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
@@ -2249,12 +2252,13 @@ mod tests {
 			assert!(seen[&Kind::Babe] > 1, "{seen:?}");
 			assert_eq!(parent.engine, ActiveEngine::Babe);
 
-			// `pallet_session::historical` records no session roots: the session manager is not
-			// wrapped in `NoteHistoricalRoot`, so no observer can obtain a key-ownership proof,
-			// and the consensus APIs answer `None` for them.
-			assert!(
-				pallet_session::historical::HistoricalSessions::<Test>::iter().next().is_none()
-			);
+			// Every session the chain went through has its validator trie root on record.
+			for index in 0..=Session::current_index() {
+				assert!(
+					pallet_session::historical::HistoricalSessions::<Test>::get(index).is_some(),
+					"session {index} has no historical root"
+				);
+			}
 		});
 
 		/// The kinds of block the migration produces, each with its own observer rules.
@@ -2337,6 +2341,27 @@ mod tests {
 				opens_epoch, rotated,
 				"block {block}: BABE announces an epoch iff the session rotates"
 			);
+
+			use frame_support::traits::KeyOwnerProofSystem;
+			// `pallet_session::historical` has a root for the current session sized to its set,
+			// and the session's members can prove their membership against it.
+			let (_, count) = pallet_session::historical::HistoricalSessions::<Test>::get(
+				Session::current_index(),
+			)
+			.expect("the current session has a historical root");
+			assert_eq!(count as usize, Session::validators().len(), "block {block}");
+			for validator in Session::validators() {
+				let keys = Session::load_keys(&validator).expect("a validator has keys");
+				let key: (sp_runtime::KeyTypeId, &[u8]) =
+					(sp_consensus_babe::KEY_TYPE, keys.babe.as_ref());
+				let proof = Historical::prove(key).expect("a member proves its BABE key");
+				assert_eq!(proof.session, Session::current_index(), "block {block}");
+				assert_eq!(
+					Historical::check_proof(key, proof),
+					Some((validator, ())),
+					"block {block}: the proof names its owner"
+				);
+			}
 
 			// The signer: who the author index names under the set the block is signed in.
 			let (signer_babe, member, session_view) = match (parent.engine, opens_epoch) {

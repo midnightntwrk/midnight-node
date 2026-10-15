@@ -7,9 +7,10 @@
 //! pending application) and promotes the previously queued committee to [crate::CurrentCommittee]
 //! (the effective validator set of the session that just started).
 //!
-//! To use it, wire [crate::Pallet] in runtime configuration of [`pallet_session`], and enable
-//! `pallet_session`'s `historical` feature with the runtime implementing
-//! [`pallet_session::historical::Config`]. Registering committee members' keys is done via
+//! To use it, wire [crate::Pallet] as the `SessionManager` of [`pallet_session`] through
+//! [`pallet_session::historical::NoteHistoricalRoot`], with the runtime implementing
+//! [`pallet_session::historical::Config`]: the wrapper stores each session's validator trie root,
+//! which key-ownership proofs are checked against. Registering committee members' keys is done via
 //! [`pallet_session::SessionInterface::set_keys`], which is intended for privileged/internal
 //! callers and (unlike the `set_keys` extrinsic) does not require an ownership proof — a
 //! validator's session keys are already authenticated off-chain as part of their Cardano
@@ -75,6 +76,34 @@ where
 	fn start_session(start_index: SessionIndex) {
 		let epoch_number = T::current_epoch_number();
 		debug!("Session manager: Start session {start_index}, epoch {epoch_number}");
+	}
+}
+
+/// The same manager for [`pallet_session::historical::NoteHistoricalRoot`], which needs each
+/// validator paired with its full identification to build the session's trie. The committee pallet
+/// identifies a validator by its account alone, so the identification is the unit type, as in
+/// upstream `pallet_staking`'s unit implementation.
+impl<T: crate::Config + pallet_session::Config + pallet_session::historical::Config>
+	pallet_session::historical::SessionManager<T::AccountId, ()> for crate::Pallet<T>
+where
+	<T as pallet_session::Config>::Keys: From<T::AuthorityKeys>,
+{
+	fn new_session_genesis(new_index: SessionIndex) -> Option<Vec<(T::AccountId, ())>> {
+		<Self as pallet_session::SessionManager<T::AccountId>>::new_session_genesis(new_index)
+			.map(|validators| validators.into_iter().map(|v| (v, ())).collect())
+	}
+
+	fn new_session(new_index: SessionIndex) -> Option<Vec<(T::AccountId, ())>> {
+		<Self as pallet_session::SessionManager<T::AccountId>>::new_session(new_index)
+			.map(|validators| validators.into_iter().map(|v| (v, ())).collect())
+	}
+
+	fn end_session(end_index: SessionIndex) {
+		<Self as pallet_session::SessionManager<T::AccountId>>::end_session(end_index)
+	}
+
+	fn start_session(start_index: SessionIndex) {
+		<Self as pallet_session::SessionManager<T::AccountId>>::start_session(start_index)
 	}
 }
 
@@ -603,6 +632,55 @@ mod tests {
 				SessionCommitteeManagement::current_committee_storage().committee,
 				ids_and_keys_fn(&[CHARLIE, DAVE])
 			);
+		});
+	}
+
+	/// `NoteHistoricalRoot` stores the trie root of every session's validator set, keyed by the
+	/// session it serves in: the genesis sessions at genesis, each later one when it is planned.
+	#[test]
+	fn records_a_historical_root_for_every_session() {
+		use pallet_session::historical::HistoricalSessions;
+		fn root_and_count(index: u32) -> Option<(sp_core::H256, u32)> {
+			HistoricalSessions::<Test>::get(index)
+		}
+
+		new_test_ext().execute_with(|| {
+			assert_eq!(root_and_count(0).map(|(_, count)| count), Some(2));
+			assert_eq!(root_and_count(1).map(|(_, count)| count), Some(2));
+			assert_eq!(root_and_count(2), None);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 1).unwrap();
+			advance_one_block();
+			assert_eq!(Session::current_index(), 1);
+			assert_eq!(root_and_count(2).map(|(_, count)| count), Some(2));
+			assert_ne!(root_and_count(1).unwrap().0, root_and_count(2).unwrap().0);
+
+			increment_epoch();
+			set_validators_directly(&[ALICE], 2).unwrap();
+			advance_one_block();
+			assert_eq!(Session::current_index(), 2);
+			assert_eq!(root_and_count(3).map(|(_, count)| count), Some(1));
+			assert_eq!(
+				pallet_session::historical::StoredRange::<Test>::get(),
+				Some((0, 4)),
+				"the recorded range covers the planned session"
+			);
+		});
+	}
+
+	/// An aborted hand-off keeps the previous validator set, and so the previous root.
+	#[test]
+	fn aborted_hand_off_carries_the_previous_historical_root_forward() {
+		use pallet_session::historical::HistoricalSessions;
+
+		new_test_ext().execute_with(|| {
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 1).unwrap();
+			advance_one_block();
+			assert_eq!(Session::current_index(), 1);
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(HistoricalSessions::<Test>::get(2), HistoricalSessions::<Test>::get(1));
 		});
 	}
 
