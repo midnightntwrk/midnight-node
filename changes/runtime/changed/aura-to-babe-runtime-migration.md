@@ -51,4 +51,4 @@ Metadata is regenerated.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2113
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742
-PRs: https://github.com/midnightntwrk/midnight-node/pull/1800, https://github.com/midnightntwrk/midnight-node/pull/1876, https://github.com/midnightntwrk/midnight-node/pull/2078
+PRs: https://github.com/midnightntwrk/midnight-node/pull/1800, https://github.com/midnightntwrk/midnight-node/pull/1876, https://github.com/midnightntwrk/midnight-node/pull/2078, https://github.com/midnightntwrk/midnight-node/pull/2310
