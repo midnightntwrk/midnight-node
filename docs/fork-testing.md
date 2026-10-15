@@ -10,16 +10,24 @@ external process first.
 
 ## Supported snapshot inputs
 
-`--from-snapshot` currently accepts an `http://` or `https://` URL pointing to
-one of these archive formats:
+`--from-snapshot` accepts an `http://` or `https://` URL, or a local archive
+(a path or `file://` URL), in one of these formats:
 
 - `.tar`
 - `.tar.gz` or `.tgz`
 - `.tar.zst`
 
+A local archive skips the download, so fetch a large snapshot once and
+reuse it across forks:
+
+```bash
+curl -fLo ~/snapshots/preview.tar.gz <snapshot URL>
+npm run run:preview -- --from-snapshot ~/snapshots/preview.tar.gz --num-validators 3
+```
+
 Local restore requires:
 
-- `curl`
+- `curl` (URLs only)
 - `tar`
 - `zstd` for `.zst` archives
 
