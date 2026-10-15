@@ -9,14 +9,15 @@ cd local-environment
 source src/scripts/babe/fns.fish   # bstate, babe <script>, roll <n> [image], savelogs <tag>
 ```
 
-| Script       | Runbook phase    | Usage (`babe <script> …`) | Checks                                                                                                                           |
-| ------------ | ---------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `state`      | 1.1, 2.1, 3, 4   | `state [ws]`              | spec, committee storage version, `engineState`, `babe.genesisSlot`, `babe.authorities`, best/finalized                           |
-| `digests`    | all              | `digests [ws] [N]`        | pre-runtime / consensus / seal digests of the last N blocks                                                                      |
-| `activation` | 2.1              | `activation [ws]`         | `setCode` and activation block                                                                                                   |
-| `mirror`     | 1.2–3            | `mirror <ws> <from> <to>` | dual-digest window: BABE `SecondaryPlain` after AURA, same slot, index = AURA author                                             |
-| `flip`       | 4                | `flip <ws> <from> <to>`   | slots, digests and `engineState` around the flip                                                                                 |
-| `forks`      | 4 (steady state) | `forks <ws> [seconds]`    | all imported heads per slot: `P+P` = primary collisions (≈3.4 % at c = 1/4), `P+Sv` = secondary orphaned by a primary (expected) |
+| Script       | Runbook phase    | Usage (`babe <script> …`) | Checks                                                                                                                                                                                                 |
+| ------------ | ---------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `state`      | 1.1, 2.1, 3, 4   | `state [ws]`              | spec, committee storage version, `engineState`, `babe.genesisSlot`, `babe.authorities`, best/finalized                                                                                                 |
+| `digests`    | all              | `digests [ws] [N]`        | pre-runtime / consensus / seal digests of the last N blocks                                                                                                                                            |
+| `activation` | 2.1              | `activation [ws]`         | `setCode` and activation block                                                                                                                                                                         |
+| `mirror`     | 1.2–3            | `mirror <ws> <from> <to>` | dual-digest window: BABE `SecondaryPlain` after AURA, same slot, index = AURA author                                                                                                                   |
+| `flip`       | 4                | `flip <ws> <from> <to>`   | slots, digests and `engineState` around the flip                                                                                                                                                       |
+| `postpone`   | 3–4 (M8)         | `postpone [ws]`           | schedules the flip with the motion closed in an epoch's last block, stops that next epoch's last-slot author, restarts it after the slot; logs each block to the flip. Needs `Aura` + BABE authorities |
+| `forks`      | 4 (steady state) | `forks <ws> [seconds]`    | all imported heads per slot: `P+P` = primary collisions (≈3.4 % at c = 1/4), `P+Sv` = secondary orphaned by a primary (expected)                                                                       |
 
 `ws` defaults to `ws://localhost:9933` (node-1). Point `mirror` / `flip` / `forks` at the archive node
 `ws://localhost:9945` — it keeps non-canonical blocks.
