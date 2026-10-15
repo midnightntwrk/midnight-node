@@ -15,12 +15,16 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
 import YAML from "yaml";
 
 interface RestoreSnapshotOptions {
   namespace: string;
   composeFile: string;
-  /** Fully-qualified http:// or https:// snapshot URI. */
+  /**
+   * http(s):// URL to download, or a local archive (path or file:// URL) to
+   * extract in place, e.g. one kept from an earlier download.
+   */
   snapshotUri: string;
   env: Record<string, string>;
   /**
@@ -55,14 +59,7 @@ export async function restoreSnapshot(
   } = options;
   if (!snapshotUri) return [];
 
-  if (
-    !snapshotUri.startsWith("http://") &&
-    !snapshotUri.startsWith("https://")
-  ) {
-    throw new Error(
-      `Unsupported snapshot URI scheme: ${snapshotUri}. Expected http:// or https://.`,
-    );
-  }
+  const localArchive = resolveLocalArchive(snapshotUri);
 
   const resolvedCompose = path.resolve(composeFile);
   const composeDir = path.dirname(resolvedCompose);
@@ -75,18 +72,21 @@ export async function restoreSnapshot(
   const stagingDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "midnight-snapshot-"),
   );
-  const archiveName = determineArchiveName(snapshotUri);
-  const archivePath = path.join(stagingDir, archiveName);
+  const archivePath =
+    localArchive ?? path.join(stagingDir, determineArchiveName(snapshotUri));
   const extractDir = path.join(stagingDir, "extracted");
   fs.mkdirSync(extractDir, { recursive: true });
 
   const mergedEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
 
   try {
-    downloadSnapshot(snapshotUri, archivePath, mergedEnv);
+    if (!localArchive) {
+      downloadSnapshot(snapshotUri, archivePath, mergedEnv);
+    }
 
     const unpackedRoot = extractSnapshotArchive(
       archivePath,
+      stagingDir,
       extractDir,
       stripComponents,
     );
@@ -126,6 +126,24 @@ export function discoverComposeDataMounts(composeFile: string): string[] {
   const dataRoot = path.resolve(composeDir, "data");
 
   return discoverDataMounts(resolvedCompose, dataRoot);
+}
+
+/** Returns the local archive path, or undefined for an http(s) URL. */
+function resolveLocalArchive(snapshotUri: string): string | undefined {
+  if (snapshotUri.startsWith("http://") || snapshotUri.startsWith("https://")) {
+    return undefined;
+  }
+  const localPath = path.resolve(
+    snapshotUri.startsWith("file://")
+      ? fileURLToPath(snapshotUri)
+      : snapshotUri,
+  );
+  if (!fs.statSync(localPath, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(
+      `Snapshot archive not found: ${localPath}. Expected an http(s):// URL or a local archive file.`,
+    );
+  }
+  return localPath;
 }
 
 function ensureBinary(bin: string, hint: string, env: NodeJS.ProcessEnv) {
@@ -174,6 +192,7 @@ function makeWritableForContainerUser(targetDirs: string[]): void {
 
 function extractSnapshotArchive(
   archivePath: string,
+  stagingDir: string,
   dest: string,
   stripComponents?: number,
 ): string {
@@ -182,7 +201,7 @@ function extractSnapshotArchive(
   }
 
   if (archivePath.endsWith(".tar.zst") || archivePath.endsWith(".zst")) {
-    const tarPath = decompressZstd(archivePath);
+    const tarPath = decompressZstd(archivePath, stagingDir);
     return untarArchive(tarPath, dest, stripComponents);
   }
 
@@ -199,7 +218,8 @@ function extractSnapshotArchive(
   );
 }
 
-function decompressZstd(archivePath: string): string {
+// Decompresses into stagingDir so a local archive's directory is left untouched.
+function decompressZstd(archivePath: string, stagingDir: string): string {
   const check = spawnSync("zstd", ["-V"], { stdio: "ignore" });
   if (check.status !== 0) {
     throw new Error(
@@ -207,15 +227,20 @@ function decompressZstd(archivePath: string): string {
     );
   }
 
+  const tarPath = path.join(
+    stagingDir,
+    path.basename(archivePath).replace(/\.zst$/, ""),
+  );
   console.log(`Decompressing ${archivePath} with zstd`);
-  const result = spawnSync("zstd", ["-d", "--force", archivePath], {
-    stdio: "inherit",
-  });
+  const result = spawnSync(
+    "zstd",
+    ["-d", "--force", archivePath, "-o", tarPath],
+    { stdio: "inherit" },
+  );
   if (result.status !== 0) {
     throw new Error(`Failed to decompress ${archivePath} with zstd`);
   }
 
-  const tarPath = archivePath.replace(/\.zst$/, "");
   if (!fs.existsSync(tarPath)) {
     throw new Error(`Expected tar file ${tarPath} after zstd decompression`);
   }
