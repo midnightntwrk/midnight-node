@@ -12,25 +12,63 @@
 // limitations under the License.
 
 import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import YAML from "yaml";
 
-import { syncConvertedDataToExtraServices } from "./snapshotRestore";
+import { restoreSnapshot } from "./snapshotRestore";
 
-const chainId = "midnight_test";
-
-function writeFile(file: string, content: string) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, content);
+// restoreSnapshot downloads with a blocking curl, so the archive has to be
+// served from another process.
+async function serveDir(t: test.TestContext, dir: string): Promise<string> {
+  const server = spawn(
+    process.execPath,
+    [
+      "-e",
+      `const fs = require("fs"), path = require("path");
+       require("http").createServer((req, res) => {
+         fs.createReadStream(path.join(${JSON.stringify(dir)}, req.url)).pipe(res);
+       }).listen(0, "127.0.0.1", function () { console.log(this.address().port); });`,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  t.after(() => server.kill());
+  const port = await new Promise<string>((resolve) =>
+    server.stdout.once("data", (chunk) => resolve(String(chunk).trim())),
+  );
+  return `http://127.0.0.1:${port}`;
 }
 
-function setupFork(t: test.TestContext) {
-  const composeDir = fs.mkdtempSync(path.join(os.tmpdir(), "snapshot-sync-"));
-  t.after(() => fs.rmSync(composeDir, { recursive: true, force: true }));
+test("prepares the extracted snapshot once, then replicates it into every data dir", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "snapshot-restore-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
+  const archiveSrc = path.join(root, "src");
+  fs.mkdirSync(path.join(archiveSrc, "node", "chains", "test"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(archiveSrc, "node", "chains", "test", "db"),
+    "original",
+  );
+  const served = path.join(root, "served");
+  fs.mkdirSync(served);
+  assert.equal(
+    spawnSync("tar", [
+      "-czf",
+      path.join(served, "snap.tar.gz"),
+      "-C",
+      archiveSrc,
+      "node",
+    ]).status,
+    0,
+  );
+
+  const composeDir = path.join(root, "compose");
+  fs.mkdirSync(composeDir);
   const composeFile = path.join(composeDir, "test.network.yaml");
   fs.writeFileSync(
     composeFile,
@@ -43,81 +81,33 @@ function setupFork(t: test.TestContext) {
     }),
   );
 
-  const data = path.join(composeDir, "data");
-  for (const node of ["node-1", "node-2"]) {
-    writeFile(
-      path.join(data, node, "chains", chainId, "paritydb", "full", "db"),
-      "converted",
-    );
-    writeFile(
-      path.join(data, node, "chains", chainId, "keystore", "key"),
-      `${node}-secret`,
-    );
-    writeFile(path.join(data, node, "ledger_storage", "db"), "converted");
-  }
-  writeFile(
-    path.join(data, "boot-node", "chains", chainId, "paritydb", "full", "db"),
-    "original",
-  );
-  writeFile(path.join(data, "boot-node", "stale"), "original");
-
-  return { composeFile, data };
-}
-
-test("copies converted validator data into extra services without the keystore", (t) => {
-  const { composeFile, data } = setupFork(t);
-  const bootNode = path.join(data, "boot-node");
-
-  const synced = syncConvertedDataToExtraServices({
+  const prepared: string[] = [];
+  const restored = await restoreSnapshot({
+    namespace: "test",
     composeFile,
-    chainId,
-    sourceService: "node1",
-    extraServices: ["boot-node"],
+    snapshotUri: `${await serveDir(t, served)}/snap.tar.gz`,
+    env: {},
+    stripComponents: 1,
+    prepare: (unpackedRoot) => {
+      prepared.push(unpackedRoot);
+      fs.writeFileSync(
+        path.join(unpackedRoot, "chains", "test", "db"),
+        "converted",
+      );
+    },
   });
 
-  assert.deepEqual(synced, [bootNode]);
-  const read = (...p: string[]) =>
-    fs.readFileSync(path.join(bootNode, ...p), "utf-8");
-  assert.equal(read("chains", chainId, "paritydb", "full", "db"), "converted");
-  assert.equal(read("ledger_storage", "db"), "converted");
-  assert.equal(fs.existsSync(path.join(bootNode, "stale")), false);
-  assert.equal(
-    fs.existsSync(path.join(bootNode, "chains", chainId, "keystore")),
-    false,
-  );
-  // The source validator keeps its keys.
-  assert.equal(
-    fs.readFileSync(
-      path.join(data, "node-1", "chains", chainId, "keystore", "key"),
-      "utf-8",
-    ),
-    "node-1-secret",
-  );
-});
-
-test("is a no-op without extra services", (t) => {
-  const { composeFile } = setupFork(t);
-  assert.deepEqual(
-    syncConvertedDataToExtraServices({
-      composeFile,
-      chainId,
-      sourceService: "node1",
-      extraServices: [],
-    }),
-    [],
-  );
-});
-
-test("fails when the source validator has no data mount", (t) => {
-  const { composeFile } = setupFork(t);
-  assert.throws(
-    () =>
-      syncConvertedDataToExtraServices({
-        composeFile,
-        chainId,
-        sourceService: "node9",
-        extraServices: ["boot-node"],
-      }),
-    /No data dir found for validator service 'node9'/,
-  );
+  assert.equal(prepared.length, 1);
+  const data = path.join(composeDir, "data");
+  assert.deepEqual(restored, [
+    path.join(data, "boot-node"),
+    path.join(data, "node-1"),
+    path.join(data, "node-2"),
+  ]);
+  for (const dir of restored) {
+    assert.equal(
+      fs.readFileSync(path.join(dir, "chains", "test", "db"), "utf-8"),
+      "converted",
+    );
+  }
 });

@@ -26,7 +26,6 @@ import { removeDockerComposeServices, runDockerCompose } from "../lib/docker";
 import {
   discoverComposeDataMounts,
   restoreSnapshot,
-  syncConvertedDataToExtraServices,
 } from "../lib/snapshotRestore";
 import {
   loadNetworkConfig,
@@ -119,6 +118,7 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
 
   let overridePath: string;
   if (runOptions.fromSnapshot) {
+    const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
     const restoredDirs = await restoreSnapshot({
       namespace,
       composeFile,
@@ -129,37 +129,20 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
       // chains/<chainId>/ lands directly at the data dir root, where both
       // mock-authorities and the node binary expect it.
       stripComponents: 1,
+      // Convert once, before replication: every data dir, validator or not
+      // (e.g. boot-node), must hold the same fork block or peers reject it.
+      prepare: (nodeDir) =>
+        runMockAuthoritiesConvert({
+          nodeDir,
+          outputDir: mockedConfigDir,
+          chainId: mock.chainId,
+          numValidators: validatorSelection.numValidators,
+          image: defaultMockAuthoritiesImage(),
+        }),
     });
     if (restoredDirs.length === 0) {
       throw new Error(
-        `Snapshot restore produced no data dirs for '${namespace}'; cannot run mock-authorities convert.`,
-      );
-    }
-
-    // mock-authorities expects --data-dir to be the parent containing every
-    // per-validator subdir (data/node-1, data/node-2, ...) so it can patch each
-    // one's paritydb with the synthesized authority set in a single pass.
-    // Pointing it at one validator's dir leaves the others on the original
-    // authority set and consensus never converges.
-    const dataParentDir = path.dirname(restoredDirs[0]);
-    const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
-    runMockAuthoritiesConvert({
-      dataDir: dataParentDir,
-      outputDir: mockedConfigDir,
-      chainId: mock.chainId,
-      numValidators: validatorSelection.numValidators,
-      image: defaultMockAuthoritiesImage(),
-    });
-
-    const syncedDirs = syncConvertedDataToExtraServices({
-      composeFile,
-      chainId: mock.chainId,
-      sourceService: validatorSelection.validatorServices[0],
-      extraServices: mock.extraServices ?? [],
-    });
-    if (syncedDirs.length > 0) {
-      console.log(
-        `Copied converted chain data from ${validatorSelection.validatorServices[0]} into ${syncedDirs.join(", ")}`,
+        `Snapshot restore produced no data dirs for '${namespace}'; nothing to start.`,
       );
     }
 
