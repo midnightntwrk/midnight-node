@@ -184,3 +184,26 @@ test("rejects a local archive that does not exist", async (t) => {
     /Snapshot archive not found/,
   );
 });
+
+test("stages next to the data dirs and cleans up", async (t) => {
+  const { archive, composeFile } = setup(t);
+  const dataRoot = path.join(path.dirname(composeFile), "data");
+  const log = t.mock.method(console, "log", () => undefined);
+
+  await restoreSnapshot({
+    namespace: "test",
+    composeFile,
+    snapshotUri: archive,
+    env: {},
+    stripComponents: 1,
+  });
+
+  const extracting = log.mock.calls
+    .map((call) => String(call.arguments[0]))
+    .find((line) => line.startsWith("Extracting "));
+  assert.ok(
+    extracting?.includes(path.join(dataRoot, ".snapshot-staging-")),
+    extracting,
+  );
+  assert.deepEqual(fs.readdirSync(dataRoot).sort(), ["node-1", "node-2"]);
+});

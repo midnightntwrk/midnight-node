@@ -25,6 +25,11 @@ curl -fLo ~/snapshots/preview.tar.gz <snapshot URL>
 npm run run:preview -- --from-snapshot ~/snapshots/preview.tar.gz --num-validators 3
 ```
 
+The archive is downloaded and extracted into a staging dir inside the
+network's `data/` dir, then cloned into each node's data dir, so only that
+filesystem needs the space (preview: ~110 GB). On macOS, put `data/` on APFS
+to get copy-on-write clones.
+
 Local restore requires:
 
 - `curl` (URLs only)

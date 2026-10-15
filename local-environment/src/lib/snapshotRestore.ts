@@ -12,7 +12,6 @@
 // limitations under the License.
 
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
@@ -69,9 +68,10 @@ export async function restoreSnapshot(
     `Restoring snapshot '${snapshotUri}' for namespace '${namespace}'`,
   );
 
-  const stagingDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "midnight-snapshot-"),
-  );
+  // Stage next to the data dirs: the extracted snapshot is large, and
+  // replicating it is only a cheap clone within the same filesystem.
+  fs.mkdirSync(dataRoot, { recursive: true });
+  const stagingDir = fs.mkdtempSync(path.join(dataRoot, ".snapshot-staging-"));
   const archivePath =
     localArchive ?? path.join(stagingDir, determineArchiveName(snapshotUri));
   const extractDir = path.join(stagingDir, "extracted");
