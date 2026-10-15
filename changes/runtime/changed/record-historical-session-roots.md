@@ -13,3 +13,5 @@ Roots are recorded from the first rotation after the upgrade on; earlier session
 consensus key-ownership-proof APIs are unchanged and still answer `None`, since equivocation
 reporting stays disabled (`KeyOwnerProof = Void`). Nothing prunes the recorded roots yet; they
 cost one hash and a count per session.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2314
