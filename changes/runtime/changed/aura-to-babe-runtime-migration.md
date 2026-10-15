@@ -10,7 +10,9 @@
 - **`pallet-consensus-engine`** (index 10) drives the state machine `Aura` → `ScheduledFlip` →
   `Babe`. Governance calls `schedule_flip` (requires `Aura`, else `InvalidEngineState`); the flip
   commits automatically at the last block of an epoch, postponed while `pallet-babe` has no
-  authorities, and writes the BABE genesis slot and epoch config. `ConsensusEngineApi` exposes
+  queued authorities, and writes the BABE genesis slot and epoch config. BABE epoch 0 covers the
+  sidechain epoch after the flip, so it is seeded with the committee queued for that epoch
+  (`NextAuthorities`), not the outgoing one. `ConsensusEngineApi` exposes
   `active_engine`; `ConsensusEngine::current_slot()` reads the active engine's slot.
 - **BABE-compatible session rotation.** BABE accepts exactly one epoch-change announcement per
   epoch, in its first block. `pallet-session-validator-management` used to catch up skipped
@@ -41,12 +43,10 @@
     `CurrentCommittee` (the active set); BEEFY stakes are matched against these.
   - A failed `set_keys` aborts the rotation: the previous authority set is kept, the failed
     committee is consumed, and genesis panics if the initial committee cannot be registered.
-  - Block authors come from upstream `pallet_authorship` (index 9) via
-    `FindAccountFromAuthorIndex<Self, Aura>`.
 - The activation block must be finalized before `schedule_flip` (enforced by the runbook).
 
 Metadata is regenerated.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2113
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742
-PRs: https://github.com/midnightntwrk/midnight-node/pull/1800, https://github.com/midnightntwrk/midnight-node/pull/1876, https://github.com/midnightntwrk/midnight-node/pull/2078
+PRs: https://github.com/midnightntwrk/midnight-node/pull/1800, https://github.com/midnightntwrk/midnight-node/pull/1876, https://github.com/midnightntwrk/midnight-node/pull/2078, https://github.com/midnightntwrk/midnight-node/pull/2310

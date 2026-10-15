@@ -233,12 +233,12 @@ pub mod pallet {
 					if let Some(slot) = Self::current_slot_from_aura_digest()
 						&& Self::is_last_slot_of_epoch(slot)
 					{
-						// Postpone while session has not yet filled BABE authorities
+						// Postpone while session has not yet queued BABE authorities
 						// (waiting for the first rotation after the key upgrade).
-						if pallet_babe::Authorities::<T>::get().is_empty() {
+						if pallet_babe::NextAuthorities::<T>::get().is_empty() {
 							log::warn!(
 								target: "consensus-engine",
-								"Scheduled flip at last slot {:?} postponed: pallet-babe Authorities \
+								"Scheduled flip at last slot {:?} postponed: pallet-babe NextAuthorities \
 								is empty (waiting for session rotation).",
 								slot,
 							);
@@ -317,12 +317,13 @@ pub mod pallet {
 		/// had this pallet from genesis) with the real genesis slot and resets the epoch index and
 		/// randomness for epoch 0.
 		///
-		/// Authorities are deliberately *not* set here. `pallet-babe` is wired as a `pallet_session`
-		/// `OneSessionHandler`, which keeps `Authorities`/`NextAuthorities` in sync with the
-		/// committee's BABE keys independently of whether BABE was ever active — so they already
-		/// hold the current committee at the flip (this does not assume any AURA-period BABE
-		/// activity). `EpochConfig` likewise comes from genesis. The node bootstraps its epoch tree
-		/// from `BabeApi::current_epoch`/`next_epoch`, which the state set here makes correct.
+		/// Epoch 0 covers the sidechain epoch after the flip, whose committee the session rotation
+		/// at the first BABE block installs. `pallet-babe`, a `pallet_session` `OneSessionHandler`
+		/// since the key upgrade, already queues that committee in `NextAuthorities`, so it becomes
+		/// the epoch-0 authority set. Seeding from `Authorities` would let the outgoing committee
+		/// author the whole first BABE epoch while the runtime credits the incoming one.
+		/// `EpochConfig` comes from genesis. The node bootstraps its epoch tree from
+		/// `BabeApi::current_epoch`/`next_epoch`, which the state set here makes correct.
 		fn migrate_to_babe(slot: Slot) {
 			let babe_genesis_slot = Self::next_epoch_start(slot);
 
@@ -339,6 +340,8 @@ pub mod pallet {
 			// block's BABE pre-digest, so setting it here is order-independent.)
 			pallet_babe::CurrentSlot::<T>::put(slot);
 			pallet_babe::EpochIndex::<T>::put(0);
+			// Epoch 0 is the next sidechain epoch's term, so it takes the committee queued for it.
+			pallet_babe::Authorities::<T>::put(pallet_babe::NextAuthorities::<T>::get());
 
 			pallet_babe::Randomness::<T>::put(BABE_GENESIS_RANDOMNESS);
 			pallet_babe::NextRandomness::<T>::put(BABE_GENESIS_RANDOMNESS);
