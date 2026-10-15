@@ -1,12 +1,26 @@
 ---
 name: comment-cleanup
-description: Prune and tighten code comments and docstrings without touching code. Use when the user asks to clean up, trim, prune, audit or review comments; says comments are too verbose, noisy, or read like an AI wrote them; or wants a comment pass over a file, diff or PR before committing. Also runs when invoked by name ("comment-cleanup", "/comment-cleanup").
+description: Prune and tighten code comments and docstrings without touching code. Run it over the unpushed commits before every `git push`, including the push that opens a PR. Also use when the user asks to clean up, trim, prune, audit or review comments; says comments are too verbose, noisy, or read like an AI wrote them; or wants a comment pass over a file, diff or PR. Also runs when invoked by name ("comment-cleanup", "/comment-cleanup").
 ---
 
 # Comment cleanup
 
 Go through the comments in the target, delete the ones that add nothing, tighten the
 ones that stay, and report anything you saw but were not allowed to fix.
+
+## Before a push
+
+This is the default run. The target is what the push would publish:
+
+1. Diff the branch against what the remote already has:
+   - branch exists on the remote → `git diff origin/<branch>...HEAD`
+   - never pushed → `git diff origin/main...HEAD`
+2. Clean up only the comments inside those hunks.
+3. If anything changed, commit it on top as its own commit (`chore: tidy comments`),
+   following the repo's commit conventions. Do not amend, rebase or squash it into
+   earlier commits.
+4. Report (see Report), then go ahead with the push. Stop and ask only if a flag needs
+   the user's decision first, e.g. a TODO that looks like unfinished work in this push.
 
 ## Ground rules
 
@@ -16,6 +30,7 @@ ones that stay, and report anything you saw but were not allowed to fix.
   the code is hard to read. Keep that comment and flag the code as a refactor candidate.
 - Do not add comments where there were none. Do not impose capitalisation or punctuation style.
 - Scope:
+  - Before a push: only comments in the unpushed hunks (see above).
   - Files: every comment in them.
   - Staged/unstaged diff or PR: only comments inside changed hunks.
 - Check before finishing: `git diff` (or the equivalent) must show nothing but comment

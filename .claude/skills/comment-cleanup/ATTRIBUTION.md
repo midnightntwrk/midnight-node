@@ -15,5 +15,6 @@ Departures from the gist's approach:
 
 - Section numbers in published, versioned standards (`RFC 9110 §8.3`) count as
   stable references; the gist treated all section numbers as unstable.
-- Invoke the skill explicitly before committing rather than relying on it
-  triggering on its own.
+- Run the skill as a step before every push, scoped to the unpushed commits,
+  rather than relying on it triggering on its own. This step was added here
+  after the clean-room rewrite and is not in the upstream spec.
