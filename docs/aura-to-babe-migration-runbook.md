@@ -23,7 +23,7 @@ in the [midnight-node repository](https://github.com/midnightntwrk/midnight-node
 | ----- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | 0     | Prerequisites: babe keys generated and permissioned candidates list updated                 | Updated permissioned-candidates list active                  |
 | 1     | Binary rollout: source-network checks, 100 % binary rollout, monitoring                     | Exit checklist all green                                     |
-| 2     | Verify permissioned candidates with babe keys observed (1.1), then v3 runtime upgrade (1.2) | Upgrade block **finalized**; ≥ 1 committee rotation after it |
+| 2     | Verify permissioned candidates with babe keys observed (1.1), then v3 runtime upgrade (1.2) | Upgrade block **finalized**; registered BABE keys active     |
 | 3     | Governance: `consensusEngine.scheduleFlip()` — **point of no return**                       | —                                                            |
 | 4     | Flip commits automatically at an epoch boundary                                             | Post-flip verification                                       |
 
@@ -177,9 +177,11 @@ From it on, runtime rejects any block from a non-upgraded author.
       `babe.genesisSlot()` is `18446744073709551615`; cadence unchanged.
 - [ ] Every validator has authored at least one **finalized** block since
       the upgrade; no spike in rejected blocks.
-- [ ] After the next committee rotation (session boundary, 300 block in Mainet):
-      `babe.authorities()` is non-empty and matches the registered keys.
-      BABE `NextEpochData` consensus digests now appear at session boundaries.
+- [ ] After the next committee rotation (session boundary, 300 blocks on mainnet):
+      `babe.authorities()` is non-empty and BABE `NextEpochData` consensus
+      digests appear at session boundaries. It still holds the copied AURA
+      keys; the registered BABE keys reach it two or three rotations after
+      the upgrade.
 
 ### Phase 2 gate:
 
@@ -187,9 +189,10 @@ From it on, runtime rejects any block from a non-upgraded author.
       is **finalized** by GRANDPA. The runtime cannot check this itself.
       Network operator has to verify it.
 - [ ] `babe.authorities()` equals the registered BABE keys of the current
-      committee (≥ 1 committee rotation since the upgrade). Copied AURA keys
-      or a missing member mean the committee did not rotate onto the
-      registered keys — do not schedule the flip.
+      committee (two or three committee rotations since the upgrade). Copied
+      AURA keys after the third rotation, or a missing member, mean the
+      committee did not rotate onto the registered keys — do not schedule
+      the flip.
 
 ---
 
