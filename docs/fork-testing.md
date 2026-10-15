@@ -63,6 +63,22 @@ On the first bring-up of a well-known network, pass the snapshot URL to `run`,
 npm run run:qanet -- --from-snapshot https://example.com/snapshots/qanet-latest.tar.zst
 ```
 
+To run fewer validators than the network's checked-in Compose topology, pass a
+positive `--num-validators` value no larger than the configured
+`mock.validatorServices` list:
+
+```bash
+npm run run:qanet -- \
+  --from-snapshot https://example.com/snapshots/qanet-latest.tar.zst \
+  --num-validators 3
+```
+
+The option selects the first N configured validator services, disables the
+remaining validator services in the generated Compose override, and asks
+`mock-authorities convert` to generate N keysets. It must be used with
+`--from-snapshot`; changing an existing fork's count without regenerating its
+authority data is rejected.
+
 The restore flow:
 
 1. Downloads and extracts the archive.
@@ -70,7 +86,8 @@ The restore flow:
    selected network.
 3. Runs `mock-authorities convert` over the restored state.
 4. Generates a compose override that mounts the generated validator seeds and
-   switches the main-chain follower into mock mode.
+   switches the main-chain follower into mock mode. When `--num-validators` is
+   provided, the override also disables validator services above that count.
 
 ## Reusing an existing local fork
 
@@ -81,11 +98,15 @@ directories and generated mock-authorities output.
 ```bash
 npm run image-upgrade:qanet
 npm run governance-runtime-upgrade:qanet -- \
-  --wasm upgrade/midnight_node_runtime.compact.wasm \
   --council-uris //Dave //Eve //Ferdie \
   --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice
 ```
+
+With no `--wasm`, the candidate runtime is extracted from `$NEW_NODE_IMAGE` (node
+images ship it under `/artifacts-<arch>/`). Pass `--wasm-from-image <image>` to name
+a different image, or `--wasm <path under artifacts/>` for a blob that is not in an
+image — a release asset, say, which is the srtool build rather than the Earthly one.
 
 If the generated fork-mode artifacts or restored `data/` directories are
 missing, the command will fail fast and ask you to rerun with `--from-snapshot`.

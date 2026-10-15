@@ -97,7 +97,7 @@ pub enum RootCallError {
 	#[error("Need at least 2 technical committee keys for 2/3 threshold voting")]
 	NotEnoughTcKeys,
 	#[error("Kepair parse error")]
-	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
+	KeypairParseError(#[from] midnight_ledger_unsafe_helpers::KeypairParseError),
 	#[error("Failed to decode call: {0}")]
 	CallDecodeError(String),
 	#[error("online client at block error: {0}")]
@@ -166,7 +166,7 @@ fn get_encoded_call(args: &RootCallArgs) -> Result<Vec<u8>, RootCallError> {
 }
 
 fn get_signer(key_str: &str) -> Result<Keypair, RootCallError> {
-	Ok(midnight_node_ledger_helpers::Keypair::from_str(key_str)?.0)
+	Ok(midnight_ledger_unsafe_helpers::Keypair::from_str(key_str)?.0)
 }
 
 /// Decode SCALE-encoded call bytes into a Value using runtime metadata

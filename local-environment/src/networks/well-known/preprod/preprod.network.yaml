@@ -462,3 +462,12 @@ volumes:
   node-data-8:
   node-data-9:
   node-data-10:
+
+networks:
+  # Stable, project-name-independent network name so external consumers
+  # (e.g. the midnight-indexer overlay) can attach with `external: true`.
+  # Without an explicit name compose derives `<project>_default`, which
+  # shifts when COMPOSE_PROJECT_NAME is set and would no longer match the
+  # MIDNIGHT_FORK_NETWORK recorded in artifacts/preprod.manifest.env.
+  default:
+    name: midnight-fork-preprod

@@ -27,8 +27,9 @@ mod common;
 use clap::Parser;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_node_toolkit::{
-	cli::{Cli, run_command},
+	cli::{Cli, Commands, run_command},
 	client::MidnightNodeClientConfig,
+	commands::{show_address, show_wallet},
 };
 use std::{
 	net::TcpListener,
@@ -49,6 +50,66 @@ use testcontainers::{
 
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+
+/// ECDSA identity exercised across the fork: funded on ledger 8 (step 3b), spent on ledger 9
+/// (step 7).
+const ECDSA_SEED: &str = "1000000000000000000000000000000000000000000000000000000000000001";
+
+/// NIGHT sent to the ECDSA address before the fork. Distinctive, so step 7 can find these outputs.
+const PREFORK_NIGHT: u128 = 500;
+
+/// Shielded amount sent before the fork. The shielded address does not depend on the scheme.
+const PREFORK_SHIELDED: u128 = 777;
+
+/// One address kind (`--shielded`, `--unshielded`, …) for a seed on `undeployed`.
+fn address_of(seed: &str, kind: &str) -> String {
+	let cli = Cli::parse_from([
+		"midnight-node-toolkit",
+		"show-address",
+		"--network",
+		"undeployed",
+		"--seed",
+		seed,
+		kind,
+	]);
+	match cli.command {
+		Commands::ShowAddress(args) => match show_address::execute(args) {
+			show_address::ShowAddress::SingleAddress(addr) => addr,
+			show_address::ShowAddress::Addresses(_) => panic!("expected a single address"),
+		},
+		_ => unreachable!(),
+	}
+}
+
+/// `show-wallet` as structured data, so balances can be asserted.
+async fn wallet_state(seed: &str, url: &str) -> show_wallet::WalletInfoJson {
+	let cli = Cli::parse_from([
+		"midnight-node-toolkit",
+		"show-wallet",
+		"--fetch-cache",
+		"inmemory",
+		"--seed",
+		seed,
+		"-s",
+		url,
+	]);
+	match cli.command {
+		Commands::ShowWallet(args) => {
+			match show_wallet::execute(args).await.expect("show-wallet failed") {
+				show_wallet::ShowWalletResult::Json(info) => info,
+				other => panic!("expected JSON wallet info, got {other:?}"),
+			}
+		},
+		_ => unreachable!(),
+	}
+}
+
+/// The compiled `contract-simple` artifacts, needed for a contract deploy.
+fn contract_artifacts_ready() -> bool {
+	std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR")
+		.map(|dir| Path::new(&dir).exists())
+		.unwrap_or(false)
+}
 
 /// The compiled runtime blob, under whichever directory holds it.
 const RUNTIME_WASM_FILE: &str = "midnight_node_runtime.compact.compressed.wasm";
@@ -96,6 +157,10 @@ impl Drop for NodeUnderTest {
 	}
 }
 
+/// In-process CLI calls leave websocket connections open, so the node's default cap of 100 runs
+/// out during the post-fork steps (HTTP 429).
+const RPC_MAX_CONNECTIONS_ARG: &str = "--rpc-max-connections 1000";
+
 /// An unused localhost port, so a local node does not collide with whatever else
 /// the developer has running.
 fn free_port() -> u16 {
@@ -119,6 +184,7 @@ async fn start_node(
 			.with_exposed_port(ContainerPort::Tcp(9944))
 			.with_env_var("CFG_PRESET", "dev")
 			.with_env_var("CHAIN", "/chainspec/chainspec.json")
+			.with_env_var("APPEND_ARGS", RPC_MAX_CONNECTIONS_ARG)
 			.with_copy_to("/chainspec/chainspec.json", chainspec.into_bytes())
 			.start()
 			.await
@@ -142,7 +208,10 @@ async fn start_node(
 		.env("CFG_PRESET", "dev")
 		.env("CHAIN", &chainspec_path)
 		.env("BASE_PATH", tempdir.join("chain"))
-		.env("APPEND_ARGS", format!("--rpc-port {rpc_port} --port 0 --no-prometheus"))
+		.env(
+			"APPEND_ARGS",
+			format!("--rpc-port {rpc_port} --port 0 --no-prometheus {RPC_MAX_CONNECTIONS_ARG}"),
+		)
 		.spawn()
 		.unwrap_or_else(|e| panic!("failed to spawn NODE_BINARY {binary}: {e}"));
 	eprintln!(
@@ -402,6 +471,54 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
+	// 3b. GH #2180: fund the `ecdsa:` identity on both sides while still on ledger 8. Ledger 8 can
+	//     hold NIGHT at the ECDSA address but not spend it, and the shielded coin is only visible
+	//     later if the wallet replayed the ledger-8 leg. Step 7 checks both.
+	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
+	let ecdsa_address = address_of(&ecdsa_seed, "--unshielded");
+	let ecdsa_shielded_address = address_of(&ecdsa_seed, "--shielded");
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		&PREFORK_NIGHT.to_string(),
+		"--destination-address",
+		&ecdsa_address,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--shielded-amount",
+		&PREFORK_SHIELDED.to_string(),
+		"--destination-address",
+		&ecdsa_shielded_address,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// Nothing to assert yet: `show-wallet --seed ecdsa:…` is refused while the tip is on ledger 8.
+	eprintln!(
+		"[hardfork_e2e] ecdsa identity funded pre-fork: {PREFORK_NIGHT} NIGHT + {PREFORK_SHIELDED} shielded"
+	);
+
 	// 4. Runtime upgrade: take the new WASM from the node under test and apply it
 	let wasm_path = tempdir.path().join("runtime.wasm");
 	std::fs::write(&wasm_path, runtime_wasm(node_binary.as_deref())).expect("write wasm");
@@ -555,4 +672,130 @@ async fn hardfork_single_tx() {
 		&url,
 	])
 	.await;
+
+	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history, funded pre-fork in step 3b.
+
+	// 7a. Both pre-fork funds must have crossed the fork. The shielded coin is the regression: it
+	//     lives in replayed wallet state, so a wallet built at the fork reports zero.
+	let post_fork = wallet_state(&ecdsa_seed, &url).await;
+	assert!(
+		post_fork.coins.values().any(|c| c.value == PREFORK_SHIELDED),
+		"the shielded coin received before the fork must survive it; got {:?}",
+		post_fork.coins,
+	);
+	assert!(
+		post_fork.utxos.iter().any(|u| u.value == PREFORK_NIGHT),
+		"the NIGHT sent to the ECDSA address before the fork must survive it; got {:?}",
+		post_fork.utxos,
+	);
+	eprintln!("[hardfork_e2e] pre-fork NIGHT and shielded coin both survived the fork");
+
+	// 7b. Spend the pre-fork NIGHT before any post-fork funding exists. The ECDSA wallet has no
+	//     DUST after the fork, so the Schnorr wallet pays the fee.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		&ecdsa_seed,
+		"--funding-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		&(PREFORK_NIGHT / 2).to_string(),
+		"--destination-address",
+		"mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r",
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7c. Spend the pre-fork shielded coin. A zswap input is proved, not signed, so only the
+	//     replayed state matters.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		&ecdsa_seed,
+		"--funding-seed",
+		SOURCE_SEED,
+		"--shielded-amount",
+		&(PREFORK_SHIELDED / 2).to_string(),
+		"--destination-address",
+		"mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d",
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7d. Fund it again post-fork, from the Schnorr genesis wallet.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		"1000",
+		"--destination-address",
+		&ecdsa_address,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7e. Spend that post-fork funding too.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		&ecdsa_seed,
+		"--funding-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		"1",
+		"--destination-address",
+		"mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r",
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// 7f. The read path resolves the identity too.
+	run_cli(&["show-wallet", "--fetch-cache", "inmemory", "--seed", &ecdsa_seed, "-s", &url]).await;
+
+	// 7g. A contract with an ECDSA maintenance committee.
+	if contract_artifacts_ready() {
+		run_cli(&[
+			"generate-txs",
+			"--fetch-cache",
+			"inmemory",
+			"contract-simple",
+			"deploy",
+			"--authority-seed",
+			&ecdsa_seed,
+			"-s",
+			&url,
+			"-d",
+			&url,
+		])
+		.await;
+	} else {
+		eprintln!(
+			"[hardfork_e2e] MIDNIGHT_LEDGER_TEST_STATIC_DIR unset; skipping ECDSA committee deploy"
+		);
+	}
 }

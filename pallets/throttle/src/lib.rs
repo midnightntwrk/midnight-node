@@ -25,6 +25,14 @@ pub use check_throttle::CheckThrottle;
 
 pub mod migrations;
 
+/// `InvalidTransaction::Custom` code returned when a signed transaction would take its
+/// account over the per-window byte or transaction limit.
+///
+/// Distinct from `InvalidTransaction::ExhaustsResources`, which signals the per-transaction
+/// or per-block weight limit. Codes from the top of the range down are used for errors raised
+/// outside the ledger (255 is the ledger mapping's `HostApiError`), so this takes the next one.
+pub const THROTTLE_LIMIT_EXCEEDED: u8 = 254;
+
 #[cfg(test)]
 mod mock;
 

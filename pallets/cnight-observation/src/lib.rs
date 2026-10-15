@@ -80,7 +80,7 @@ pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER
 pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use midnight_primitives::{
-		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
+		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionCNightExecutor,
 	};
 	use midnight_primitives_cnight_observation::{
 		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
@@ -157,7 +157,7 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config<Hash = H256> {
-		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		type MidnightSystemTransactionExecutor: MidnightSystemTransactionCNightExecutor;
 		/// Reads the ledger state key, to capture the pre-hardfork (ledger-8)
 		/// one before the pallet-midnight translation replaces it.
 		type LedgerStateProvider: LedgerStateProvider;
@@ -535,9 +535,16 @@ pub mod pallet {
 						dust_public_key: prev_dust_key,
 					}))
 				},
-				_ => {
+				// 2+ -> 3+: still ambiguous, nothing to announce.
+				(None, None) => {
+					log::debug!(
+						"Additional registration for {cardano_reward_address:?}, which already has 2+ mappings"
+					);
+				},
+				// 1 -> 1: only possible if this exact UTXO was already stored.
+				(Some(_), Some(_)) => {
 					log::error!(
-						"fatal integrity error: mapping added, previous and post mapping count == 1"
+						"error: registration UTXO {utxo_id:?} for {cardano_reward_address:?} observed twice; cursor or data source bug"
 					);
 				},
 			}
@@ -609,7 +616,7 @@ pub mod pallet {
 			// post a DUST registration) so this is traced, not warned. Enable trace
 			// level on this target to debug "I registered but no DUST appeared".
 			let Some(ref dust_public_key) = Self::get_registration(&data.owner) else {
-				log::trace!("No valid dust registration for {:?}", &data.owner);
+				log::trace!("No valid dust registration for {:?}", data.owner);
 				return None;
 			};
 
@@ -632,7 +639,7 @@ pub mod pallet {
 					Some(CNightGeneratesDustEventSerialized(event_bytes))
 				},
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					Self::log_dust_event_failure(&data.utxo_tx_hash.0, data.utxo_tx_index, e);
 					None
 				},
 			}
@@ -670,9 +677,24 @@ pub mod pallet {
 			match event {
 				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					Self::log_dust_event_failure(&data.utxo_tx_hash.0, data.utxo_tx_index, e);
 					None
 				},
+			}
+		}
+
+		fn log_dust_event_failure(tx_hash: &[u8], index: u16, e: LedgerApiError) {
+			let utxo = hex::encode(tx_hash);
+			match e {
+				// Registration datums are user-controlled; out-of-range keys are common.
+				LedgerApiError::Deserialization(DeserializationError::DustPublicKey) => {
+					log::debug!(
+						"Skipping cNIGHT observation {utxo}#{index}: invalid DustPublicKey"
+					);
+				},
+				e => log::warn!(
+					"cNIGHT observation {utxo}#{index} dropped: unable to construct CNightGeneratesDustEvent: {e:?}"
+				),
 			}
 		}
 	}
@@ -807,7 +829,10 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		#[pallet::weight((
+			T::WeightInfo::set_mapping_validator_contract_address(),
+			DispatchClass::Normal
+		))]
 		pub fn set_mapping_validator_contract_address(
 			origin: OriginFor<T>,
 			address: Vec<u8>,

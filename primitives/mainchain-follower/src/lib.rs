@@ -56,6 +56,7 @@ pub mod inherent_provider {
 			start_position: &CardanoPosition,
 			current_tip: McBlockHash,
 			capacity: usize,
+			spec_version: u32,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
