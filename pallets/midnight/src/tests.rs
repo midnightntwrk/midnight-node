@@ -419,6 +419,44 @@ fn test_get_mn_transaction_fee() {
 }
 
 #[test]
+fn tx_cost_bounded_by_normal_dispatch_budget() {
+	// send_mn_transaction is DispatchClass::Normal (the default).
+	// Normal extrinsics are limited to NORMAL_DISPATCH_RATIO (75%) of max_block.
+	//
+	// get_transaction_cost maps ledger normalized cost to Substrate weight by
+	// scaling against a weight budget. That budget must be the Normal dispatch
+	// class max_total, not max_block, otherwise:
+	// - A tx at >75% of any ledger dimension gets weight exceeding the Normal cap
+	// - Substrate rejects it even though the ledger considers it valid
+	// - post_block_update fullness for user-only blocks can never exceed ~75%
+	//
+	// The maximum possible gas_cost is the budget parameter itself (when a tx
+	// saturates a ledger dimension). Verify real transactions are within bounds.
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		let gas_cost = mock::Midnight::get_transaction_cost(&tx).unwrap();
+
+		let weights = <<Test as frame_system::Config>::BlockWeights as frame_support::traits::Get<
+			frame_system::limits::BlockWeights,
+		>>::get();
+		let normal_budget = weights
+			.get(frame_support::dispatch::DispatchClass::Normal)
+			.max_total
+			.unwrap_or(weights.max_block)
+			.ref_time();
+
+		assert!(
+			gas_cost <= normal_budget,
+			"Transaction gas cost ({gas_cost}) exceeds Normal dispatch budget ({normal_budget}). \
+			 get_transaction_cost must scale against the Normal class budget, not max_block."
+		);
+	});
+}
+
+#[test]
 fn test_get_ledger_parameters() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
