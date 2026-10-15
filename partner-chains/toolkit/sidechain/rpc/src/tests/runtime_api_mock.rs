@@ -1,6 +1,5 @@
 use super::*;
 use mock::*;
-use rpc_mock::*;
 use sidechain_domain::UtxoId;
 use sidechain_slots::{ScSlotConfig, SlotsPerEpoch};
 use sp_sidechain::GetGenesisUtxo;
