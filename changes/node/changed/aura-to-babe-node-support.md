@@ -27,5 +27,5 @@ A node can verify, import and author blocks of both engines across the flip. Ope
   `sc-partner-chains-consensus` (`PartnerChainsBlockImport`, `PartnerChainsVerifier`,
   `PartnerChainsProposerFactory`).
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/2113
+PR: https://github.com/midnightntwrk/midnight-node/pull/2113, https://github.com/midnightntwrk/midnight-node/pull/2312
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1757
