@@ -1,0 +1,116 @@
+name: try-runtime upgrade dry-run
+
+# Run before shipping a runtime upgrade. Manual because it scrapes full chain
+# state over RPC, which is heavy on the public endpoints.
+#
+# A snapshot carries substrate storage only, so migrations that read ledger state
+# abort here — those belong to the fork-testing flow (docs/fork-testing.md).
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "Dry-run against preview"
+        type: boolean
+        default: true
+      preprod:
+        description: "Dry-run against preprod"
+        type: boolean
+        default: true
+      mainnet:
+        description: "Dry-run against mainnet"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Build node and dry-run upgrade
+    runs-on: [self-hosted, "tier:large"]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      # One build; earthly then schedules the per-network dry-runs in parallel.
+      # --FAIL_FAST=false so every network runs to the end and the snapshots are
+      # output (earthly drops all outputs if any target fails); the next step
+      # fails the job from the per-network status files.
+      - name: Dry-run on-runtime-upgrade
+        env:
+          PREVIEW: ${{ inputs.preview }}
+          PREPROD: ${{ inputs.preprod }}
+          MAINNET: ${{ inputs.mainnet }}
+        run: |
+          networks=""
+          [ "$PREVIEW" = "true" ] && networks="$networks preview"
+          [ "$PREPROD" = "true" ] && networks="$networks preprod"
+          [ "$MAINNET" = "true" ] && networks="$networks mainnet"
+          if [ -z "$networks" ]; then
+            echo "::error::no network selected"
+            exit 1
+          fi
+          . ./.envrc && earthly --ci --output -P +try-runtime-dry-run-all \
+            --NETWORKS="${networks# }" --FAIL_FAST=false
+
+      # One annotation per network saying why it stopped, the tail of each log,
+      # and a table in the job summary.
+      - name: Report per-network results
+        run: |
+          failed=0
+          {
+            echo "| network | result |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for f in artifacts-try-runtime/*.status; do
+            [ -e "$f" ] || { echo "::error::no status files produced"; exit 1; }
+            network=$(basename "$f" .status)
+            log="artifacts-try-runtime/$network.log"
+            status=$(cat "$f")
+            if [ "$status" = 0 ]; then
+              result="passed: migrations, MBMs, state decode and try-state all ran"
+              echo "::notice::$network: $result"
+            elif grep -q "empty scratch arena does not have" "$log"; then
+              result="stopped at the ledger translation (pallet-midnight v1->v2): substrate migrations before it applied, the rest needs --ledger-db (docs/fork-testing.md)"
+              echo "::error::$network: $result"
+              failed=1
+            else
+              result="failed (exit $status), see the log tail below"
+              echo "::error::$network: $result"
+              failed=1
+            fi
+            echo "| $network | $result |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::group::$network dry-run log (last 40 lines)"
+            tail -n 40 "$log" 2>/dev/null || echo "(no log)"
+            echo "::endgroup::"
+          done
+          exit "$failed"
+
+      # So a failure can be re-run locally against the exact same state.
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: try-runtime-${{ github.run_id }}
+          path: artifacts-try-runtime/
+          if-no-files-found: ignore
+          retention-days: 14
