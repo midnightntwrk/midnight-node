@@ -736,7 +736,7 @@ where
 		)
 	}
 
-	/// Mempool validation. `check_guaranteed_utxos` adds [`Self::check_guaranteed_utxos`].
+	/// Mempool validation. `check_utxos` adds [`Self::check_guaranteed_utxos`].
 	#[allow(clippy::too_many_arguments)]
 	pub fn validate_transaction(
 		mut externalities: &mut dyn Externalities,
@@ -747,7 +747,7 @@ where
 		// The runtime's max weight as of now
 		max_weight: u64,
 		get_tx_details: bool,
-		check_guaranteed_utxos: bool,
+		check_utxos: bool,
 	) -> Result<(Hash, Option<TransactionDetails>), LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_validation_time = Instant::now();
@@ -771,7 +771,7 @@ where
 			&tx,
 			&block_context,
 			&wrapped_cache_key,
-			check_guaranteed_utxos,
+			check_utxos,
 		)?;
 
 		let tx_details = if get_tx_details {
@@ -809,8 +809,8 @@ where
 	///
 	/// Used by `pre_dispatch` to reject transactions whose application
 	/// would fail - this keeps the block free of failed transactions.
-	/// `check_guaranteed_utxos` adds [`Self::check_guaranteed_utxos`]; a `pre_dispatch`
-	/// rejection decides block validity, so like netting it is chosen by host-fn version.
+	/// `check_utxos` adds [`Self::check_guaranteed_utxos`]; a `pre_dispatch` rejection
+	/// decides block validity, so like netting it is chosen by host-fn version.
 	///
 	/// This function checks the strict cache for a cached `VerifiedTransaction`
 	/// (populated by `validate_unsigned(strict=true)`) to avoid redundant ZK
@@ -822,7 +822,7 @@ where
 		block_context: BlockContext,
 		runtime_version: u32,
 		skew_tblock: bool,
-		check_guaranteed_utxos: bool,
+		check_utxos: bool,
 	) -> Result<(), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -844,7 +844,7 @@ where
 			&block_context,
 			&cache_key,
 			skew_tblock,
-			check_guaranteed_utxos,
+			check_utxos,
 		)?;
 
 		// Write Prometheus metrics
@@ -1775,11 +1775,11 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 mod tests {
 	use super::*;
 	use base_crypto_local::{
-		cost_model::{FeePrices, FixedPoint, SyntheticCost},
+		cost_model::{FixedPoint, SyntheticCost},
 		rng::SplittableRng,
 		schnorr,
 	};
-	use coin_structure_local::coin::{NIGHT, ShieldedTokenType, UnshieldedTokenType, UserAddress};
+	use coin_structure_local::coin::{NIGHT, ShieldedTokenType, UnshieldedTokenType};
 	use helpers_local::{Rng, SeedableRng, StdRng};
 	use ledger_storage_local::{DefaultDB, storage::HashMap as StorageHashMap};
 	use mn_ledger_local::structure::{
@@ -2350,35 +2350,29 @@ mod tests {
 		const VALUE: u128 = 1_000_000;
 
 		// Zero fee prices: the fee-less transaction then balances under default strictness.
-		let fee_prices =
-			FeePrices { overall_price: FixedPoint::ZERO, ..INITIAL_PARAMETERS.fee_prices };
-		let parameters = LedgerParameters { fee_prices, ..INITIAL_PARAMETERS };
-		let state =
-			LedgerState::<DefaultDB>::with_genesis_settings(NETWORK, parameters, 0, MAX_SUPPLY, 0)
-				.expect("legal genesis settings");
+		let mut params = INITIAL_PARAMETERS;
+		params.fee_prices.overall_price = FixedPoint::ZERO;
+		let state = LedgerState::with_genesis_settings(NETWORK, params, 0, MAX_SUPPLY, 0).unwrap();
 
 		let mut rng = StdRng::seed_from_u64(0x4e35_3200);
 		let sk = SigningKey::Schnorr(schnorr::SigningKey::sample(&mut rng));
 		let vk = sk.verifying_key();
+		let (r1, r2) = (rng.r#gen(), rng.r#gen());
 		let offer = |inputs: Vec<UtxoSpend>, outputs: Vec<UtxoOutput>| {
-			Some(Sp::new(UnshieldedOffer {
-				inputs: inputs.into(),
-				outputs: outputs.into(),
-				signatures: vec![].into(),
-			}))
+			let (inputs, outputs, signatures) = (inputs.into(), outputs.into(), vec![].into());
+			Some(Sp::new(UnshieldedOffer { inputs, outputs, signatures }))
 		};
-		let intent = |rng: &mut StdRng, guaranteed_unshielded_offer| TestIntent {
+		let intent = |binding_commitment, guaranteed_unshielded_offer| TestIntent {
 			guaranteed_unshielded_offer,
 			fallible_unshielded_offer: None,
 			actions: vec![].into(),
 			dust_actions: None,
 			ttl: Timestamp::from_secs(0),
-			binding_commitment: rng.r#gen(),
+			binding_commitment,
 		};
 
-		let owner = UserAddress::from(vk.clone());
-		let create =
-			intent(&mut rng, offer(vec![], vec![UtxoOutput { owner, type_: NIGHT, value: VALUE }]));
+		let output = UtxoOutput { owner: vk.clone().into(), type_: NIGHT, value: VALUE };
+		let create = intent(r1, offer(vec![], vec![output]));
 		let y = UtxoSpend {
 			intent_hash: create.erase_proofs().erase_signatures().intent_hash(0),
 			output_no: 0,
@@ -2386,88 +2380,48 @@ mod tests {
 			type_: NIGHT,
 			value: VALUE,
 		};
-		let spend = intent(&mut rng, offer(vec![y], vec![]))
-			.sign(&mut rng, 2, &[sk], &[], &[])
-			.expect("signs the spend");
-
-		let intents: StorageHashMap<u16, TestIntent, DefaultDB> =
-			[(1u16, create), (2u16, spend)].into_iter().collect();
-		let binding_randomness =
-			intents.values().map(|i| i.binding_commitment).fold(0.into(), |a, b| a + b);
+		let spend = intent(r2, offer(vec![y], vec![])).sign(&mut rng, 2, &[sk], &[], &[]).unwrap();
 		let tx = LedgerTransaction::Standard(StandardTransaction {
 			network_id: NETWORK.into(),
-			intents,
+			intents: [(1, create), (2, spend)].into_iter().collect(),
 			guaranteed_coins: None,
 			fallible_coins: StorageHashMap::new(),
-			binding_randomness,
+			binding_randomness: r1 + r2,
 		})
 		.seal(rng.split());
 
 		let api = api::new();
-		let bytes = api.tagged_serialize(&tx).expect("serializes");
+		let tx = api.tagged_serialize(&tx).unwrap();
 		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
 		ledger.persist();
-		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+		let key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
 		let mut test_ext = sp_io::TestExternalities::default();
 		let mut ext = test_ext.ext();
-		let bc = BlockContext::default();
+		let bc = BlockContext::default;
 
-		TestBridge::validate_transaction(
-			&mut ext,
-			&state_key,
-			&bytes,
-			bc.clone(),
-			1,
-			1,
-			false,
-			true,
-		)
-		.expect("mempool validation accepts it");
-		TestBridge::validate_guaranteed_execution(
-			&mut ext,
-			&state_key,
-			&bytes,
-			bc.clone(),
-			1,
-			false,
-			true,
-		)
-		.expect("pre_dispatch accepts it");
-		let applied = TestBridge::apply_transaction(
-			&mut ext,
-			&state_key,
-			&bytes,
-			bc.clone(),
-			true,
-			true,
-			1,
-			false,
-		)
-		.expect("apply accepts it");
+		// Mempool, `pre_dispatch` and apply, through the new host-fn versions or the old.
+		// A runtime binds one version and its `spec_version` keys the validation caches,
+		// so each arm runs under its own `runtime_version`.
+		let mut run = |new: bool| {
+			let (ext, rv) = (&mut ext, u32::from(new));
+			(
+				TestBridge::validate_transaction(ext, &key, &tx, bc(), rv, 1, false, new),
+				TestBridge::validate_guaranteed_execution(ext, &key, &tx, bc(), rv, false, new),
+				TestBridge::apply_transaction(ext, &key, &tx, bc(), true, new, rv, false),
+			)
+		};
+
+		let (validated, dispatched, applied) = run(true);
+		validated.expect("mempool validation accepts it");
+		dispatched.expect("pre_dispatch accepts it");
+		let applied = applied.expect("apply accepts it");
 		assert!(applied.all_applied);
-		assert!(
-			applied.unshielded_utxos_created.is_empty()
-				&& applied.unshielded_utxos_spent.is_empty(),
-			"a UTXO created and spent in one tx is reported as neither"
-		);
+		assert!(applied.unshielded_utxos_created.is_empty(), "netted: not reported as created");
+		assert!(applied.unshielded_utxos_spent.is_empty(), "netted: not reported as spent");
 
-		// A runtime binds one host-fn version and its `spec_version` keys the validation
-		// caches, so the older arm runs under a different `runtime_version`.
-		TestBridge::validate_transaction(
-			&mut ext,
-			&state_key,
-			&bytes,
-			bc.clone(),
-			0,
-			1,
-			false,
-			false,
-		)
-		.expect("older versions do not run the check at validation");
-		let rejected =
-			TestBridge::apply_transaction(&mut ext, &state_key, &bytes, bc, true, false, 0, false)
-				.err()
-				.expect("older versions reject it at apply");
-		assert_eq!(rejected, LedgerApiError::HostApiError, "older versions replay the old verdict");
+		let (validated, dispatched, applied) = run(false);
+		validated.expect("old versions do not check at validation");
+		dispatched.expect("old versions do not check at pre_dispatch");
+		assert_eq!(applied.err(), Some(LedgerApiError::HostApiError), "old verdict replays");
 	}
 }
