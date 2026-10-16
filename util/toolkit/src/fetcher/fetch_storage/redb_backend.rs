@@ -94,8 +94,8 @@ impl RedbBackend {
 
 		Self {
 			db: Arc::new(RwLock::new(Database::create(path).expect("failed to create database"))),
-			block_data_table: TableDefinition::new("raw_block_data_v2"),
-			highest_verified_table: TableDefinition::new("highest_verified"),
+			block_data_table: TableDefinition::new("raw_block_data_v3"),
+			highest_verified_table: TableDefinition::new("highest_verified_v3"),
 			_lock: Arc::new(lock_file),
 		}
 	}

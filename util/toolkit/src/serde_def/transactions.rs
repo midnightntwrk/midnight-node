@@ -197,6 +197,8 @@ mod tests {
 			tblock_err: 30,
 			parent_block_hash: [0u8; 32],
 			last_block_time_secs: number.saturating_sub(1),
+			spec_version: 0,
+			skews_tblock: false,
 			state_root: None,
 			state: None,
 		}

@@ -234,6 +234,7 @@ pub fn apply_block_8(
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
+		block.skews_tblock,
 	)
 	.expect("failed to update ledger 8 context from block")
 }
@@ -273,6 +274,8 @@ pub fn apply_block_9(
 
 	let block_context = block_context_from_raw_9(block);
 
+	// No `skew_tblock` counterpart here: `Ledger9Bridge`'s host functions never skew, because
+	// every ledger-9 block was produced after the upgrade that closed the loophole.
 	ctx.update_from_block(
 		&transactions,
 		&block_context,

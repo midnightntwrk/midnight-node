@@ -15,6 +15,7 @@ pub mod compute_task;
 pub mod fetch_storage;
 pub mod fetch_task;
 pub mod runtimes;
+pub mod tblock_correction;
 pub mod trusted_deserialize;
 pub mod wallet_state_cache;
 
