@@ -266,6 +266,13 @@ pub struct UtxoInfo {
 	pub output_no: u32,
 }
 
+impl UtxoInfo {
+	/// Ledger identity of this UTXO; owner, type and value are not part of it.
+	pub fn id(&self) -> (Hash, u32) {
+		(self.intent_hash, self.output_no)
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeCountError {
 	TagNotFound,
