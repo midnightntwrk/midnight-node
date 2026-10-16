@@ -12980,7 +12980,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "10",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-        "OUT_DIR": "polkadot-sdk-eff3836c89051857/substrate/utils/frame/storage-access-test-runtime",
+        "OUT_DIR": "polkadot-sdk-a959d6a2230da379/substrate/utils/frame/storage-access-test-runtime",
     },
     features = [
         "cumulus-pallet-parachain-system",
@@ -47735,7 +47735,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-        "OUT_DIR": "polkadot-sdk-eff3836c89051857/substrate/test-utils/runtime",
+        "OUT_DIR": "polkadot-sdk-a959d6a2230da379/substrate/test-utils/runtime",
     },
     features = [
         "array-bytes",

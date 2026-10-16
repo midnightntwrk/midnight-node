@@ -1,13 +1,15 @@
 # substrate-wasm-builder can't run under buck; skip it and overlay the
-# WASM_BINARY=None stub the build script would emit. Same pattern as
-# frame-storage-access-test-runtime; OUT_DIR = crate manifest dir (the git-fetch
-# subdir hash tracks the polkadot-sdk pin — regenerate on bump).
+# WASM_BINARY=None stub the build script would emit. Same pattern (and same
+# drift caveat) as frame-storage-access-test-runtime: OUT_DIR = crate manifest
+# dir, whose `polkadot-sdk-<hash>` prefix tracks the polkadot-sdk pin. On a bump,
+# re-pin from the live `polkadot-sdk-<hash>.git` in third-party/BUCK before
+# re-buckifying, or include! finds no wasm_binary.rs.
 buildscript.run = false
 cargo_env = true
 overlay = "overlay"
 
 [env]
-OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/test-utils/runtime"
+OUT_DIR = "polkadot-sdk-a959d6a2230da379/substrate/test-utils/runtime"
 
 # git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
 # git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on

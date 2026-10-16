@@ -4,12 +4,16 @@
 # `#[cfg(feature="std")] include!(concat!(env!("OUT_DIR"),"/wasm_binary.rs"))`,
 # resolved from the srcs-tree root (rustc CWD), so OUT_DIR must equal the
 # crate's manifest dir (where the overlay lands the stub).
-# CAVEAT: the git-fetch dir hash below tracks the polkadot-sdk pin; regenerate
-# on a polkadot-sdk bump (or replace with a buildscript genrule). See
-# docs/buck2-notes.md.
+# CAVEAT: OUT_DIR must equal this crate's CARGO_MANIFEST_DIR (where the overlay
+# lands the stub), and that path's `polkadot-sdk-<hash>` prefix is reindeer's
+# git-fetch cell hash, which tracks the polkadot-sdk pin. On a bump, grep the
+# live hash from third-party/BUCK (`grep -oE 'polkadot-sdk-[a-f0-9]+\.git'`) and
+# update it here BEFORE re-buckifying — a stale hash points include!(OUT_DIR/
+# wasm_binary.rs) at a dir the overlay never populated (build error: "couldn't
+# read .../wasm_binary.rs"). Last drift: stable2606 bump, see docs/buck2-notes.md.
 buildscript.run = false
 cargo_env = true
 overlay = "overlay"
 
 [env]
-OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/utils/frame/storage-access-test-runtime"
+OUT_DIR = "polkadot-sdk-a959d6a2230da379/substrate/utils/frame/storage-access-test-runtime"
