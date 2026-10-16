@@ -1538,6 +1538,8 @@ node-image:
     LOCALLY
     LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
     LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET COMMIT_HASH = "$(git rev-parse HEAD)"
+    ARG IMAGE_TAG_HASH=$CONTENT_HASH_SHORT
 
     ARG NATIVEARCH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
@@ -1555,8 +1557,10 @@ node-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
-    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
+    LABEL org.opencontainers.image.revision="$COMMIT_HASH"
+    ENV IMAGE_TAG="$(cat /version)-$IMAGE_TAG_HASH-$NATIVEARCH"
+    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$IMAGE_TAG_HASH-$NATIVEARCH"
 
     RUN echo image tag=$IMAGE_REPO:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     # Only /node needs fixing: the binaries are copied with --chown and the base
@@ -1614,6 +1618,8 @@ toolkit-image:
     LOCALLY
     LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
     LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+    LET COMMIT_HASH = "$(git rev-parse HEAD)"
+    ARG IMAGE_TAG_HASH=$CONTENT_HASH_SHORT
 
     ARG NATIVEARCH
     # Set to false to skip toolkit-js
@@ -1658,7 +1664,8 @@ toolkit-image:
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
+    LABEL org.opencontainers.image.revision="$COMMIT_HASH"
+    ENV IMAGE_TAG="${NODE_VERSION}-${IMAGE_TAG_HASH}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     SAVE IMAGE --push \
         $GHCR_REGISTRY/$IMAGE_REPO-toolkit:latest-$NATIVEARCH \

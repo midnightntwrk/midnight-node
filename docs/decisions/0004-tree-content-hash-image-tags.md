@@ -1,8 +1,44 @@
 # 0004: Tree Content Hash for Docker Image Tags
 
 **Date:** 2026-02-25
-**Status:** Proposed
+**Status:** Amended: tree reuse applies to PR CI; main/release images use commit identity
 **Deciders:** @gilescope
+
+## Release provenance amendment
+
+Node and toolkit images built by `main.yml` use
+`{NODE_VERSION}-{full-40-character-commit-SHA}-{ARCH}`. Both architectures and the
+multi-architecture manifest resolve the requested ref once, so a moving branch
+cannot mix different commits. PR CI retains tree-based tags and deduplication.
+
+The binary embeds the abbreviated build commit through
+`SUBSTRATE_CLI_GIT_COMMIT_HASH`. Reusing a PR test-merge image after the final merge
+preserves that earlier commit in telemetry, even when both commits have identical
+source trees. A commit alias alone cannot change the embedded binary version.
+
+Main builds pass the commit SHA to Earthly as `IMAGE_TAG_HASH`; ordinary local and
+PR builds retain the tree-hash default. Node and toolkit images record the full
+build commit in `org.opencontainers.image.revision`. Existing images are reused
+only when that label matches the requested commit for the target architecture.
+The tree hash remains available as `GIT_CONTENT_HASH` for content comparisons.
+
+`release-image.yml` resolves `inputs.ref` to `RELEASE_SHA`, selects the corresponding
+commit-tagged images, and checks their revision labels for both architectures
+before publishing any release image. The private manifest and the public mirror
+are checked separately. Missing images, missing labels, and mismatched revisions
+fail the release with a request to run Main build/publish for the exact commit.
+Node/toolkit skip flags and the runtime-only release path remain supported.
+
+GHCR and Docker Hub expose commit-specific tags alongside the release tags.
+Version-only tags such as `1.0.400`, architecture tags, and release archive names
+are unchanged. Release archives are extracted from the promoted images, so they
+carry the same binary build identity. This change does not rewrite existing
+releases. Release branches need the updated build workflow and Earthfile before
+they can supply commit-specific release artifacts; legacy tree aliases are not a
+fallback. Different commits with the same tree now require separate main builds.
+
+The original tree-reuse decision below describes PR CI and the previous main
+release behavior; this amendment supersedes its main/release-specific claims.
 
 ## Context
 
