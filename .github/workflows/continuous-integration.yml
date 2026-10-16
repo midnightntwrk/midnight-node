@@ -675,14 +675,18 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
-            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
-            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            -P --strict $PUSH_FLAG \
-            --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
-            +test-toolkit \
-              --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
-              --CACHE_KEY="$CACHE_KEY"
+          # Shared self-hosted buildkitd: wrapped in retry-transient-ci.sh so a
+          # daemon recycle by a concurrent job is retried, not reported.
+          . ./.envrc
+          ./.github/scripts/retry-transient-ci.sh \
+            earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+              --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+              --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+              -P --strict $PUSH_FLAG \
+              --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
+              +test-toolkit \
+                --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
+                --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
