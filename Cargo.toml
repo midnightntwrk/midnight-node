@@ -191,7 +191,6 @@ sc-partner-chains-consensus = { path = "partner-chains/toolkit/consensus" }
 
 binary-merkle-tree = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 pallet-aura = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
-pallet-authorship = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 pallet-babe = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 pallet-beefy = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 pallet-beefy-mmr = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }

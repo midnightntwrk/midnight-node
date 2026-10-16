@@ -144,14 +144,24 @@ pub fn seed_aura_authorities(n: u32) {
 	pallet_aura::Authorities::<Test>::put(bounded);
 }
 
-/// Seed a non-empty `pallet-babe::Authorities` set so the flip is allowed to commit.
-pub fn seed_babe_authorities() {
-	use frame_support::WeakBoundedVec;
+/// A one-member BABE authority set whose key is `seed` repeated.
+pub fn babe_authority_set(
+	seed: u8,
+) -> frame_support::WeakBoundedVec<
+	(sp_consensus_babe::AuthorityId, u64),
+	<Test as pallet_babe::Config>::MaxAuthorities,
+> {
 	use sp_core::sr25519;
-	let id = sp_consensus_babe::AuthorityId::from(sr25519::Public::from_raw([1u8; 32]));
-	let authorities =
-		WeakBoundedVec::try_from(vec![(id, 1u64)]).expect("one authority fits MaxAuthorities");
-	pallet_babe::Authorities::<Test>::put(authorities);
+	let id = sp_consensus_babe::AuthorityId::from(sr25519::Public::from_raw([seed; 32]));
+	frame_support::WeakBoundedVec::try_from(vec![(id, 1u64)])
+		.expect("one authority fits MaxAuthorities")
+}
+
+/// Seed non-empty `pallet-babe` `Authorities` and `NextAuthorities` sets, as a session
+/// rotation after the key upgrade leaves them, so the flip is allowed to commit.
+pub fn seed_babe_authorities() {
+	pallet_babe::Authorities::<Test>::put(babe_authority_set(1));
+	pallet_babe::NextAuthorities::<Test>::put(babe_authority_set(1));
 }
 
 /// Put [`EngineState`] as on an upgraded network: the activation migration has already
