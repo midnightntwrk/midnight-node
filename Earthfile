@@ -143,7 +143,7 @@ generate-keys:
     ARG D_PERMISSIONED
     ARG NUM_BOOT_NODES
     ARG NUM_VALIDATOR_NODES
-    FROM earthly/dind:alpine-3.20-docker-26.1.5-r0
+    FROM earthly/dind:alpine-3.20-docker-26.1.5-r0@sha256:d5e41b181f38e04078c7b57e4ceae16465931ecd8f55092332a80f53f68a81d9
     RUN apk add --no-cache python3
     COPY scripts/generate-keys.py .
     COPY --if-exists secrets/$NETWORK-seeds-aws.json secrets/seeds-aws.json
@@ -170,7 +170,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.98.1-trixie
+    FROM rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -199,8 +199,13 @@ build-node-only:
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
     ARG NATIVEARCH
 
+    # The runtime's fork-transition feature must never be released; feature
+    # unification could turn it on from any crate in the build.
+    RUN ./scripts/assert-no-fork-transition.sh features -p midnight-node
     RUN cargo auditable build -p midnight-node --locked --release
 
     # cp (not mv) so the linked binary stays in the persistent /target cache (see +build).
@@ -722,6 +727,8 @@ node-ci-image-single-platform:
     # Install rust with minimal profile + only the components we need
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
     ENV PATH="/root/.cargo/bin:${PATH}"
+    # See +prep-no-copy: litep2p/str0m enable vendored OpenSSL; use the system library.
+    ENV OPENSSL_NO_VENDOR=1
     RUN rustup component add clippy rustfmt
 
     RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
@@ -830,7 +837,7 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     # Read versions from files (multi-FROM so we don't depend on env vars propagating)
-    FROM alpine:3.20
+    FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
     COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
@@ -859,6 +866,11 @@ prep-no-copy:
     # on PATH from the CI image, and are unaffected — CARGO_HOME only moves cargo's data/bin home.)
     ENV CARGO_HOME=/usr/local/cargo
     ENV PATH="/usr/local/cargo/bin:${PATH}"
+    # litep2p (polkadot-sdk stable2609 sc-network) enables str0m's `vendored` OpenSSL feature,
+    # which compiles OpenSSL from source via perl. AL2023-minimal's perl lacks FindBin.pm
+    # (Configure exits 2). openssl-devel is already in the CI image, so link against that
+    # instead, as every openssl-sys consumer did before the bump.
+    ENV OPENSSL_NO_VENDOR=1
     # Pin git-fetch-with-cli at CARGO_HOME (canonical, workdir-independent) rather than relying on
     # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
     # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
@@ -1108,7 +1120,6 @@ check-rust:
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching missing dependencies masked by workspace feature unification.
-# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
 # Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
 # the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
@@ -1240,9 +1251,10 @@ test-pallet-fixtures:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests in debug mode (compiles much faster)
+    # Limit compilation as well as execution to the fixture tests' library.
     WITH DOCKER
         RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+            --package pallet-midnight --lib \
             -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
     END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
@@ -1306,7 +1318,7 @@ test-toolkit:
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
 
     LET EXTRA_DOCKER_ENV=""
@@ -1414,9 +1426,17 @@ build:
     # ENV AR_X86_64_UNKNOWN_LINUX_GNU=ar
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
+    # The runtime's fork-transition feature must never be released; feature
+    # unification could turn it on from any crate in the build.
+    RUN ./scripts/assert-no-fork-transition.sh features --workspace
+
     # Default build (no hardfork)
     RUN \
         cargo auditable build --workspace --locked --release
+
+    RUN ./scripts/assert-no-fork-transition.sh wasm /target/release/wbuild/midnight-node-runtime/*.wasm
 
     # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
     # (local, CI=false); otherwise cargo would re-link every binary on the next run even
@@ -1436,7 +1456,10 @@ build-benchmarks:
 
     ARG NATIVEARCH
 
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
     # Build with runtime-benchmarks feature
+    RUN ./scripts/assert-no-fork-transition.sh features --workspace --features runtime-benchmarks
     RUN \
         cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
@@ -1486,6 +1509,11 @@ srtool-build:
     # Run srtool build with --app flag to show all output, save JSON result
     RUN --no-cache /srtool/build --app --json | tee /tmp/srtool-output.txt && \
         tail -1 /tmp/srtool-output.txt > /build/srtool-digest.json
+
+    # This is the runtime proposed for on-chain upgrades: it must never be a
+    # fork-transition build.
+    COPY scripts/assert-no-fork-transition.sh /tmp/
+    RUN /tmp/assert-no-fork-transition.sh wasm /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm
 
     # Save artifacts
     SAVE ARTIFACT /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm AS LOCAL artifacts/srtool/
@@ -1828,7 +1856,7 @@ chain-params-check:
 
 # compares addresses with testnet-02
 addresses-check:
-    FROM node:iron-alpine3.21
+    FROM node:iron-alpine3.21@sha256:eb0b81f6eb35ec5ecd1cab181801f93a6314127580b416e6e290363b724e1686
     RUN apk add --no-cache nodejs yarn
     COPY res/testnet-02/addresses.json /addresses.json
     COPY --dir scripts /
@@ -2162,7 +2190,7 @@ sync-mainnet-1000-snapshot:
     ARG MIN_EPOCH=617
     # postgres:17.4-alpine matches the loader image used by run-sync.sh and
     # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
-    FROM postgres:17.4-alpine
+    FROM postgres:17.4-alpine@sha256:7062a2109c4b51f3c792c7ea01e83ed12ef9a980886e3b3d380a7d2e5f6ce3f5
     RUN apk add --no-cache bash xz
     WORKDIR /work
     COPY scripts/sync-test/build-snapshot.sh ./

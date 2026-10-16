@@ -28,6 +28,7 @@ pub(crate) const CUSTOM_METHOD_NAMES: &[&str] = &[
 	"midnight_ledgerStateRoot",
 	"midnight_apiVersions",
 	"midnight_ledgerVersion",
+	"midnight_ledgerStats",
 	"systemParameters_getTermsAndConditions",
 	"systemParameters_getDParameter",
 	"systemParameters_getAriadneParameters",
@@ -196,6 +197,18 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				json!({"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 255}}),
 			),
 			&[error_ref("StateRpcError")],
+		),
+		"midnight_ledgerStats" => method_entry(
+			name,
+			"Returns the collection sizes held at the ledger-state root.",
+			"Most notably the unshielded UTXO set size, which no other RPC exposes — it lives in the ledger arena, outside the Substrate trie. Every value is read from a trie-root annotation, so the cost is independent of the size of the state. If `at` is null, the best block is used. A node running with default state pruning only retains trie state for recent blocks, so an older `at` fails on such a node even though the arena still holds the data.",
+			&[param_optional(
+				"at",
+				"Block hash to query at (defaults to best block)",
+				schema_ref("BlockHash"),
+			)],
+			result("stats", "Ledger-state collection sizes", schema_ref("LedgerStats")),
+			&[error_ref("LedgerStatsInvalidParams"), error_ref("LedgerStatsInternalError")],
 		),
 		"midnight_apiVersions" => method_entry(
 			name,
@@ -542,6 +555,9 @@ fn build_component_schemas() -> Value {
 			.expect("MidnightRpcTransaction schema must serialize to valid JSON");
 	let rpc_tx_schema = serde_json::to_value(schema_for!(pallet_midnight_rpc::RpcTransaction))
 		.expect("RpcTransaction schema must serialize to valid JSON");
+	let ledger_stats_schema =
+		serde_json::to_value(schema_for!(crate::ledger_stats_rpc::LedgerStats))
+			.expect("LedgerStats schema must serialize to valid JSON");
 
 	json!({
 		"BlockHash": {
@@ -555,6 +571,7 @@ fn build_component_schemas() -> Value {
 		"Operation": operation_schema,
 		"MidnightRpcTransaction": midnight_tx_schema,
 		"RpcTransaction": rpc_tx_schema,
+		"LedgerStats": ledger_stats_schema,
 		"PeerReputationInfo": {
 			"type": "object",
 			"description": "Peer information enriched with reputation and ban status",
@@ -688,6 +705,20 @@ fn build_error_components() -> Value {
 			"message": "Invalid params",
 			"data": {
 				"description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
+			}
+		},
+		"LedgerStatsInvalidParams": {
+			"code": -32602,
+			"message": "Invalid params",
+			"data": {
+				"description": "Variants: UnknownBlock (the requested block hash is not known to this node), NoStateKey (the pallet holds no StateKey at that block)"
+			}
+		},
+		"LedgerStatsInternalError": {
+			"code": -32603,
+			"message": "Internal error",
+			"data": {
+				"description": "Variants: StateKeyUnavailable (reading the ledger StateKey from the trie failed — the expected result for a block outside a pruned node's retained state window), LedgerUnavailable (the arena could not resolve the state the StateKey points at)"
 			}
 		},
 		"SystemParametersRpcError": {
@@ -926,8 +957,8 @@ mod tests {
 	fn ci_custom_method_count_drift_detection() {
 		assert_eq!(
 			CUSTOM_METHOD_NAMES.len(),
-			16,
-			"CUSTOM_METHOD_NAMES has {} entries but 16 are expected. \
+			17,
+			"CUSTOM_METHOD_NAMES has {} entries but 17 are expected. \
 			 If you added or removed a custom RPC method, update CUSTOM_METHOD_NAMES \
 			 and the OpenRPC metadata in build_custom_method().",
 			CUSTOM_METHOD_NAMES.len()

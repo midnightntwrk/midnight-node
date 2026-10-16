@@ -16,10 +16,11 @@ use crate::ledger_9::{
 	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader, MidnightDataProvider,
 	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
 	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
-	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState,
-	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme,
+	UnshieldedWallet, Utxo, VerifiedTransaction, Wallet, WalletAddress, WalletSeed,
+	WellFormedStrictness, ZswapChainState, clamp_and_normalize, compute_overall_fullness,
+	default_storage, deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+	types::StorableSyntheticCost,
 };
 use crate::replay_stats::{FAILED_TXS, PARTIALLY_FAILED_TXS};
 use derive_where::derive_where;
@@ -155,6 +156,16 @@ impl<D: DB + Clone> LedgerContext<D> {
 			resolver,
 			latest_block_context: Mutex::new(None),
 		}
+	}
+
+	/// Replace an existing wallet's unshielded (NIGHT) keys, keeping its shielded state. Used after
+	/// the 8->9 fork for `ecdsa:` seeds, which replay ledger 8 watch-only.
+	pub fn install_unshielded_keys(&self, seed: &WalletSeed, scheme: UnshieldedSignatureScheme) {
+		let mut wallets = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
+		let wallet = wallets
+			.get_mut(seed)
+			.expect("Cannot key an unshielded identity that is not in the `LedgerContext`");
+		wallet.unshielded = UnshieldedWallet::new(seed.clone(), scheme);
 	}
 
 	/// Apply all transactions in a block to the ledger, returning events without

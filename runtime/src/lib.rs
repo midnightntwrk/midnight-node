@@ -79,8 +79,6 @@ use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
-//#[cfg(feature = "experimental")]
-//use sp_block_rewards::GetBlockRewardPoints;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
@@ -98,8 +96,6 @@ use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use crate::{constants::time_units::HOURS, currency::CurrencyWaiver};
 use alloc::{vec, vec::Vec};
-#[cfg(feature = "std")]
-use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // Make the WASM binary available.
@@ -117,6 +113,10 @@ pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+/// Fork-transition support. Off by default; see the module docs before
+/// enabling -- a runtime built with this feature must never be released.
+#[cfg(feature = "fork-transition")]
+pub mod fork_transition;
 mod migrations;
 pub mod weights;
 
@@ -163,9 +163,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ecdsa, ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -217,8 +217,8 @@ pub mod opaque {
 		pub struct SessionKeys {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
-			// todo: add the beefy
-			// pub beefy: Beefy,
+			pub babe: Babe,
+			pub beefy: Beefy,
 		}
 	}
 
@@ -228,7 +228,16 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+			let babe = keys.find(BABE)?;
+			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
+			let beefy = keys.find(BEEFY)?;
+			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
+			Some(Self {
+				aura: aura.into(),
+				grandpa: grandpa.into(),
+				babe: babe.into(),
+				beefy: beefy.into(),
+			})
 		}
 	}
 
@@ -240,9 +249,14 @@ pub mod opaque {
 					value.aura.into_inner().to_raw().to_vec(),
 				),
 				sidechain_domain::CandidateKey::new(
+					BABE,
+					value.babe.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
+				sidechain_domain::CandidateKey::new(BEEFY, value.beefy.into_inner().to_raw_vec()),
 			])
 		}
 	}
@@ -264,23 +278,41 @@ pub mod opaque {
 
 pub type CrossChainPublic = opaque::cross_chain_app::Public;
 
-// To learn more about runtime versioning, see:
-// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
-#[allow(clippy::zero_prefixed_literal)]
-#[sp_version::runtime_version]
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: Cow::Borrowed("midnight"),
-	impl_name: Cow::Borrowed("midnight"),
-	authoring_version: 1,
-	// The version of the runtime specification. A full node will not attempt to use its native
-	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
-	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 003_000_000,
-	impl_version: 0,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 4,
-	system_version: 3,
-};
+/// The `impl_name` of a runtime built with `fork-transition`, so one is
+/// identifiable from `state_getRuntimeVersion` or from its wasm: release
+/// builds check for this string (`scripts/assert-no-fork-transition.sh`).
+pub const FORK_TRANSITION_IMPL_NAME: &str = "midnight-fork-transition-UNSAFE";
+
+// `#[sp_version::runtime_version]` only accepts string literals, so `impl_name`
+// is chosen per feature by expanding the one definition twice rather than by a
+// const. `spec_version` must stay single-sourced: `codeSubstitutes` matches on
+// it, so a fork runtime that drifted from the stock one would silently not apply.
+macro_rules! runtime_version {
+	($impl_name:tt) => {
+		// To learn more about runtime versioning, see:
+		// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
+		#[allow(clippy::zero_prefixed_literal)]
+		#[sp_version::runtime_version]
+		pub const VERSION: RuntimeVersion = RuntimeVersion {
+			spec_name: Cow::Borrowed("midnight"),
+			impl_name: Cow::Borrowed($impl_name),
+			authoring_version: 1,
+			// The version of the runtime specification. A full node will not attempt to use its native
+			//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
+			//   `spec_version`, and `authoring_version` are the same between Wasm and native.
+			spec_version: 003_000_000,
+			impl_version: 0,
+			apis: RUNTIME_API_VERSIONS,
+			transaction_version: 4,
+			system_version: 3,
+		};
+	};
+}
+
+#[cfg(not(feature = "fork-transition"))]
+runtime_version!("midnight");
+#[cfg(feature = "fork-transition")]
+runtime_version!("midnight-fork-transition-UNSAFE");
 
 /// This determines the average expected block time that we are targeting.
 /// Blocks will be produced at a minimum duration defined by `SLOT_DURATION`.
@@ -298,12 +330,6 @@ pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
 		c: (1, 4),
 		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
 	};
-
-/// The version information used to identify this runtime when compiled natively.
-#[cfg(feature = "std")]
-pub fn native_version() -> NativeVersion {
-	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
-}
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
@@ -374,15 +400,16 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes the QueuedCommittee storage added in v2
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-		// See migrations::authority_keys when opaque::SessionKeys changes shape.
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE and BEEFY keys, and activates the
+		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
+		// `on_initialize` sees the first BABE pre-digest).
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
 	type PostInherents = ();
 	type PostTransactions = ();
-	type ExtensionsWeightInfo = ();
+	type ExtensionsWeightInfo = weights::frame_system_extensions::WeightInfo<Runtime>;
 }
 
 impl pallet_aura::Config for Runtime {
@@ -393,17 +420,14 @@ impl pallet_aura::Config for Runtime {
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
-impl pallet_authorship::Config for Runtime {
-	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
-	type EventHandler = ();
-}
-
 impl pallet_babe::Config for Runtime {
 	type EpochDuration = SidechainEpochDuration;
 	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
 	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
 	type DisabledValidators = ();
-	// TODO: Issue #1863
+	// Default weights implemented by `()` are the best thing we have for BABE.
+	// Pallet does not define benchmarks for methods in the `WeightInfo`, so
+	// running benchmarks does not add any value.
 	type WeightInfo = ();
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
@@ -647,14 +671,6 @@ impl pallet_session_validator_management::Config for Runtime {
 
 pub struct LogBeneficiaries;
 impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
-	#[cfg(feature = "experimental")]
-	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
-		//let rewards = BlockRewards::get_rewards_and_clear();
-		//log::info!("Rewards accrued in epoch {old_epoch}: {rewards:?}");
-
-		ParityDbWeight::get().reads_writes(1, 1)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
 		Weight::zero()
 	}
@@ -675,43 +691,12 @@ pub type BeneficiaryId = midnight_node_ledger::types::Hash;
 pub type BlockRewardPoints = u128;
 pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
 
-/*
-#[cfg(feature = "experimental")]
-pub struct LedgerBlockRewardPoints;
-#[cfg(feature = "experimental")]
-impl GetBlockRewardPoints<BlockRewardPoints> for LedgerBlockRewardPoints {
-	fn get_block_reward() -> BlockRewardPoints {
-		BLOCK_REWARD_POINTS
-	}
-}
-*/
-
 pub struct LedgerBlockReward;
 impl Get<BlockReward> for LedgerBlockReward {
-	#[cfg(feature = "experimental")]
-	fn get() -> BlockReward {
-		/*
-		(
-			<Runtime as pallet_block_rewards::Config>::GetBlockRewardPoints::get_block_reward(),
-			pallet_block_rewards::CurrentBlockBeneficiary::<Runtime>::get(),
-		)
-		*/
-		(0, None)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn get() -> BlockReward {
 		(0, None)
 	}
 }
-
-/*
-#[cfg(feature = "experimental")]
-impl pallet_block_rewards::Config for Runtime {
-	type BeneficiaryId = BeneficiaryId;
-	type BlockRewardPoints = BlockRewardPoints;
-	type GetBlockRewardPoints = LedgerBlockRewardPoints;
-}
-*/
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
@@ -725,16 +710,9 @@ impl pallet_midnight_system::Config for Runtime {
 	type LedgerBlockContextProvider = Midnight;
 }
 
-pub struct ValidatorSet;
-impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
-	fn get() -> BoundedVec<AuraId, MaxAuthorities> {
-		pallet_aura::Authorities::<Runtime>::get()
-	}
-}
-
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
-	type WeightInfo = pallet_version::VersionWeight<Runtime>;
+	type WeightInfo = weights::pallet_version::WeightInfo<Runtime>;
 	type RuntimeVersion = Version;
 }
 
@@ -791,7 +769,7 @@ impl pallet_safe_mode::Config for Runtime {
 	type ForceDepositOrigin = EnsureRoot<AccountId>;
 	type Notify = ();
 	type ReleaseDelay = ();
-	type WeightInfo = pallet_safe_mode::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_safe_mode::WeightInfo<Runtime>;
 }
 
 pub const MOTION_DURATION: BlockNumber = 5 * DAYS;
@@ -972,7 +950,7 @@ parameter_types! {
 	pub const MaxBytes: u64 = 10 * 1024 * 1024;
 	/// Maximum transactions a single account can submit within a throttle window
 	pub const MaxTxs: u64 = 100;
-	/// Number of blocks that define a throttle window (1 day at 6s/block).
+	/// Number of blocks that define a throttle window (1 hour: 600 blocks at 6 s/block).
 	pub const WindowSize: u32 = HOURS;
 }
 
@@ -1121,14 +1099,10 @@ mod runtime {
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
 
-	// Authorship must be before Session (polkadot-sdk hook order).
-	#[runtime::pallet_index(9)]
-	pub type Authorship = pallet_authorship::Pallet<Runtime>;
-
 	// Consensus engine transition state machine. Hook order (pallet index order) is
 	// load-bearing: its `on_initialize` digest guards must run after Babe (which
 	// consumes BABE pre-digests) but before anything that mutates the state they
-	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
+	// check against — Scheduler (18) can dispatch `schedule_flip` from
 	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
 	// which the `authority_index == slot % n` transition guard compares with. Both
 	// the block author and the AURA seal verifier work from the parent state, so
@@ -1141,8 +1115,6 @@ mod runtime {
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
-	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1256,6 +1228,13 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
+	// on the unsigned mandatory block 1 since launch, and the session-key migration above
+	// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
+	// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
+	// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
+	// re-enabled (see `migrations::beefy_genesis`).
+	migrations::beefy_genesis::ResetBeefyGenesis,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
@@ -1365,6 +1344,11 @@ mod benches {
 	define_benchmarks!(
 		[frame_benchmarking, BaselineBench::<Runtime>]
 		[frame_system, SystemBench::<Runtime>]
+		// The `TxExtension` checks every signed transaction pays for. Without this
+		// entry `frame_system::Config::ExtensionsWeightInfo` falls back to upstream's
+		// `()` impl, whose numbers are Parity's reference hardware and RocksDB —
+		// this runtime is ParityDb.
+		[frame_system_extensions, SystemExtensionsBench::<Runtime>]
 		[pallet_beefy_mmr, BeefyMmrLeaf]
 		[pallet_grandpa, Grandpa]
 		[pallet_timestamp, Timestamp]
@@ -1373,6 +1357,10 @@ mod benches {
 		[pallet_preimage, Preimage]
 		[pallet_scheduler, Scheduler]
 		[pallet_tx_pause, TxPause]
+		// Load-bearing since #2079 made safe mode the failed-migration handler.
+		// `enter`/`extend`/`release_deposit` report Weightless here: deposits are
+		// disabled in this runtime, so those calls are unusable by design.
+		[pallet_safe_mode, SafeMode]
 		[pallet_collective, Council]
 		[pallet_collective, TechnicalCommittee]
 		[pallet_membership, CouncilMembership]
@@ -1384,6 +1372,8 @@ mod benches {
 		[pallet_cnight_observation, CNightObservation]
 		[pallet_c2m_bridge, C2MBridge]
 		[pallet_partner_chains_bridge, Bridge]
+		// No extrinsics; the benchmark measures the per-block `on_initialize` digest write.
+		[pallet_version, NodeVersion]
 	);
 }
 
@@ -1409,6 +1399,14 @@ impl_runtime_apis! {
 		}
 
 		fn execute_block(block: <Block as BlockT>::LazyBlock) {
+			// The fork block carries a storage delta instead of the inherents a
+			// proposer would have produced; applying it is the whole execution.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				crate::fork_transition::execute_fork_block(&block);
+				return;
+			}
+
 			Executive::execute_block(block);
 		}
 
@@ -1507,6 +1505,34 @@ impl_runtime_apis! {
 			block: <Block as BlockT>::LazyBlock,
 			data: sp_inherents::InherentData,
 		) -> sp_inherents::CheckInherentsResult {
+			// The fork block has no inherents to check -- it was never proposed.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				return sp_inherents::CheckInherentsResult::new();
+			}
+
+			// Verifiers check the first block after a runtime upgrade with this, the new,
+			// runtime (the node calls this API in the on-chain context, which resolves the
+			// upgrade staged in `:pending_code`), against the parent state the old runtime
+			// left behind. Apply the pending migrations first, so the checks read storage in
+			// the layout they expect. The runtime storage writes are discarded with the
+			// runtime API call; the block's own execution runs the migrations again, for real.
+			//
+			// Host-side effects are NOT discarded: anything a migration does through a host
+			// function (e.g. the ledger v8->v9 translation persisting the translated state in
+			// the ledger arena) happens once per run, and a verifying node runs the migrations
+			// twice for the first post-upgrade block (here, then in `execute_block`). Every
+			// migration must therefore be deterministic and idempotent on the host side. This
+			// was already required (competing children of the upgrade block, abandoned
+			// proposals and resyncs re-run them on the same host state), but it is now the
+			// normal path rather than an edge case.
+			let upgraded = frame_system::LastRuntimeUpgrade::<Runtime>::get()
+				.map(|last| last.was_upgraded(&VERSION))
+				.unwrap_or(true);
+			if upgraded {
+				Executive::execute_on_runtime_upgrade();
+			}
+
 			data.check_extrinsics(&block)
 		}
 	}
@@ -1533,6 +1559,15 @@ impl_runtime_apis! {
 		}
 
 		fn authorities() -> Vec<AuraId> {
+			// At the fork block's parent, report the fork's mock set so the
+			// fork block's seal verifies. Every other height reads state.
+			#[cfg(feature = "fork-transition")]
+			if let Some(authorities) =
+				crate::fork_transition::aura_authorities_at(System::block_number())
+			{
+				return authorities;
+			}
+
 			pallet_aura::Authorities::<Runtime>::get().into_inner()
 		}
 	}
@@ -1697,7 +1732,7 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl pallet_beefy_mmr::BeefyMmrApi<Block, Hash> for RuntimeApi {
+	impl pallet_beefy_mmr::BeefyMmrApi<Block, Hash> for Runtime {
 		fn authority_set_proof() -> sp_consensus_beefy::mmr::BeefyAuthoritySet<Hash> {
 			BeefyMmrLeaf::authority_set_proof()
 		}
@@ -1769,6 +1804,7 @@ impl_runtime_apis! {
 			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
@@ -1787,6 +1823,7 @@ impl_runtime_apis! {
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}
@@ -1844,10 +1881,6 @@ impl_runtime_apis! {
 	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()
-		}
-
-		fn should_emit_babe_preruntime_digest() -> bool {
-			ConsensusEngine::should_emit_babe_preruntime_digest()
 		}
 	}
 
@@ -1975,17 +2008,24 @@ mod tests {
 		assert_ok,
 		dispatch::PostDispatchInfo,
 		inherent::ProvideInherent,
-		traits::{UnfilteredDispatchable, WhitelistedStorageKeys},
+		traits::{FindAuthor, UnfilteredDispatchable, WhitelistedStorageKeys},
 	};
 	use frame_system::RawOrigin;
+	use midnight_primitives_consensus_engine::ActiveEngine;
+	use parity_scale_codec::Decode;
 	use sidechain_domain::{
 		CandidateRegistrations, CrossChainPublicKey, CrossChainSignature, DParameter, EpochNonce,
 		MainchainSignature, PermissionedCandidateData, RegistrationData, ScEpochNumber,
 		SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
 	};
+	use sp_consensus_aura::AURA_ENGINE_ID;
+	use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+	use sp_consensus_babe::{BABE_ENGINE_ID, BabeAuthorityWeight, ConsensusLog};
+	use sp_core::crypto::AccountId32;
 	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
 	use sp_runtime::traits::Zero;
+	use sp_session_validator_management::CommitteeMember as _;
 	use std::collections::HashSet;
 
 	#[test]
@@ -2144,6 +2184,590 @@ mod tests {
 		});
 	}
 
+	/// What an observer of the chain sees across the flip must agree, block by block: the engine
+	/// the header's pre-runtime digests name, the signer those digests resolve to in every
+	/// authority view readable at the parent state (`AuraApi::authorities`, `BabeApi::current_epoch`
+	/// and `next_epoch`, the committee pallet's current and queued committees, `pallet_session`'s
+	/// validators), the author the runtime credits, and the epoch BABE announces for the session to
+	/// come. The committee changes at every rotation, so a stale or wrong set is a distinct answer.
+	///
+	/// Post-flip, a block that opens an epoch is signed under the epoch BABE announced one epoch
+	/// earlier, i.e. `BabeApi::next_epoch` at its parent; every other block under
+	/// `BabeApi::current_epoch` at its parent. At the flip block both name the first BABE epoch.
+	#[test]
+	fn observers_see_coherent_signers_and_epochs_across_the_flip() {
+		new_test_ext().execute_with(|| {
+			// As the upgrade migration leaves an existing network.
+			ConsensusEngine::activate();
+			advance_block();
+
+			// A committee set in epoch N serves epoch N + 2. The flip commits at the end of epoch
+			// 1, so `[bob]` serves the first BABE epoch while `[alice, bob]` still signs epoch 1.
+			let plan = [
+				vec![bob()],
+				vec![alice()],
+				vec![alice(), bob()],
+				vec![bob(), alice()],
+				vec![alice()],
+			];
+			let mut planned = None;
+			let mut seen = std::collections::BTreeMap::<Kind, u32>::new();
+			let mut last = None;
+			// The activation block is observed too: the parent view is the genesis state.
+			let mut parent = View::capture();
+			loop {
+				advance_block();
+				let kind = match (last, observe(&parent)) {
+					(Some(Kind::Flip), Kind::BabeOpening) => Kind::FirstBabe,
+					(_, kind) => kind,
+				};
+				*seen.entry(kind).or_default() += 1;
+				last = Some(kind);
+				parent = View::capture();
+
+				let epoch = (Sidechain::current_epoch_number().0 - ARBITRARY_FIRST_EPOCH) as usize;
+				if epoch > plan.len() {
+					break;
+				}
+				if planned != Some(epoch) {
+					if let Some(committee) = plan.get(epoch) {
+						set_committee_through_inherent_data(committee);
+					}
+					if epoch == 1 {
+						assert_ok!(ConsensusEngine::schedule_flip(RawOrigin::Root.into()));
+					}
+					planned = Some(epoch);
+				}
+			}
+
+			// Every kind of block the migration produces was checked, the singular ones once.
+			assert_eq!(seen[&Kind::Flip], 1);
+			assert_eq!(seen[&Kind::FirstBabe], 1);
+			assert!(seen[&Kind::PreFlip] > 1, "{seen:?}");
+			assert!(seen[&Kind::PreFlipOpening] >= 1, "{seen:?}");
+			assert!(seen[&Kind::BabeOpening] >= 3, "{seen:?}");
+			assert!(seen[&Kind::Babe] > 1, "{seen:?}");
+			assert_eq!(parent.engine, ActiveEngine::Babe);
+
+			// `pallet_session::historical` records no session roots: the session manager is not
+			// wrapped in `NoteHistoricalRoot`, so no observer can obtain a key-ownership proof,
+			// and the consensus APIs answer `None` for them.
+			assert!(
+				pallet_session::historical::HistoricalSessions::<Test>::iter().next().is_none()
+			);
+		});
+
+		/// The kinds of block the migration produces, each with its own observer rules.
+		#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+		enum Kind {
+			PreFlip,
+			PreFlipOpening,
+			Flip,
+			FirstBabe,
+			BabeOpening,
+			Babe,
+		}
+
+		type Member = <Test as pallet_session_validator_management::Config>::CommitteeMember;
+		type BabeAuthorities = Vec<(sp_consensus_babe::AuthorityId, BabeAuthorityWeight)>;
+
+		/// The views an observer can read at a block's state, used for the block's child.
+		struct View {
+			engine: ActiveEngine,
+			session: u32,
+			aura: Vec<AuraId>,
+			babe: BabeAuthorities,
+			current_epoch: Option<sp_consensus_babe::Epoch>,
+			next_epoch: BabeAuthorities,
+			validators: Vec<AccountId32>,
+			queued_validators: Vec<AccountId32>,
+			committee: Vec<Member>,
+			queued_committee: Vec<Member>,
+		}
+
+		impl View {
+			fn capture() -> Self {
+				// `BabeApi::current_epoch` needs the epoch config the flip writes.
+				let current_epoch =
+					pallet_babe::EpochConfig::<Test>::get().map(|_| Babe::current_epoch());
+				View {
+					engine: ConsensusEngine::active_engine(),
+					session: Session::current_index(),
+					aura: pallet_aura::Authorities::<Test>::get().to_vec(),
+					babe: pallet_babe::Authorities::<Test>::get().to_vec(),
+					current_epoch,
+					next_epoch: pallet_babe::NextAuthorities::<Test>::get().to_vec(),
+					validators: Session::validators(),
+					queued_validators: pallet_session::QueuedKeys::<Test>::get()
+						.into_iter()
+						.map(|(validator, _)| validator)
+						.collect(),
+					committee: SessionCommitteeManagement::current_committee_storage()
+						.committee
+						.to_vec(),
+					queued_committee: SessionCommitteeManagement::queued_committee_storage()
+						.committee
+						.to_vec(),
+				}
+			}
+		}
+
+		/// Check the block just initialized against the views at its parent.
+		fn observe(parent: &View) -> Kind {
+			let block = System::block_number();
+			let logs = System::digest().logs;
+			let engines = logs
+				.iter()
+				.filter_map(|log| log.as_pre_runtime())
+				.map(|(engine, _)| engine)
+				.collect::<Vec<_>>();
+			let expected = match parent.engine {
+				ActiveEngine::Aura => vec![AURA_ENGINE_ID, BABE_ENGINE_ID],
+				ActiveEngine::Babe => vec![BABE_ENGINE_ID],
+			};
+			assert_eq!(engines, expected, "block {block}: pre-runtime digests");
+
+			let index = <ConsensusEngine as FindAuthor<u32>>::find_author(
+				logs.iter().filter_map(|log| log.as_pre_runtime()),
+			)
+			.expect("the digests name the author") as usize;
+			let opens_epoch = babe_next_epoch_data().is_some();
+			let rotated = Session::current_index() != parent.session;
+			assert_eq!(
+				opens_epoch, rotated,
+				"block {block}: BABE announces an epoch iff the session rotates"
+			);
+
+			// The signer: who the author index names under the set the block is signed in.
+			let (signer_babe, member, session_view) = match (parent.engine, opens_epoch) {
+				// AURA: `slot % n` in the AURA list; the BABE digest names the same member.
+				(ActiveEngine::Aura, _) => {
+					assert_eq!(parent.aura[index], parent.committee[index].authority_keys().aura);
+					(parent.babe[index].0.clone(), &parent.committee[index], &parent.validators)
+				},
+				(ActiveEngine::Babe, false) => {
+					let epoch = parent.current_epoch.as_ref().expect("post-flip epoch");
+					(
+						epoch.authorities[index].0.clone(),
+						&parent.committee[index],
+						&parent.validators,
+					)
+				},
+				(ActiveEngine::Babe, true) => (
+					parent.next_epoch[index].0.clone(),
+					&parent.queued_committee[index],
+					&parent.queued_validators,
+				),
+			};
+			let signer: AccountId32 = member.authority_id().into();
+			assert_eq!(signer_babe, member.authority_keys().babe, "block {block}: committee view");
+			assert_eq!(session_view[index], signer, "block {block}: pallet_session view");
+
+			// Post-flip the signer's set is this block's current set everywhere.
+			if parent.engine == ActiveEngine::Babe {
+				assert_eq!(Session::validators()[index], signer, "block {block}");
+				assert_eq!(
+					pallet_babe::Authorities::<Test>::get()[index].0,
+					signer_babe,
+					"block {block}"
+				);
+				let current: AccountId32 = current_committee()[index].authority_id().into();
+				assert_eq!(current, signer, "block {block}");
+			}
+
+			// What BABE announces is the set the next rotation installs.
+			if let Some(announced) = babe_next_epoch_data() {
+				assert_eq!(
+					announced,
+					pallet_babe::NextAuthorities::<Test>::get().to_vec(),
+					"block {block}"
+				);
+				assert_eq!(announced, session_queued_babe_authorities(), "block {block}");
+				assert_eq!(
+					announced,
+					committee_babe_authorities(queued_committee()),
+					"block {block}"
+				);
+				if pallet_babe::EpochConfig::<Test>::get().is_some() {
+					assert_eq!(announced, Babe::next_epoch().authorities, "block {block}");
+				}
+			}
+
+			// The flip block: AURA-authored (its header says so) while its state already reports
+			// BABE, so observers must take the engine from the header. Its state seeds epoch 0 with
+			// the committee queued for the epoch it covers.
+			let flipped = parent.engine == ActiveEngine::Aura
+				&& ConsensusEngine::active_engine() == ActiveEngine::Babe;
+			if flipped {
+				assert!(!opens_epoch, "block {block}: the flip block ends an epoch");
+				let epoch_zero = Babe::current_epoch();
+				assert_eq!(
+					epoch_zero.authorities,
+					pallet_babe::NextAuthorities::<Test>::get().to_vec()
+				);
+				assert_eq!(epoch_zero.authorities, session_queued_babe_authorities());
+				assert_eq!(epoch_zero.authorities, committee_babe_authorities(queued_committee()));
+				assert_eq!(epoch_zero.authorities, Babe::next_epoch().authorities);
+				assert_ne!(epoch_zero.authorities, committee_babe_authorities(current_committee()));
+			}
+			match (parent.engine, opens_epoch, flipped) {
+				(_, _, true) => Kind::Flip,
+				(ActiveEngine::Aura, true, _) => Kind::PreFlipOpening,
+				(ActiveEngine::Aura, false, _) => Kind::PreFlip,
+				(ActiveEngine::Babe, true, _) => Kind::BabeOpening,
+				(ActiveEngine::Babe, false, _) => Kind::Babe,
+			}
+		}
+
+		/// The BABE keys `pallet_session` activates at its next rotation.
+		fn session_queued_babe_authorities() -> BabeAuthorities {
+			pallet_session::QueuedKeys::<Test>::get()
+				.into_iter()
+				.map(|(_, keys)| (keys.babe, 1))
+				.collect()
+		}
+
+		fn queued_committee() -> Vec<Member> {
+			SessionCommitteeManagement::queued_committee_storage().committee.to_vec()
+		}
+
+		fn current_committee() -> Vec<Member> {
+			SessionCommitteeManagement::current_committee_storage().committee.to_vec()
+		}
+
+		fn committee_babe_authorities(committee: Vec<Member>) -> BabeAuthorities {
+			committee.into_iter().map(|member| (member.authority_keys().babe, 1)).collect()
+		}
+
+		/// The authorities of the `NextEpochData` BABE consensus log in the current block, if any.
+		fn babe_next_epoch_data() -> Option<BabeAuthorities> {
+			System::digest().logs.iter().find_map(|log| {
+				let (engine, mut data) = log.as_consensus()?;
+				if engine != BABE_ENGINE_ID {
+					return None;
+				}
+				match ConsensusLog::decode(&mut data).ok()? {
+					ConsensusLog::NextEpochData(descriptor) => Some(descriptor.authorities),
+					_ => None,
+				}
+			})
+		}
+	}
+
+	/// Observers read the chain through runtime APIs. Each one must be the pallet state the
+	/// coherence test above checks, with nothing in between.
+	mod runtime_api_views {
+		use crate::mock::{TestKeys, alice, bob};
+		use crate::{
+			AuraId, BABE_GENESIS_EPOCH_CONFIG, BeefyId, Block, GrandpaId, Hash, Runtime,
+			SLOT_DURATION, Sidechain, opaque,
+		};
+		use authority_selection_inherents::{AuthoritySelectionInputs, CommitteeMember};
+		use frame_support::{BoundedVec, WeakBoundedVec};
+		use midnight_primitives_consensus_engine::ActiveEngine;
+		use pallet_consensus_engine::{EngineState, State};
+		use pallet_session_validator_management::{
+			CommitteeInfo, CurrentCommittee, MainChainScriptsConfiguration, NextCommittee,
+			QueuedCommittee,
+		};
+		use parity_scale_codec::Encode;
+		use sidechain_domain::{MainchainAddress, PolicyId, ScEpochNumber};
+		use sp_consensus_beefy::mmr::BeefyAuthoritySet;
+		use sp_consensus_slots::{Slot, SlotDuration};
+		use sp_core::{ByteArray, Pair};
+		use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
+		use sp_session_validator_management::MainChainScripts;
+
+		type CommitteeMemberOf =
+			<Runtime as pallet_session_validator_management::Config>::CommitteeMember;
+
+		fn ext() -> sp_io::TestExternalities {
+			sp_io::TestExternalities::default()
+		}
+
+		fn babe_set(
+			seed: u8,
+		) -> WeakBoundedVec<
+			(sp_consensus_babe::AuthorityId, sp_consensus_babe::BabeAuthorityWeight),
+			<Runtime as pallet_babe::Config>::MaxAuthorities,
+		> {
+			let id = sp_consensus_babe::AuthorityId::from(sp_core::sr25519::Public::from_raw(
+				[seed; 32],
+			));
+			WeakBoundedVec::try_from(vec![(id, 1)]).expect("one authority fits")
+		}
+
+		fn beefy_id(keys: &TestKeys) -> BeefyId {
+			keys.cross_chain.public().into_inner().into()
+		}
+
+		fn member(keys: &TestKeys) -> CommitteeMemberOf {
+			CommitteeMember::permissioned(
+				keys.cross_chain.public(),
+				opaque::SessionKeys {
+					aura: keys.aura.public(),
+					grandpa: keys.grandpa.public(),
+					babe: keys.babe.public(),
+					beefy: beefy_id(keys),
+				},
+			)
+		}
+
+		fn committee(
+			epoch: u64,
+			members: &[TestKeys],
+		) -> CommitteeInfo<
+			ScEpochNumber,
+			CommitteeMemberOf,
+			<Runtime as pallet_session_validator_management::Config>::MaxValidators,
+		> {
+			CommitteeInfo {
+				epoch: ScEpochNumber(epoch),
+				committee: BoundedVec::truncate_from(members.iter().map(member).collect()),
+			}
+		}
+
+		#[test]
+		fn aura_api_reports_the_pallet_authorities_and_slot_duration() {
+			ext().execute_with(|| {
+				let authorities = vec![alice().aura.public(), bob().aura.public()];
+				pallet_aura::Authorities::<Runtime>::put(BoundedVec::truncate_from(
+					authorities.clone(),
+				));
+
+				use sp_consensus_aura::runtime_decl_for_aura_api::AuraApi;
+				assert_eq!(<Runtime as AuraApi<Block, AuraId>>::authorities(), authorities);
+				assert_eq!(
+					<Runtime as AuraApi<Block, AuraId>>::slot_duration(),
+					SlotDuration::from_millis(SLOT_DURATION)
+				);
+			});
+		}
+
+		#[test]
+		fn babe_api_reports_the_pallet_epochs_and_configuration() {
+			ext().execute_with(|| {
+				pallet_babe::EpochConfig::<Runtime>::put(BABE_GENESIS_EPOCH_CONFIG);
+				pallet_babe::Authorities::<Runtime>::put(babe_set(1));
+				pallet_babe::NextAuthorities::<Runtime>::put(babe_set(2));
+				pallet_babe::Randomness::<Runtime>::put([7; 32]);
+				pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(700u64));
+				pallet_babe::EpochIndex::<Runtime>::put(2);
+				let epoch_length = u64::from(Sidechain::slots_per_epoch().0);
+
+				use sp_consensus_babe::runtime_decl_for_babe_api::BabeApi;
+				let current = <Runtime as BabeApi<Block>>::current_epoch();
+				assert_eq!(current.authorities, babe_set(1).to_vec());
+				assert_eq!(current.epoch_index, 2);
+				assert_eq!(current.start_slot, Slot::from(700 + 2 * epoch_length));
+				assert_eq!(current.duration, epoch_length);
+				assert_eq!(current.config, BABE_GENESIS_EPOCH_CONFIG);
+				let next = <Runtime as BabeApi<Block>>::next_epoch();
+				assert_eq!(next.authorities, babe_set(2).to_vec());
+				assert_eq!(next.epoch_index, 3);
+				assert_eq!(next.start_slot, Slot::from(700 + 3 * epoch_length));
+				assert_eq!(
+					<Runtime as BabeApi<Block>>::current_epoch_start(),
+					Slot::from(700 + 2 * epoch_length)
+				);
+				let configuration = <Runtime as BabeApi<Block>>::configuration();
+				assert_eq!(configuration.authorities, babe_set(1).to_vec());
+				assert_eq!(configuration.randomness, [7; 32]);
+				assert_eq!(configuration.epoch_length, epoch_length);
+				assert_eq!(configuration.slot_duration, SLOT_DURATION);
+				assert_eq!(configuration.c, BABE_GENESIS_EPOCH_CONFIG.c);
+				assert_eq!(configuration.allowed_slots, BABE_GENESIS_EPOCH_CONFIG.allowed_slots);
+				assert!(
+					<Runtime as BabeApi<Block>>::generate_key_ownership_proof(
+						Slot::from(700u64),
+						babe_set(1)[0].0.clone()
+					)
+					.is_none()
+				);
+			});
+		}
+
+		#[test]
+		fn grandpa_api_reports_the_pallet_authorities_and_set_id() {
+			ext().execute_with(|| {
+				let authorities =
+					vec![(alice().grandpa.public(), 1u64), (bob().grandpa.public(), 1)];
+				pallet_grandpa::Authorities::<Runtime>::put(
+					WeakBoundedVec::try_from(authorities.clone()).expect("two authorities fit"),
+				);
+				pallet_grandpa::CurrentSetId::<Runtime>::put(3);
+
+				use sp_consensus_grandpa::runtime_decl_for_grandpa_api::GrandpaApi;
+				assert_eq!(<Runtime as GrandpaApi<Block>>::grandpa_authorities(), authorities);
+				assert_eq!(<Runtime as GrandpaApi<Block>>::current_set_id(), 3);
+				assert!(
+					<Runtime as GrandpaApi<Block>>::generate_key_ownership_proof(
+						3,
+						GrandpaId::from(alice().grandpa.public())
+					)
+					.is_none()
+				);
+			});
+		}
+
+		#[test]
+		fn beefy_api_reports_the_pallet_validator_set_and_genesis() {
+			ext().execute_with(|| {
+				let validators = vec![beefy_id(&alice()), beefy_id(&bob())];
+				pallet_beefy::Authorities::<Runtime>::put(BoundedVec::truncate_from(
+					validators.clone(),
+				));
+				pallet_beefy::ValidatorSetId::<Runtime>::put(2);
+				pallet_beefy::GenesisBlock::<Runtime>::put(Some(5));
+
+				use sp_consensus_beefy::runtime_decl_for_beefy_api::BeefyApi;
+				let set = <Runtime as BeefyApi<Block, BeefyId>>::validator_set().expect("a set");
+				assert_eq!(set.validators(), &validators[..]);
+				assert_eq!(set.id(), 2);
+				assert_eq!(<Runtime as BeefyApi<Block, BeefyId>>::beefy_genesis(), Some(5));
+				assert!(
+					<Runtime as BeefyApi<Block, BeefyId>>::generate_key_ownership_proof(
+						2,
+						beefy_id(&alice())
+					)
+					.is_none()
+				);
+			});
+		}
+
+		#[test]
+		fn beefy_stakes_api_reports_the_current_and_queued_sets() {
+			ext().execute_with(|| {
+				pallet_beefy::Authorities::<Runtime>::put(BoundedVec::truncate_from(vec![
+					beefy_id(&alice()),
+				]));
+				pallet_beefy::NextAuthorities::<Runtime>::put(BoundedVec::truncate_from(vec![
+					beefy_id(&bob()),
+				]));
+				CurrentCommittee::<Runtime>::put(committee(7, &[alice()]));
+				QueuedCommittee::<Runtime>::put(committee(7, &[bob()]));
+
+				use midnight_primitives_beefy::runtime_decl_for_beefy_stakes_api::BeefyStakesApi;
+				assert_eq!(
+					<Runtime as BeefyStakesApi<Block, Hash, BeefyId>>::current_beefy_stakes(),
+					vec![(beefy_id(&alice()), 1)]
+				);
+				assert_eq!(
+					<Runtime as BeefyStakesApi<Block, Hash, BeefyId>>::next_beefy_stakes(),
+					Some(vec![(beefy_id(&bob()), 1)])
+				);
+			});
+		}
+
+		#[test]
+		fn beefy_mmr_api_reports_the_authority_set_proofs() {
+			ext().execute_with(|| {
+				let current =
+					BeefyAuthoritySet { id: 2, len: 1, keyset_commitment: Hash::repeat_byte(2) };
+				let next =
+					BeefyAuthoritySet { id: 3, len: 2, keyset_commitment: Hash::repeat_byte(3) };
+				pallet_beefy_mmr::BeefyAuthorities::<Runtime>::put(current.clone());
+				pallet_beefy_mmr::BeefyNextAuthorities::<Runtime>::put(next.clone());
+
+				use pallet_beefy_mmr::runtime_decl_for_beefy_mmr_api::BeefyMmrApi;
+				assert_eq!(<Runtime as BeefyMmrApi<Block, Hash>>::authority_set_proof(), current);
+				assert_eq!(<Runtime as BeefyMmrApi<Block, Hash>>::next_authority_set_proof(), next);
+			});
+		}
+
+		#[test]
+		fn session_keys_api_decodes_the_opaque_keys_in_declaration_order() {
+			ext().execute_with(|| {
+				let keys = alice();
+				let encoded = opaque::SessionKeys {
+					aura: keys.aura.public(),
+					grandpa: keys.grandpa.public(),
+					babe: keys.babe.public(),
+					beefy: beefy_id(&keys),
+				}
+				.encode();
+
+				use sp_session::runtime_decl_for_session_keys::SessionKeys;
+				assert_eq!(
+					<Runtime as SessionKeys<Block>>::decode_session_keys(encoded),
+					Some(vec![
+						(keys.aura.public().to_raw_vec(), AURA),
+						(keys.grandpa.public().to_raw_vec(), GRANDPA),
+						(keys.babe.public().to_raw_vec(), BABE),
+						(beefy_id(&keys).to_raw_vec(), BEEFY),
+					])
+				);
+			});
+		}
+
+		#[test]
+		fn session_info_api_reports_the_session_index() {
+			ext().execute_with(|| {
+				pallet_session::CurrentIndex::<Runtime>::put(5);
+
+				use midnight_primitives_session_info::runtime_decl_for_session_info_api::SessionInfoApi;
+				assert_eq!(<Runtime as SessionInfoApi<Block>>::current_session_index(), 5);
+			});
+		}
+
+		#[test]
+		fn consensus_engine_api_reports_the_engine_state() {
+			ext().execute_with(|| {
+				use midnight_primitives_consensus_engine::runtime_decl_for_consensus_engine_api::ConsensusEngineApi;
+				assert_eq!(
+					<Runtime as ConsensusEngineApi<Block>>::active_engine(),
+					ActiveEngine::Aura
+				);
+				EngineState::<Runtime>::put(State::ScheduledFlip);
+				assert_eq!(
+					<Runtime as ConsensusEngineApi<Block>>::active_engine(),
+					ActiveEngine::Aura
+				);
+				EngineState::<Runtime>::put(State::Babe);
+				assert_eq!(
+					<Runtime as ConsensusEngineApi<Block>>::active_engine(),
+					ActiveEngine::Babe
+				);
+			});
+		}
+
+		#[test]
+		fn committee_api_reports_the_committees_epochs_and_scripts() {
+			ext().execute_with(|| {
+				let current = committee(7, &[alice()]);
+				let next = committee(8, &[alice(), bob()]);
+				CurrentCommittee::<Runtime>::put(current.clone());
+				QueuedCommittee::<Runtime>::put(committee(7, &[bob()]));
+				let scripts = MainChainScripts {
+					committee_candidate_address: MainchainAddress::default(),
+					d_parameter_policy_id: PolicyId([1; 28]),
+					permissioned_candidates_policy_id: PolicyId([2; 28]),
+				};
+				MainChainScriptsConfiguration::<Runtime>::put(scripts.clone());
+
+				use sp_session_validator_management::runtime_decl_for_session_validator_management_api::SessionValidatorManagementApi;
+				macro_rules! api {
+					($method:ident) => {
+						<Runtime as SessionValidatorManagementApi<
+							Block,
+							CommitteeMemberOf,
+							AuthoritySelectionInputs,
+							ScEpochNumber,
+						>>::$method()
+					};
+				}
+				assert_eq!(api!(get_current_committee), (ScEpochNumber(7), current.committee.to_vec()));
+				assert_eq!(api!(get_next_committee), None);
+				// With nothing selected yet, the next epoch to fill follows the queued one.
+				assert_eq!(api!(get_next_unset_epoch_number), ScEpochNumber(8));
+				NextCommittee::<Runtime>::put(next.clone());
+				assert_eq!(api!(get_next_committee), Some((ScEpochNumber(8), next.committee.to_vec())));
+				assert_eq!(api!(get_next_unset_epoch_number), ScEpochNumber(9));
+				assert_eq!(api!(get_main_chain_scripts), scripts);
+			});
+		}
+	}
+
 	#[test]
 	// The effects of setting the d parameter are already well-tested, so we will not check that. We will check the selection to ensure that it simply respects d-parameter overriding
 	fn check_overridden_d_param_committee_rotation() {
@@ -2186,7 +2810,7 @@ mod tests {
 		expected_authorities: &[TestKeys],
 	) -> PostDispatchInfo {
 		let epoch = Sidechain::current_epoch_number();
-		let slot = *pallet_aura::CurrentSlot::<Test>::get();
+		let slot = *ConsensusEngine::current_slot();
 		println!(
 			"(slot {slot}, epoch {epoch}) Setting {} authorities for next epoch",
 			expected_authorities.len()
@@ -2395,23 +3019,36 @@ mod tests {
 			});
 		}
 
-		// The armed and scheduled states still produce AURA blocks, so the slot must
-		// keep coming from AURA until the flip actually completes.
+		// The scheduled state still produces AURA blocks, so the slot must keep
+		// coming from AURA until the flip actually completes.
 		#[test]
 		fn slot_is_read_from_aura_storage_while_the_flip_is_pending() {
-			for state in [State::ArmedBabe, State::ScheduledFlip] {
-				sp_io::TestExternalities::default().execute_with(|| {
-					EngineState::<Runtime>::put(state);
-					pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
-					pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::ScheduledFlip);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
 
-					assert_eq!(
-						get_sidechain_status().slot,
-						ScSlotNumber(STALE_AURA_SLOT),
-						"unexpected slot in state {state:?}"
-					);
-				});
-			}
+				assert_eq!(get_sidechain_status().slot, ScSlotNumber(STALE_AURA_SLOT));
+			});
+		}
+	}
+
+	/// Nodes distrust the AURA/BABE pre-runtime digest layout of blocks executed by runtimes from
+	/// before `pallet-consensus-engine`, identified by `spec_version` via the `pallet-version`
+	/// digest, so this runtime must not report a version below the activation one.
+	mod consensus_engine_activation {
+		use crate::VERSION;
+		use midnight_primitives_consensus_engine::ACTIVATION_SPEC_VERSION;
+
+		#[test]
+		fn this_runtime_is_at_or_past_the_activation_version() {
+			const {
+				assert!(
+					VERSION.spec_version >= ACTIVATION_SPEC_VERSION,
+					"pallet-consensus-engine is in this runtime, so its spec_version must not be \
+					 below ACTIVATION_SPEC_VERSION",
+				)
+			};
 		}
 	}
 
@@ -2522,13 +3159,41 @@ mod tests {
 					pallet_safe_mode::Call::force_exit {}
 				)));
 
-				// The next block admits normal (non-inherent) extrinsics again.
+				// The next block admits normal (non-inherent) extrinsics again. Like any
+				// AURA block it must carry the AURA pre-digest followed by the matching BABE
+				// `SecondaryPlain` one, which `pallet-consensus-engine` checks against the
+				// AURA authority set (`authority_index == slot % n`).
+				let authority = sp_consensus_aura::sr25519::AuthorityId::from(
+					sp_core::sr25519::Public::from_raw([1u8; 32]),
+				);
+				pallet_aura::Authorities::<Runtime>::put(frame_support::BoundedVec::truncate_from(
+					vec![authority],
+				));
+				let slot = sp_consensus_slots::Slot::from(1);
+				let digest = sp_runtime::Digest {
+					logs: vec![
+						sp_runtime::DigestItem::PreRuntime(
+							sp_consensus_aura::AURA_ENGINE_ID,
+							slot.encode(),
+						),
+						sp_runtime::DigestItem::PreRuntime(
+							sp_consensus_babe::BABE_ENGINE_ID,
+							sp_consensus_babe::digests::PreDigest::SecondaryPlain(
+								sp_consensus_babe::digests::SecondaryPlainPreDigest {
+									authority_index: 0,
+									slot,
+								},
+							)
+							.encode(),
+						),
+					],
+				};
 				let header = crate::Header::new(
 					2,
 					Default::default(),
 					Default::default(),
 					frame_system::Pallet::<Runtime>::parent_hash(),
-					Default::default(),
+					digest,
 				);
 				assert_eq!(
 					Executive::initialize_block(&header),

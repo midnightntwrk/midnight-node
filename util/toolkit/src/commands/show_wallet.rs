@@ -92,8 +92,7 @@ pub async fn execute(
 
 	if let Some((seed, scheme)) = resolved_seed {
 		let schemes = WalletSchemes::from([(seed.clone(), scheme)]);
-		// Guard: ECDSA NIGHT identities are only representable from ledger 9.
-		ensure_ecdsa_supported(source_blocks.ledger_version(), &schemes)?;
+		ensure_ecdsa_supported(source_blocks.tip_ledger_version(), &schemes)?;
 		let fork_ctx = build_fork_aware_context_cached_with_schemes(
 			&[seed.clone()],
 			&source_blocks,

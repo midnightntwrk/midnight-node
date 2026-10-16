@@ -89,28 +89,15 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      # `act` shares the host docker socket, so this step's
-      # `docker image prune --all --force` would nuke the developer's local
-      # image cache (including the locally-cached mock-authorities image we
-      # rely on as the pull fallback). Skip it on act runs.
-      # Also skip on self-hosted — the action's targets (e.g. /usr/share/swift,
-      # android SDK) aren't on our self-hosted runner.
-      - name: Free disk space
-        if: env.ACT != 'true' && runner.environment != 'self-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          swap-storage: false
-
-      - name: Disk space after cleanup
-        run: df -h /
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Backgrounded so later steps don't wait on it. Skipped under `act`
+      # (shares the host) and on self-hosted runners, which lack the
+      # GitHub-hosted preinstalls it deletes.
+      - name: Free disk space
+        if: env.ACT != 'true' && runner.environment != 'self-hosted'
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -455,6 +442,11 @@ jobs:
           curl -sf -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","id":1,"method":"state_getRuntimeVersion","params":[]}' \
             "$RPC_URL" | jq '{specName: .result.specName, specVersion: .result.specVersion}'
+
+      # Before teardown: `down -v` frees the volumes that would explain a full disk.
+      - name: Disk space
+        if: failure()
+        run: df -h /
 
       - name: Dump compose logs
         if: always()

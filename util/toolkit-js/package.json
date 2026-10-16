@@ -20,7 +20,7 @@
     "start": "dist/bin.js",
     "test": "npm run build:variants && npm run build-compact && vitest run",
     "test:compat": "./scripts/test-all-compactc.sh",
-    "build-compact": "(shx --negate test -d ./test/contract/managed && npm run compact || true)",
+    "build-compact": "(test ! -d ./test/contract/managed && npm run compact)",
     "compact": "fetch-compactc && npm run compact-counter && npm run compact-mint && npm run compact-tokens-minter",
     "compact-counter": "run-compactc ./test/contract/counter.compact ./test/contract/managed/counter",
     "compact-tokens-minter": "run-compactc ./test/minter_contract/minter.compact ./test/minter_contract/out",
@@ -31,13 +31,13 @@
     "@midnight-ntwrk/node-toolkit-compact-0.30.0": "^0.1.0",
     "@midnight-ntwrk/node-toolkit-compact-0.31.0": "^0.1.0",
     "@midnight-ntwrk/node-toolkit-compact-0.33.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.34.0": "^0.1.0",
     "effect": "^3.21.0"
   },
   "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "4.0.4",
     "@tsconfig/node24": "24.0.0",
     "@types/node": "24.13.3",
-    "shx": "0.4.0",
     "turbo": "2.9.14",
     "typescript": "5.9.3",
     "vitest": "4.1.11"

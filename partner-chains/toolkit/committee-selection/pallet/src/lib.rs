@@ -158,10 +158,9 @@ pub mod pallet {
 	/// The committee whose keys form the effective validator set of the current session, i.e.
 	/// the committee actively producing blocks.
 	///
-	/// Its `epoch` field is stamped at promotion from [`QueuedCommittee`] with the committee's
-	/// selection epoch + 1: the epoch it was due to start serving. In normal operation this is
-	/// the epoch the committee is actively serving in; after skipped epochs (catch-up), the
-	/// recovered committees keep unique, consecutive labels in recovery order.
+	/// Its `epoch` field is stamped at promotion from [`QueuedCommittee`] with the epoch it
+	/// starts serving in: the committee's selection epoch + 1, or the current epoch when the
+	/// rotation comes late (after epochs without blocks). It never lags the current epoch.
 	#[pallet::storage]
 	pub type CurrentCommittee<T: Config> = StorageValue<
 		_,
@@ -174,7 +173,10 @@ pub mod pallet {
 	/// rotation.
 	///
 	/// This is the anchor of the selection pipeline: the inherent selects [`NextCommittee`] for
-	/// the epoch following this committee's epoch.
+	/// the epoch following this committee's epoch, and [`pallet_session::ShouldEndSession`]
+	/// rotates when the current epoch is past it. Its `epoch` is the committee's selection
+	/// epoch, lifted to the current epoch when the rotation came late, so that skipped epochs
+	/// are caught up in a single rotation (see [`Pallet::rotate_committee_to_next_epoch`]).
 	#[pallet::storage]
 	pub type QueuedCommittee<T: Config> = StorageValue<
 		_,
@@ -452,13 +454,23 @@ pub mod pallet {
 
 		/// Rotates the committees one step: [QueuedCommittee] — whose keys the session machinery
 		/// applies as the effective validator set at this rotation — is promoted to
-		/// [CurrentCommittee] with its epoch stamped to the epoch it was due to start serving
-		/// (its selection epoch + 1), and, if [NextCommittee] is defined, its value is moved to
-		/// [QueuedCommittee]. Returns the value taken from [NextCommittee].
+		/// [CurrentCommittee] with its epoch stamped to the epoch it starts serving in, and, if
+		/// [NextCommittee] is defined, its value is moved to [QueuedCommittee]. Returns the value
+		/// taken from [NextCommittee].
+		///
+		/// A late rotation — one or more epochs passed without a block — is caught up here in one
+		/// step: the committee moved to [QueuedCommittee] is stamped with the *current* epoch
+		/// rather than its selection epoch, so the inherent selects the following committee for
+		/// the epoch after the current one and [`pallet_session::ShouldEndSession`] does not ask
+		/// for another rotation until the next epoch. The alternative, one rotation per block
+		/// until the stamps catch up, announces several BABE epoch changes within one BABE epoch,
+		/// which the BABE client rejects — and with it every later block. The committee that was
+		/// due in a skipped epoch serves the current one instead; nothing is dropped.
 		pub fn rotate_committee_to_next_epoch() -> Option<Vec<T::CommitteeMember>> {
 			Self::promote_queued_committee_to_current();
 
-			let next_committee = NextCommittee::<T>::take()?;
+			let mut next_committee = NextCommittee::<T>::take()?;
+			next_committee.epoch = Self::caught_up_epoch(next_committee.epoch);
 
 			QueuedCommittee::<T>::put(next_committee.clone());
 
@@ -477,14 +489,15 @@ pub mod pallet {
 		/// The previously queued committee has just become the effective validator set, so it is
 		/// still promoted to [CurrentCommittee]. [QueuedCommittee] keeps those same members —
 		/// matching `pallet_session` keeping the previous authorities when `new_session` returns
-		/// [`None`] — and is stamped with the skipped committee's epoch so
-		/// [`pallet_session::ShouldEndSession`] does not retry every block.
+		/// [`None`] — and is stamped with the skipped committee's epoch (lifted to the current
+		/// epoch if the rotation came late) so [`pallet_session::ShouldEndSession`] does not
+		/// retry every block.
 		pub(crate) fn skip_unregistered_next_committee() {
 			Self::promote_queued_committee_to_current();
 
 			if let Some(next_committee) = NextCommittee::<T>::take() {
 				QueuedCommittee::<T>::mutate(|queued| {
-					queued.epoch = next_committee.epoch;
+					queued.epoch = Self::caught_up_epoch(next_committee.epoch);
 				});
 				warn!(
 					"Skipped committee for epoch {}: session key registration failed; keeping previous validator set",
@@ -506,8 +519,25 @@ pub mod pallet {
 		/// all onto the current epoch.
 		fn promote_queued_committee_to_current() {
 			let mut promoted = QueuedCommittee::<T>::get();
-			promoted.epoch = promoted.epoch + One::one();
+			// The epoch it starts serving in: the one after its selection epoch, or the current
+			// epoch when the rotation comes late.
+			promoted.epoch = Self::caught_up_epoch(promoted.epoch + One::one());
 			CurrentCommittee::<T>::put(promoted);
+		}
+
+		/// `epoch`, lifted to the current epoch if it is behind it (a late rotation), logging
+		/// the catch-up.
+		fn caught_up_epoch(epoch: T::ScEpochNumber) -> T::ScEpochNumber {
+			let current_epoch = T::current_epoch_number();
+			if epoch < current_epoch {
+				warn!(
+					"Late committee rotation: committee stamped for epoch {epoch} is applied in \
+					 epoch {current_epoch}; skipped epochs are caught up in this single rotation"
+				);
+				current_epoch
+			} else {
+				epoch
+			}
 		}
 
 		/// Returns main chain scripts.

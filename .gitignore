@@ -114,3 +114,6 @@ toolkit-image.tar
 /buck-out/
 /third-party/.cargo/
 /wasm-deps/.cargo/
+
+# component-rn-draft working dir
+.rn-drafts/
