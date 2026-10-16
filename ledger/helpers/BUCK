@@ -19,8 +19,8 @@ rust_library(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
-        "LEDGER_8_VERSION": "8.1.2",
-        "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.5, rev: 6abe9b16f1a2a9965a3317729cd72fd1f7fbfc03)",
+        "LEDGER_8_VERSION": "8.1.3",
+        "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.6, rev: 48a978d7fc4342e8f5536eb95f47139477e1a0e8)",
     },
     deps = [
         "root//third-party:anyhow",
@@ -79,8 +79,8 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
-        "LEDGER_8_VERSION": "8.1.2",
-        "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.5, rev: 6abe9b16f1a2a9965a3317729cd72fd1f7fbfc03)",
+        "LEDGER_8_VERSION": "8.1.3",
+        "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.6, rev: 48a978d7fc4342e8f5536eb95f47139477e1a0e8)",
         "MIDNIGHT_PP": ".zk-params",
     },
     deps = [

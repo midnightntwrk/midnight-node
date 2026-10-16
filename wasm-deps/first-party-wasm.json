@@ -57,7 +57,6 @@
    "midnight-primitives-federated-authority-observation",
    "midnight-primitives-session-info",
    "pallet-aura",
-   "pallet-authorship",
    "pallet-babe",
    "pallet-beefy",
    "pallet-beefy-mmr",
@@ -240,7 +239,8 @@
    "scale-info",
    "sp-consensus-aura",
    "sp-consensus-babe",
-   "sp-consensus-slots"
+   "sp-consensus-slots",
+   "sp-runtime"
   ],
   "features": []
  },

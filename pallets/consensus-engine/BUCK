@@ -50,6 +50,7 @@ rust_library(
             "root//third-party:sp-consensus-aura",
             "root//third-party:sp-consensus-babe",
             "root//third-party:sp-consensus-slots",
+            "root//third-party:sp-runtime",
         ],
     }),
     visibility = ["PUBLIC"],

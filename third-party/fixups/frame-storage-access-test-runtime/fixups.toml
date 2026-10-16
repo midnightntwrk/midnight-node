@@ -4,13 +4,14 @@
 # `#[cfg(feature="std")] include!(concat!(env!("OUT_DIR"),"/wasm_binary.rs"))`,
 # resolved from the srcs-tree root (rustc CWD), so OUT_DIR must equal the
 # crate's manifest dir (where the overlay lands the stub).
-# CAVEAT: OUT_DIR must equal this crate's CARGO_MANIFEST_DIR (where the overlay
-# lands the stub), and that path's `polkadot-sdk-<hash>` prefix is reindeer's
-# git-fetch cell hash, which tracks the polkadot-sdk pin. On a bump, grep the
-# live hash from third-party/BUCK (`grep -oE 'polkadot-sdk-[a-f0-9]+\.git'`) and
-# update it here BEFORE re-buckifying — a stale hash points include!(OUT_DIR/
-# wasm_binary.rs) at a dir the overlay never populated (build error: "couldn't
-# read .../wasm_binary.rs"). Last drift: stable2606 bump, see docs/buck2-notes.md.
+# OUT_DIR must equal this crate's CARGO_MANIFEST_DIR (where the overlay lands the
+# stub), so include!(OUT_DIR/wasm_binary.rs) resolves. The path's
+# `polkadot-sdk-<hash>` prefix is reindeer's git-fetch cell hash and moves on
+# every polkadot-sdk bump, but CARGO_MANIFEST_DIR (reindeer-computed) moves with
+# it while this static hash does not. The hash below is therefore only a seed:
+# scripts/buck2/normalize-wasm-stub-outdir.py (the last regen step) rewrites it in
+# the generated BUCK to match CARGO_MANIFEST_DIR, so a stale value here is
+# self-healed rather than a build break. See docs/buck2-notes.md.
 buildscript.run = false
 cargo_env = true
 overlay = "overlay"

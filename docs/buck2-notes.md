@@ -72,10 +72,23 @@ crates.io and the polkadot-sdk git tag, which `cargo vendor` rejects.
 ```sh
 cargo metadata --format-version 1 > /tmp/meta.json
 scripts/buck2/gen-third-party.py /tmp/meta.json third-party/Cargo.toml
+rm -f third-party/Cargo.lock                             # reseed from workspace lock
 reindeer --third-party-dir third-party buckify
+scripts/buck2/normalize-wasm-stub-outdir.py third-party/BUCK  # see below
+scripts/buck2/gen-wasm-deps.sh                           # no_std wasm universe
+reindeer --third-party-dir wasm-deps buckify
 scripts/buck2/gen-first-party.py /tmp/meta.json          # all members
 buck2 build root//node:midnight-node                     # library
 ```
+
+`normalize-wasm-stub-outdir.py` enforces `OUT_DIR == CARGO_MANIFEST_DIR` for the
+two WASM-stub crates (`frame-storage-access-test-runtime`, `substrate-test-
+runtime`): their fixups overlay a `WASM_BINARY = None` stub into the manifest dir
+and set OUT_DIR there, but the `polkadot-sdk-<hash>` git-fetch cell hash in that
+path moves on every polkadot-sdk bump while the static fixup hash doesn't — so
+re-pinning by hand drifts (it did, twice). The normalizer rewrites the generated
+BUCK so the hash self-heals. Idempotent; a no-op run exits 0. Reindeer must be
+the `gilescope/reindeer` fork (see below), not `~/.cargo/bin/reindeer`.
 
 ### `gen-third-party.py`
 

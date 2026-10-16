@@ -34,6 +34,7 @@ rust_library(
             "root//wasm-deps:sp-version",
         ],
         "DEFAULT": [
+            "root//third-party:frame-benchmarking",
             "root//third-party:frame-support",
             "root//third-party:frame-system",
             "root//third-party:parity-scale-codec",
@@ -67,6 +68,7 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "",
     },
     deps = [
+        "root//third-party:frame-benchmarking",
         "root//third-party:frame-support",
         "root//third-party:frame-system",
         "root//third-party:parity-scale-codec",
