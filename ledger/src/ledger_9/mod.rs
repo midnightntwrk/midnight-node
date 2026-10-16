@@ -363,8 +363,8 @@ where
 	}
 
 	/// `net_intra_tx_utxos` nets out UTXOs created and spent within the tx before the
-	/// integrity check (audit H-4, NODE-342). It is consensus state, chosen by host-fn
-	/// version: earlier runtimes recorded such txs as failed and must replay that way.
+	/// integrity check. It is consensus state, chosen by host-fn version: earlier runtimes
+	/// recorded such txs as failed and must replay that way.
 	#[allow(clippy::too_many_arguments)]
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
@@ -1274,9 +1274,8 @@ where
 		Ok(verified_tx)
 	}
 
-	/// Validation-time half of the audit H-4 fix: the UTXO integrity check `apply_transaction`
-	/// runs, applied to the guaranteed dry run so a transaction it would reject after apply
-	/// never enters a block.
+	/// The UTXO integrity check `apply_transaction` runs, applied to the guaranteed dry run
+	/// so a transaction it would reject after apply never enters a block.
 	fn check_guaranteed_utxos(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
@@ -2200,13 +2199,13 @@ mod tests {
 		assert_ne!(decoded, transaction_too_large());
 	}
 
-	/// Audit H-4 (NODE-342) end to end. Intent 1 creates an unshielded UTXO in its
-	/// guaranteed section and intent 2 spends it in its own; the ledger applies that in
-	/// segment order. Through the host-fn versions that net (`apply_transaction` v3,
-	/// `validate_transaction` and `validate_guaranteed_execution` v2), mempool validation,
-	/// `pre_dispatch` and apply all accept it, and the UTXO is reported as neither created
-	/// nor spent. Through the older versions the audited verdict stands: validation admits
-	/// it and apply rejects it.
+	/// End to end: intent 1 creates an unshielded UTXO in its guaranteed section and intent 2
+	/// spends it in its own; the ledger applies that in segment order. Through the host-fn
+	/// versions that net (`apply_transaction` v3, `validate_transaction` and
+	/// `validate_guaranteed_execution` v2), mempool validation, `pre_dispatch` and apply all
+	/// accept it, and the UTXO is reported as neither created nor spent. Through the older
+	/// versions the old verdict stands: validation admits it and apply rejects it, so the tx
+	/// sits in a block without paying.
 	#[test]
 	fn a_tx_spending_a_utxo_it_created_passes_validation_and_apply() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {

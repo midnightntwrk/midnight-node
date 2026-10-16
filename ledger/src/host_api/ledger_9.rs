@@ -248,8 +248,8 @@ pub trait Ledger9Bridge {
 	 * state trie, so blocks from pre-upgrade runtimes must keep replaying through v1.
 	 *
 	 * v3 also nets out a UTXO created and spent within the tx before the integrity check,
-	 * where v1 and v2 reject the tx (audit H-4, NODE-342). Runtimes bound to v2 keep that
-	 * verdict on replay; a node lacking v3 cannot import blocks from a runtime that needs it.
+	 * where v1 and v2 reject the tx. Runtimes bound to v2 keep that verdict on replay; a node
+	 * lacking v3 cannot import blocks from a runtime that needs it.
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -406,8 +406,8 @@ pub trait Ledger9Bridge {
 	/*
 	 * validate_transaction()
 	 *
-	 * v2 also runs the guaranteed-segment UTXO integrity check (audit H-4, NODE-342), so a
-	 * tx `apply_transaction` v3 would reject never enters the pool.
+	 * v2 also runs the guaranteed-segment UTXO integrity check, so a tx
+	 * `apply_transaction` v3 would reject never enters the pool.
 	 */
 	fn validate_transaction(
 		&mut self,
@@ -456,9 +456,9 @@ pub trait Ledger9Bridge {
 	 * Validates that the guaranteed part of a transaction will succeed.
 	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
 	 *
-	 * v2 also runs the guaranteed-segment UTXO integrity check (audit H-4, NODE-342). A
-	 * pre_dispatch rejection decides block validity, so this is consensus state like
-	 * `apply_transaction` v3, and runtimes bound to v1 keep their verdict on replay.
+	 * v2 also runs the guaranteed-segment UTXO integrity check. A pre_dispatch rejection
+	 * decides block validity, so this is consensus state like `apply_transaction` v3, and
+	 * runtimes bound to v1 keep their verdict on replay.
 	 */
 	fn validate_guaranteed_execution(
 		&mut self,
