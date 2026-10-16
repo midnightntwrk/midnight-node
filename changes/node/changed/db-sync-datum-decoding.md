@@ -11,6 +11,3 @@ instead of failing the whole query. The same change is applied to the
 partner-chains db-sync candidate data source.
 
 Candidate registration `tx_inputs` are now returned in a deterministic order.
-
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/50
-Issue: https://github.com/shieldedtech/audit-taran/issues/53

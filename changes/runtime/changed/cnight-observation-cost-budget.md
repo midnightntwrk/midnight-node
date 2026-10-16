@@ -45,8 +45,3 @@ The `process_tokens` inherent no longer rejects batches by UTXO count
 All nodes, not only validators, must run a node binary with the matching inherent
 data provider change before this runtime is enacted; older binaries stop importing
 blocks at the upgrade.
-
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/45
-Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/599
-Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/590
-Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/568

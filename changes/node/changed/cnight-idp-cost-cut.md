@@ -32,8 +32,3 @@ inherent it built before, byte for byte, so this binary can be rolled out
 gradually and mixed with older binaries until the runtime upgrade. After the
 upgrade, older binaries build a different inherent and must not remain in the
 validator set.
-
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/45
-Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/599
-Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/590
-Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/568

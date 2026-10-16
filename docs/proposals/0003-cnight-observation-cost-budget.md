@@ -3,14 +3,10 @@
 Status: implemented (IDP budgeting, per-UTXO cursor, pallet fallback). Option C
 below is a follow-up.
 
-Addresses
-[SSE-599](https://github.com/shieldedtech/shielded-security-engineering/issues/599)
-(inherent can exceed the ledger's per-block `bytes_written` limit → permanent halt) and
-[SSE-590](https://github.com/shieldedtech/shielded-security-engineering/issues/590)
-(Dijkstra invalidates the `200 × 64` count bounds), and the halt and silent-skip
-findings of
-[SSE-568](https://github.com/shieldedtech/shielded-security-engineering/issues/568)
-(GHSA-3hqm-3v42-34gv).
+Addresses two issues: the inherent can exceed the ledger's per-block
+`bytes_written` limit (→ permanent halt), and Dijkstra invalidates the `200 × 64`
+count bounds. It also closes the related chain-halt and silent-skip paths in cNIGHT
+observation.
 
 ## 1. The one defect behind both issues
 
@@ -121,7 +117,7 @@ orders rows inside a transaction differently from the observation order, so noth
 at or past the frontier is admitted; the next batch fetches it afresh. The frontier is
 taken from raw rows, not decoded UTXOs: rows that do not decode (bad datums, holders
 without a stake credential) cost nothing, so a cap filled by them would otherwise let
-the batch reach the tip past rows never fetched (SSE-568 finding A). The frontier
+the batch reach the tip past rows never fetched. The frontier
 advances unless one Cardano transaction holds more than `full_gas / utxo_gas`
 (~27 000) rows of one kind, which Cardano's transaction size rules out.
 
@@ -220,7 +216,7 @@ ascending: rejection would turn a node bug into a Mandatory-inherent halt, and
   may fall inside a transaction; every UTXO is priced by weight; the frontier and the
   offset skip; a 427-spend transaction drains over three blocks under runtime-shaped
   prices, every UTXO exactly once and every batch within budget.
-- E2E (`tests/e2e/tests/cnight/observation.rs`): SSE-599's `churn_halt`
+- E2E (`tests/e2e/tests/cnight/observation.rs`): the halt reproduction
   inverted — register once, mint one more create than a block affords over
   several Cardano transactions, assert block height keeps advancing and every
   create's dust entry lands.
