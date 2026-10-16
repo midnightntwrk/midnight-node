@@ -45,10 +45,22 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+/// Calls `Bridge::$call` for the storage layout `$ext` runs on.
+#[cfg(feature = "std")]
+macro_rules! bridge {
+	($ext:expr, $call:ident($($arg:expr),* $(,)?)) => {
+		if is_unified($ext) {
+			Bridge::<Signature, DbUnified>::$call($($arg),*)
+		} else {
+			Bridge::<Signature, DbSeparate>::$call($($arg),*)
+		}
+	};
+}
+
 /// Shared body of every `apply_transaction` host-function version.
 #[cfg(feature = "std")]
 fn apply_transaction_inner(
-	externalities: &mut dyn Externalities,
+	ext: &mut dyn Externalities,
 	state_key: &[u8],
 	tx: &[u8],
 	block_context: BlockContext,
@@ -56,9 +68,10 @@ fn apply_transaction_inner(
 	filter_only_failed_segments: bool,
 	net_intra_tx_utxos: bool,
 ) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
-	if is_unified(externalities) {
-		Bridge::<Signature, DbUnified>::apply_transaction(
-			externalities,
+	bridge!(
+		ext,
+		apply_transaction(
+			ext,
 			state_key,
 			tx,
 			block_context,
@@ -67,88 +80,58 @@ fn apply_transaction_inner(
 			runtime_version,
 			/* skew_tblock */ false,
 		)
-	} else {
-		Bridge::<Signature, DbSeparate>::apply_transaction(
-			externalities,
-			state_key,
-			tx,
-			block_context,
-			filter_only_failed_segments,
-			net_intra_tx_utxos,
-			runtime_version,
-			/* skew_tblock */ false,
-		)
-	}
+	)
 }
 
 /// Shared body of both `validate_transaction` host-function versions.
 #[cfg(feature = "std")]
 fn validate_transaction_inner(
-	externalities: &mut dyn Externalities,
+	ext: &mut dyn Externalities,
 	state_key: &[u8],
 	tx: &[u8],
 	block_context: BlockContext,
 	runtime_version: u32,
 	max_weight: u64,
-	check_guaranteed_utxos: bool,
+	check_utxos: bool,
 ) -> Result<Hash, LedgerApiError> {
-	let (hash, _) = if is_unified(externalities) {
-		Bridge::<Signature, DbUnified>::validate_transaction(
-			externalities,
+	bridge!(
+		ext,
+		validate_transaction(
+			ext,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
 			max_weight,
 			/* get_tx_details */ false,
-			check_guaranteed_utxos,
-		)?
-	} else {
-		Bridge::<Signature, DbSeparate>::validate_transaction(
-			externalities,
-			state_key,
-			tx,
-			block_context,
-			runtime_version,
-			max_weight,
-			/* get_tx_details */ false,
-			check_guaranteed_utxos,
-		)?
-	};
-	Ok(hash)
+			check_utxos,
+		)
+	)
+	.map(|(hash, _)| hash)
 }
 
 /// Shared body of both `validate_guaranteed_execution` host-function versions.
 #[cfg(feature = "std")]
 fn validate_guaranteed_execution_inner(
-	externalities: &mut dyn Externalities,
+	ext: &mut dyn Externalities,
 	state_key: &[u8],
 	tx: &[u8],
 	block_context: BlockContext,
 	runtime_version: u32,
-	check_guaranteed_utxos: bool,
+	check_utxos: bool,
 ) -> Result<(), LedgerApiError> {
-	if is_unified(externalities) {
-		Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
-			externalities,
+	bridge!(
+		ext,
+		validate_guaranteed_execution(
+			ext,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
 			/* skew_tblock */ false,
-			check_guaranteed_utxos,
+			check_utxos,
 		)
-	} else {
-		Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
-			externalities,
-			state_key,
-			tx,
-			block_context,
-			runtime_version,
-			/* skew_tblock */ false,
-			check_guaranteed_utxos,
-		)
-	}
+	)
 }
 
 #[cfg(feature = "std")]
@@ -442,7 +425,7 @@ pub trait Ledger9Bridge {
 			block_context,
 			runtime_version,
 			max_weight,
-			/* check_guaranteed_utxos */ false,
+			/* check_utxos */ false,
 		)
 	}
 
@@ -463,7 +446,7 @@ pub trait Ledger9Bridge {
 			block_context,
 			runtime_version,
 			max_weight,
-			/* check_guaranteed_utxos */ true,
+			/* check_utxos */ true,
 		)
 	}
 
@@ -490,7 +473,7 @@ pub trait Ledger9Bridge {
 			tx,
 			block_context,
 			runtime_version,
-			/* check_guaranteed_utxos */ false,
+			/* check_utxos */ false,
 		)
 	}
 
@@ -508,7 +491,7 @@ pub trait Ledger9Bridge {
 			tx,
 			block_context,
 			runtime_version,
-			/* check_guaranteed_utxos */ true,
+			/* check_utxos */ true,
 		)
 	}
 

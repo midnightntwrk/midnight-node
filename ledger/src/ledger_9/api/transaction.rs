@@ -167,13 +167,10 @@ impl UnshieldedUtxos {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
-	/// The apply-time integrity check, scoped to what validation can see.
-	///
-	/// Mempool validation and `pre_dispatch` dry-run only the guaranteed segment, so
-	/// `state` holds that segment's effects and nothing of the fallible ones. Checking
-	/// the guaranteed segment there means a transaction the node would reject after
-	/// apply never reaches a block, where it would occupy weight without paying. The
-	/// caller gates it by host-fn version.
+	/// The apply-time integrity check, limited to the guaranteed segment: mempool
+	/// validation and `pre_dispatch` dry-run only that, so `state` holds no fallible
+	/// effects. Run there, a tx apply would reject never reaches a block to sit in
+	/// fee-free. The caller gates it by host-fn version.
 	pub fn check_guaranteed_integrity<D: DB>(
 		mut self,
 		initial_utxos_size: usize,
@@ -750,50 +747,39 @@ mod tests {
 		assert!(utxos.check_utxos_response_integrity(initial, &ledger.state).is_err());
 	}
 
+	/// [`UnshieldedUtxos::check_guaranteed_integrity`] of `(segment, utxo)` pairs, at most
+	/// one per segment per side, against genesis, which holds none of them.
+	fn guaranteed_integrity(
+		outputs: &[(u16, UtxoInfo)],
+		inputs: &[(u16, UtxoInfo)],
+	) -> Result<(), LedgerApiError> {
+		let ledger = prepare_ledger();
+		let side = |p: &[(_, UtxoInfo)]| p.iter().map(|(s, u)| (*s, vec![u.clone()])).collect();
+		let utxos = UnshieldedUtxos { outputs: side(outputs), inputs: side(inputs) };
+		utxos.check_guaranteed_integrity(ledger.state.utxo.utxos.size(), &ledger.state)
+	}
+
 	/// Validation dry-runs only the guaranteed segment, so the check it runs must
 	/// ignore fallible segments, which the state it is given has not applied.
 	#[test]
 	fn guaranteed_integrity_ignores_fallible_segments() {
-		let ledger = prepare_ledger();
-		let initial = ledger.state.utxo.utxos.size();
-
-		let mut utxos = UnshieldedUtxos::default();
-		utxos.outputs.insert(1, vec![utxo_info(0xAA, 0)]);
-		utxos.inputs.insert(2, vec![utxo_info(0xBB, 0)]);
-
-		utxos
-			.check_guaranteed_integrity(initial, &ledger.state)
-			.expect("fallible segments are not checked");
+		let checked = guaranteed_integrity(&[(1, utxo_info(0xAA, 0))], &[(2, utxo_info(0xBB, 0))]);
+		checked.expect("fallible segments are not checked");
 	}
 
 	/// A UTXO created and spent within the guaranteed segment (the audited PoC) nets
 	/// out at validation exactly as it does at apply.
 	#[test]
 	fn guaranteed_integrity_nets_within_the_segment() {
-		let ledger = prepare_ledger();
-		let initial = ledger.state.utxo.utxos.size();
 		let y = utxo_info(0xAA, 0);
-
-		let mut utxos = UnshieldedUtxos::default();
-		utxos.outputs.insert(0, vec![y.clone()]);
-		utxos.inputs.insert(0, vec![y]);
-
-		utxos
-			.check_guaranteed_integrity(initial, &ledger.state)
-			.expect("netted to nothing");
+		guaranteed_integrity(&[(0, y.clone())], &[(0, y)]).expect("netted to nothing");
 	}
 
 	/// A guaranteed output the dry-run state does not hold is rejected before the
 	/// transaction can reach a block.
 	#[test]
 	fn guaranteed_integrity_rejects_a_missing_output() {
-		let ledger = prepare_ledger();
-		let initial = ledger.state.utxo.utxos.size();
-
-		let mut utxos = UnshieldedUtxos::default();
-		utxos.outputs.insert(0, vec![utxo_info(0xAA, 0)]);
-
-		assert!(utxos.check_guaranteed_integrity(initial, &ledger.state).is_err());
+		assert!(guaranteed_integrity(&[(0, utxo_info(0xAA, 0))], &[]).is_err());
 	}
 }
 // grcov-excl-stop
