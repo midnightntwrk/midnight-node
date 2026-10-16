@@ -34,6 +34,11 @@ interface RestoreSnapshotOptions {
    * passing 1 strips it so chains/ lands at the data dir root.
    */
   stripComponents?: number;
+  /**
+   * Runs on the extracted snapshot before it is replicated, e.g. to convert it
+   * once so every data dir receives the same prepared state.
+   */
+  prepare?: (unpackedRoot: string) => void;
 }
 
 export async function restoreSnapshot(
@@ -46,6 +51,7 @@ export async function restoreSnapshot(
     env,
     permissive,
     stripComponents,
+    prepare,
   } = options;
   if (!snapshotUri) return [];
 
@@ -91,6 +97,13 @@ export async function restoreSnapshot(
         `No data directories discovered in compose file ${resolvedCompose}; skipping snapshot restore`,
       );
       return [];
+    }
+
+    if (prepare) {
+      if (permissive) {
+        makeWritableForContainerUser([unpackedRoot]);
+      }
+      prepare(unpackedRoot);
     }
 
     replicateSnapshot(unpackedRoot, targetDirs);

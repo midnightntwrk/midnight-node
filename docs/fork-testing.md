@@ -82,9 +82,10 @@ authority data is rejected.
 The restore flow:
 
 1. Downloads and extracts the archive.
-2. Replicates the extracted node state into every compose `data/` mount for the
-   selected network.
-3. Runs `mock-authorities convert` over the restored state.
+2. Runs `mock-authorities convert --node-dir` once over the extracted state.
+3. Replicates the converted state into every compose `data/` mount for the
+   selected network, validators and non-validators (e.g. `boot-node`) alike,
+   so every peer starts from the same fork block.
 4. Generates a compose override that mounts the generated validator seeds and
    switches the main-chain follower into mock mode. When `--num-validators` is
    provided, the override also disables validator services above that count.
