@@ -13,22 +13,14 @@ platform(
     visibility = ["PUBLIC"],
 )
 
-# Distributed-CI execution platforms (gilescope/rebuck2). Default local builds
-# keep `.buckconfig`'s prelude platform; the rebuck driver writes a
-# `.buckconfig.local` selecting one of these:
-#   re-cache — remote action cache on, execution local (cache-only rebuck).
-#   re-exec  — every action dispatched to rebuck2 workers (local_enabled=False).
+# CI execution platform: local execution + a remote action CACHE (bazel-remote).
+# `.buckconfig`'s prelude platform is the default; `.buckconfig.local` (written by
+# buck2/Earthfile +CONFIG) selects this so misses run locally and upload to the
+# cache. (The gilescope/rebuck2 distributed `re-exec` platform was retired with
+# the mesh workflow - self-hosted runners don't need the fan-out.)
 re_cache_execution_platform(
     name = "re-cache",
     cpu_configuration = host_configuration.cpu,
-    os_configuration = host_configuration.os,
-    visibility = ["PUBLIC"],
-)
-
-re_cache_execution_platform(
-    name = "re-exec",
-    cpu_configuration = host_configuration.cpu,
-    local_enabled = False,
     os_configuration = host_configuration.os,
     visibility = ["PUBLIC"],
 )

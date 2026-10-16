@@ -1,0 +1,62 @@
+name: "buck2"
+
+# buck2 build + test on the self-hosted pool, under a bazel-remote action cache
+# (Earthfile +buck2-ci -> buck2/Earthfile). Replaces the retired rebuck2
+# distributed workflow (buck2-distributed.yml): the self-hosted runners have the
+# muscle the free runners lacked, so no mesh is needed - just buck2 + a cache
+# that persists across runs on the buildkitd.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [giles-buck2-build]
+    paths:
+      - "**/BUCK"
+      - ".buckconfig"
+      - "platforms/**"
+      - "toolchains/**"
+      - "third-party/**"
+      - "wasm-deps/**"
+      - "tools/wasm-compress/**"
+      - "scripts/buck2/**"
+      - "buck2/**"
+      - "Earthfile"
+      - ".earth/config.selfhosted.yml"
+      - ".github/workflows/buck2.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  buck2:
+    name: buck2 build + test
+    runs-on: [self-hosted, "tier:large"]
+    # A cold buck2 build of the whole tree on one runner is long; the persistent
+    # action cache makes later runs warm. Generous cap, but fail rather than hang.
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      # A v0.8.19 earth-buildkitd, separate from the fleet's v0.8.16 earthly one
+      # (see .earth/config.selfhosted.yml): same hash as midnightntwrk/season, so
+      # the two buck2 tenants share a daemon and neither restarts the other's.
+      EARTH_CONFIG: ${{ github.workspace }}/.earth/config.selfhosted.yml
+    steps:
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        with:
+          version: v0.8.19
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # --RUN_ID re-executes the buck2 steps every run (Earthfile +buck2-ci); the
+      # bazel-remote action cache, not Earthly's layer cache, is what keeps them warm.
+      # --BUCK2_CACHE_ADDR: a host-shared bazel-remote if the fleet provides one,
+      # else buck2-ci.sh starts a per-job sidecar on the CACHE mount.
+      - name: buck2 build + test
+        env:
+          BUCK2_CACHE_ADDR: ${{ vars.BUCK2_CACHE_ADDR }}
+        run: |
+          earth --ci +buck2-ci --RUN_ID="$GITHUB_RUN_ID" --BUCK2_CACHE_ADDR="${BUCK2_CACHE_ADDR:-}"
