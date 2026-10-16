@@ -1,0 +1,25 @@
+# Commits the release matrix must contain (checks/security.sh). Tab separated: component
+# (node-l8, node-l9 or indexer), commit, reference, description. SEC_REQUIRED_COMMITS_FILE
+# adds another file.
+node-l8	c0252640	node#1932	tblock correction for historical blocks
+node-l8	b09b64b3	node#1965	tblock correction narrowed to the first transaction of a block
+node-l8	aee7bb4a	node#2002	tblock correction gated on the on-chain runtime
+node-l8	e6eb5464	node-1.0.300 notes	gdb removed from the node and toolkit images
+node-l8	40643af0	node-1.0.300 notes	toolkit replays runtime 1000300
+node-l8	8081e4b27	node#2238	ledger 8 moved to 8.1.3
+node-l8	5defaf5de	node#2238	ledger-8 blocks: the first transaction retried at the block's own tblock
+node-l9	1e9a5a538	node#2042	well-formed tblock check gated on the runtime
+node-l9	1f3435c20	node#2080	per-pallet allow-listed system transaction executor
+node-l9	cf7ab5e39	node#2039	cNIGHT observation query limits
+node-l9	411db4e47	node#2030	cNIGHT sync improvements reverted
+node-l9	dc8f0bd61	node#2064	cNIGHT UTxO over-fetch reduction reverted
+node-l9	e3291b9e0	node#2105	transaction rejection reasons logged with Display
+node-l9	d39992981	node#2206	gdb removed from the node and toolkit images
+node-l9	3d4d81958	node#2181	toolkit accepts ecdsa: seeds on chains forked from ledger 8
+node-l9	7955f18ec	node#2216	ledger-8 blocks: the first transaction retried at the block's own tblock
+indexer	4edac32d	indexer#1444	ledger 8 -> 9 hard fork and DUST migration
+indexer	4565e5ba	indexer#1371	tblock bumped from the parent block
+indexer	951630ed	indexer#1455	unbounded epoch range queries rejected
+indexer	cf506b8c	indexer#1440	concurrent ledger-DB queries bounded
+indexer	5e0f6b77	indexer#1443	node-identical stateless cost for block fullness
+indexer	7fd4ecba	indexer#1610	the first regular transaction accepted at either tblock
