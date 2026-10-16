@@ -58,7 +58,7 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
-/// Shared body of both `apply_transaction` host-function versions.
+/// Shared body of every `apply_transaction` host-function version.
 #[cfg(feature = "std")]
 fn apply_transaction_inner(
 	externalities: &mut dyn Externalities,
@@ -67,6 +67,7 @@ fn apply_transaction_inner(
 	block_context: BlockContext,
 	runtime_version: u32,
 	filter_only_failed_segments: bool,
+	net_intra_tx_utxos: bool,
 ) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
 	if is_unified(externalities) {
 		Bridge::<Signature, DbUnified>::apply_transaction(
@@ -75,6 +76,7 @@ fn apply_transaction_inner(
 			tx,
 			block_context,
 			filter_only_failed_segments,
+			net_intra_tx_utxos,
 			runtime_version,
 			/* skew_tblock */ false,
 		)
@@ -85,8 +87,79 @@ fn apply_transaction_inner(
 			tx,
 			block_context,
 			filter_only_failed_segments,
+			net_intra_tx_utxos,
 			runtime_version,
 			/* skew_tblock */ false,
+		)
+	}
+}
+
+/// Shared body of both `validate_transaction` host-function versions.
+#[cfg(feature = "std")]
+fn validate_transaction_inner(
+	externalities: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	max_weight: u64,
+	check_guaranteed_utxos: bool,
+) -> Result<Hash, LedgerApiError> {
+	let (hash, _) = if is_unified(externalities) {
+		Bridge::<Signature, DbUnified>::validate_transaction(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* get_tx_details */ false,
+			check_guaranteed_utxos,
+		)?
+	} else {
+		Bridge::<Signature, DbSeparate>::validate_transaction(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* get_tx_details */ false,
+			check_guaranteed_utxos,
+		)?
+	};
+	Ok(hash)
+}
+
+/// Shared body of both `validate_guaranteed_execution` host-function versions.
+#[cfg(feature = "std")]
+fn validate_guaranteed_execution_inner(
+	externalities: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	check_guaranteed_utxos: bool,
+) -> Result<(), LedgerApiError> {
+	if is_unified(externalities) {
+		Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* skew_tblock */ false,
+			check_guaranteed_utxos,
+		)
+	} else {
+		Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* skew_tblock */ false,
+			check_guaranteed_utxos,
 		)
 	}
 }
@@ -203,6 +276,10 @@ pub trait Ledger9Bridge {
 	 * v1 withholds contract events for every segment a partial-success transaction attempted,
 	 * succeeding ones included; v2 withholds only the failed ones. `System::Events` is in the
 	 * state trie, so blocks from pre-upgrade runtimes must keep replaying through v1.
+	 *
+	 * v3 also nets out a UTXO created and spent within the tx before the integrity check,
+	 * where v1 and v2 reject the tx (audit H-4, NODE-342). Runtimes bound to v2 keep that
+	 * verdict on replay; a node lacking v3 cannot import blocks from a runtime that needs it.
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -218,6 +295,7 @@ pub trait Ledger9Bridge {
 			block_context,
 			runtime_version,
 			/* filter_only_failed_segments */ false,
+			/* net_intra_tx_utxos */ false,
 		)
 	}
 
@@ -236,6 +314,26 @@ pub trait Ledger9Bridge {
 			block_context,
 			runtime_version,
 			/* filter_only_failed_segments */ true,
+			/* net_intra_tx_utxos */ false,
+		)
+	}
+
+	#[version(3)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ true,
+			/* net_intra_tx_utxos */ true,
 		)
 	}
 
@@ -337,6 +435,9 @@ pub trait Ledger9Bridge {
 
 	/*
 	 * validate_transaction()
+	 *
+	 * v2 also runs the guaranteed-segment UTXO integrity check (audit H-4, NODE-342), so a
+	 * tx `apply_transaction` v3 would reject never enters the pool.
 	 */
 	fn validate_transaction(
 		&mut self,
@@ -347,29 +448,36 @@ pub trait Ledger9Bridge {
 		// The Runtime's max weight as of now
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
-		let (hash, _) = if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::validate_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				max_weight,
-				false,
-			)?
-		} else {
-			Bridge::<Signature, DbSeparate>::validate_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				max_weight,
-				false,
-			)?
-		};
+		validate_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* check_guaranteed_utxos */ false,
+		)
+	}
 
-		Ok(hash)
+	#[version(2)]
+	fn validate_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
+		validate_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* check_guaranteed_utxos */ true,
+		)
 	}
 
 	/*
@@ -377,6 +485,10 @@ pub trait Ledger9Bridge {
 	 *
 	 * Validates that the guaranteed part of a transaction will succeed.
 	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 *
+	 * v2 also runs the guaranteed-segment UTXO integrity check (audit H-4, NODE-342). A
+	 * pre_dispatch rejection decides block validity, so this is consensus state like
+	 * `apply_transaction` v3, and runtimes bound to v1 keep their verdict on replay.
 	 */
 	fn validate_guaranteed_execution(
 		&mut self,
@@ -385,25 +497,32 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				/* skew_tblock */ false,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				/* skew_tblock */ false,
-			)
-		}
+		validate_guaranteed_execution_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* check_guaranteed_utxos */ false,
+		)
+	}
+
+	#[version(2)]
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
+		validate_guaranteed_execution_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* check_guaranteed_utxos */ true,
+		)
 	}
 
 	/*

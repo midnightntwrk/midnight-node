@@ -25,11 +25,10 @@ use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use coin_structure_local::coin::{NIGHT, UnshieldedTokenType, UserAddress};
-use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash,
+		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash, LedgerState,
 		OutputInstructionUnshielded, ProofKind, ProofMarker, SignatureKind, StandardTransaction,
 		Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
@@ -37,7 +36,7 @@ use mn_ledger_local::{
 use std::borrow::Borrow;
 
 use super::{
-	ContractAddress, DeserializableError, LOG_TARGET, Ledger, LedgerParameters, SerializableError,
+	ContractAddress, DeserializableError, LOG_TARGET, LedgerParameters, SerializableError,
 	TransactionIdentifier, TransactionInvalid,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
@@ -168,7 +167,26 @@ impl UnshieldedUtxos {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
-	/// Checks the integrity of UTXO events against the final Ledger state.
+	/// The apply-time integrity check, scoped to what validation can see.
+	///
+	/// Mempool validation and `pre_dispatch` dry-run only the guaranteed segment, so
+	/// `state` holds that segment's effects and nothing of the fallible ones. Checking
+	/// the guaranteed segment there means a transaction the node would reject after
+	/// apply never reaches a block, where it would occupy weight without paying. The
+	/// caller gates it by host-fn version.
+	pub fn check_guaranteed_integrity<D: DB>(
+		mut self,
+		initial_utxos_size: usize,
+		state: &LedgerState<D>,
+	) -> Result<(), LedgerApiError> {
+		self.outputs.retain(|segment, _| *segment == 0);
+		self.inputs.retain(|segment, _| *segment == 0);
+		self.net_intra_tx_utxos();
+		self.check_utxos_response_integrity(initial_utxos_size, state).map(|_| ())
+	}
+
+	/// Checks the integrity of UTXO events against `state`: the final state at apply,
+	/// the post-guaranteed state at validation.
 	///
 	/// This function verifies that:
 	/// - All returned UTXO outputs are present in the updated Ledger state.
@@ -181,7 +199,7 @@ impl UnshieldedUtxos {
 	pub fn check_utxos_response_integrity<D: DB>(
 		&self,
 		initial_utxos_size: usize,
-		state: &Sp<Ledger<D>, D>,
+		state: &LedgerState<D>,
 	) -> Result<(Vec<UtxoInfo>, Vec<UtxoInfo>), LedgerApiError> {
 		// Check returned utxo outputs exist in the state
 		for utxo_info in self.outputs.values().flatten() {
@@ -193,7 +211,7 @@ impl UnshieldedUtxos {
 				output_no: utxo_info.output_no,
 			};
 
-			if !state.state.utxo.utxos.contains_key(&utxo) {
+			if !state.utxo.utxos.contains_key(&utxo) {
 				log::error!(target: LOG_TARGET, "Returned UTXO output {utxo:?} should be present in the Ledger state");
 				return Err(LedgerApiError::HostApiError);
 			}
@@ -209,14 +227,14 @@ impl UnshieldedUtxos {
 				output_no: utxo_info.output_no,
 			};
 
-			if state.state.utxo.utxos.contains_key(&utxo) {
+			if state.utxo.utxos.contains_key(&utxo) {
 				log::error!(target: LOG_TARGET, "Returned UTXO input {utxo:?} should NOT be present in the Ledger state");
 				return Err(LedgerApiError::HostApiError);
 			}
 		}
 
 		// Check no other utxos have been added or removed from the final Ledger state
-		let final_utxos_size = state.state.utxo.utxos.size();
+		let final_utxos_size = state.utxo.utxos.size();
 
 		let utxo_outputs = self.outputs();
 		let num_additions = utxo_outputs.len();
@@ -454,12 +472,13 @@ pub enum Operation {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::ledger_9::{BlockContext, CRATE_NAME, TransactionSignature as Signature, api};
+	use crate::ledger_9::{
+		BlockContext, CRATE_NAME, TransactionSignature as Signature, api, api::Ledger,
+	};
 	use ledger_storage_local::DefaultDB;
 	use midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
-	use mn_ledger_local::structure::LedgerState;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
 	const MALFORMED: &[u8] = include_bytes!("../../../test-data/malformed_tx.json");
@@ -692,14 +711,14 @@ mod tests {
 		utxos.inputs.insert(2, vec![y.clone()]);
 
 		assert!(
-			utxos.check_utxos_response_integrity(initial, &Sp::new(ledger.clone())).is_err(),
+			utxos.check_utxos_response_integrity(initial, &ledger.state).is_err(),
 			"un-netted: Y is reported as created but is absent from the final state"
 		);
 
 		utxos.net_intra_tx_utxos();
 		assert!(utxos.outputs().is_empty() && utxos.inputs().is_empty());
 		let (outputs, inputs) = utxos
-			.check_utxos_response_integrity(initial, &Sp::new(ledger))
+			.check_utxos_response_integrity(initial, &ledger.state)
 			.expect("netted: nothing left to verify");
 		assert!(outputs.is_empty() && inputs.is_empty());
 	}
@@ -728,7 +747,53 @@ mod tests {
 		utxos.outputs.insert(0, vec![utxo_info(0xAA, 0)]);
 
 		utxos.net_intra_tx_utxos();
-		assert!(utxos.check_utxos_response_integrity(initial, &Sp::new(ledger)).is_err());
+		assert!(utxos.check_utxos_response_integrity(initial, &ledger.state).is_err());
+	}
+
+	/// Validation dry-runs only the guaranteed segment, so the check it runs must
+	/// ignore fallible segments, which the state it is given has not applied.
+	#[test]
+	fn guaranteed_integrity_ignores_fallible_segments() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(1, vec![utxo_info(0xAA, 0)]);
+		utxos.inputs.insert(2, vec![utxo_info(0xBB, 0)]);
+
+		utxos
+			.check_guaranteed_integrity(initial, &ledger.state)
+			.expect("fallible segments are not checked");
+	}
+
+	/// A UTXO created and spent within the guaranteed segment (the audited PoC) nets
+	/// out at validation exactly as it does at apply.
+	#[test]
+	fn guaranteed_integrity_nets_within_the_segment() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+		let y = utxo_info(0xAA, 0);
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(0, vec![y.clone()]);
+		utxos.inputs.insert(0, vec![y]);
+
+		utxos
+			.check_guaranteed_integrity(initial, &ledger.state)
+			.expect("netted to nothing");
+	}
+
+	/// A guaranteed output the dry-run state does not hold is rejected before the
+	/// transaction can reach a block.
+	#[test]
+	fn guaranteed_integrity_rejects_a_missing_output() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(0, vec![utxo_info(0xAA, 0)]);
+
+		assert!(utxos.check_guaranteed_integrity(initial, &ledger.state).is_err());
 	}
 }
 // grcov-excl-stop
