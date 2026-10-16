@@ -980,6 +980,31 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
+  storage-separation-migration-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: storage_separation migration E2E
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: storage-separation-migration-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
   chainspec-validation:
     permissions:
       contents: read

@@ -47,6 +47,10 @@ startup-qanet-e2e NODE_IMAGE:
   @scripts/tests/startup-qanet-e2e.sh {{NODE_IMAGE}}
   @echo "✅ Startup E2E test in qanet mode completed successfully."
 
+storage-separation-migration-e2e NODE_IMAGE:
+  @scripts/tests/storage-separation-migration-e2e.sh {{NODE_IMAGE}}
+  @echo "✅ storage_separation migration E2E test completed successfully."
+
 genesis-wallets-undeployed-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/genesis-wallets-undeployed-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Genesis wallet E2E test in undeployed network completed successfully."
