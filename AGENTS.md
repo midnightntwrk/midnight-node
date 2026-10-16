@@ -182,6 +182,8 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 - When creating PRs, add the `bot:ai-assisted` label
   - Remove the deprecated `ai-assisted` label (without `bot:` prefix) if found
 
+**Comment pass before pushing:** Before every `git push`, run the comment-cleanup skill (`.claude/skills/comment-cleanup/SKILL.md`) over the unpushed commits.
+
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
 - This applies especially to change files - if you need to add a PR link after creating the PR, make a separate commit
