@@ -295,6 +295,11 @@ fn run(plan: &[Epoch], flip_epoch: usize) -> Flip {
 		assert!(count(Kind::BabeOpening) >= 3, "{seen:?}");
 		assert!(count(Kind::Babe) > 1, "{seen:?}");
 		assert_eq!(parent.engine, ActiveEngine::Babe);
+
+		// `pallet_session::historical` records no session roots: the session manager is not
+		// wrapped in `NoteHistoricalRoot`, so no observer can obtain a key-ownership proof, and
+		// the consensus APIs answer `None` for them.
+		assert!(pallet_session::historical::HistoricalSessions::<Test>::iter().next().is_none());
 		flip.expect("the flip committed")
 	})
 }
