@@ -9,7 +9,6 @@ Historic-block queries (old runtimes, v1 host functions) are bounded by the
 hardcoded ledger defaults, which equal the on-chain limits at every historic
 block.
 
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/53
 
 The transaction-pool admission path is bounded by the same on-chain limit.
 `validate_transaction` and `validate_guaranteed_execution` load the ledger before

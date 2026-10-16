@@ -2753,7 +2753,7 @@ const MAX_OUTPUTS_PER_LARGE_TX: usize = 140;
 const FUNDING_PER_TX: u64 = 1_500_000 * MAX_OUTPUTS_PER_TX as u64 + 30_000_000;
 
 /// One more registered create than a whole block affords must not fail the Mandatory
-/// inherent (SSE-599): the batch is cut by ledger cost, the rest lands in later
+/// inherent: the batch is cut by ledger cost, the rest lands in later
 /// blocks, and every create's dust entry still lands.
 #[e2e_test]
 async fn oversized_cnight_batch_keeps_producing_blocks() {

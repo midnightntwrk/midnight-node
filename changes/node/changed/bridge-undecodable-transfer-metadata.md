@@ -25,5 +25,3 @@ would have become reachable the moment governance called `set_main_chain_scripts
 
 Covered by `metadata_nested_too_deeply_to_decode_yields_an_invalid_recipient`, run
 against both Db-Sync schema variants and both the cached and uncached data sources.
-
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/61
