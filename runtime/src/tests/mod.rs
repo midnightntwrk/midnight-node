@@ -826,12 +826,14 @@ mod failed_mbm_recovery {
 		frame_system::Pallet::<Runtime>::can_set_code(&[], false)
 	}
 
-	/// Fail migration 0 (cnight v1 `MigrateV0ToV1`) by planting an active cursor whose
-	/// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size cursor
-	/// type -> `InvalidCursor` -> `FailedMigrationHandler`, then step the MBMs the way
-	/// Executive does after inherent application. Leaves the chain in safe mode with
-	/// the cursor unstuck.
+	/// Fail migration 0 by registering a single mocked migration that fails on its first
+	/// step (the runtime's MBM list is the mocked one under `cfg(test)`), planting an
+	/// active cursor on it, then stepping the MBMs the way Executive does after inherent
+	/// application: `Failed` -> `FailedMigrationHandler`. Leaves the chain in safe mode
+	/// with the cursor unstuck.
 	fn fail_mbm_and_enter_safe_mode() {
+		use pallet_migrations::mock_helpers::{MockedMigrationKind, MockedMigrations};
+
 		// Mark the runtime as already upgraded so a later `initialize_block` doesn't
 		// onboard the MBMs again.
 		frame_system::LastRuntimeUpgrade::<Runtime>::put(
@@ -840,10 +842,11 @@ mod failed_mbm_recovery {
 		frame_system::Pallet::<Runtime>::set_block_number(1);
 		assert!(can_set_code().into_result().is_ok());
 
+		MockedMigrations::set(vec![(MockedMigrationKind::FailAfter, 0)]);
 		assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
 			crate::RuntimeOrigin::root(),
 			0,
-			Some(vec![0u8].try_into().unwrap()),
+			None,
 			Some(1),
 		));
 		assert!(ongoing());
