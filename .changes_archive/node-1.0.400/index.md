@@ -1,1 +1,7 @@
-Git tag: [runtime-{{ runtime_tag }}](https://github.com/midnightntwrk/midnight-node/tree/runtime-{{ runtime_tag }})
+Git tag: [node-1.0.400](https://github.com/midnightntwrk/midnight-node/tree/node-1.0.400)
+
+## Components
+
+- 📦 `node-1.0.400`
+- 🧰 `toolkit-1.0.400`
+- ⚙️ `runtime-1.0.300`
