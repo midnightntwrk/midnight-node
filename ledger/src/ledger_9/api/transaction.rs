@@ -696,7 +696,8 @@ mod tests {
 		}
 	}
 
-	/// Audit H-4 (NODE-342): Y is in neither the initial nor the final state.
+	/// A later intent spends Y, created by an earlier one: Y is in neither the initial nor
+	/// the final state.
 	#[test]
 	fn integrity_check_nets_a_utxo_created_and_spent_in_the_same_tx() {
 		let ledger = prepare_ledger();
@@ -767,8 +768,8 @@ mod tests {
 		checked.expect("fallible segments are not checked");
 	}
 
-	/// A UTXO created and spent within the guaranteed segment (the audited PoC) nets
-	/// out at validation exactly as it does at apply.
+	/// A UTXO created and spent within the guaranteed segment nets out at validation
+	/// exactly as it does at apply.
 	#[test]
 	fn guaranteed_integrity_nets_within_the_segment() {
 		let y = utxo_info(0xAA, 0);
