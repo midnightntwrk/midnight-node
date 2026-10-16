@@ -47,7 +47,7 @@ pub use frame_support::{
 	},
 };
 pub use frame_system::Call as SystemCall;
-use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
+use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
@@ -803,7 +803,7 @@ impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -855,7 +855,7 @@ impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -2362,6 +2362,98 @@ mod tests {
 				// And governance can lift safe mode once the fixed runtime is applied.
 				assert_ok!(crate::SafeMode::force_exit(crate::RuntimeOrigin::root()));
 				assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), None);
+			});
+		}
+	}
+
+	mod membership_reset_origin {
+		use crate::{
+			AccountId, Executive, Runtime, RuntimeCall, RuntimeOrigin, UncheckedExtrinsic,
+		};
+		use frame_support::assert_ok;
+		use pallet_membership::{Instance1, Instance2};
+		use sidechain_domain::PolicyId;
+		use sp_runtime::{BuildStorage, DispatchError, traits::Dispatchable};
+
+		fn account(b: u8) -> AccountId {
+			AccountId::from([b; 32])
+		}
+
+		fn assert_bodies(expected: &[AccountId]) {
+			assert_eq!(
+				pallet_membership::Members::<Runtime, Instance1>::get().as_slice(),
+				expected
+			);
+			assert_eq!(
+				pallet_membership::Members::<Runtime, Instance2>::get().as_slice(),
+				expected
+			);
+			assert_eq!(pallet_collective::Members::<Runtime, Instance1>::get(), expected);
+			assert_eq!(pallet_collective::Members::<Runtime, Instance2>::get(), expected);
+		}
+
+		fn new_test_ext(members: &[AccountId]) -> sp_io::TestExternalities {
+			let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+			pallet_membership::GenesisConfig::<Runtime, Instance1> {
+				members: members.to_vec().try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+			pallet_membership::GenesisConfig::<Runtime, Instance2> {
+				members: members.to_vec().try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+			t.into()
+		}
+
+		/// A block author can append any call to a block as a bare extrinsic, which
+		/// dispatches with the `None` origin. Neither membership body may accept it.
+		#[test]
+		fn bare_membership_reset_is_rejected() {
+			let honest = [account(1), account(2)];
+			new_test_ext(&honest).execute_with(|| {
+				frame_system::Pallet::<Runtime>::initialize(
+					&1,
+					&Default::default(),
+					&Default::default(),
+				);
+				let members = vec![account(0xAA)];
+				for call in [
+					RuntimeCall::CouncilMembership(pallet_membership::Call::reset_members {
+						members: members.clone(),
+					}),
+					RuntimeCall::TechnicalCommitteeMembership(
+						pallet_membership::Call::reset_members { members: members.clone() },
+					),
+				] {
+					assert_eq!(
+						Executive::apply_extrinsic(UncheckedExtrinsic::new_bare(call)),
+						Ok(Err(DispatchError::BadOrigin))
+					);
+				}
+				assert_bodies(&honest);
+			});
+		}
+
+		#[test]
+		fn observed_membership_reset_updates_both_bodies() {
+			new_test_ext(&[account(1), account(2)]).execute_with(|| {
+				let observed = [account(3), account(4)];
+				let authorities: Vec<_> =
+					[3u8, 4].iter().map(|&b| (account(b), PolicyId([b; 28]))).collect();
+				assert_ok!(
+					RuntimeCall::FederatedAuthorityObservation(
+						pallet_federated_authority_observation::Call::reset_members {
+							council_authorities: authorities.clone().try_into().unwrap(),
+							technical_committee_authorities: authorities.try_into().unwrap(),
+						}
+					)
+					.dispatch(RuntimeOrigin::none())
+				);
+				assert_bodies(&observed);
 			});
 		}
 	}
