@@ -5,7 +5,7 @@ services:
     # shared volume once at startup; using the multi-arch busybox image lets Docker
     # fetch the right arch automatically, so no per-arch binaries are vendored.
     container_name: busybox-init
-    image: busybox:1.35.0-uclibc
+    image: busybox:1.35.0-uclibc@sha256:e5877866756a3714cd11309f0b34e7c2c62406fdbfcae39c96beabb5dd4005a7
     platform: ${ARCHITECTURE}
     command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
     security_opt:
@@ -189,7 +189,7 @@ services:
       -c ssl=on
       -c ssl_cert_file=/etc/ssl/postgres/server.crt
       -c ssl_key_file=/etc/ssl/postgres/server.key
-      -c max_connections=120
+      -c max_connections=400
       -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -262,6 +262,7 @@ services:
       APP__INFRA__STORAGE__PASSWORD: "${APP__INFRA__STORAGE__PASSWORD}"
       APP__INFRA__PUB_SUB__URL: "nats:4222"
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+      APP__APPLICATION__NETWORK_ID: "local"
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/wallet-indexer/running"]
       start_interval: "5s"
@@ -292,6 +293,7 @@ services:
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
+      APP__APPLICATION__NETWORK_ID: "local"
 
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/indexer-api/running"]
@@ -348,8 +350,13 @@ services:
       - shared-volume:/shared
       - midnight-node-1-data:/data
       - ./configurations/midnight-nodes/midnight-node-1/entrypoint.sh:/entrypoint.sh
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      RPC_PORT: "9933"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -379,8 +386,13 @@ services:
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-2/keystore:/keystore
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      RPC_PORT: "9934"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -410,11 +422,17 @@ services:
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-3/seeds:/seeds
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       AURA_SEED_FILE: "/seeds/aura.seed"
       CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
       GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
+      BEEFY_SEED_FILE: "/seeds/beefy.seed"
+      RPC_PORT: "9935"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -445,8 +463,13 @@ services:
       - ./configurations/midnight-nodes/midnight-node-4/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-4/keystore:/keystore
       - ./configurations/midnight-nodes/midnight-node-4/network:/network
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      RPC_PORT: "9936"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -477,8 +500,13 @@ services:
       - ./configurations/midnight-nodes/midnight-node-5/entrypoint.sh:/entrypoint.sh
       - ./configurations/midnight-nodes/midnight-node-5/keystore:/keystore
       - ./configurations/midnight-nodes/midnight-node-5/network:/network
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      RPC_PORT: "9944"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -494,8 +522,52 @@ services:
           cpus: ${CPU_MIDNIGHT_NODE:-}
           memory: ${MEM_MIDNIGHT_NODE:-}
 
-  midnight-setup:
-    container_name: midnight-setup
+  # Non-validator archive node: follows the chain, keeps full state and block
+  # history for RPC inspection. Not labeled io.midnight.role: validator, so
+  # finality verification and upgrade tooling skip it.
+  midnight-node-6:
+    container_name: midnight-node-6
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - midnight-node-6-data:/data
+      - shared-volume:/shared
+      - ./configurations/midnight-nodes/midnight-node-6/entrypoint.sh:/entrypoint.sh
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      RPC_PORT: "9945"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: archive
+      io.midnight.rpc-port: "9945"
+    ports:
+      - "30338:30338"
+      - "9945:9945"
+      - "9620:9620"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
+  # Chain preparation is three one-shot jobs so each step runs on the image that owns
+  # it: config patching and build-spec need the node binary, genesis needs the toolkit
+  # binary. The genesis step exists because the committed res/genesis/*.mn blobs are
+  # serialized for the ledger version of the checkout (`midnight:ledger-state[vNN]`),
+  # so feeding them to an older ${MIDNIGHT_NODE_IMAGE} fails to deserialize; building
+  # genesis here with the matching ${TOOLKIT_IMAGE} keeps any released image bootable.
+  midnight-setup-configs:
+    container_name: midnight-setup-configs
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -504,6 +576,42 @@ services:
       contract-compiler:
         condition: service_completed_successfully
       mint-cnight-supply:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    volumes:
+      - ./configurations/midnight-setup/:/midnight-setup/
+      - ../../../../res/:/res/
+      - ./runtime-values:/runtime-values
+    environment:
+      - OGMIOS_PORT=${OGMIOS_PORT}
+    entrypoint: ["/bin/bash", "/midnight-setup/patch-configs.sh"]
+
+  midnight-setup-genesis:
+    container_name: midnight-setup-genesis
+    image: ${TOOLKIT_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup-configs:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    volumes:
+      - shared-volume:/shared
+      - ./configurations/midnight-setup/:/midnight-setup/
+      - ../../../../res/:/res/:ro
+    entrypoint: ["/bin/bash", "/midnight-setup/generate-genesis.sh"]
+
+  midnight-setup:
+    container_name: midnight-setup
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      ogmios:
+        condition: service_healthy
+      midnight-setup-genesis:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
@@ -522,6 +630,10 @@ services:
       - ./configurations/midnight-nodes/:/midnight-nodes/
       - ../../../../res/:/res/
       - ./runtime-values:/runtime-values
+    # Keys older node images need that this checkout no longer defines; a no-op
+    # for images built from it. See configurations/legacy-node-cfg.env.
+    env_file:
+      - ./configurations/legacy-node-cfg.env
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
@@ -581,6 +693,7 @@ volumes:
   midnight-node-3-data: {}
   midnight-node-4-data: {}
   midnight-node-5-data: {}
+  midnight-node-6-data: {}
   nats-data: {}
   postgres-indexer-data: {}
   ogmios-data: {}

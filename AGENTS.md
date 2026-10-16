@@ -235,6 +235,18 @@ When writing or modifying GitHub Actions workflows (`.github/workflows/*.yml`):
 - **`if:` conditions on steps are safe** — `if: inputs.skip-node != true` is evaluated by the Actions runner, not interpolated into shell.
 - **Job-level `if:` on reusable workflow calls uses string comparison** — use `github.event.inputs.skip-node != 'true'` (quoted string), not boolean.
 - **Use `!cancelled() && !failure()`** on downstream jobs to let them run when upstream jobs are skipped (but not when failed).
+- **Never hardcode a publish target.** This repo gets cloned into private forks, and a
+  fork must never push images, packages, or releases into `midnightntwrk`'s registries. Take the registry and image name from the repo — derive
+  from `github.repository_owner` / `${GITHUB_REPOSITORY#*/}`, or an Earthfile
+  `ARG --global` overridden via `EARTHLY_BUILD_ARGS` (`.envrc` already forwards
+  `GHCR_REGISTRY`, `GHCR_REGISTRY_PUBLIC`, `IMAGE_REPO` and `IMAGE_SOURCE_URL` to every
+  earthly invocation that sources it) — and gate anything that publishes outside the
+  current repo's own namespace (the public `ghcr.io/midnightntwrk` mirror, Docker Hub,
+  GitHub releases) on `if: github.repository == 'midnightntwrk/midnight-node'`.
+  Defaults must be the *safe* ones, so a new fork leaks nothing before anyone configures it.
+- **When you touch a workflow, check what it publishes.** If a change adds or moves a push,
+  ask whether a fork running it would write somewhere it does not own. `grep` your diff for
+  `ghcr.io`, `docker push`, `SAVE IMAGE --push`, `gh release`, and `subject-name:`.
 
 ## License Header
 

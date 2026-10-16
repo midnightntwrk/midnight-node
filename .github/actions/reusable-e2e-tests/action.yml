@@ -37,17 +37,19 @@ runs:
       run: |
         echo "🧪 Running E2E command: $JUST_COMMAND"
 
-        # Resolve the just invocation (which positional images each command wants),
-        # then run it through retry-transient-ci.sh: retries only on a known-transient
-        # CI failure (buildkit recycled by a concurrent job, or a dropped ghcr push);
-        # a genuine E2E failure fails fast.
         case "$JUST_COMMAND" in
           indexer-api-e2e)
-            args=(just "$JUST_COMMAND") ;;
+            just "$JUST_COMMAND"
+            ;;
+          startup-dev-e2e | startup-qanet-e2e)
+            just "$JUST_COMMAND" "$NODE_IMAGE"
+            ;;
           toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-tokens-minter-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
-            args=(just "$JUST_COMMAND" "$NODE_IMAGE" "$TOOLKIT_IMAGE") ;;
+            just "$JUST_COMMAND" "$NODE_IMAGE" "$TOOLKIT_IMAGE"
+            ;;
           *)
-            args=(just "$JUST_COMMAND" "$NODE_IMAGE") ;;
+            just "$JUST_COMMAND" "$NODE_IMAGE"
+            ;;
         esac
 
         ./.github/scripts/retry-transient-ci.sh "${args[@]}"

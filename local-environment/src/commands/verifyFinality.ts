@@ -17,6 +17,10 @@ import { globSync } from "glob";
 
 import { NodeEndpoint, waitForFinality } from "../lib/waitForFinality";
 import { discoverValidatorEndpoints } from "../lib/discoverValidators";
+import {
+  mockOverridePath,
+  readMockValidatorSelection,
+} from "../lib/mockComposeOverride";
 
 export interface VerifyFinalityOptions {
   targetBlock: number;
@@ -49,7 +53,25 @@ function discoverFromNetwork(network: string | undefined): NodeEndpoint[] {
       "verify-finality requires either a <network> argument or one or more --node overrides",
     );
   }
-  return discoverValidatorEndpoints(resolveComposeFile(network));
+  const composeFile = resolveComposeFile(network);
+  const endpoints = discoverValidatorEndpoints(composeFile);
+  if (network === "local-env") return endpoints;
+
+  const selection = readMockValidatorSelection(
+    mockOverridePath(path.dirname(composeFile), network),
+  );
+  if (!selection) return endpoints;
+
+  const activeServices = new Set(selection.validatorServices);
+  const selectedEndpoints = endpoints.filter((endpoint) =>
+    activeServices.has(endpoint.name),
+  );
+  if (selectedEndpoints.length !== selection.numValidators) {
+    throw new Error(
+      `Generated mock override selects ${selection.numValidators} validators, but only ${selectedEndpoints.length} matching validator services were discovered in ${composeFile}`,
+    );
+  }
+  return selectedEndpoints;
 }
 
 function resolveComposeFile(network: string): string {

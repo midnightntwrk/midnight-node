@@ -23,14 +23,18 @@ use frame_support::{
 	traits::{ConstBool, ConstU64},
 };
 use frame_system::EnsureRoot;
+use midnight_primitives_consensus_engine::ActiveEngine;
 use sidechain_domain::*;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_consensus_babe::BABE_ENGINE_ID;
+use sp_consensus_babe::digests::{PreDigest as BabePreDigest, SecondaryPlainPreDigest};
+use sp_consensus_slots::Slot;
 use sp_core::crypto::CryptoType;
 use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
 	BuildStorage, Digest, DigestItem, impl_opaque_keys,
-	key_types::{AURA, GRANDPA},
+	key_types::{AURA, BABE, BEEFY, GRANDPA},
 	traits::{BlakeTwo256, ConvertInto, IdentityLookup, OpaqueKeys},
 };
 use std::cmp::max;
@@ -60,6 +64,8 @@ type Block = frame_system::mocking::MockBlock<Test>;
 )]
 pub struct AccountKeys {
 	pub aura: [u8; 32],
+	pub babe: [u8; 32],
+	pub beefy: ecdsa::Public,
 	pub grandpa: [u8; 32],
 }
 
@@ -67,22 +73,36 @@ impl AccountKeys {
 	pub fn from_seed(seed: &str) -> AccountKeys {
 		let mut aura = format!("aura-{seed}").into_bytes();
 		aura.resize(32, 0);
+		let mut babe = format!("babe-{seed}").into_bytes();
+		babe.resize(32, 0);
 		let mut grandpa = format!("grandpa-{seed}").into_bytes();
 		grandpa.resize(32, 0);
-		AccountKeys { aura: aura.try_into().unwrap(), grandpa: grandpa.try_into().unwrap() }
+		let beefy = ecdsa::Pair::from_string(seed, None)
+			.expect("static values are valid; qed")
+			.public();
+		AccountKeys {
+			aura: aura.try_into().unwrap(),
+			babe: babe.try_into().unwrap(),
+			beefy,
+			grandpa: grandpa.try_into().unwrap(),
+		}
 	}
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AccountId(ecdsa::Public);
 
-// Configure a mock runtime to test the pallet.
+// Configure a mock runtime to test the pallet. Hooks are driven by hand in `initialize_block`
+// and `finalize_block`, in production order: both engines before the consensus-engine guards,
+// those before the session rotation.
 frame_support::construct_runtime!(
 	pub enum Test {
 		System: frame_system,
 		Sidechain: pallet_sidechain,
 		SessionCommitteeManagement: pallet_session_validator_management,
 		Aura: pallet_aura,
+		Babe: pallet_babe,
+		ConsensusEngine: pallet_consensus_engine,
 		Grandpa: pallet_grandpa,
 		Session: pallet_session,
 		Historical: pallet_session::historical,
@@ -134,6 +154,7 @@ impl_opaque_keys! {
 	pub struct TestSessionKeys {
 		pub aura: Aura,
 		pub grandpa: Grandpa,
+		pub babe: Babe,
 	}
 }
 impl MaybeFromCandidateKeys for TestSessionKeys {
@@ -142,7 +163,9 @@ impl MaybeFromCandidateKeys for TestSessionKeys {
 		let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 		let grandpa = keys.find(GRANDPA)?;
 		let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-		Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+		let babe = keys.find(BABE)?;
+		let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
+		Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
 	}
 }
 
@@ -176,7 +199,7 @@ impl pallet_session::historical::Config for Test {
 
 impl pallet_sidechain::Config for Test {
 	fn current_slot_number() -> ScSlotNumber {
-		ScSlotNumber(*pallet_aura::CurrentSlot::<Test>::get())
+		ScSlotNumber(*ConsensusEngine::current_slot())
 	}
 	type OnNewEpoch = ();
 }
@@ -231,6 +254,33 @@ impl pallet_aura::Config for Test {
 	type SlotDuration = ConstU64<6000>;
 }
 
+impl pallet_babe::Config for Test {
+	type EpochDuration = ConstU64<{ SLOTS_PER_EPOCH as u64 }>;
+	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
+	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
+	type DisabledValidators = ();
+	type WeightInfo = ();
+	type MaxAuthorities = ConstU32<32>;
+	type MaxNominators = ConstU32<0>;
+	type KeyOwnerProof = sp_core::Void;
+	type EquivocationReportSystem = ();
+}
+
+parameter_types! {
+	pub TestBabeEpochConfig: sp_consensus_babe::BabeEpochConfiguration =
+		sp_consensus_babe::BabeEpochConfiguration {
+			c: (1, 4),
+			allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+		};
+}
+
+impl pallet_consensus_engine::Config for Test {
+	type GovernanceOrigin = EnsureRoot<AccountId32>;
+	type EpochDuration = ConstU64<{ SLOTS_PER_EPOCH as u64 }>;
+	type EpochConfiguration = TestBabeEpochConfig;
+	type WeightInfo = ();
+}
+
 impl pallet_grandpa::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 
@@ -277,7 +327,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
 pub fn slots_to_epoch(epoch: u64, slots_per_epoch: u32) -> u64 {
 	let epoch = ARBITRARY_FIRST_EPOCH + epoch;
-	let current_slot = pallet_aura::CurrentSlot::<Test>::get();
+	let current_slot = ConsensusEngine::current_slot();
 	let to_slot = epoch * (slots_per_epoch as u64);
 	to_slot - *current_slot
 }
@@ -292,19 +342,21 @@ pub const ARBITRARY_FIRST_SLOT: u64 = 389374234;
 pub const ARBITRARY_FIRST_EPOCH: u64 = ARBITRARY_FIRST_SLOT / (SLOTS_PER_EPOCH as u64);
 
 pub fn initialize_block() {
-	let slot = *pallet_aura::CurrentSlot::<Test>::get() + 1;
+	let slot = *ConsensusEngine::current_slot() + 1;
 	let slot = if slot == 1 { slot + ARBITRARY_FIRST_SLOT } else { slot };
 	initialize_with_slot_digest_and_increment_block_number(slot);
 
 	System::on_initialize(System::block_number());
 	Aura::on_initialize(System::block_number());
+	Babe::on_initialize(System::block_number());
 	Grandpa::on_initialize(System::block_number());
+	ConsensusEngine::on_initialize(System::block_number());
 	SessionCommitteeManagement::on_initialize(System::block_number());
 	Session::on_initialize(System::block_number());
 
 	let block_number = System::block_number();
 	let epoch = Sidechain::current_epoch_number();
-	assert_eq!(slot, *pallet_aura::CurrentSlot::<Test>::get());
+	assert_eq!(slot, *ConsensusEngine::current_slot());
 	println!("(slot {slot}, epoch {epoch}) Initialized block {block_number}");
 }
 
@@ -313,6 +365,7 @@ pub fn finalize_block() {
 		Session::on_finalize(System::block_number());
 		SessionCommitteeManagement::on_finalize(System::block_number());
 		Grandpa::on_finalize(System::block_number());
+		Babe::on_finalize(System::block_number());
 		Aura::on_finalize(System::block_number());
 		System::on_finalize(System::block_number());
 	}
@@ -413,19 +466,31 @@ const BOB_SEED: &str = "//2";
 pub struct TestKeys {
 	pub cross_chain: CrossChainPair,
 	pub aura: sp_consensus_aura::sr25519::AuthorityPair,
+	pub babe: sp_consensus_babe::AuthorityPair,
 	pub grandpa: sp_consensus_grandpa::AuthorityPair,
 }
 
 impl TestKeys {
 	pub fn from_seed(s: &str) -> Self {
-		Self { cross_chain: pair_from_seed(s), aura: pair_from_seed(s), grandpa: pair_from_seed(s) }
+		Self {
+			cross_chain: pair_from_seed(s),
+			aura: pair_from_seed(s),
+			// A key of its own, so a BABE assertion cannot pass on the AURA key by accident.
+			babe: pair_from_seed(&format!("{s}//babe")),
+			grandpa: pair_from_seed(s),
+		}
 	}
 	pub fn session(&self) -> TestSessionKeys {
-		TestSessionKeys { aura: self.aura.public(), grandpa: self.grandpa.public() }
+		TestSessionKeys {
+			aura: self.aura.public(),
+			grandpa: self.grandpa.public(),
+			babe: self.babe.public(),
+		}
 	}
 	pub fn candidate_keys(&self) -> CandidateKeys {
 		CandidateKeys(vec![
 			CandidateKey::new(AURA, self.aura.public().as_slice().into()),
+			CandidateKey::new(BABE, self.babe.public().as_slice().into()),
 			CandidateKey::new(GRANDPA, self.grandpa.public().as_slice().into()),
 		])
 	}
@@ -473,6 +538,8 @@ impl MockValidator {
 		let keys = self.account_keys();
 		CandidateKeys(vec![
 			CandidateKey::new(AURA, keys.aura.to_vec()),
+			CandidateKey::new(BABE, keys.babe.to_vec()),
+			CandidateKey::new(BEEFY, keys.beefy.to_vec()),
 			CandidateKey::new(GRANDPA, keys.grandpa.to_vec()),
 		])
 	}
@@ -490,9 +557,38 @@ pub fn charlie_mock_validator() -> MockValidator {
 	MockValidator::new("charlie", "//3", 100)
 }
 
+/// The pre-runtime digests a migration-aware node puts on a block at `slot_number`: before the
+/// flip the AURA one followed by a BABE `SecondaryPlain` one naming the AURA author; after it the
+/// BABE one alone, claiming `slot % n` under the epoch the block is signed in — the set BABE
+/// announced for it when the block opens an epoch, else the current one.
 fn initialize_with_slot_digest_and_increment_block_number(slot_number: u64) {
-	let slot = sp_consensus_slots::Slot::from(slot_number);
-	let pre_digest = Digest { logs: vec![DigestItem::PreRuntime(AURA_ENGINE_ID, slot.encode())] };
+	let slot = Slot::from(slot_number);
+	let babe = |authority_index: u32| {
+		DigestItem::PreRuntime(
+			BABE_ENGINE_ID,
+			BabePreDigest::SecondaryPlain(SecondaryPlainPreDigest { authority_index, slot })
+				.encode(),
+		)
+	};
+	let logs = match ConsensusEngine::active_engine() {
+		ActiveEngine::Aura => {
+			let authorities = pallet_aura::Authorities::<Test>::get().len() as u64;
+			vec![
+				DigestItem::PreRuntime(AURA_ENGINE_ID, slot.encode()),
+				babe((slot_number % authorities) as u32),
+			]
+		},
+		ActiveEngine::Babe => {
+			let opens_epoch = slot_number.is_multiple_of(SLOTS_PER_EPOCH as u64);
+			let signers = if opens_epoch {
+				pallet_babe::NextAuthorities::<Test>::get().len()
+			} else {
+				pallet_babe::Authorities::<Test>::get().len()
+			};
+			vec![babe((slot_number % signers.max(1) as u64) as u32)]
+		},
+	};
+	let pre_digest = Digest { logs };
 
 	System::reset_events();
 	System::initialize(&(System::block_number() + 1), &System::parent_hash(), &pre_digest);

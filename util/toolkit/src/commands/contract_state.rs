@@ -1,9 +1,22 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::super::tx_generator::{TxGenerator, source::Source};
 use crate::cli_parsers as cli;
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
 use clap::Args;
-use midnight_node_ledger_helpers::ContractAddress;
+use midnight_ledger_unsafe_helpers::ContractAddress;
 use std::{fs, path::Path};
 
 #[derive(Args)]
@@ -26,6 +39,7 @@ pub async fn execute(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
@@ -39,15 +53,15 @@ pub async fn execute(
 	let blocks = source.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
-	let fork_ctx = build_fork_aware_context_cached(&[], &blocks, wallet_cache.as_deref()).await;
+	let fork_ctx = build_fork_aware_context_cached(
+		&[],
+		&blocks,
+		wallet_cache.as_deref(),
+		replay_checkpoint_interval,
+	)
+	.await;
 
 	let serialized_state = fork_ctx.dispatch(
-		|ctx| {
-			crate::commands::fork::ledger_7::contract_state::get_contract_state(
-				&ctx,
-				args.contract_address,
-			)
-		},
 		|ctx| {
 			crate::commands::fork::ledger_8::contract_state::get_contract_state(
 				&ctx,

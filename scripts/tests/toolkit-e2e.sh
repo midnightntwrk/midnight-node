@@ -21,6 +21,7 @@ set -euxo pipefail
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
 RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
+SOURCE_SEED="0000000000000000000000000000000000000000000000000000000000000001"
 
 echo "🎯 Running Toolkit E2E test"
 echo "🧱 NODE_IMAGE: $NODE_IMAGE"
@@ -121,7 +122,7 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$te
 echo "Sending just unshielded tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs single-tx \
-    --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+    --source-seed "$SOURCE_SEED" \
     --unshielded-amount 10 \
     --destination-address mn_addr_undeployed1gkasr3z3vwyscy2jpp53nzr37v7n4r3lsfgj6v5g584dakjzt0xqun4d4r \
     --destination-address mn_addr_undeployed1g9nr3mvjcey7ca8shcs5d4yjndcnmczf90rhv4nju7qqqlfg4ygs0t4ngm \
@@ -162,10 +163,45 @@ docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
+# Issue #1896: fund a new wallet with 4 NIGHT UTXOs, then register it self-funded
+# (no --funding-seed) - the fee is paid from the wallet's own retroactive DUST.
+# NB: the dash must come last in the set: a leading dash makes GNU tr parse it as an option.
+new_seed=$( (uuidgen; uuidgen) | tr -d '\n-' | tr '[:upper:]' '[:lower:]')
+new_address=$(
+    docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
+    show-address \
+    --network undeployed \
+    --seed "$new_seed" \
+    --unshielded
+)
+
+echo "Funding new wallet with multiple NIGHT UTXOs..."
+docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
+    generate-txs single-tx \
+    --source-seed "$SOURCE_SEED" \
+    --unshielded-amount 2000000000000 \
+    --destination-address "$new_address" \
+    --destination-address "$new_address" \
+    --destination-address "$new_address" \
+    --destination-address "$new_address" \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
+
+# The fresh UTXOs have accrued no retroactive DUST inside their own funding block
+# (dt = 0); one more block accrues plenty for the fee.
+wait_for_next_finalized_block http://localhost:9944
+
+echo "Register multi-UTXO wallet with self-funded fee..."
+docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
+    generate-txs register-dust-address \
+    --wallet-seed "$new_seed" \
+    -s ws://midnight-node-tx:9944 \
+    -d ws://midnight-node-tx:9944
+
 echo "Sending just shielded tokens..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs single-tx \
-    --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
+    --source-seed "$SOURCE_SEED" \
     --shielded-amount 10 \
     --destination-address mn_shield-addr_undeployed1tdu4jzhm7xn9qhzwweleyszxmhtt7fnzfhql42g87aay2jdjvau3fljgum7nqky8cj5mmm697rd33uyh6dnw42thuucjp7da74nje0sggh42d \
     --destination-address mn_shield-addr_undeployed1tth9g6jf8he6cmhgtme6arty0jde7wnypsg53qc3x5navl9za355jqqvfftm8asg986dx9puzwkmedeune9nfkuqvtmccmxtjwvlrvccwypcs \
