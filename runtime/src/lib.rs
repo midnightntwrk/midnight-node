@@ -2189,73 +2189,297 @@ mod tests {
 	/// authority view readable at the parent state (`AuraApi::authorities`, `BabeApi::current_epoch`
 	/// and `next_epoch`, the committee pallet's current and queued committees, `pallet_session`'s
 	/// validators), the author the runtime credits, and the epoch BABE announces for the session to
-	/// come. The committee changes at every rotation, so a stale or wrong set is a distinct answer.
+	/// come. Each test runs one committee plan through the flip; its own assertions pin the
+	/// committee that signs the last AURA epoch and the one that BABE epoch 0 names.
 	///
 	/// Post-flip, a block that opens an epoch is signed under the epoch BABE announced one epoch
 	/// earlier, i.e. `BabeApi::next_epoch` at its parent; every other block under
 	/// `BabeApi::current_epoch` at its parent. At the flip block both name the first BABE epoch.
-	#[test]
-	fn observers_see_coherent_signers_and_epochs_across_the_flip() {
-		new_test_ext().execute_with(|| {
-			// As the upgrade migration leaves an existing network.
-			ConsensusEngine::activate();
-			advance_block();
+	mod flip_observers {
+		use super::*;
+		use sp_consensus_babe::digests::PreDigest as BabePreDigest;
 
-			// A committee set in epoch N serves epoch N + 2. The flip commits at the end of epoch
-			// 1, so `[bob]` serves the first BABE epoch while `[alice, bob]` still signs epoch 1.
-			let plan = [
-				vec![bob()],
-				vec![alice()],
-				vec![alice(), bob()],
-				vec![bob(), alice()],
-				vec![alice()],
-			];
-			let mut planned = None;
-			let mut seen = std::collections::BTreeMap::<Kind, u32>::new();
-			let mut last = None;
-			// The activation block is observed too: the parent view is the genesis state.
-			let mut parent = View::capture();
-			loop {
-				advance_block();
-				let kind = match (last, observe(&parent)) {
-					(Some(Kind::Flip), Kind::BabeOpening) => Kind::FirstBabe,
-					(_, kind) => kind,
-				};
-				*seen.entry(kind).or_default() += 1;
-				last = Some(kind);
-				parent = View::capture();
+		#[test]
+		fn observers_see_coherent_signers_and_epochs_across_the_flip() {
+			// The flip commits at the end of epoch 1, so `[bob]` serves the first BABE epoch
+			// while the genesis `[alice, bob]` still signs epoch 1.
+			let flip = run(
+				&[
+					select(&[bob()]),
+					select(&[alice()]),
+					select(&[alice(), bob()]),
+					select(&[bob(), alice()]),
+					select(&[alice()]),
+				],
+				1,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice(), bob()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[bob()]));
+		}
 
-				let epoch = (Sidechain::current_epoch_number().0 - ARBITRARY_FIRST_EPOCH) as usize;
-				if epoch > plan.len() {
-					break;
-				}
-				if planned != Some(epoch) {
-					if let Some(committee) = plan.get(epoch) {
-						set_committee_through_inherent_data(committee);
-					}
-					if epoch == 1 {
-						assert_ok!(ConsensusEngine::schedule_flip(RawOrigin::Root.into()));
-					}
-					planned = Some(epoch);
-				}
+		/// Ariadne reorders an unchanged membership every epoch: the case seen on a live flip.
+		#[test]
+		fn epoch_zero_follows_a_reordered_committee() {
+			let flip = run(
+				&[
+					select(&[alice(), bob(), charlie()]),
+					select(&[charlie(), alice(), bob()]),
+					select(&[bob(), charlie(), alice()]),
+					select(&[alice(), bob(), charlie()]),
+				],
+				2,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice(), bob(), charlie()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[charlie(), alice(), bob()]));
+		}
+
+		/// More signers in epoch 0 than in the epoch before: indices past the outgoing set.
+		#[test]
+		fn epoch_zero_follows_a_growing_committee() {
+			let flip = run(
+				&[
+					select(&[alice()]),
+					select(&[alice(), bob(), charlie()]),
+					select(&[charlie(), bob()]),
+					select(&[alice()]),
+				],
+				2,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[alice(), bob(), charlie()]));
+		}
+
+		/// Candidates removed and a new one added on Cardano: no member in common.
+		#[test]
+		fn epoch_zero_follows_a_replaced_committee() {
+			let flip = run(
+				&[
+					select(&[alice(), bob()]),
+					select(&[charlie()]),
+					select(&[bob(), alice()]),
+					select(&[charlie(), alice()]),
+				],
+				2,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice(), bob()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[charlie()]));
+		}
+
+		/// A D-parameter change: more seats than candidates, so the draw with replacement gives
+		/// members several seats and `babe.authorities` repeats their keys.
+		#[test]
+		fn epoch_zero_follows_a_change_in_seats() {
+			let flip = run(
+				&[
+					select(&[alice(), bob(), charlie()]),
+					select(&[bob(), bob(), alice(), charlie(), bob()]),
+					select(&[charlie(), alice()]),
+					select(&[alice(), alice(), bob()]),
+				],
+				2,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice(), bob(), charlie()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[bob(), bob(), alice(), charlie(), bob()]));
+		}
+
+		/// No valid candidates for the epoch after the flip: the queued committee carries over.
+		#[test]
+		fn epoch_zero_keeps_the_committee_when_selection_fails() {
+			let flip = run(
+				&[
+					select(&[alice(), bob(), charlie()]),
+					select(&[]),
+					select(&[bob(), alice()]),
+					select(&[charlie()]),
+				],
+				2,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice(), bob(), charlie()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[alice(), bob(), charlie()]));
+		}
+
+		/// A member of the epoch-0 committee claims a BABE key another account holds:
+		/// `pallet_session` rejects it, the hand-off is aborted and the outgoing set stays on.
+		#[test]
+		fn epoch_zero_keeps_the_committee_when_the_hand_off_is_aborted() {
+			let bobs_babe_key = TestKeys { babe: bob().babe, ..charlie() };
+			let flip = run(
+				&[
+					select(&[alice(), bob()]),
+					select(&[bobs_babe_key, alice()]),
+					select(&[bob(), alice()]),
+					select(&[charlie()]),
+				],
+				2,
+			);
+			assert_eq!(flip.outgoing, babe_keys(&[alice(), bob()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[alice(), bob()]));
+		}
+
+		/// The last slot of the scheduled epoch stays empty: the flip moves to the next epoch's
+		/// last slot and epoch 0 names the committee that serves the epoch after that.
+		#[test]
+		fn epoch_zero_follows_the_committee_after_a_postponed_flip() {
+			let flip = run(
+				&[
+					select(&[alice(), bob()]),
+					select(&[charlie()]),
+					select(&[bob(), charlie(), alice()]).skip_last_slot(),
+					select(&[alice()]),
+					select(&[charlie(), bob()]),
+				],
+				2,
+			);
+			assert_eq!(flip.at_epoch, 3);
+			assert_eq!(flip.outgoing, babe_keys(&[charlie()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[bob(), charlie(), alice()]));
+		}
+
+		/// The chain halts with the flip scheduled, past one whole epoch: the first block back
+		/// catches up in one rotation, and the flip names the committee queued after it.
+		#[test]
+		fn epoch_zero_follows_the_committee_after_a_halt_with_the_flip_scheduled() {
+			let flip = run(
+				&[
+					select(&[alice(), bob()]),
+					select(&[charlie()]),
+					select(&[bob(), charlie(), alice()]).halt(2 * SLOTS_PER_EPOCH as u64),
+					select(&[alice()]),
+					select(&[charlie(), bob()]),
+					select(&[bob()]),
+				],
+				2,
+			);
+			assert_eq!(flip.at_epoch, 4);
+			// The committee due in the skipped epoch 3 serves epoch 4; the one selected in
+			// epoch 2 is queued for epoch 5.
+			assert_eq!(flip.outgoing, babe_keys(&[charlie()]));
+			assert_eq!(flip.epoch_zero, babe_keys(&[bob(), charlie(), alice()]));
+		}
+
+		/// One sidechain epoch of a plan.
+		struct Epoch {
+			/// The committee the inherent selects in this epoch's first block; it serves two
+			/// epochs later. Empty: no valid candidates, so selection falls back to the queue.
+			select: Vec<TestKeys>,
+			/// Leave the epoch's last slot without a block.
+			skip_last_slot: bool,
+			/// Slots left without a block after the epoch's first block.
+			halt: u64,
+		}
+
+		fn select(committee: &[TestKeys]) -> Epoch {
+			Epoch { select: committee.to_vec(), skip_last_slot: false, halt: 0 }
+		}
+
+		impl Epoch {
+			fn skip_last_slot(self) -> Self {
+				Epoch { skip_last_slot: true, ..self }
 			}
 
-			// Every kind of block the migration produces was checked, the singular ones once.
-			assert_eq!(seen[&Kind::Flip], 1);
-			assert_eq!(seen[&Kind::FirstBabe], 1);
-			assert!(seen[&Kind::PreFlip] > 1, "{seen:?}");
-			assert!(seen[&Kind::PreFlipOpening] >= 1, "{seen:?}");
-			assert!(seen[&Kind::BabeOpening] >= 3, "{seen:?}");
-			assert!(seen[&Kind::Babe] > 1, "{seen:?}");
-			assert_eq!(parent.engine, ActiveEngine::Babe);
+			fn halt(self, slots: u64) -> Self {
+				Epoch { halt: slots, ..self }
+			}
+		}
 
-			// `pallet_session::historical` records no session roots: the session manager is not
-			// wrapped in `NoteHistoricalRoot`, so no observer can obtain a key-ownership proof,
-			// and the consensus APIs answer `None` for them.
-			assert!(
-				pallet_session::historical::HistoricalSessions::<Test>::iter().next().is_none()
-			);
-		});
+		/// What the flip block left behind.
+		struct Flip {
+			/// The epoch, from 0 at the first block, that the flip committed at the end of.
+			at_epoch: usize,
+			/// The BABE keys of the committee that signed the flip block's epoch.
+			outgoing: BabeAuthorities,
+			/// The authorities of BABE epoch 0.
+			epoch_zero: BabeAuthorities,
+		}
+
+		fn babe_keys(committee: &[TestKeys]) -> BabeAuthorities {
+			committee.iter().map(|keys| (keys.babe.public(), 1)).collect()
+		}
+
+		/// Run `plan` from activation, scheduling the flip in the first block of `flip_epoch`, and
+		/// observe every block until a few BABE epochs after the flip.
+		fn run(plan: &[Epoch], flip_epoch: usize) -> Flip {
+			new_test_ext().execute_with(|| {
+				// As the upgrade migration leaves an existing network.
+				ConsensusEngine::activate();
+				advance_block();
+
+				let epoch_of =
+					|slot: u64| (slot / SLOTS_PER_EPOCH as u64 - ARBITRARY_FIRST_EPOCH) as usize;
+				let mut planned = None;
+				let mut empty_slots = 0;
+				let mut flip = None;
+				let mut seen = std::collections::BTreeMap::<Kind, u32>::new();
+				let mut last = None;
+				// The activation block is observed too: the parent view is the genesis state.
+				let mut parent = View::capture();
+				loop {
+					let next_slot = *ConsensusEngine::current_slot() + 1 + empty_slots;
+					let last_slot = (next_slot + 1).is_multiple_of(SLOTS_PER_EPOCH as u64);
+					if last_slot && plan.get(epoch_of(next_slot)).is_some_and(|e| e.skip_last_slot)
+					{
+						empty_slots += 1;
+					}
+					advance_block_skipping(empty_slots);
+					empty_slots = 0;
+					let kind = match (last, observe(&parent)) {
+						(Some(Kind::Flip), Kind::BabeOpening) => Kind::FirstBabe,
+						(_, kind) => kind,
+					};
+					*seen.entry(kind).or_default() += 1;
+					last = Some(kind);
+					parent = View::capture();
+
+					let epoch = epoch_of(*ConsensusEngine::current_slot());
+					if kind == Kind::Flip {
+						flip = Some(Flip {
+							at_epoch: epoch,
+							outgoing: committee_babe_authorities(current_committee()),
+							epoch_zero: Babe::current_epoch().authorities,
+						});
+					}
+					if epoch > plan.len()
+						&& flip.as_ref().is_some_and(|flip| epoch > flip.at_epoch + 3)
+					{
+						break;
+					}
+					if planned != Some(epoch) {
+						// Past the plan, selection keeps the queued committee, so rotations go on.
+						match plan.get(epoch) {
+							Some(step) => {
+								set_committee_through_inherent_data(&step.select);
+								empty_slots = step.halt;
+							},
+							None => {
+								set_committee_through_inherent_data(&[]);
+							},
+						}
+						if epoch == flip_epoch {
+							assert_ok!(ConsensusEngine::schedule_flip(RawOrigin::Root.into()));
+						}
+						planned = Some(epoch);
+					}
+				}
+
+				// Every kind of block the migration produces was checked, the singular ones once.
+				let count = |kind| seen.get(&kind).copied().unwrap_or_default();
+				assert_eq!(count(Kind::Flip), 1, "{seen:?}");
+				assert_eq!(count(Kind::FirstBabe), 1, "{seen:?}");
+				assert!(count(Kind::PreFlip) > 1, "{seen:?}");
+				assert!(count(Kind::PreFlipOpening) >= 1, "{seen:?}");
+				assert!(count(Kind::BabeOpening) >= 3, "{seen:?}");
+				assert!(count(Kind::Babe) > 1, "{seen:?}");
+				assert_eq!(parent.engine, ActiveEngine::Babe);
+
+				// `pallet_session::historical` records no session roots: the session manager is
+				// not wrapped in `NoteHistoricalRoot`, so no observer can obtain a key-ownership
+				// proof, and the consensus APIs answer `None` for them.
+				assert!(
+					pallet_session::historical::HistoricalSessions::<Test>::iter().next().is_none()
+				);
+				flip.expect("the flip committed")
+			})
+		}
 
 		/// The kinds of block the migration produces, each with its own observer rules.
 		#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -2327,10 +2551,27 @@ mod tests {
 			};
 			assert_eq!(engines, expected, "block {block}: pre-runtime digests");
 
-			let index = <ConsensusEngine as FindAuthor<u32>>::find_author(
+			// The signer's index as the header claims it: the BABE pre-digest names it under
+			// both engines.
+			let index = logs
+				.iter()
+				.filter_map(|log| log.as_pre_runtime())
+				.find(|(engine, _)| *engine == BABE_ENGINE_ID)
+				.and_then(|(_, mut data)| BabePreDigest::decode(&mut data).ok())
+				.expect("a BABE pre-digest")
+				.authority_index() as usize;
+			let credited = <ConsensusEngine as FindAuthor<u32>>::find_author(
 				logs.iter().filter_map(|log| log.as_pre_runtime()),
 			)
 			.expect("the digests name the author") as usize;
+			// `pallet_aura` credits `slot % n` over the set the block installs, so an AURA block
+			// that rotates to a committee of another size credits another index than the signer's.
+			// Nothing consumes the AURA author.
+			let aura_resized = parent.engine == ActiveEngine::Aura
+				&& pallet_aura::Authorities::<Test>::get().len() != parent.aura.len();
+			if !aura_resized {
+				assert_eq!(credited, index, "block {block}: credited author");
+			}
 			let opens_epoch = babe_next_epoch_data().is_some();
 			let rotated = Session::current_index() != parent.session;
 			assert_eq!(
@@ -2408,7 +2649,6 @@ mod tests {
 				assert_eq!(epoch_zero.authorities, session_queued_babe_authorities());
 				assert_eq!(epoch_zero.authorities, committee_babe_authorities(queued_committee()));
 				assert_eq!(epoch_zero.authorities, Babe::next_epoch().authorities);
-				assert_ne!(epoch_zero.authorities, committee_babe_authorities(current_committee()));
 			}
 			match (parent.engine, opens_epoch, flipped) {
 				(_, _, true) => Kind::Flip,
