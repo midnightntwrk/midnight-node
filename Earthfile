@@ -835,7 +835,7 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     # Read versions from files (multi-FROM so we don't depend on env vars propagating)
-    FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+    FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
@@ -2188,7 +2188,7 @@ sync-mainnet-1000-snapshot:
     ARG MIN_EPOCH=617
     # postgres:17.4-alpine matches the loader image used by run-sync.sh and
     # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
-    FROM postgres:17.4-alpine@sha256:7062a2109c4b51f3c792c7ea01e83ed12ef9a980886e3b3d380a7d2e5f6ce3f5
+    FROM postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     RUN apk add --no-cache bash xz
     WORKDIR /work
     COPY scripts/sync-test/build-snapshot.sh ./
