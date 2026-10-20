@@ -76,7 +76,7 @@ INSTALL:
         if [ -f /tmp/br.tgz ]; then tar xzf /tmp/br.tgz -C /usr/local/bin && rm /tmp/br.tgz; fi && \
         echo "${BR_SHA}  /usr/local/bin/bazel-remote" | sha256sum -c - && \
         chmod +x /usr/local/bin/bazel-remote && \
-        buck2 --version && bazel-remote --version
+        buck2 --version && test -x /usr/local/bin/bazel-remote  # bazel-remote has no --version flag; sha256 above already verifies it
 
     # binaryen (wasm-opt) for the on-chain blob genrule. apt's is too old for
     # --signext-lowering; pin version_130. x86_64 only (the self-hosted fleet).
