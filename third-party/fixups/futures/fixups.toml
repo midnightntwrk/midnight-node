@@ -1,0 +1,7 @@
+# no_std wasm32: the `futures` umbrella crate's `std` feature turns on std-only
+# submodules (and std on every re-exported futures-rs crate), none of which
+# exist on wasm32v1-none -> E0463. Same leak as futures-sink - sp-inherents'
+# dev-dep pulls `futures` with default-features = true into the wasm resolve.
+# The no_std runtime only needs the alloc-level re-exports.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]

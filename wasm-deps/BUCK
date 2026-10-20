@@ -3157,8 +3157,18 @@ cargo.rust_library(
         "default",
         "executor",
         "futures-executor",
-        "std",
     ],
+    platform = {
+        "linux-arm64": dict(
+            features = ["std"],
+        ),
+        "linux-x86_64": dict(
+            features = ["std"],
+        ),
+        "macos-arm64": dict(
+            features = ["std"],
+        ),
+    },
     visibility = [],
     deps = [
         ":futures-channel-0.3",
@@ -3234,26 +3244,28 @@ cargo.rust_library(
     crate_root = "futures-core-0.3.32.crate/src/lib.rs",
     edition = "2018",
     env = {
-        "CARGO_BIN_NAME": "futures_core",
-        "CARGO_CRATE_NAME": "futures_core",
         "CARGO_MANIFEST_DIR": "futures-core-0.3.32.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "The core traits and types in for the `futures` library.\n",
-        "CARGO_PKG_HOMEPAGE": "https://rust-lang.github.io/futures-rs",
         "CARGO_PKG_NAME": "futures-core",
-        "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/rust-lang/futures-rs",
-        "CARGO_PKG_RUST_VERSION": "1.36",
         "CARGO_PKG_VERSION": "0.3.32",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "3",
         "CARGO_PKG_VERSION_PATCH": "32",
-        "CARGO_PKG_VERSION_PRE": "",
     },
-    features = [
-        "alloc",
-        "std",
-    ],
+    features = ["alloc"],
+    platform = {
+        "linux-arm64": dict(
+            features = ["std"],
+        ),
+        "linux-x86_64": dict(
+            features = ["std"],
+        ),
+        "macos-arm64": dict(
+            features = ["std"],
+        ),
+    },
     visibility = [],
 )
 
@@ -3483,36 +3495,64 @@ cargo.rust_library(
         "alloc",
         "async-await",
         "async-await-macro",
-        "channel",
-        "futures-channel",
-        "futures-io",
         "futures-macro",
         "futures-sink",
-        "io",
-        "memchr",
         "sink",
         "slab",
     ],
     platform = {
         "linux-arm64": dict(
-            features = ["std"],
+            features = [
+                "channel",
+                "futures-channel",
+                "futures-io",
+                "io",
+                "memchr",
+                "std",
+            ],
+            deps = [
+                ":futures-channel-0.3",
+                ":futures-io-0.3",
+                ":memchr-2",
+            ],
         ),
         "linux-x86_64": dict(
-            features = ["std"],
+            features = [
+                "channel",
+                "futures-channel",
+                "futures-io",
+                "io",
+                "memchr",
+                "std",
+            ],
+            deps = [
+                ":futures-channel-0.3",
+                ":futures-io-0.3",
+                ":memchr-2",
+            ],
         ),
         "macos-arm64": dict(
-            features = ["std"],
+            features = [
+                "channel",
+                "futures-channel",
+                "futures-io",
+                "io",
+                "memchr",
+                "std",
+            ],
+            deps = [
+                ":futures-channel-0.3",
+                ":futures-io-0.3",
+                ":memchr-2",
+            ],
         ),
     },
     visibility = [],
     deps = [
-        ":futures-channel-0.3",
         ":futures-core-0.3",
-        ":futures-io-0.3",
         ":futures-macro-0.3",
         ":futures-sink-0.3",
         ":futures-task-0.3",
-        ":memchr-2",
         ":pin-project-lite-0.2",
         ":slab-0.4",
     ],
@@ -5070,23 +5110,25 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "8",
         "CARGO_PKG_VERSION_PATCH": "3",
     },
-    features = ["default"],
     platform = {
         "linux-arm64": dict(
             features = [
                 "alloc",
+                "default",
                 "std",
             ],
         ),
         "linux-x86_64": dict(
             features = [
                 "alloc",
+                "default",
                 "std",
             ],
         ),
         "macos-arm64": dict(
             features = [
                 "alloc",
+                "default",
                 "std",
             ],
         ),

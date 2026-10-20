@@ -1,0 +1,7 @@
+# no_std wasm32: futures-core gates `extern crate std;` on the `std` feature,
+# which does not exist on wasm32v1-none -> E0463. Same leak as futures-sink -
+# sp-inherents' dev-dep on `futures` (default-features = true) enables std across
+# the whole futures-rs family in the wasm resolve. core traits (Future/Stream)
+# compile without std.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]
