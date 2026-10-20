@@ -1,0 +1,7 @@
+# no_std wasm32: all futures-rs 0.3 crates gate `extern crate std;` on the `std`
+# feature. On wasm32v1-none the std crate does not exist -> E0463. The `std`
+# feature arrives via sp-inherents dev-dep on `futures` (polkadot-sdk workspace
+# has `futures = { version = "0.3.31" }` with default-features = true, which
+# includes std). alloc is sufficient for the Sink trait on no_std targets.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]

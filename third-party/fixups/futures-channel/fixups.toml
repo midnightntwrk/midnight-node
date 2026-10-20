@@ -1,0 +1,5 @@
+# no_std wasm32: std feature requires extern crate std which does not exist on
+# wasm32v1-none. Same root cause as futures-sink - sp-inherents dev-dep pulls
+# futures with default-features = true into the wasm resolve. alloc is sufficient.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]

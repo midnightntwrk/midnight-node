@@ -1,20 +1,21 @@
-# The `openssl` (0.10) crate's build script reads DEP_OPENSSL_VERSION_NUMBER
-# (openssl-sys's `links` metadata) to decide which version cfgs to emit. Reindeer
-# captures that value ONCE, at buckify time, from whatever openssl the buckify
-# host has, and bakes it in statically. Buckified on macOS (Homebrew openssl 3.5)
-# it bakes 3.5.0 -> the crate gates in 3.3+ symbols (EVP_DigestSqueeze,
-# OSSL_get_max_threads, X509_PURPOSE_CODE_SIGN). But at build time openssl-sys
-# dynamically detects the real host openssl (3.0.13 on ubuntu CI) and its ffi
-# only has 3.0 symbols -> "not found in `ffi`". Pin the dependent to the 3.0
-# baseline on Linux so it matches openssl-sys's dynamic detection and the system
-# libssl. (Proper fix is dynamic DEP_OPENSSL_* wiring in reindeer; this is the
-# pragmatic pin for the ubuntu build target.)
+# openssl-0.10's build script reads DEP_OPENSSL_VERSION_NUMBER and DEP_OPENSSL_CONF
+# (emitted by openssl-sys's `links = "openssl"` build script) to decide which
+# version cfgs and osslconf= flags to emit. With the `vendored` feature active
+# (str0m-openssl-0.6 requests it), openssl-sys builds OpenSSL from source via
+# openssl-src 300.6.1+3.6.3 = OpenSSL 3.6.3, regardless of the system libssl.
+#
+# openssl-src is configured with features = ["default", "legacy"], which means
+# no-camellia, no-idea, no-seed, and no-ssl3-method are all passed to ./Configure.
+# The resulting opensslconf.h defines OPENSSL_NO_CAMELLIA, OPENSSL_NO_IDEA,
+# OPENSSL_NO_SEED, OPENSSL_NO_SSL3_METHOD. These must all appear in DEP_OPENSSL_CONF
+# or openssl-0.10 includes the EVP_camellia_* / EVP_seed_* wrappers that reference
+# symbols the ffi omits -> E0425.
+#
+# DEP_OPENSSL_VERSION_NUMBER for OpenSSL 3.6.3: (3<<28)|(6<<20)|(3<<4) = 0x30600030.
 cargo_env = true
 
 ['cfg(target_os = "linux")'.buildscript.run.env]
-DEP_OPENSSL_VERSION_NUMBER = "30000000"
+DEP_OPENSSL_VERSION_NUMBER = "30600030"
 # This env block REPLACES reindeer's baked DEP_OPENSSL_* rather than merging, so
-# the conf (which openssl-sys detects identically on macOS 3.5 and ubuntu 3.0.13
-# — both built without IDEA / SSLv3) must be restated or openssl-0.10 references
-# EVP_idea_* symbols the ffi omits under OPENSSL_NO_IDEA.
-DEP_OPENSSL_CONF = "OPENSSL_NO_IDEA,OPENSSL_NO_SSL3_METHOD"
+# all NO_* flags that the vendored ./Configure emits must be listed here.
+DEP_OPENSSL_CONF = "OPENSSL_NO_CAMELLIA,OPENSSL_NO_IDEA,OPENSSL_NO_SEED,OPENSSL_NO_SSL3_METHOD"
