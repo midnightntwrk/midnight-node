@@ -44386,12 +44386,6 @@ cargo.rust_library(
     ],
 )
 
-alias(
-    name = "sp-application-crypto",
-    actual = ":sp-application-crypto-49",
-    visibility = ["PUBLIC"],
-)
-
 cargo.rust_library(
     name = "sp-application-crypto-49",
     srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],

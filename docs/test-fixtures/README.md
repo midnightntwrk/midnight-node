@@ -166,6 +166,7 @@ that we are still in the process of being release. As such:
 - [OpenRPC API Specification](docs/openrpc.md) - Machine-readable API schema via `rpc.discover`
 - [Configuration Guide](docs/configuration-guide.md) - Comprehensive configuration guide for SREs
 - [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
+- [Mock Authorities](docs/mock-authorities.md) - Existing test keys with real Cardano observations
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
@@ -289,6 +290,7 @@ Chain specifications are located in `/res/` directory.
 | AURA seed | `AURA_SEED_FILE=/path/to/seed` | - | Path to AURA consensus seed file |
 | GRANDPA seed | `GRANDPA_SEED_FILE=/path/to/seed` | - | Path to GRANDPA finality seed file |
 | Cross-chain seed | `CROSS_CHAIN_SEED_FILE=/path/to/seed` | - | Path to cross-chain seed file |
+| BEEFY seed | `BEEFY_SEED_FILE=/path/to/seed` | - | Path to BEEFY seed file (ECDSA, like cross-chain) |
 | Chain spec | `CHAIN=dev` | `--chain dev` | Network to connect to |
 | Base path | `BASE_PATH=/tmp/node-1` | `--base-path /tmp/node-1` | Data directory |
 | Validator mode | `VALIDATOR=true` | `--validator` | Run as validator (true/1/TRUE) |
@@ -305,7 +307,7 @@ Chain specifications are located in `/res/` directory.
 
 ```shell
 echo "//Alice" > /tmp/alice-seed && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed BEEFY_SEED_FILE=/tmp/alice-seed \
   BASE_PATH=/tmp/node-1 CHAIN=dev VALIDATOR=true ./target/release/midnight-node
 ```
 
@@ -313,35 +315,35 @@ CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed 
 
 ```shell
 echo "//Alice" > /tmp/alice-seed && echo "0000000000000000000000000000000000000000000000000000000000000001" > /tmp/alice-key && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed BEEFY_SEED_FILE=/tmp/alice-seed \
   NODE_KEY_FILE=/tmp/alice-key BASE_PATH=/tmp/node-1 CHAIN=dev VALIDATOR=true ./target/release/midnight-node --port 30333
 
 echo "//Bob" > /tmp/bob-seed && echo "0000000000000000000000000000000000000000000000000000000000000002" > /tmp/bob-key && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/bob-seed GRANDPA_SEED_FILE=/tmp/bob-seed CROSS_CHAIN_SEED_FILE=/tmp/bob-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/bob-seed GRANDPA_SEED_FILE=/tmp/bob-seed CROSS_CHAIN_SEED_FILE=/tmp/bob-seed BEEFY_SEED_FILE=/tmp/bob-seed \
   NODE_KEY_FILE=/tmp/bob-key BASE_PATH=/tmp/node-2 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30334
 
 echo "//Charlie" > /tmp/charlie-seed && echo "0000000000000000000000000000000000000000000000000000000000000003" > /tmp/charlie-key && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/charlie-seed GRANDPA_SEED_FILE=/tmp/charlie-seed CROSS_CHAIN_SEED_FILE=/tmp/charlie-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/charlie-seed GRANDPA_SEED_FILE=/tmp/charlie-seed CROSS_CHAIN_SEED_FILE=/tmp/charlie-seed BEEFY_SEED_FILE=/tmp/charlie-seed \
   NODE_KEY_FILE=/tmp/charlie-key BASE_PATH=/tmp/node-3 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30335
 
 echo "//Dave" > /tmp/dave-seed && echo "0000000000000000000000000000000000000000000000000000000000000004" > /tmp/dave-key && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/dave-seed GRANDPA_SEED_FILE=/tmp/dave-seed CROSS_CHAIN_SEED_FILE=/tmp/dave-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/dave-seed GRANDPA_SEED_FILE=/tmp/dave-seed CROSS_CHAIN_SEED_FILE=/tmp/dave-seed BEEFY_SEED_FILE=/tmp/dave-seed \
   NODE_KEY_FILE=/tmp/dave-key BASE_PATH=/tmp/node-4 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30336
 
 echo "//Eve" > /tmp/eve-seed && echo "0000000000000000000000000000000000000000000000000000000000000005" > /tmp/eve-key && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/eve-seed GRANDPA_SEED_FILE=/tmp/eve-seed CROSS_CHAIN_SEED_FILE=/tmp/eve-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/eve-seed GRANDPA_SEED_FILE=/tmp/eve-seed CROSS_CHAIN_SEED_FILE=/tmp/eve-seed BEEFY_SEED_FILE=/tmp/eve-seed \
   NODE_KEY_FILE=/tmp/eve-key BASE_PATH=/tmp/node-5 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30337
 
 echo "//Ferdie" > /tmp/ferdie-seed && echo "0000000000000000000000000000000000000000000000000000000000000006" > /tmp/ferdie-key && \
-CFG_PRESET=dev AURA_SEED_FILE=/tmp/ferdie-seed GRANDPA_SEED_FILE=/tmp/ferdie-seed CROSS_CHAIN_SEED_FILE=/tmp/ferdie-seed \
+CFG_PRESET=dev AURA_SEED_FILE=/tmp/ferdie-seed GRANDPA_SEED_FILE=/tmp/ferdie-seed CROSS_CHAIN_SEED_FILE=/tmp/ferdie-seed BEEFY_SEED_FILE=/tmp/ferdie-seed \
   NODE_KEY_FILE=/tmp/ferdie-key BASE_PATH=/tmp/node-6 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30338
@@ -376,3 +378,8 @@ python ./scripts/generate-keys.py --help
 ### Fork Testing
 
 See [fork-testing.md](docs/fork-testing.md)
+
+### Migrating AURA to BABE
+
+See [aura-to-babe-migration-runbook.md](docs/aura-to-babe-migration-runbook.md)
+

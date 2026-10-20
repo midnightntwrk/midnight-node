@@ -94,7 +94,6 @@ rust_test(
         "root//third-party:pallet-session",
         "root//third-party:parity-scale-codec",
         "root//third-party:scale-info",
-        "root//third-party:sp-application-crypto",
         "root//third-party:sp-core",
         "root//third-party:sp-crypto-hashing",
         "root//third-party:sp-io",

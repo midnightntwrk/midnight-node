@@ -37,6 +37,7 @@ rust_library(
             "root//wasm-deps:sp-consensus-aura",
             "root//wasm-deps:sp-consensus-babe",
             "root//wasm-deps:sp-consensus-slots",
+            "root//wasm-deps:sp-runtime",
         ],
         "DEFAULT": [
             "root//primitives/consensus-engine:midnight-primitives-consensus-engine",

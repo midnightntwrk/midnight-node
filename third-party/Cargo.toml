@@ -174,7 +174,6 @@ shell-words = { version = "^1.1.1", features = ["default", "std"] }
 shellexpand = { version = "^3", features = ["base-0", "default", "dirs", "tilde"] }
 snap = { version = "^1.1" }
 sp-api = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", features = ["default", "frame-metadata", "hash-db", "sp-externalities", "sp-metadata-ir", "sp-state-machine", "sp-trie", "std", "thiserror"] }
-sp-application-crypto = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", features = ["default", "full_crypto", "serde", "std"], default-features = false }
 sp-block-builder = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", features = ["default", "std"] }
 sp-blockchain = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", default-features = false }
 sp-consensus = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", features = ["default"], default-features = false }

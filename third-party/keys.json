@@ -164,7 +164,6 @@
  "shellexpand|^3|registry+https://github.com/rust-lang/crates.io-index": "shellexpand",
  "snap|^1.1|registry+https://github.com/rust-lang/crates.io-index": "snap",
  "sp-api|*|git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609": "sp-api",
- "sp-application-crypto|*|git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609": "sp-application-crypto",
  "sp-block-builder|*|git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609": "sp-block-builder",
  "sp-blockchain|*|git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609": "sp-blockchain",
  "sp-consensus-aura|*|git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609": "sp-consensus-aura",

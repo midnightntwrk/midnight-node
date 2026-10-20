@@ -12283,7 +12283,6 @@ dependencies = [
  "shellexpand",
  "snap",
  "sp-api",
- "sp-application-crypto",
  "sp-block-builder",
  "sp-blockchain",
  "sp-consensus",

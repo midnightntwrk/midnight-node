@@ -222,8 +222,7 @@
    "scale-info",
    "serde",
    "sidechain-domain",
-   "sp-core",
-   "sp-runtime"
+   "sp-core"
   ],
   "features": []
  },

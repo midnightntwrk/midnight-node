@@ -17,7 +17,7 @@ existing Cargo and Bazel builds. Uses forks of both tools.
 | `node` **binary** (`root//node:midnight-node-bin`) | ◈ builds, links, runs (`--version` → `midnight-node 2.0.0`) |
 | `toolkit` **binary** (`root//util/toolkit:midnight-node-toolkit-bin`) | ◈ builds, links, runs |
 | **tests** (`buck2 test //...`) | ◈ all pass except environmental (docker/devnet/Cardano) + a substrate-test-runtime blob; the real on-chain WASM blob is built (see WASM runtime) |
-| **distributed CI** (`.github/workflows/buck2-distributed.yml`) | ◈ driver + 3 workers on ubuntu-latest via rebuck2 iroh mesh; runs `buck2 build root//...` + `buck2 test root//... --exclude ci-infra` |
+| **CI** (`.github/workflows/buck2.yml`) | ◈ self-hosted `tier:large` under a bazel-remote action cache; runs `buck2 build` (node/toolkit bins + runtime wasm) + `buck2 test root//... --exclude ci-infra` |
 | `relay` binary | ✗ blocked on rs_merkle digest version (see below) |
 
 ```sh
@@ -45,7 +45,7 @@ Install buck2 to `~/.cargo/bin/buck2`; build reindeer with
 
 ## Layout
 
-```
+```text
 .buckconfig              root cell + `fixups` external cell (buck2-fixups pin)
 .buckroot
 BUCK                     runtime-wasm-stub genrule, on-chain wasm blob target
@@ -155,7 +155,7 @@ run; instead:
   on local **and** RE without cargo metadata. A relative `SQLX_OFFLINE_DIR`
   missed (rustc's CWD is the repo root, not `__srcs`); a `$(location)` one
   missed too (that filegroup artifact isn't materialized at its logical path
-  under rebuck2's CAS — only srcs symlinked to project source are).
+  under remote execution — only srcs symlinked to project source are).
   `CARGO="cargo"` set for sqlx's pre-offline presence check.
   Caveat: the crate `.sqlx/` duplicates the root cache; keep them in sync
   (`cargo sqlx prepare --workspace` then re-copy) — CI `prepare --check` guards it.
@@ -239,6 +239,7 @@ universe. Infrastructure:
   `--cfg substrate_runtime` when `cpu:wasm32` is selected.
 * **`.buckconfig`** `[build] execution_platforms` — host as the exec platform so
   build scripts compile+run on the host when cross-compiling to wasm.
+
 ### Host/target feature split — the core blocker, and how it's handled
 
 The runtime is strictly no_std, yet crates like `either` and `memchr` are in
@@ -359,62 +360,38 @@ In `gilescope/reindeer`, branch `giles-git-multicommit-fixup` on top of
    binary failed to link with undefined symbols / "library not found". Now
    default true; a fixup can still opt out.
 
-## Distributed CI (free runners, no paid 16-core box)
+## CI
 
-`.github/workflows/buck2-distributed.yml` runs the whole buck2 build + test
-across free `ubuntu-latest` runners using [gilescope/rebuck2](https://github.com/gilescope/rebuck/tree/giles-iroh-re-punch/rebuck2)
-as an ad-hoc distributed Remote Execution engine over an iroh P2P mesh:
+`.github/workflows/buck2.yml` runs `earth --ci +buck2-ci` on the self-hosted pool
+(`runs-on: [self-hosted, "tier:large"]`), modelled on midnightntwrk/season#44.
+buck2 keeps no local action cache - a fresh daemon recompiles everything - so each
+run goes through a **bazel-remote action cache** that persists across runs on the
+buildkitd (shared via `--BUCK2_CACHE_ADDR` when the host offers one, else a per-job
+sidecar). `buck2/Earthfile` installs the pinned buck2 + toolchain and writes the
+`.buckconfig.local` that points `[buck2_re_client]` at the cache; `buck2/buck2-ci.sh`
+drives build then test. Cold once, warm thereafter - no borrowed cores, no mesh.
 
-* one **driver** job owns the `buck2` invocation and serves the REAPI buck2
-  dials on localhost; it also lends half its cores as a co-worker.
-* N **worker** jobs (matrix, 3) join the mesh, claim actions least-loaded-first,
-  fetch inputs P2P, execute, stream outputs back. No checkout of the source is
-  needed for the build — blobs move over the mesh.
-* Rendezvous is keyless: every job derives the driver's iroh key from
-  `github.run_id`, so no service and no secrets.
+The build selects `root//platforms:re-cache` (`platforms/defs.bzl`): local
+execution + a remote **action cache** (`remote_cache_enabled=True`), so misses run
+locally and upload. The distributed `re-exec` platform and the rebuck2 engine were
+retired - the self-hosted runners have the muscle the free ones lacked.
 
-The build selects `root//platforms:re-cache` (via a `.buckconfig.local` the driver
-action writes) — hybrid (`local_enabled=True`), so `local_only` actions (reindeer
-`git_fetch`) run on the driver and the rest distribute. `re-exec`
-(`local_enabled=False`) rejects the `local_only` fetches, so re-cache is the one
-that works. Platform rules live in `platforms/defs.bzl`.
+**Toolchain.** The wasm blob build needs a wasm-capable clang and `wasm-opt`.
+`buck2/Earthfile` `+INSTALL` installs a pinned rustc (+ `wasm32v1-none`),
+`clang`/`lld`/`llvm`, `protobuf-compiler`, and a pinned binaryen v130, and asserts
+`clang --print-targets` includes wasm. The wasm `cc`/`cxx`/`ar` come from
+`read_config("wasm", …)`; the macOS default in `toolchains/BUCK` is Homebrew LLVM,
+and CI overrides it with a **global** `-c wasm.cc=…` (a root-cell `.buckconfig.local`
+doesn't reach the `toolchains` cell). `toolchains/wasm-lld.sh` locates rust-lld via
+`rustc --print sysroot` (portable across OS/arch).
 
-**Proven:** the mesh forms keyless, and a cold build dispatches ~2500-3800 actions
-to workers (`remote:` in the buck summary). rustc/cxx compiles distribute cleanly.
+**Infra tests.** The handful of tests needing Docker/devnet/Cardano carry a
+`ci-infra` label (`gen-first-party.py` `CI_INFRA_*` sets); CI runs `buck2 test
+root//... --exclude ci-infra`. Locally that is Pass 1460 / Fail 0.
 
-**Toolchain portability.** The wasm blob build needs a wasm-capable clang and
-`wasm-opt` on every runner. `.github/actions/buck2-linux-toolchain` installs a
-pinned rustc (+ `wasm32v1-none`), `clang`/`lld`/`llvm`, `protobuf-compiler`, and a
-pinned binaryen v130, and asserts `clang --print-targets` includes wasm. The wasm
-`cc`/`cxx`/`ar` come from `read_config("wasm", …)`; the macOS default in
-`toolchains/BUCK` is Homebrew LLVM, and CI overrides it with a **global** `-c
-wasm.cc=…` (`BUCK_WASM_CFG` on the build/test commands — a root-cell
-`.buckconfig.local` doesn't reach the `toolchains` cell). `toolchains/wasm-lld.sh`
-locates rust-lld via `rustc --print sysroot` (portable across OS/arch).
-
-**Infra tests.** The 5 tests needing Docker/devnet/Cardano carry a `ci-infra`
-label (`gen-first-party.py` `CI_INFRA_*` sets); CI runs `buck2 test root//...
---exclude ci-infra`. Locally that is Pass 1460 / Fail 0.
-
-**Build correctness: DONE.** The full `node + toolkit + wasm blob` builds green on
-Linux — verified end-to-end in an `ubuntu:24.04` container (clang 18.1.3, matching
-CI) plus macOS unregressed. All five Linux root causes are fixed (see "Remaining
-blockers" below for the writeups).
-
-**CI reliability on free runners: the open edge.** The distributed CI distributes
-(thousands of remote actions, keyless mesh) but the *driver* job doesn't yet
-reliably finish the monolithic build+test: it gets VM-reclaimed ~20 min in (exit
-143, "runner received a shutdown signal" — not a build error), stalling on an
-`[re_upload]` to the CAS. Not disk (seen on a 145 GB/15 GB runner with room) and
-swap didn't help. This is the rebuck2-WIP + free-runner boundary: the driver holds
-all of buck-out (tens of GB, redirect it off `/` via a bind mount to the big disk)
-+ the CAS store + all `local_only` work, and uploads every rlib over iroh P2P.
-Paths to close it: shard the build across several driver jobs; persist buck-out /
-a sharded CAS across runs (incremental, not cold); reduce driver local concurrency
-(`-j`); or rebuck2 throughput/robustness work (a dropped worker still fails its
-in-flight actions). buck2 is `gilescope/install-buck2` (stock `latest`) — pin a
-`facebook/buck2` release via the driver's `buck2-version` if a prelude bump breaks
-parse.
+**Build correctness.** The full `node + toolkit + wasm blob` builds green on Linux -
+verified end-to-end in an `ubuntu:24.04` container (clang 18.1.3) plus macOS
+unregressed. The Linux root causes are fixed (writeups below).
 
 ### Linux `-sys` / toolchain failures — root-caused + fixed
 
@@ -428,12 +405,12 @@ reached the blob assembly / final link.
 
 * **`secp256k1-sys` wasm compile — buck2 cell-scoping.** The cc-shim exec'd
   `/opt/homebrew/opt/llvm/bin/clang` (the macOS default in `toolchains/BUCK`) →
-  `FileNotFoundError` on Linux. The `[wasm] cc` override the driver writes to
-  `.buckconfig.local` is **root-cell-scoped**, but `toolchains/BUCK`'s
-  `read_config("wasm", …)` runs in the `toolchains` cell, which doesn't see it
-  (`buck2 audit config --cell toolchains wasm.cc` → empty). Fix: pass it as a
-  **global `-c wasm.cc=…`** on the build/test commands (`BUCK_WASM_CFG`), which
-  reaches every cell. (`-Qunused-arguments` + absolute clang in `wasm-cc.sh` were
+  `FileNotFoundError` on Linux. A `[wasm] cc` override in `.buckconfig.local` is
+  **root-cell-scoped**, but `toolchains/BUCK`'s `read_config("wasm", …)` runs in
+  the `toolchains` cell, which doesn't see it (`buck2 audit config --cell
+  toolchains wasm.cc` → empty). Fix: pass it as a **global `-c wasm.cc=…`** on the
+  build/test commands (buck2/Earthfile `+BUCK2` `buck2_args`), which reaches every
+  cell. (`-Qunused-arguments` + absolute clang in `wasm-cc.sh` were
   also needed once the right compiler is found.)
 
 * **`openssl` version skew — static-vs-dynamic.** Reindeer captures openssl-sys's
