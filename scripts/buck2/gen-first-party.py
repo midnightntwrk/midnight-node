@@ -190,6 +190,14 @@ MAPPED_SRCS_EXTERNAL = {
     # res owns every file its tests read, so no cross-package labels — membership
     # here (even empty) just switches it to the project-relative `res/` prefix.
     "midnight-node-res": {},
+    # node/src/warp_ledger_sync/integration_tests.rs include_bytes!s
+    # `../../../res/genesis/genesis_state_preview.mn` - a file above the crate
+    # dir, so node switches to the repo-mirroring prefix (src -> node/src, the
+    # genesis blob at res/genesis/...) and the `../../../res/...` path resolves.
+    "midnight-node": {
+        "root//res:genesis-state-preview":
+            "res/genesis/genesis_state_preview.mn",
+    },
     "midnight-node-toolkit": {
         "root//:COMPACTC_VERSION": "COMPACTC_VERSION",
         "root//node:cargo-toml": "node/Cargo.toml",
@@ -221,6 +229,9 @@ EXPORTS = {
         '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "genesis-block-undeployed",\n'
         '    src = "genesis/genesis_block_undeployed.mn",\n'
+        '    visibility = ["PUBLIC"],\n)',
+        'export_file(\n    name = "genesis-state-preview",\n'
+        '    src = "genesis/genesis_state_preview.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "serialized-tx",\n'
         '    src = "test-tx-deserialize/serialized_tx.mn",\n'

@@ -4,11 +4,15 @@ export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])
 rust_library(
     name = "midnight-node",
     crate = "midnight_node",
-    crate_root = "src/lib.rs",
+    crate_root = "node/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "node/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
+            ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
+        ],
+    ),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
         "CARGO_PKG_VERSION": "3.0.0",
         "CARGO_PKG_VERSION_MAJOR": "3",
@@ -154,11 +158,15 @@ rust_library(
 rust_binary(
     name = "midnight-node-bin",
     crate = "midnight_node",
-    crate_root = "src/main.rs",
+    crate_root = "node/src/main.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "node/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
+            ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
+        ],
+    ),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
         "CARGO_PKG_VERSION": "3.0.0",
         "CARGO_PKG_VERSION_MAJOR": "3",
@@ -305,11 +313,15 @@ rust_binary(
 rust_test(
     name = "midnight-node-unit-test",
     crate = "midnight_node",
-    crate_root = "src/lib.rs",
+    crate_root = "node/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "node/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
+            ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
+        ],
+    ),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
         "CARGO_PKG_VERSION": "3.0.0",
         "CARGO_PKG_VERSION_MAJOR": "3",
@@ -460,11 +472,15 @@ rust_test(
 rust_test(
     name = "midnight-node-storage_migration",
     crate = "storage_migration",
-    crate_root = "tests/storage_migration.rs",
+    crate_root = "node/tests/storage_migration.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "node/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**"])] + [
+            ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
+        ],
+    ),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
         "CARGO_PKG_VERSION": "3.0.0",
         "CARGO_PKG_VERSION_MAJOR": "3",
@@ -615,11 +631,15 @@ rust_test(
 rust_test(
     name = "midnight-node-yamux_vulnerability",
     crate = "yamux_vulnerability",
-    crate_root = "tests/yamux_vulnerability.rs",
+    crate_root = "node/tests/yamux_vulnerability.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "node/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**"])] + [
+            ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
+        ],
+    ),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
         "CARGO_PKG_VERSION": "3.0.0",
         "CARGO_PKG_VERSION_MAJOR": "3",

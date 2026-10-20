@@ -17,6 +17,12 @@ export_file(
 )
 
 export_file(
+    name = "genesis-state-preview",
+    src = "genesis/genesis_state_preview.mn",
+    visibility = ["PUBLIC"],
+)
+
+export_file(
     name = "serialized-tx",
     src = "test-tx-deserialize/serialized_tx.mn",
     visibility = ["PUBLIC"],
