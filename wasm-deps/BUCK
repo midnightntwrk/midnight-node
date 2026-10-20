@@ -3151,29 +3151,43 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "3",
         "CARGO_PKG_VERSION_PATCH": "32",
     },
-    features = [
-        "alloc",
-        "async-await",
-        "default",
-        "executor",
-        "futures-executor",
-    ],
+    features = ["alloc"],
     platform = {
         "linux-arm64": dict(
-            features = ["std"],
+            features = [
+                "async-await",
+                "default",
+                "executor",
+                "futures-executor",
+                "std",
+            ],
+            deps = [":futures-executor-0.3"],
         ),
         "linux-x86_64": dict(
-            features = ["std"],
+            features = [
+                "async-await",
+                "default",
+                "executor",
+                "futures-executor",
+                "std",
+            ],
+            deps = [":futures-executor-0.3"],
         ),
         "macos-arm64": dict(
-            features = ["std"],
+            features = [
+                "async-await",
+                "default",
+                "executor",
+                "futures-executor",
+                "std",
+            ],
+            deps = [":futures-executor-0.3"],
         ),
     },
     visibility = [],
     deps = [
         ":futures-channel-0.3",
         ":futures-core-0.3",
-        ":futures-executor-0.3",
         ":futures-io-0.3",
         ":futures-sink-0.3",
         ":futures-task-0.3",
@@ -3294,17 +3308,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "3",
         "CARGO_PKG_VERSION_PATCH": "32",
     },
-    platform = {
-        "linux-arm64": dict(
-            features = ["std"],
-        ),
-        "linux-x86_64": dict(
-            features = ["std"],
-        ),
-        "macos-arm64": dict(
-            features = ["std"],
-        ),
-    },
+    features = ["std"],
     visibility = [],
     deps = [
         ":futures-core-0.3",
@@ -3493,9 +3497,6 @@ cargo.rust_library(
     },
     features = [
         "alloc",
-        "async-await",
-        "async-await-macro",
-        "futures-macro",
         "futures-sink",
         "sink",
         "slab",
@@ -3503,9 +3504,12 @@ cargo.rust_library(
     platform = {
         "linux-arm64": dict(
             features = [
+                "async-await",
+                "async-await-macro",
                 "channel",
                 "futures-channel",
                 "futures-io",
+                "futures-macro",
                 "io",
                 "memchr",
                 "std",
@@ -3513,14 +3517,18 @@ cargo.rust_library(
             deps = [
                 ":futures-channel-0.3",
                 ":futures-io-0.3",
+                ":futures-macro-0.3",
                 ":memchr-2",
             ],
         ),
         "linux-x86_64": dict(
             features = [
+                "async-await",
+                "async-await-macro",
                 "channel",
                 "futures-channel",
                 "futures-io",
+                "futures-macro",
                 "io",
                 "memchr",
                 "std",
@@ -3528,14 +3536,18 @@ cargo.rust_library(
             deps = [
                 ":futures-channel-0.3",
                 ":futures-io-0.3",
+                ":futures-macro-0.3",
                 ":memchr-2",
             ],
         ),
         "macos-arm64": dict(
             features = [
+                "async-await",
+                "async-await-macro",
                 "channel",
                 "futures-channel",
                 "futures-io",
+                "futures-macro",
                 "io",
                 "memchr",
                 "std",
@@ -3543,6 +3555,7 @@ cargo.rust_library(
             deps = [
                 ":futures-channel-0.3",
                 ":futures-io-0.3",
+                ":futures-macro-0.3",
                 ":memchr-2",
             ],
         ),
@@ -3550,7 +3563,6 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":futures-core-0.3",
-        ":futures-macro-0.3",
         ":futures-sink-0.3",
         ":futures-task-0.3",
         ":pin-project-lite-0.2",

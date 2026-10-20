@@ -1,7 +1,10 @@
-# no_std wasm32: the `futures` umbrella crate's `std` feature turns on std-only
-# submodules (and std on every re-exported futures-rs crate), none of which
-# exist on wasm32v1-none -> E0463. Same leak as futures-sink - sp-inherents'
-# dev-dep pulls `futures` with default-features = true into the wasm resolve.
-# The no_std runtime only needs the alloc-level re-exports.
+# no_std wasm32: the `futures` umbrella's std-requiring features cannot be
+# satisfied on wasm32v1-none. sp-inherents' dev-dep pulls `futures` with
+# default-features = true (-> std, executor, futures-executor); `executor`
+# re-exports futures_executor::{block_on, LocalPool, ...}, all std-only, so with
+# std off they resolve to nothing (E0432). The no_std runtime imports no
+# futures:: item - it only needs the crate to compile - so drop every std-tied
+# feature and keep the alloc-level core (alloc + async-await). std/executor stay
+# on the host exec platforms.
 ['cfg(target_arch = "wasm32")']
-omit_features = ["std"]
+omit_features = ["std", "default", "executor", "futures-executor"]
