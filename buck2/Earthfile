@@ -90,7 +90,10 @@ INSTALL:
         tar xzf /tmp/binaryen.tgz -C /usr/local --strip-components=1 && rm /tmp/binaryen.tgz && \
         wasm-opt --version && wasm-opt --help 2>&1 | grep -q signext-lowering
 
-    COPY buck2-ci.sh /usr/local/bin/buck2-ci.sh
+    # A FUNCTION's local COPY resolves against the *caller's* context (repo root
+    # here), not buck2/, so pull the script as an artifact from +script, whose
+    # target reference does resolve against this Earthfile's dir.
+    COPY +script/buck2-ci.sh /usr/local/bin/buck2-ci.sh
     RUN chmod +x /usr/local/bin/buck2-ci.sh
 
 # CONFIG writes .buckconfig.local (local exec + remote action cache) and installs
