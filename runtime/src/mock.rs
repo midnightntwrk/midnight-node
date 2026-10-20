@@ -337,6 +337,12 @@ pub fn advance_block() {
 	initialize_block();
 }
 
+/// [advance_block], leaving `empty` slots without a block before the next one.
+pub fn advance_block_skipping(empty: u64) {
+	finalize_block();
+	initialize_block_at(*ConsensusEngine::current_slot() + 1 + empty);
+}
+
 // in real life first slot will be something much bigger than 0, that's why it is here
 pub const ARBITRARY_FIRST_SLOT: u64 = 389374234;
 pub const ARBITRARY_FIRST_EPOCH: u64 = ARBITRARY_FIRST_SLOT / (SLOTS_PER_EPOCH as u64);
@@ -344,6 +350,10 @@ pub const ARBITRARY_FIRST_EPOCH: u64 = ARBITRARY_FIRST_SLOT / (SLOTS_PER_EPOCH a
 pub fn initialize_block() {
 	let slot = *ConsensusEngine::current_slot() + 1;
 	let slot = if slot == 1 { slot + ARBITRARY_FIRST_SLOT } else { slot };
+	initialize_block_at(slot);
+}
+
+fn initialize_block_at(slot: u64) {
 	initialize_with_slot_digest_and_increment_block_number(slot);
 
 	System::on_initialize(System::block_number());
@@ -461,6 +471,7 @@ pub type CrossChainPair = <CrossChainPublic as CryptoType>::Pair;
 
 const ALICE_SEED: &str = "//1";
 const BOB_SEED: &str = "//2";
+const CHARLIE_SEED: &str = "//3";
 
 #[derive(Clone)]
 pub struct TestKeys {
@@ -506,6 +517,10 @@ pub fn alice() -> TestKeys {
 
 pub fn bob() -> TestKeys {
 	TestKeys::from_seed(BOB_SEED)
+}
+
+pub fn charlie() -> TestKeys {
+	TestKeys::from_seed(CHARLIE_SEED)
 }
 
 #[derive(Clone)]
@@ -579,7 +594,10 @@ fn initialize_with_slot_digest_and_increment_block_number(slot_number: u64) {
 			]
 		},
 		ActiveEngine::Babe => {
-			let opens_epoch = slot_number.is_multiple_of(SLOTS_PER_EPOCH as u64);
+			// The first block of an epoch, which need not be at its first slot after empty slots.
+			let parent_slot = *ConsensusEngine::current_slot();
+			let opens_epoch =
+				slot_number / SLOTS_PER_EPOCH as u64 != parent_slot / SLOTS_PER_EPOCH as u64;
 			let signers = if opens_epoch {
 				pallet_babe::NextAuthorities::<Test>::get().len()
 			} else {
