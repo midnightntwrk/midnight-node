@@ -290,11 +290,12 @@ UNIT_TEST_ENV = {
     },
 }
 
-# Crates to skip emitting a unit-test target for. sc-partner-chains-consensus-aura's
-# tests all need substrate-test-runtime's dev wasm binary (a polkadot-sdk internal
-# test fixture built by substrate-wasm-builder) — out of scope: it'd need a second
-# wasm crate-universe + cdylib/compress pipeline just for a third-party test runtime.
-NO_UNIT_TEST = {"sc-partner-chains-consensus-aura"}
+# Crates to skip emitting a unit-test target for. sc-partner-chains-consensus and
+# sc-partner-chains-consensus-aura tests all need substrate-test-runtime's dev wasm
+# binary (a polkadot-sdk internal test fixture built by substrate-wasm-builder) —
+# out of scope: it'd need a second wasm crate-universe + cdylib/compress pipeline
+# just for a third-party test runtime.
+NO_UNIT_TEST = {"sc-partner-chains-consensus-aura", "sc-partner-chains-consensus"}
 
 # Tests that need external infra (Docker/testcontainers, a live devnet, a Cardano
 # node) get a `ci-infra` label so the distributed CI can `buck2 test root//...
@@ -305,6 +306,8 @@ CI_INFRA_INTEGRATION = {
     ("midnight-node-e2e", "e2e_tests"),                        # devnet
     ("midnight-node-toolkit", "single_tx"),                    # docker-compose
     ("midnight-node-toolkit", "toolkit_e2e"),                  # devnet / ledger static dir
+    ("midnight-node-toolkit", "hardfork_e2e"),                 # docker-compose
+    ("sc-partner-chains-consensus", "verifier_network"),        # substrate-test-runtime wasm
 }
 
 # Extra src globs a crate's TEST targets need (test-data include_str!'d only by

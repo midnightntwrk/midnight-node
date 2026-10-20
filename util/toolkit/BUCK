@@ -580,6 +580,7 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    labels = ["ci-infra"],
     visibility = ["PUBLIC"],
 )
 
