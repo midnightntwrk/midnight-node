@@ -123,7 +123,7 @@ fn check_spec_version_matches_node_version() {
 
 #[test]
 fn check_runtime_package_version_matches_spec_version() {
-	let runtime_manifest_str = std::fs::read_to_string("../runtime/Cargo.toml").unwrap();
+	let runtime_manifest_str = std::fs::read_to_string(root().join("runtime/Cargo.toml")).unwrap();
 	let runtime_manifest: Manifest =
 		toml::from_str(&runtime_manifest_str).expect("Failed to parse runtime Cargo.toml");
 

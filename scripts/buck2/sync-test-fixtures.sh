@@ -13,11 +13,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# node: cfg::tests read <root>/res/cfg/*.toml ; openrpc::tests read <root>/docs/openrpc.json
+# node: cfg::tests read <root>/res/cfg/*.toml ; openrpc::tests read <root>/docs/openrpc.json ;
+# main_chain_follower tests read <root>/res/mock-bridge-data/ (mock authority registrations).
 rm -rf node/test-fixtures
-mkdir -p node/test-fixtures/res/cfg node/test-fixtures/docs
+mkdir -p node/test-fixtures/res/cfg node/test-fixtures/docs node/test-fixtures/res/mock-bridge-data
 cp res/cfg/*.toml node/test-fixtures/res/cfg/
 cp docs/openrpc.json node/test-fixtures/docs/
+cp res/mock-bridge-data/* node/test-fixtures/res/mock-bridge-data/
 
 # docs: docs_tests reads <root>/{res/cfg/default.toml (anchor), runtime/src/lib.rs,
 # node/Cargo.toml, metadata/Cargo.toml, README.md, util/toolkit/src/fetcher/runtimes.rs,
@@ -27,6 +29,7 @@ mkdir -p docs/test-fixtures/res/cfg docs/test-fixtures/runtime/src docs/test-fix
          docs/test-fixtures/metadata docs/test-fixtures/util/toolkit/src/fetcher docs/test-fixtures/docs
 cp res/cfg/default.toml docs/test-fixtures/res/cfg/
 cp runtime/src/lib.rs docs/test-fixtures/runtime/src/
+cp runtime/Cargo.toml docs/test-fixtures/runtime/
 cp node/Cargo.toml docs/test-fixtures/node/
 cp metadata/Cargo.toml docs/test-fixtures/metadata/
 cp README.md docs/test-fixtures/

@@ -296,10 +296,10 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000001",
 		)
 		.unwrap();
-		let src_files = vec![
-			concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/genesis/genesis_block_undeployed.mn")
-				.to_string(),
-		];
+		let src_files = vec![format!(
+			"{}/test-data/genesis/genesis_block_undeployed.mn",
+			crate::test_paths::manifest_dir()
+		)];
 		let args = ShowWalletArgs {
 			source: Source {
 				src_url: None,
