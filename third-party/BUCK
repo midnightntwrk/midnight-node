@@ -30987,7 +30987,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "10",
         "CARGO_PKG_VERSION_PATCH": "80",
         "CARGO_PKG_VERSION_PRE": "",
-        "OUT_DIR": "$(location :openssl-0.10-build-script-run[out_dir])",
     },
     features = [
         "default",
@@ -30996,7 +30995,20 @@ cargo.rust_library(
     named_deps = {
         "ffi": ":openssl-sys-0.9",
     },
-    rustc_flags = ["@$(location :openssl-0.10-build-script-run[rustc_flags])"],
+    platform = {
+        "linux-arm64": dict(
+            env = {
+                "OUT_DIR": "$(location :openssl-0.10-build-script-run[out_dir])",
+            },
+            rustc_flags = ["@$(location :openssl-0.10-build-script-run[rustc_flags])"],
+        ),
+        "linux-x86_64": dict(
+            env = {
+                "OUT_DIR": "$(location :openssl-0.10-build-script-run[out_dir])",
+            },
+            rustc_flags = ["@$(location :openssl-0.10-build-script-run[rustc_flags])"],
+        ),
+    },
     visibility = [],
     deps = [
         ":bitflags-2",
@@ -31052,6 +31064,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "10",
         "CARGO_PKG_VERSION_PATCH": "80",
         "CARGO_PKG_VERSION_PRE": "",
+        "DEP_OPENSSL_CONF": "OPENSSL_NO_CAMELLIA,OPENSSL_NO_IDEA,OPENSSL_NO_SEED,OPENSSL_NO_SSL3_METHOD",
+        "DEP_OPENSSL_VERSION_NUMBER": "30600030",
     },
     features = [
         "default",
