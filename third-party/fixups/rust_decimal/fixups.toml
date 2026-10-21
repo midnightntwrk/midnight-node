@@ -13,4 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-buildscript.run = true
+# cc-rs build script: OPT_LEVEL is a cargo profile var buck doesn't
+# provide, and cc-rs panics without it. (Env table implies run = true.)
+[buildscript.run.env]
+OPT_LEVEL = "3"

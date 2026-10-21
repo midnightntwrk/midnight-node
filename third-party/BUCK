@@ -3853,6 +3853,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CC": "clang",
         "CXX": "clang++",
+        "OPT_LEVEL": "3",
     },
     rustc_link_lib = True,
     rustc_link_search = True,
@@ -37828,6 +37829,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "1",
         "CARGO_PKG_VERSION_PATCH": "31",
         "CARGO_PKG_VERSION_PRE": "",
+        "OPT_LEVEL": "3",
     },
     rustc_link_lib = True,
     rustc_link_search = True,
@@ -40301,6 +40303,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CC": "clang",
         "CXX": "clang++",
+        "OPT_LEVEL": "3",
     },
     features = [
         "alloc",
@@ -40835,6 +40838,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "41",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
+        "OPT_LEVEL": "3",
     },
     features = [
         "default",
@@ -61499,6 +61503,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "12",
         "CARGO_PKG_VERSION_PRE": "",
+        "OPT_LEVEL": "3",
     },
     features = [
         "addr2line",
@@ -65332,6 +65337,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "16",
         "CARGO_PKG_VERSION_PRE": "",
+        "OPT_LEVEL": "3",
     },
     features = [
         "legacy",
