@@ -1,0 +1,189 @@
+[
+  {
+    "registrations": [
+      {
+        "name": "Ash",
+        "aura_pub_key": "0x22b279645c68d3963c2ec649dae8553b7eae6fb947d9315900084bba765d3425",
+        "grandpa_pub_key": "0xfe6a8c3512a6778577d167155a34b4a2dd40b4d2023f6db18be2c2b9e8e36847",
+        "sidechain_pub_key": "0x03fec991c885626bb43ec369aa95e0fca72146af4e0f57663a7a69eadde3d5991e",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Baobab",
+        "aura_pub_key": "0x38cca2a41efe2200cd001050ff47d395517173a082165b5e38bc5d62bd965562",
+        "grandpa_pub_key": "0xf514487b02b392f50a84dc26de9f302a345d5e223f3a00995425ee09ba67b782",
+        "sidechain_pub_key": "0x03a7b8b085c0139ff5f385f672bed286277fd8088f2c3f21d132e14bedc0e14732",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Cedar",
+        "aura_pub_key": "0x721f9d9208d9c65b9f582ec6509e98e1f123d21ce92b2fddd20dfbbac1af034c",
+        "grandpa_pub_key": "0x08355eead9344871a77c6b113503574b1f4a5b71002b0a1803fafd1f385d730a",
+        "sidechain_pub_key": "0x03e7c2d78bbda1f920bed36b84d2b1763664826eee1a9698900b333e5717525731",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Deodar",
+        "aura_pub_key": "0x0ee406b36cf05c78dce5dd030589c39191caa46df3f32d0d9e2df97bc106ac51",
+        "grandpa_pub_key": "0x1a678f402fd071a94652f46f358890658f147a47fc6a4de7e5579028074985c0",
+        "sidechain_pub_key": "0x03dee690d5faf0ac338f07196f3ceba1ee51ac68ccc9d8bfcc08fee28f73a02190",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      }
+    ],
+    "permissioned": [
+      {
+        "name": "Aspen",
+        "aura_pub_key": "0xa237d084859b99078c28f850b3398594d8419c2866b234b0e3e6f293676af26a",
+        "grandpa_pub_key": "0x4a3b21c7d37563f02ae231926dbe7201db63d00c9cbe2105f34ab0ce4f0c0c5a",
+        "sidechain_pub_key": "0x0356dcb690685b6b159606ab16fae7417691e499f6ca205238d48515e9eaa3a8a0",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Birch",
+        "aura_pub_key": "0xd8f8975ad49ff6df094823cbae0e55ec9240ed7e6e7a213d3e80c32c7fd84265",
+        "grandpa_pub_key": "0x66d41b68d8b7bdf0726f7b920edbe4f9081badfc6f6327850560ce1bacace5d3",
+        "sidechain_pub_key": "0x03ba2fae521bc23a26620f082a961b5dd0f813f08e62d35f1a73507061777dcb01",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Cherry",
+        "aura_pub_key": "0xc69fe2b67aed7f263090ea14c2176266efc829115476e74102d16084df74f21a",
+        "grandpa_pub_key": "0x9bf454d198184ffe9b7d110a7eb86c7b7d8127cb3e904ea01743a7f6706de6d9",
+        "sidechain_pub_key": "0x0203ae55458c8b9123b37a61ddd7f2a334ff35a80385825a2265eb490688cdebc5",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Dogwood",
+        "aura_pub_key": "0x287caf737ecacfc302130a35d55188e5d10a8a984304af2409390de2e4522607",
+        "grandpa_pub_key": "0xbc668c2e035590a684b18f02ac5406baf62d93bea50acef1cf30161527574ae8",
+        "sidechain_pub_key": "0x03061e6543612512636a3018e8e3d0c0403ef08cc8afbff6fe2bcf88ce9a2b7ef9",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Eucalyptus",
+        "aura_pub_key": "0x7cfe0d72ce7dc70a0915f3909c9ad41755a1e6a54dbeb73d4d510c1b68de1109",
+        "grandpa_pub_key": "0x865c58447a43efc68d39452b492a9a0467d2ebd77e8161dbdd4dd59868fb68c2",
+        "sidechain_pub_key": "0x0321009431b00dc9a9ba7b168c7297edd2c17de9cdee04b26a31b5d7746fd46344",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Fig",
+        "aura_pub_key": "0x8020b21e74d091f0b017e3b8b6d5a8570e17f2423f91d8aff9db00a4bd94fe06",
+        "grandpa_pub_key": "0x3abd02ddd5ee4c914b28f71b84f9944daf54e71586a2554491f8158faf3fda76",
+        "sidechain_pub_key": "0x03e2a245ba91ebc0af91842c117b4bf1efb97f862bf88399d53c9440349d3814ba",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Ginkgo",
+        "aura_pub_key": "0x4ea3a9a15869deb8cb7872eb2051507458a736ce7e6aaabc1f08ac4fb25bf636",
+        "grandpa_pub_key": "0x27c771d9183777822c6452b19dc956f170bdfc115f35818f78b7da0b6ba9c8b1",
+        "sidechain_pub_key": "0x0224c6d324f865d8c1ec98623cb12e1ef7f832ce867459a651a05bec302ad025fc",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Hemlock",
+        "aura_pub_key": "0xe6da2b0f0357f70e0913ddb05544f4d999eed71b91f046bd2ef6cfb9c52e9d21",
+        "grandpa_pub_key": "0xd7afed5d1eb089070544bf6828526f4ace2f055df3e026e59ac17cdc7d938f8f",
+        "sidechain_pub_key": "0x02c9303f3a61dddc8a320e33c5f49b960a5005a9f6d1d9bb7cf51996cd952a3b5b",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Ironwood",
+        "aura_pub_key": "0xec31fa7ea1cdda876fe5d1bfea35a952a9c1baa0db1ad0c115c915631c36757e",
+        "grandpa_pub_key": "0xc715c3cc0bab7b59c01c65a4736349c1e6d55c1f13f7c20021b0ac970d00e7da",
+        "sidechain_pub_key": "0x0250159344a81b11aa21d9b4d2b5f24000682a95eb6564caccfe67b96ade9e202a",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Juniper",
+        "aura_pub_key": "0x8c4480cce621138cd98a7a479243f093a1bf853e07c1515f4bec02ce3ed38e1c",
+        "grandpa_pub_key": "0x2cdcc7d8f8c362c11779226a00e9b682c490b2a7fa2d50041f92658e4c50df60",
+        "sidechain_pub_key": "0x027cdef218a74d6c5ceb0f7341ad4164ab28638412a3281bc518845833dbb77018",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Kentia",
+        "aura_pub_key": "0xe44ab215b1b779e2d142c4a0bb27c82358325ae52390c2706af0b7a57db9cc2d",
+        "grandpa_pub_key": "0x4317150cc9481fd7ddb442ee9c124faa292ac365b653e0b92577a6794e8d70a4",
+        "sidechain_pub_key": "0x022eaa9749b268a5e39c4a063dd59076854d8e4102338c12ff415d7a58ffb96f61",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      },
+      {
+        "name": "Locust",
+        "aura_pub_key": "0x1c502173467843c471b4e67fb42a19c442e45d93c5bb61b659fc9f0994f6a943",
+        "grandpa_pub_key": "0x1211f8e918416ce4e505e73828ca00a1f1c2e4cacfb0c612bfe8e7ed635cc67c",
+        "sidechain_pub_key": "0x03461f9f9a0a7502ce25337aa3fb3b4209b98005a8ab95ac3897b7a536aff3dbb0",
+        "mainchain_pub_key": "0xd5f64925e8722583ab9f8bb633a6938780873cf59504b3d12527719d3310b0ff",
+        "mainchain_signature": "0x9e417ede1ab0d710ce3d5854627baef9b32d4dd69ec75f20d1f28234f167b3f679dadafce995fc63a05eefefa322ebe84b5ffccf526481710d086a16aef61506",
+        "sidechain_signature": "0x568e305af7f6d51668a76f3aaa72aa3f0f3554be20f150dcabb759f8bff66b484bf66cf248916a40bda649b3ce302ecaf689b9c7b4abd66b44b2aeb039ff85a5",
+        "registration_utxo": "ff428f8f916a832d146e58f3656c17c769a6bbc44bba1693fe2a4f9c605b8f16#0",
+        "status": "Active"
+      }
+    ],
+    "nonce": "0x1234",
+    "d_parameter": {
+      "registered": 25,
+      "permissioned": 275
+    }
+  }
+]

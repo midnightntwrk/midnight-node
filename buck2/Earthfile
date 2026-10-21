@@ -1,0 +1,143 @@
+VERSION 0.8
+
+# buck2 for an Earthfile, image-agnostic: the caller picks its own FROM (a
+# Debian-based rust image, e.g. rust:1.98.1-trixie) and its sources.
+#
+#   IMPORT ./buck2
+#   prep:
+#       FROM rust:1.98.1-trixie
+#       DO buck2+INSTALL
+#       ...COPY sources...
+#       DO --pass-args buck2+CONFIG
+#   build:
+#       FROM +prep
+#       DO --pass-args buck2+BUCK2 --mode=build --targets="root//node:midnight-node-bin ..."
+#
+# --pass-args carries --BUCK2_CACHE_ADDR from the command line into CONFIG and
+# BUCK2: a FUNCTION's ARG never sees a command-line value otherwise.
+#
+# buck2 has no local action cache - a fresh daemon recompiles everything - so
+# every +BUCK2 step runs under bazel-remote on a CACHE mount that persists
+# across runs on a self-hosted buildkitd (or a shared per-host cache via
+# --BUCK2_CACHE_ADDR). Pinned to buck2 2026-06-01 to match midnightntwrk/season
+# on the shared pool: identical toolchain -> identical action digests -> shared
+# cache hits. (Also pre-dates the 2026-08-10 prelude change that dropped
+# cpu/constraints:wasm32, which platforms/wasm32v1-none references.)
+
+# INSTALL puts buck2, bazel-remote, buck2-ci.sh and the wasm/substrate build
+# toolchain on PATH. Image-agnostic: no repo sources yet.
+INSTALL:
+    FUNCTION
+    ARG BUCK2_VERSION=2026-06-01
+    ARG BAZEL_REMOTE_VERSION=2.6.1
+    ARG BINARYEN_VERSION=version_130
+    ARG RUST_WASM_TARGET=wasm32v1-none
+
+    RUN command -v apt-get > /dev/null && command -v curl > /dev/null && command -v dpkg > /dev/null || \
+        { echo "buck2+INSTALL needs a Debian-based image with curl (e.g. rust:1.98.1-trixie)" >&2; exit 1; }
+    # clang+lld: the prelude's C++ toolchain links `clang++ -fuse-ld=lld`, and
+    #   the on-chain wasm blob's secp256k1 needs clang's WebAssembly backend.
+    # protobuf-compiler: substrate sc-network*/litep2p prost-build codegen.
+    # llvm (llvm-ar), cmake+perl (aws-lc-sys), libssl-dev+pkg-config (openssl-sys).
+    # git: tests that drive git. zstd: buck2/binaryen releases ship compressed.
+    # python3: the prelude's rust rules drive rustc through python scripts.
+    RUN apt-get update -qq && \
+        apt-get install -y --no-install-recommends -qq \
+          clang lld llvm libssl-dev pkg-config cmake perl protobuf-compiler \
+          git python3 zstd curl ca-certificates xz-utils && \
+        rm -rf /var/lib/apt/lists/* && \
+        for t in clang clang++ llvm-ar; do \
+          command -v "$t" > /dev/null || { c="$(ls /usr/bin/${t}-* 2>/dev/null | sort -V | tail -1)"; [ -n "$c" ] && ln -sf "$c" "/usr/bin/${t}"; }; \
+        done && \
+        clang --print-targets | grep -qi wasm || { echo "clang has no WebAssembly backend" >&2; exit 1; }
+
+    # The on-chain runtime target. The base rust image ships rustup.
+    RUN rustup target add "$RUST_WASM_TARGET"
+
+    # buck2 + bazel-remote. Checksums from the release assets (neither project
+    # publishes them); bump version and checksums together. Use the image's own
+    # arch (dpkg), not ARG TARGETARCH, which rth gets wrong inside a FUNCTION.
+    RUN case "$(dpkg --print-architecture)" in \
+          amd64) TRIPLE=x86_64-unknown-linux-gnu; \
+                 BUCK2_SHA=4dd9ae54c87fdcf795101074f8788232af55523885135d5e3358c77365993555; \
+                 BR_ARCH=linux-amd64; \
+                 BR_SHA=025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784 ;; \
+          arm64) TRIPLE=aarch64-unknown-linux-gnu; \
+                 BUCK2_SHA=623af318a44e3b81a17bf1660c23dd5a75ca8686727c3f0f94c8e8ca694daca1; \
+                 BR_ARCH=linux-arm64; \
+                 BR_SHA=b8b9456d669d45bb8c5480ce0529ca4fa9d445e0c33b3aeed779df802d8164db ;; \
+          *) echo "unsupported arch: $(dpkg --print-architecture)" >&2 && exit 1 ;; \
+        esac && \
+        curl -fsSL --retry 5 -o /tmp/buck2.zst "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${TRIPLE}.zst" && \
+        echo "${BUCK2_SHA}  /tmp/buck2.zst" | sha256sum -c - && \
+        zstd -d /tmp/buck2.zst -o /usr/local/bin/buck2 && chmod +x /usr/local/bin/buck2 && rm /tmp/buck2.zst && \
+        curl -fsSL --retry 5 -o /tmp/br.tgz "https://github.com/buchgr/bazel-remote/releases/download/v${BAZEL_REMOTE_VERSION}/bazel-remote-${BAZEL_REMOTE_VERSION}-${BR_ARCH}.tar.gz" 2>/dev/null \
+          || curl -fsSL --retry 5 -o /usr/local/bin/bazel-remote "https://github.com/buchgr/bazel-remote/releases/download/v${BAZEL_REMOTE_VERSION}/bazel-remote-${BAZEL_REMOTE_VERSION}-${BR_ARCH}" && \
+        if [ -f /tmp/br.tgz ]; then tar xzf /tmp/br.tgz -C /usr/local/bin && rm /tmp/br.tgz; fi && \
+        echo "${BR_SHA}  /usr/local/bin/bazel-remote" | sha256sum -c - && \
+        chmod +x /usr/local/bin/bazel-remote && \
+        buck2 --version && test -x /usr/local/bin/bazel-remote  # bazel-remote has no --version flag; sha256 above already verifies it
+
+    # binaryen (wasm-opt) for the on-chain blob genrule. apt's is too old for
+    # --signext-lowering; pin version_130. x86_64 only (the self-hosted fleet).
+    RUN case "$(dpkg --print-architecture)" in \
+          amd64) BIN_ARCH=x86_64; \
+                 BIN_SHA=0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc ;; \
+          *) echo "binaryen pin is x86_64 only (fleet arch); got $(dpkg --print-architecture)" >&2 && exit 1 ;; \
+        esac && \
+        curl -fsSL --retry 5 -o /tmp/binaryen.tgz "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-${BIN_ARCH}-linux.tar.gz" && \
+        echo "${BIN_SHA}  /tmp/binaryen.tgz" | sha256sum -c - && \
+        tar xzf /tmp/binaryen.tgz -C /usr/local --strip-components=1 && rm /tmp/binaryen.tgz && \
+        wasm-opt --version && wasm-opt --help 2>&1 | grep -q signext-lowering
+
+    # A FUNCTION's local COPY resolves against the *caller's* context (repo root
+    # here), not buck2/, so pull the script as an artifact from +script, whose
+    # target reference does resolve against this Earthfile's dir.
+    COPY +script/buck2-ci.sh /usr/local/bin/buck2-ci.sh
+    RUN chmod +x /usr/local/bin/buck2-ci.sh
+
+# CONFIG writes .buckconfig.local (local exec + remote action cache) and installs
+# the wasm toolchain shims. Run AFTER the repo sources are COPY'd (needs toolchains/).
+CONFIG:
+    FUNCTION
+    # A bazel-remote shared by every job on the host, e.g. grpc://172.17.0.1:49092
+    # (the docker bridge; a RUN step cannot see the host's loopback). Empty or
+    # unreachable: buck2-ci.sh runs a per-job sidecar.
+    ARG BUCK2_CACHE_ADDR
+    # The toolchains cell reads a *global* -c only, so the wasm cc/ar/linker must
+    # be absolute on-host paths, not a .buckconfig section (see BUCK2_ARGS below).
+    RUN install -m755 toolchains/wasm-cc.sh /usr/local/bin/wasm-cc.sh && \
+        install -m755 toolchains/wasm-ar.sh /usr/local/bin/wasm-ar.sh && \
+        install -m755 toolchains/wasm-lld.sh /usr/local/bin/wasm-lld.sh
+    RUN addr="${BUCK2_CACHE_ADDR:-grpc://127.0.0.1:9092}" && printf '%s\n' \
+          '[buck2]' \
+          'file_watcher = fs_hash_crawler' \
+          '[build]' \
+          'execution_platforms = root//platforms:re-cache' \
+          '[buck2_re_client]' \
+          "action_cache_address = $addr" \
+          "cas_address = $addr" \
+          "engine_address = $addr" \
+          'tls = false' \
+          'capabilities = false' \
+          > .buckconfig.local
+
+# BUCK2 runs one buck2-ci.sh mode under the action cache. TARGETS is a
+# space-separated list; BUCK2_ARGS the global flags prepended to every buck2 call.
+BUCK2:
+    FUNCTION
+    ARG --required mode
+    ARG --required targets
+    ARG bin
+    ARG platform
+    ARG out
+    # midnight-node pins the host target + the wasm toolchain via global -c.
+    ARG buck2_args="--target-platforms root//platforms:linux-x86_64 -c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    ARG BUCK2_CACHE_ADDR
+    CACHE --sharing locked --id buck2-action-cache /root/.cache/bazel-remote
+    RUN TARGETS="$targets" BUCK2_ARGS="$buck2_args" BIN="$bin" PLATFORM="$platform" OUT="$out" buck2-ci.sh "$mode"
+
+script:
+    FROM scratch
+    COPY buck2-ci.sh /buck2-ci.sh
+    SAVE ARTIFACT /buck2-ci.sh

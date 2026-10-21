@@ -1,0 +1,20 @@
+cardano_security_parameter = 5
+cardano_active_slots_coeff = 1
+mc__first_epoch_timestamp_millis = 1772211480000
+mc__epoch_duration_millis = 60000
+mc__slot_duration_millis = 1000
+
+chainspec_name = "Midnight Local"
+chainspec_id = "local"
+chainspec_genesis_state = "res/genesis/genesis_state_local.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_local.mn"
+chainspec_chain_type = "local"
+chainspec_pc_chain_config = "res/local/pc-chain-config.json"
+chainspec_cnight_genesis = "res/local/cnight-config.json"
+chainspec_ics_config = "res/local/ics-config.json"
+chainspec_reserve_config = "res/local/reserve-config.json"
+chainspec_federated_authority_config = "res/local/federated-authority-config.json"
+chainspec_system_parameters_config = "res/local/system-parameters-config.json"
+chainspec_permissioned_candidates_config = "res/local/permissioned-candidates-config.json"
+chainspec_registered_candidates_addresses = "res/local/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/local/c2m-bridge-config.json"

@@ -1,0 +1,12 @@
+bin.name = "midnight-node-toolkit"
+args = [
+    "contract-address",
+    "--src-file", "../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
+    "--tagged",
+]
+status.code = 0
+stderr = ""
+
+stdout = """
+6d69646e696768743a636f6e74726163742d616464726573735b76325d3a[..]
+"""

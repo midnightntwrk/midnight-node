@@ -1,5 +1,7 @@
 VERSION 0.8
 
+IMPORT ./buck2 AS buck2
+
 # Scopes the cargo build directory (`/target`) so PRs running on the same
 # self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
 # stable auto-generated cache id. Without scoping, an in-flight branch
@@ -2257,3 +2259,39 @@ images:
     FROM scratch
     BUILD +node-image
     BUILD +toolkit-image
+
+# buck2 build + test under a bazel-remote action cache (see buck2/Earthfile).
+# Replaces the retired rebuck2 distributed workflow: one buck2 run on a
+# self-hosted runner, the cache making it warm after the first lap.
+#buck2-prep Install the buck2 toolchain + stage sources + write .buckconfig.local
+buck2-prep:
+    FROM rust:1.98.1-trixie
+    DO buck2+INSTALL
+    WORKDIR /work
+    # Source set: the cargo tree (as +prep) plus every buck2 input - the root
+    # BUCK + .buckconfig, platforms/toolchains, the generated third-party and
+    # wasm-deps graphs, the generators, and tools/wasm-compress. The `prelude`
+    # cell is `bundled` (buck2 ships it), so it is NOT copied.
+    COPY --keep-ts --dir \
+        .buckconfig BUCK Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml \
+        docs ledger LICENSE node pallets primitives README.md res runtime \
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION \
+        platforms toolchains third-party wasm-deps scripts tools .
+    DO --pass-args buck2+CONFIG
+
+#buck2-ci Build the deliverables then run the tests, both under the action cache
+buck2-ci:
+    FROM +buck2-prep
+    # Re-run the buck2 steps every CI run (pass --RUN_ID=$GITHUB_RUN_ID): Earthly's
+    # layer cache would otherwise skip them on an unchanged tree, but the point is
+    # to exercise buck2 against the bazel-remote action cache, which is what
+    # provides incrementality. Busting here (not in +buck2-prep) keeps the
+    # toolchain install + source stage cached.
+    ARG RUN_ID=0
+    RUN echo "buck2-ci run ${RUN_ID}"
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    DO --pass-args buck2+BUCK2 --mode=build \
+        --targets="root//node:midnight-node-bin root//util/toolkit:midnight-node-toolkit-bin root//:runtime-wasm"
+    DO --pass-args buck2+BUCK2 --mode=test \
+        --targets="root//..." \
+        --buck2_args="--target-platforms root//platforms:linux-x86_64 --exclude ci-infra $_wasm"
