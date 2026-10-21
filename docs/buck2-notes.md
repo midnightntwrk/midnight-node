@@ -29,29 +29,28 @@ Caveat: the embedded runtime is a `WASM_BINARY = None` stub, so this binary
 compiles/links/runs but cannot yet run a real chain — building the on-chain
 WASM blob is a separate no_std crate-universe phase (below).
 
-## Toolchain (forks)
+## Toolchain
 
-Both from `github.com/gilescope`:
+* **buck2** — the official `facebook/buck2` pinned release (`2026-06-01`), the
+  same one CI installs and checksum-verifies (`buck2/Earthfile`). Stock buck2 is
+  the supported path; a local `gilescope/buck2` build also works (it only adds
+  unrelated DICE-persistence work).
+* **reindeer** — the `gilescope/reindeer` fork, for local buckify fixes not yet
+  upstreamed (see "Reindeer fixes"). Fixups are vendored in-tree, so its
+  `shared_fixups` feature is unused. Build with `cargo build --release` and use
+  `target/release/reindeer`.
 
-* **buck2** — `gilescope/buck2` `dice-persistence` rolling release
-  (`buck2-mac-*.zst`). The stock buck2 works too; the fork carries unrelated
-  DICE-persistence work.
-* **reindeer** — `gilescope/reindeer`, needs local changes on top of the
-  `shared_fixups` branch (`baca1130`). See "Reindeer fixes" — these are **not
-  yet upstreamed**; build from the working tree.
-
-Install buck2 to `~/.cargo/bin/buck2`; build reindeer with
-`cargo build --release` and use `target/release/reindeer`.
+Install buck2 to `~/.cargo/bin/buck2`.
 
 ## Layout
 
 ```text
-.buckconfig              root cell + `fixups` external cell (buck2-fixups pin)
+.buckconfig              root + prelude cells (fixups vendored, no external cell)
 .buckroot
 BUCK                     runtime-wasm-stub genrule, on-chain wasm blob target
 toolchains/BUCK          system rust/cxx/python toolchains (abs clang paths)
 third-party/
-  reindeer.toml          shared_fixups pin + global cargo_env + vendor=false
+  reindeer.toml          global cargo_env + vendor=false (fixups vendored below)
   Cargo.toml             @generated: direct external deps of all members
   patches.toml           buck-specific [patch] overrides (proc-macro-crate)
   patched/               vendored patched crates (proc-macro-crate bazel fallback)
@@ -257,10 +256,10 @@ the wasm runtime may use `std`, a per-crate `omit_features` fixup scoped to
 `['cfg(target_arch = "wasm32")']` drops `std`/`use_std` on wasm32 while host/exec
 builds keep them. Fixups live in `third-party/fixups/<crate>/` (shared with the
 std universe via the `wasm-deps/fixups` symlink; harmless there — it never builds
-wasm32). Done so far: `either`, `memchr`, `byte-slice-cast`, `once_cell`. Crates
-that already carry a shared fixup (`parity-scale-codec`, `serde`, `indexmap`, …)
-need the `omit_features` folded into the **shared** buck2-fixups entry, not a
-local override (which would clobber their `buildscript`/`cargo_env` config).
+wasm32). Done so far: `either`, `memchr`, `byte-slice-cast`, `once_cell`. A crate
+that needs both a `buildscript`/`cargo_env` directive and a wasm32 `omit_features`
+(`parity-scale-codec`, `serde`, `indexmap`, …) carries both in its one vendored
+fixup file.
 
 ### Cleared
 
@@ -425,8 +424,8 @@ reached the blob assembly / final link.
   reindeer's baked env, and without it `openssl-0.10` references `EVP_idea_*`
   symbols the ffi omits. (Proper fix would be dynamic `DEP_OPENSSL_*` wiring.)
 
-* **`ittapi-sys` — build script disabled by a shared fixup.** The shared
-  `buck2-fixups/fixups/ittapi-sys` sets `buildscript.run = false`, so
+* **`ittapi-sys` — build script omitted by default.** Without a fixup, reindeer
+  omits the build script, so
   `jitprofiling.c` (defining `iJIT_NotifyEvent` / `iJIT_GetNewMethodID`) is never
   compiled. On Linux the node pulls `ittapi` via wasmtime's profiling and the
   final link fails `undefined symbol: iJIT_*`. Fix: local

@@ -1,5 +1,19 @@
-# Local override of the shared secp256k1-sys fixup (preserves its config, adds a
-# wasm CFLAG). secp256k1-sys's vendored wasm/wasm-sysroot predates clang making
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# 	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# secp256k1-sys's vendored wasm/wasm-sysroot predates clang making
 # implicit function declarations a hard error (C99+); a newer distro clang
 # (ubuntu clang-18 in CI) fails the wasm.c compile. Demote it to a warning — the
 # symbols resolve at link from the real wasi/libc. See AGENTS.md
