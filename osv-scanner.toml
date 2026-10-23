@@ -1,0 +1,15 @@
+# osv-scanner suppressions, read by the Scan workflow's osv-scanner and by
+# Scorecard's Vulnerabilities check. Every entry needs a reason a reviewer
+# would accept; prefer fixing over ignoring.
+
+# wasmtime executes only the chain's own runtime blob: built from this repo,
+# enacted through on-chain governance, and identical on every node. No
+# user-supplied or otherwise untrusted wasm ever reaches it, so guest-triggered
+# wasmtime issues are out of our threat model.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0379"
+reason = "wasmtime guest-triggered issue (GHSA-mghf-wjfp-p5xm); midnight-node runs no untrusted wasm"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0380"
+reason = "wasmtime guest-triggered issue (GHSA-897f-g5gm-fmxm); midnight-node runs no untrusted wasm"
