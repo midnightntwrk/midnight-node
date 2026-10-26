@@ -788,3 +788,66 @@ fn current_slot_reads_aura_storage_while_flip_pending() {
 		assert_eq!(ConsensusEngine::current_slot(), Slot::from(7));
 	});
 }
+
+// --- `ScheduledFlip`: a session rotation due in the flip block postpones the flip ---
+
+/// The pallet-babe items `migrate_to_babe` writes. `CurrentSlot` and `Initialized` are left
+/// out: pallet-babe's own hook rewrites them on every block.
+fn babe_epoch_state() -> impl PartialEq + core::fmt::Debug {
+	(
+		pallet_babe::GenesisSlot::<Test>::get(),
+		pallet_babe::EpochIndex::<Test>::get(),
+		pallet_babe::Authorities::<Test>::get(),
+		pallet_babe::NextAuthorities::<Test>::get(),
+		pallet_babe::Randomness::<Test>::get(),
+		pallet_babe::NextRandomness::<Test>::get(),
+		pallet_babe::EpochConfig::<Test>::get(),
+	)
+}
+
+#[test]
+fn flip_is_postponed_while_a_session_rotation_is_due() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::ScheduledFlip);
+		pallet_babe::Authorities::<Test>::put(babe_authority_set(1));
+		pallet_babe::NextAuthorities::<Test>::put(babe_authority_set(2));
+		// `pallet_session` would rotate in this block, right after this pallet's hook.
+		SessionRotationDue::set(true);
+
+		start_block_with_babe_pre_digest(1499);
+		let before = babe_epoch_state();
+		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
+		assert_eq!(ConsensusEngine::active_engine(), ActiveEngine::Aura);
+		assert_eq!(babe_epoch_state(), before);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), babe_genesis_slot_sentinel());
+
+		// No rotation is due at the next epoch end, so the flip commits there.
+		SessionRotationDue::set(false);
+		start_block_with_babe_pre_digest(1799);
+		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1800));
+		assert_eq!(pallet_babe::Authorities::<Test>::get(), babe_authority_set(2));
+	});
+}
+
+#[test]
+fn flip_commits_when_no_session_rotation_is_due() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::ScheduledFlip);
+		pallet_babe::Authorities::<Test>::put(babe_authority_set(1));
+		pallet_babe::NextAuthorities::<Test>::put(babe_authority_set(2));
+		SessionRotationDue::set(false);
+
+		start_block_with_babe_pre_digest(1499);
+		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
+		assert_eq!(pallet_babe::EpochIndex::<Test>::get(), 0);
+		assert_eq!(pallet_babe::Authorities::<Test>::get(), babe_authority_set(2));
+	});
+}

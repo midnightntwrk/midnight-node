@@ -975,6 +975,8 @@ impl pallet_consensus_engine::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type EpochDuration = SidechainEpochDuration;
 	type EpochConfiguration = BabeEpochConfigurationValue;
+	// The predicate `Session` (30) evaluates later in the same block.
+	type ShouldEndSession = SessionCommitteeManagement;
 	// Unit weights for now. Issue #1863.
 	type WeightInfo = ();
 }

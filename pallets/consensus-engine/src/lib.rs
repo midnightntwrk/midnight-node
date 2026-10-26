@@ -52,20 +52,27 @@
 //! block must still carry the AURA pre-runtime digest followed by a BABE `SecondaryPlain` one
 //! matching the AURA slot and author index (both unique). `Primary`/`SecondaryVRF` variants are
 //! rejected, since their VRF material is never client-verified while blocks import through the
-//! AURA pipeline. The flip is postponed while `pallet-babe::Authorities` is empty (session has
-//! not yet populated BABE keys after the runtime upgrade). If the last slot of an epoch is empty,
-//! migration is postponed to a later epoch-end block. After the flip (`Babe`) the check is
+//! AURA pipeline. The flip is postponed while `pallet-babe::NextAuthorities` is empty (session
+//! has not yet populated BABE keys after the runtime upgrade) and while a session rotation is due
+//! in the same block (see below). If the last slot of an epoch is empty, migration is postponed
+//! to a later epoch-end block. After the flip (`Babe`) the check is
 //! mirrored: AURA pre-runtime digests are rejected, so a stray one cannot hijack slot/author
 //! extraction from a block that BABE authored. The migration initializes pallet-babe state and
 //! transitions to the final state `Babe`. The first block of the next epoch is authored with
 //! BABE.
 //!
-//! A session rotation may land in the flip block itself (the flip block is the first block of
-//! its epoch, or a late committee just arrived). That is harmless: `pallet-session` runs after
-//! this pallet and deposits pallet-babe's `NextEpochData` into an AURA block no BABE client reads,
-//! but the committee inherent of the same block stores the committee for the next epoch, so the
-//! first BABE block — in that next epoch — has its own rotation due and announces BABE epoch 1
-//! exactly where the client requires it. The flip is therefore not postponed for it.
+//! A session rotation may be due in the flip block itself (no block was produced in the epoch
+//! before its last slot, or a late committee arrived in the block before). The flip is postponed
+//! for it. The node seeds BABE epoch 0 from `BabeApi::current_epoch` at the flip block, which
+//! [`Pallet::migrate_to_babe`] fills with `NextAuthorities`: the set the first BABE block's
+//! rotation installs, as long as nothing rotates in between. A rotation in the flip block would
+//! run after the seed (`pallet-session` runs after this pallet) and install that set already,
+//! queueing the next one; the first BABE block would then install the next one instead. Epoch 0
+//! would be signed by a committee that every runtime view (`Session::validators`,
+//! `pallet_babe::Authorities`, the committee pallet) has already replaced, and the committee
+//! those views credit would never sign. [`Config::ShouldEndSession`] evaluates the predicate
+//! `pallet-session` uses later in the same block; when it holds, the flip waits for the last
+//! slot of a later epoch. A rotation is due at most once per epoch, so the wait is bounded.
 //!
 //! # Session rotation under BABE
 //!
@@ -89,7 +96,9 @@
 //!   `pallet_aura::Authorities` in its `on_initialize`, while the author (and
 //!   the AURA seal check) computed `slot % n` from the parent state. Running
 //!   after rotation would false-reject every honest block at a session boundary
-//!   whose committee size changes;
+//!   whose committee size changes. The flip guard also asks
+//!   [`Config::ShouldEndSession`] whether a rotation is due, which only answers
+//!   for this block while the rotation has not happened yet;
 //! * **before `pallet-scheduler`** (or any hook that can dispatch
 //!   [`Pallet::schedule_flip`] during block initialization): a state transition
 //!   applied before the guard would make the guard check the *new* state against
@@ -119,6 +128,7 @@ pub mod pallet {
 	use frame_support::traits::OnTimestampSet;
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives_consensus_engine::ActiveEngine;
+	use pallet_session::ShouldEndSession as _;
 	use sp_consensus_aura::AURA_ENGINE_ID;
 	use sp_consensus_aura::digests::CompatibleDigestItem as AuraCompatibleDigestItem;
 	use sp_consensus_babe::BABE_ENGINE_ID;
@@ -155,6 +165,11 @@ pub mod pallet {
 		/// BABE epoch configuration to be written into `pallet_babe::EpochConfig` if it
 		/// was empty at the flip time.
 		type EpochConfiguration: Get<sp_consensus_babe::BabeEpochConfiguration>;
+
+		/// Whether `pallet_session` rotates the session in a given block: the runtime's
+		/// `pallet_session::Config::ShouldEndSession`. This pallet runs before `pallet_session`
+		/// and evaluates the same predicate to keep the flip out of a block that rotates.
+		type ShouldEndSession: pallet_session::ShouldEndSession<BlockNumberFor<Self>>;
 
 		/// Weight information for this pallet's extrinsics.
 		type WeightInfo: WeightInfo;
@@ -213,7 +228,7 @@ pub mod pallet {
 		///
 		/// The current slot is read from the AURA pre-runtime digest (the validated,
 		/// authoritative slot while AURA is producing).
-		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
+		fn on_initialize(n: BlockNumberFor<T>) -> Weight {
 			match EngineState::<T>::get() {
 				// Until the flip, every block must carry the BABE `SecondaryPlain` pre-digest
 				// matching the AURA slot (unique, after AURA). Nodes are upgraded to emit it
@@ -240,6 +255,15 @@ pub mod pallet {
 								target: "consensus-engine",
 								"Scheduled flip at last slot {:?} postponed: pallet-babe NextAuthorities \
 								is empty (waiting for session rotation).",
+								slot,
+							);
+						} else if T::ShouldEndSession::should_end_session(n) {
+							// A rotation in this block would install the set epoch 0 is seeded
+							// with and leave the first BABE block to install the next one.
+							log::warn!(
+								target: "consensus-engine",
+								"Scheduled flip at last slot {:?} postponed: a session rotation is due \
+								in this block.",
 								slot,
 							);
 						} else {
@@ -321,7 +345,10 @@ pub mod pallet {
 		/// at the first BABE block installs. `pallet-babe`, a `pallet_session` `OneSessionHandler`
 		/// since the key upgrade, already queues that committee in `NextAuthorities`, so it becomes
 		/// the epoch-0 authority set. Seeding from `Authorities` would let the outgoing committee
-		/// author the whole first BABE epoch while the runtime credits the incoming one.
+		/// author the whole first BABE epoch while the runtime credits the incoming one. This
+		/// holds only because the caller never commits the flip in a block with a rotation due:
+		/// a rotation in this block would replace `NextAuthorities` after the seed, and the first
+		/// BABE block would install a set other than the one seeded here.
 		/// `EpochConfig` comes from genesis. The node bootstraps its epoch tree from
 		/// `BabeApi::current_epoch`/`next_epoch`, which the state set here makes correct.
 		fn migrate_to_babe(slot: Slot) {
