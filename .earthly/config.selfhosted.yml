@@ -20,4 +20,4 @@ global:
     tls_enabled: false
     disable_analytics: true
     buildkit_max_parallelism: 16
-    cache_size_pct: 50
+    cache_size_pct: 20
