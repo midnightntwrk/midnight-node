@@ -15,3 +15,5 @@ signed by a committee every runtime view (`Session::validators`, `pallet_babe::A
 committee pallet) had replaced, and the credited committee never signed. A rotation is due at most
 once per epoch, so the postponement is bounded. No storage, call or runtime API changes; metadata
 is unchanged.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2326
