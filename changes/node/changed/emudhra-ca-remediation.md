@@ -15,4 +15,5 @@ affected roots are no longer trusted by the OS CA bundle used by the node's
 non-rustls TLS paths.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2327
+Issue: https://github.com/shieldedtech/shielded-sre/issues/706
 Advisory: https://alas.aws.amazon.com/AL2023/ALAS-2026-3306.html
