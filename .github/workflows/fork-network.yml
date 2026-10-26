@@ -37,9 +37,9 @@ on:
           - devnet
           - qanet
       mock_authorities_tag:
-        description: "mock-authorities image tag (>= 368fd98 required for the runtime and full upgrade modes: older tags do not rewrite Council/Technical Committee membership)"
+        description: "mock-authorities image tag. Use >= f6cbf91: it writes a mock-follower main-chain hash into the fork block (older tags keep the real Cardano hash, which >=2.x nodes reject as regressing, midnight-node#2307). Older floor 4d8d772: it carries the GRANDPA client aux-storage rewrite (PR #77) required so forks of >=2.0.0 runtimes finalize (older tags such as 368fd98 rotate the voter via a ForcedChange digest that deadlocks GRANDPA and finality stalls), and it still includes the Council/Technical Committee membership rewrite needed for the runtime and full upgrade modes."
         required: true
-        default: "368fd98"
+        default: "f6cbf91"
       node_image:
         description: "Full Docker image reference to fork from, e.g. ghcr.io/midnight-ntwrk/midnight-node:1.0.0 or a CI tag like ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-<tree-hash>-amd64 — not a git branch/sha/URL. Must match the snapshot's runtime host fns"
         required: true
@@ -89,31 +89,18 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      # `act` shares the host docker socket, so this step's
-      # `docker image prune --all --force` would nuke the developer's local
-      # image cache (including the locally-cached mock-authorities image we
-      # rely on as the pull fallback). Skip it on act runs.
-      # Also skip on self-hosted — the action's targets (e.g. /usr/share/swift,
-      # android SDK) aren't on our self-hosted runner.
-      - name: Free disk space
-        if: env.ACT != 'true' && runner.environment != 'self-hosted'
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          swap-storage: false
-
-      - name: Disk space after cleanup
-        run: df -h /
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Backgrounded so later steps don't wait on it. Skipped under `act`
+      # (shares the host) and on self-hosted runners, which lack the
+      # GitHub-hosted preinstalls it deletes.
+      - name: Free disk space
+        if: env.ACT != 'true' && runner.environment != 'self-hosted'
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
+
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.18.0"
 
@@ -456,6 +443,11 @@ jobs:
             -d '{"jsonrpc":"2.0","id":1,"method":"state_getRuntimeVersion","params":[]}' \
             "$RPC_URL" | jq '{specName: .result.specName, specVersion: .result.specVersion}'
 
+      # Before teardown: `down -v` frees the volumes that would explain a full disk.
+      - name: Disk space
+        if: failure()
+        run: df -h /
+
       - name: Dump compose logs
         if: always()
         env:
@@ -475,7 +467,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: forked-${{ inputs.network }}-logs
           path: /tmp/forked-network-logs/

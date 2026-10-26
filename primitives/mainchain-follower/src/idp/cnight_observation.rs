@@ -20,7 +20,7 @@ use midnight_primitives_cnight_observation::{
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
-use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
+use sp_api::{ApiError, ApiExt, Core, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{error::Error, string::FromUtf8Error, sync::Arc};
@@ -105,6 +105,7 @@ impl MidnightCNightObservationInherentDataProvider {
 			.try_into()
 			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
+		let spec_version = api.version(parent_hash)?.spec_version;
 
 		let config = CNightAddresses {
 			mapping_validator_address,
@@ -123,6 +124,7 @@ impl MidnightCNightObservationInherentDataProvider {
 				&cardano_position_start,
 				mc_hash,
 				utxo_capacity as usize,
+				spec_version,
 			)
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;

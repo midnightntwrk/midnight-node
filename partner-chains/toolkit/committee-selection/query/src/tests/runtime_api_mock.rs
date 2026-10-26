@@ -4,7 +4,6 @@ use authority_selection_inherents::{
 	MaybeFromCandidateKeys, PermissionedCandidateDataError, RegistrationDataError, StakeError,
 	validate_permissioned_candidate_data, validate_registration_data,
 };
-use mock::*;
 use sidechain_domain::*;
 use sp_core::{Decode, Encode};
 use sp_runtime::{BoundToRuntimeAppPublic, impl_opaque_keys};

@@ -144,27 +144,35 @@ pub fn seed_aura_authorities(n: u32) {
 	pallet_aura::Authorities::<Test>::put(bounded);
 }
 
-/// Seed a non-empty `pallet-babe::Authorities` set so the flip is allowed to commit.
-pub fn seed_babe_authorities() {
-	use frame_support::WeakBoundedVec;
+/// A one-member BABE authority set whose key is `seed` repeated.
+pub fn babe_authority_set(
+	seed: u8,
+) -> frame_support::WeakBoundedVec<
+	(sp_consensus_babe::AuthorityId, u64),
+	<Test as pallet_babe::Config>::MaxAuthorities,
+> {
 	use sp_core::sr25519;
-	let id = sp_consensus_babe::AuthorityId::from(sr25519::Public::from_raw([1u8; 32]));
-	let authorities =
-		WeakBoundedVec::try_from(vec![(id, 1u64)]).expect("one authority fits MaxAuthorities");
-	pallet_babe::Authorities::<Test>::put(authorities);
+	let id = sp_consensus_babe::AuthorityId::from(sr25519::Public::from_raw([seed; 32]));
+	frame_support::WeakBoundedVec::try_from(vec![(id, 1u64)])
+		.expect("one authority fits MaxAuthorities")
 }
 
-/// Put [`EngineState`] as in production: once past `Aura`, `arm_babe` has already
+/// Seed non-empty `pallet-babe` `Authorities` and `NextAuthorities` sets, as a session
+/// rotation after the key upgrade leaves them, so the flip is allowed to commit.
+pub fn seed_babe_authorities() {
+	pallet_babe::Authorities::<Test>::put(babe_authority_set(1));
+	pallet_babe::NextAuthorities::<Test>::put(babe_authority_set(1));
+}
+
+/// Put [`EngineState`] as on an upgraded network: the activation migration has already
 /// written the BABE genesis-slot sentinel so pallet-babe does not self-initialize
 /// from a transition digest. Skips the write when `GenesisSlot` is already set
 /// (e.g. after `migrate_to_babe`).
 pub fn put_engine_state(state: crate::State) {
 	use crate::pallet::EngineState;
 	EngineState::<Test>::put(state);
-	if matches!(state, crate::State::ArmedBabe | crate::State::ScheduledFlip | crate::State::Babe)
-		&& pallet_babe::GenesisSlot::<Test>::get() == Slot::from(0u64)
-	{
-		pallet_babe::GenesisSlot::<Test>::put(Slot::from(u64::MAX));
+	if pallet_babe::GenesisSlot::<Test>::get() == Slot::from(0u64) {
+		pallet_babe::GenesisSlot::<Test>::put(crate::babe_genesis_slot_sentinel());
 	}
 }
 
@@ -273,8 +281,8 @@ pub fn start_block_at_slot(slot: u64) {
 }
 
 /// Start a new block whose header carries a BABE pre-runtime digest alongside
-/// the AURA one at the same slot — the shape nodes emit once armed, and the
-/// shape required of the flip block.
+/// the AURA one at the same slot — the shape migration-aware nodes emit on every
+/// AURA block, and the shape required of the flip block.
 pub fn start_block_with_babe_pre_digest(slot: u64) {
 	start_block_with_logs(vec![aura_pre_digest(slot), babe_pre_digest(slot)]);
 }
@@ -284,9 +292,12 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut ext: sp_io::TestExternalities = t.into();
 	// Block 0 does not record events; move to block 1 so `assert_last_event` works.
 	// One AURA authority so `babe_pre_digest`'s index 0 matches `slot % 1`.
+	// The chain is activated as on an upgraded network: state `Aura` with the BABE
+	// genesis-slot sentinel already written by the activation migration.
 	ext.execute_with(|| {
 		System::set_block_number(1);
 		seed_aura_authorities(1);
+		put_engine_state(crate::State::Aura);
 	});
 	ext
 }

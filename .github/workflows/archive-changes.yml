@@ -6,13 +6,13 @@ permissions: {}
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: "The git ref to checkout"
-        required: true
-        default: "main"
       release-tag:
         description: "The release tag to archive under (e.g. node-1.2.3-toolkit-0.4.5)"
         required: true
+      previous-tag:
+        description: "Previous release tag on the same release branch (e.g. node-1.0.300). If set, only change files added or modified since it are archived"
+        required: false
+        default: ""
       archive-changes:
         type: boolean
         description: "Archive changes for this release"
@@ -55,12 +55,12 @@ on:
 
   workflow_call:
     inputs:
-      ref:
-        type: string
-        required: true
       release-tag:
         type: string
         required: true
+      previous-tag:
+        type: string
+        default: ""
       archive-changes:
         type: boolean
         default: true
@@ -97,11 +97,17 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
+      # Always work on the default branch: the PR below is applied to main, so
+      # the diff must be taken against main. `season archive-changes` reads the
+      # change files from the release tag itself (git ls-tree / git show) and
+      # only deletes a source file whose working-tree copy is byte-identical to
+      # the tag's, so a main checkout is exactly what it expects - a release
+      # branch checkout produced a diff that did not apply to main.
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Install Season
         uses: ./.github/actions/install-season
@@ -133,24 +139,46 @@ jobs:
         if: inputs.archive-changes == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin tag "$GIT_TAG_RELEASE"
+          PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        run: |
+          git fetch origin tag "$GIT_TAG_RELEASE"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            git fetch origin tag "$PREVIOUS_TAG"
+          fi
 
       - name: Archive changes
         if: inputs.archive-changes == true
         env:
           ARCHIVE_MODE: ${{ inputs.archive-mode }}
+          PREVIOUS_TAG: ${{ inputs.previous-tag }}
           SKIP_NODE: ${{ inputs.skip-node }}
           SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
         run: |
-          if [ "$SKIP_NODE" != "true" ]; then
-            season archive-changes --changes-dir changes/node --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
-          fi
-          if [ "$SKIP_TOOLKIT" != "true" ]; then
-            season archive-changes --changes-dir changes/toolkit --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
-          fi
-          if [ "$SKIP_RUNTIME" != "true" ]; then
-            season archive-changes --changes-dir changes/runtime --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+          set -euo pipefail
+          ARCHIVE=".changes_archive/$GIT_TAG_RELEASE"
+
+          # One run over all of changes/: --force replaces the archive dir, so
+          # per-component runs each wiped the previous one's output.
+          season archive-changes --changes-dir changes --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+
+          for c in node toolkit runtime; do
+            skip_var="SKIP_${c^^}"
+            if [ "${!skip_var}" = "true" ]; then
+              rm -rf "${ARCHIVE:?}/$c"
+              git checkout HEAD -- "changes/$c"
+            fi
+          done
+
+          # Release branches never reset changes/, so the tag carries every
+          # change since the branch was cut; keep only this release's delta.
+          if [ -n "$PREVIOUS_TAG" ]; then
+            delta="$(git diff --name-only --diff-filter=AM "$PREVIOUS_TAG" "$GIT_TAG_RELEASE" -- changes/)"
+            find "$ARCHIVE" -type f ! -path "$ARCHIVE/index.md" -print0 |
+              while IFS= read -r -d '' f; do
+                grep -qxF "changes/${f#"$ARCHIVE"/}" <<< "$delta" || rm "$f"
+              done
+            find "$ARCHIVE" -type d -empty -delete
           fi
 
       - name: Reset changes
@@ -225,6 +253,18 @@ jobs:
           OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO="${GITHUB_REPOSITORY##*/}"
 
+          # The commit is built from the diff against this checkout's HEAD, so use
+          # that exact OID as the branch base and expectedHeadOid - not a fresh
+          # query of main, which may have moved since checkout.
+          MAIN_OID=$(git rev-parse HEAD)
+
+          # shellcheck disable=SC2016
+          REPO_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) { id }
+            }
+          ' -f owner="$OWNER" -f name="$REPO" | jq -r '.data.repository.id')
+
           # Stage all working-tree changes so we can diff them
           git add -A
 
@@ -246,22 +286,6 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-
-          # Get repo ID and main branch HEAD OID
-          # shellcheck disable=SC2016
-          QUERY_RESULT=$(gh api graphql -f query='
-            query($owner: String!, $name: String!) {
-              repository(owner: $owner, name: $name) {
-                id
-                defaultBranchRef {
-                  target { oid }
-                }
-              }
-            }
-          ' -f owner="$OWNER" -f name="$REPO")
-
-          REPO_ID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.id')
-          MAIN_OID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.defaultBranchRef.target.oid')
 
           # Create branch at main HEAD, or force-update if it already exists
           # shellcheck disable=SC2016

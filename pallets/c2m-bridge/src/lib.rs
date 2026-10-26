@@ -54,7 +54,7 @@ pub mod pallet {
 	use midnight_node_ledger::types::{
 		active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
-	use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionExecutor};
+	use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionBridgeExecutor};
 	use pallet_partner_chains_bridge::TransferHandlerError;
 	use sidechain_domain::McTxHash;
 	use sp_core::hexdisplay::HexDisplay;
@@ -68,7 +68,7 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// Provides access to the Midnight system transaction executor.
-		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		type MidnightSystemTransactionExecutor: MidnightSystemTransactionBridgeExecutor;
 
 		/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
 		type MinBridgeAmountProvider: MinBridgeAmountProvider;
@@ -190,6 +190,8 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		// TransferCounter is absent at both block boundaries, so this kill never reaches
+		// the trie and needs no weight reserved for it in on_initialize.
 		fn on_finalize(_n: BlockNumberFor<T>) {
 			TransferCounter::<T>::kill();
 		}
@@ -409,6 +411,12 @@ pub mod pallet {
 		fn handle_incoming_transfer(
 			transfer: BridgeTransferV1<BridgeRecipient>,
 		) -> Result<(), TransferHandlerError> {
+			// A 'Reserve' transfer is not paid out to any address, so the ledger's minimum
+			// bridge amount does not apply to it and it is never subminimal.
+			if matches!(transfer.recipient, TransferRecipient::Reserve) {
+				return Self::handle_reserve_transfer(transfer.mc_tx_hash, transfer.amount);
+			}
+
 			match T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount() {
 				Ok(min_amount) => {
 					if u128::from(transfer.amount) < min_amount {

@@ -14,7 +14,7 @@
 import path from "path";
 import { globSync } from "glob";
 import fs, { existsSync } from "fs";
-import { parse } from "dotenv";
+import { applyEnvFileOverrides, cleanEnv } from "../lib/envFile";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -22,12 +22,16 @@ import {
   requiredImageVars,
 } from "../lib/localEnv";
 import { assertWellKnownNamespace, RunOptions } from "../lib/types";
-import { runDockerCompose } from "../lib/docker";
+import { removeDockerComposeServices, runDockerCompose } from "../lib/docker";
 import {
   discoverComposeDataMounts,
   restoreSnapshot,
 } from "../lib/snapshotRestore";
-import { loadNetworkConfig, requireMockConfig } from "../lib/networkConfig";
+import {
+  loadNetworkConfig,
+  requireMockConfig,
+  resolveMockValidatorSelection,
+} from "../lib/networkConfig";
 import {
   defaultMockAuthoritiesImage,
   runMockAuthoritiesConvert,
@@ -36,6 +40,7 @@ import {
   generateMockComposeOverride,
   mockOverridePath,
   MOCKED_CONFIG_DIRNAME,
+  readMockValidatorSelection,
 } from "../lib/mockComposeOverride";
 import { writeForkManifest } from "../lib/forkManifest";
 import { generateGenesisComposeOverride } from "../lib/genesisComposeOverride";
@@ -78,18 +83,16 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     );
   }
 
+  if (runOptions.numValidators !== undefined && !runOptions.fromSnapshot) {
+    throw new Error(
+      "--num-validators requires --from-snapshot so the authority set and validator seeds can be regenerated. Omit it when reusing an existing fork.",
+    );
+  }
+
   const composeFile = resolveComposeFile(namespace);
   const composeDir = path.dirname(composeFile);
 
-  let env: Record<string, string> = { ...cleanEnv(process.env) };
-  for (const envFilePath of runOptions.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  const env = applyEnvFileOverrides(cleanEnv(process.env), runOptions.envFile);
 
   if (runOptions.fromGenesis) {
     await runFromGenesis(namespace, composeFile, env, runOptions);
@@ -108,8 +111,14 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     );
   }
 
+  const validatorSelection = resolveMockValidatorSelection(
+    mock,
+    runOptions.numValidators,
+  );
+
   let overridePath: string;
   if (runOptions.fromSnapshot) {
+    const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
     const restoredDirs = await restoreSnapshot({
       namespace,
       composeFile,
@@ -120,34 +129,33 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
       // chains/<chainId>/ lands directly at the data dir root, where both
       // mock-authorities and the node binary expect it.
       stripComponents: 1,
+      // Convert once, before replication: every data dir, validator or not
+      // (e.g. boot-node), must hold the same fork block or peers reject it.
+      prepare: (nodeDir) =>
+        runMockAuthoritiesConvert({
+          nodeDir,
+          outputDir: mockedConfigDir,
+          chainId: mock.chainId,
+          numValidators: validatorSelection.numValidators,
+          image: defaultMockAuthoritiesImage(),
+        }),
     });
     if (restoredDirs.length === 0) {
       throw new Error(
-        `Snapshot restore produced no data dirs for '${namespace}'; cannot run mock-authorities convert.`,
+        `Snapshot restore produced no data dirs for '${namespace}'; nothing to start.`,
       );
     }
-
-    // mock-authorities expects --data-dir to be the parent containing every
-    // per-validator subdir (data/node-1, data/node-2, ...) so it can patch each
-    // one's paritydb with the synthesized authority set in a single pass.
-    // Pointing it at one validator's dir leaves the others on the original
-    // authority set and consensus never converges.
-    const dataParentDir = path.dirname(restoredDirs[0]);
-    const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
-    runMockAuthoritiesConvert({
-      dataDir: dataParentDir,
-      outputDir: mockedConfigDir,
-      chainId: mock.chainId,
-      numValidators: mock.numValidators,
-      image: defaultMockAuthoritiesImage(),
-    });
 
     overridePath = generateMockComposeOverride({
       composeDir,
       network: namespace,
-      validatorServices: mock.validatorServices,
+      validatorServices: validatorSelection.validatorServices,
+      disabledValidatorServices: validatorSelection.disabledValidatorServices,
       extraServices: mock.extraServices,
     });
+    console.log(
+      `Selected ${validatorSelection.numValidators} mock validators: ${validatorSelection.validatorServices.join(", ")}`,
+    );
     console.log(`Generated fork-mode override: ${overridePath}`);
   } else {
     // No snapshot: reuse the fork-mode artifacts from a previous bring-up.
@@ -156,6 +164,18 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     overridePath = mockOverridePath(composeDir, namespace);
     assertReusableForkState(namespace, composeFile, composeDir, overridePath);
     console.log(`Reusing existing fork-mode override: ${overridePath}`);
+  }
+
+  const persistedSelection = readMockValidatorSelection(overridePath);
+  if (persistedSelection?.disabledValidatorServices.length) {
+    await removeDockerComposeServices(
+      {
+        composeFile,
+        env,
+        profiles: runOptions.profiles,
+      },
+      persistedSelection.disabledValidatorServices,
+    );
   }
 
   await runDockerCompose({
@@ -319,25 +339,21 @@ async function runLocalEnvironment(runOptions: RunOptions) {
       "--from-snapshot is not supported for the local-env target; ignoring.",
     );
   }
+  if (runOptions.numValidators !== undefined) {
+    throw new Error(
+      "--num-validators is only supported for snapshot-based well-known network forks, not local-env.",
+    );
+  }
 
   generateSecretsIfMissing();
 
   const localEnvSecretVars = getLocalEnvSecretVars();
   const envDefault = loadEnvDefault();
 
-  let env: Record<string, string> = {
-    ...envDefault,
-    ...localEnvSecretVars,
-  };
-
-  for (const envFilePath of runOptions.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  let env: Record<string, string> = applyEnvFileOverrides(
+    { ...envDefault, ...localEnvSecretVars },
+    runOptions.envFile,
+  );
 
   // Process environment variables take precendence
   env = {
@@ -390,13 +406,4 @@ function resolveComposeFile(namespace: string): string {
   }
 
   return composeFile;
-}
-
-// Helper to ensure no undefined values in env vars
-function cleanEnv(
-  env: Record<string, string | undefined>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter(([, v]) => typeof v === "string"),
-  ) as Record<string, string>;
 }
