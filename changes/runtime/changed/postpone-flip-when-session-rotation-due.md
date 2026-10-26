@@ -17,3 +17,4 @@ once per epoch, so the postponement is bounded. No storage, call or runtime API 
 is unchanged.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2326
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1740
