@@ -120,11 +120,27 @@ parameter_types! {
 		};
 }
 
+parameter_types! {
+	/// Whether the mock session rotates in the current block; tests toggle it.
+	pub static SessionRotationDue: bool = false;
+}
+
+/// Stands in for the runtime's `pallet_session::Config::ShouldEndSession`: the mock has no
+/// session pallet, so the answer is whatever the test set in [`SessionRotationDue`].
+pub struct MockShouldEndSession;
+
+impl pallet_session::ShouldEndSession<u64> for MockShouldEndSession {
+	fn should_end_session(_now: u64) -> bool {
+		SessionRotationDue::get()
+	}
+}
+
 impl pallet_consensus_engine::Config for Test {
 	// Only root drives state transitions in the mock, mirroring the runtime's governance origin.
 	type GovernanceOrigin = EnsureRoot<u64>;
 	type EpochDuration = ConstU64<EPOCH_DURATION>;
 	type EpochConfiguration = TestBabeEpochConfig;
+	type ShouldEndSession = MockShouldEndSession;
 	type WeightInfo = ();
 }
 
@@ -299,5 +315,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		seed_aura_authorities(1);
 		put_engine_state(crate::State::Aura);
 	});
+	SessionRotationDue::set(false);
 	ext
 }

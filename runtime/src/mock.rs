@@ -278,6 +278,7 @@ impl pallet_consensus_engine::Config for Test {
 	type GovernanceOrigin = EnsureRoot<AccountId32>;
 	type EpochDuration = ConstU64<{ SLOTS_PER_EPOCH as u64 }>;
 	type EpochConfiguration = TestBabeEpochConfig;
+	type ShouldEndSession = SessionCommitteeManagement;
 	type WeightInfo = ();
 }
 

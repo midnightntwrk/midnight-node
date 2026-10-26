@@ -186,6 +186,27 @@ fn epoch_zero_follows_the_committee_after_a_halt_with_the_flip_scheduled() {
 	assert_eq!(flip.epoch_zero, babe_keys(&[bob(), charlie(), alice()]));
 }
 
+/// No block is produced in the epoch after the flip is scheduled until its last slot, so the
+/// rotation due for that epoch lands in the block that would commit the flip. The flip waits for
+/// the next epoch's last slot, and epoch 0 names the committee that serves the epoch after that.
+#[test]
+fn flip_is_deferred_when_a_rotation_is_due_in_the_flip_block() {
+	let flip = run(
+		&[
+			select(&[alice(), bob()]),
+			select(&[charlie()]),
+			select(&[bob(), charlie(), alice()]).halt(2 * SLOTS_PER_EPOCH as u64 - 2),
+			select(&[alice()]),
+			select(&[charlie(), bob()]),
+			select(&[bob()]),
+		],
+		2,
+	);
+	assert_eq!(flip.at_epoch, 4);
+	assert_eq!(flip.outgoing, babe_keys(&[bob(), charlie(), alice()]));
+	assert_eq!(flip.epoch_zero, babe_keys(&[alice()]));
+}
+
 /// One sidechain epoch of a plan.
 struct Epoch {
 	/// The committee the inherent selects in this epoch's first block; it serves two
@@ -264,6 +285,12 @@ fn run(plan: &[Epoch], flip_epoch: usize) -> Flip {
 					outgoing: committee_babe_authorities(current_committee()),
 					epoch_zero: Babe::current_epoch().authorities,
 				});
+			}
+			// The node signs the first BABE epoch under `BabeApi::current_epoch` at the flip
+			// block; the set the first BABE block installs must be that one.
+			if kind == Kind::FirstBabe {
+				let epoch_zero = &flip.as_ref().expect("the flip committed").epoch_zero;
+				assert_eq!(&pallet_babe::Authorities::<Test>::get().to_vec(), epoch_zero);
 			}
 			if epoch > plan.len() && flip.as_ref().is_some_and(|flip| epoch > flip.at_epoch + 3) {
 				break;
