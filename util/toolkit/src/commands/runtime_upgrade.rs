@@ -46,7 +46,7 @@ pub enum RuntimeUpgradeError {
 	#[error("events error: {0}")]
 	EventsError(#[from] subxt::error::EventsError),
 	#[error("keypair parse error: {0}")]
-	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
+	KeypairParseError(#[from] midnight_ledger_unsafe_helpers::KeypairParseError),
 	#[error("error executing root call: {0}")]
 	RootCallError(Box<dyn std::error::Error + Send + Sync>),
 	#[error("runtime upgrade failed: CodeUpdated event not found")]
@@ -141,7 +141,7 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 
 	// Step 5: Apply the authorized upgrade
 	log::info!("Applying authorized upgrade...");
-	let signer = midnight_node_ledger_helpers::Keypair::from_str(&args.signer_key)?.0;
+	let signer = midnight_ledger_unsafe_helpers::Keypair::from_str(&args.signer_key)?.0;
 	let apply_upgrade_call =
 		dynamic::tx("System", "apply_authorized_upgrade", vec![dynamic::Value::from_bytes(&code)]);
 

@@ -1,9 +1,9 @@
 use crate::{InherentDigest, SlotExtractor};
 use log::warn;
-use sp_api::{ApiExt, ProvideRuntimeApi};
-use sp_block_builder::BlockBuilder as BlockBuilderApi;
+use sp_api::{ApiExt, CallContext, ProvideRuntimeApi};
+use sp_block_builder::{BlockBuilder as BlockBuilderApi, CheckInherentsError};
 use sp_consensus_slots::Slot;
-use sp_inherents::{CreateInherentDataProviders, InherentDataProvider};
+use sp_inherents::{CreateInherentDataProviders, InherentData, InherentDataProvider};
 use sp_runtime::traits::{Block as BlockT, Header};
 use std::sync::Arc;
 
@@ -58,8 +58,8 @@ where
 
 			let check_block = B::new(header.clone(), inner_body.clone());
 
-			sp_block_builder::check_inherents_with_data(
-				client.clone(),
+			check_inherents_on_chain(
+				client,
 				parent_hash,
 				check_block,
 				&inherent_data_providers,
@@ -73,6 +73,54 @@ where
 				);
 				format!("Inherent check failed: {e:?}")
 			})?;
+		}
+	}
+
+	Ok(())
+}
+
+/// Checks the block's inherents through the runtime's `check_inherents` API in the
+/// **on-chain** call context, the context the block builder that produced the block
+/// used.
+///
+/// The context decides which runtime executes the call around a runtime upgrade. With
+/// `system_version >= 3` an upgrade is staged in `:pending_code` and replaces `:code`
+/// only at the end of the block *after* the upgrade block. On-chain calls (block
+/// building and import) resolve the staged runtime; a runtime API call in the default,
+/// off-chain context does not and runs the old one. The first post-upgrade block is
+/// therefore built with the new runtime, and checking it with the old one fails to
+/// decode any inherent whose encoding changed across the upgrade (the generated
+/// `check_extrinsics` panics): every node other than the author rejects the block and
+/// each authority ends up on a fork of its own.
+///
+/// Equivalent to `sp_block_builder::check_inherents_with_data` apart from the call
+/// context.
+async fn check_inherents_on_chain<B, C>(
+	client: &Arc<C>,
+	at_hash: B::Hash,
+	block: B,
+	inherent_data_providers: &impl InherentDataProvider,
+	inherent_data: InherentData,
+) -> Result<(), CheckInherentsError>
+where
+	B: BlockT,
+	C: ProvideRuntimeApi<B>,
+	C::Api: BlockBuilderApi<B> + ApiExt<B>,
+{
+	// Scoped so the (non-`Send`) API handle is dropped before the awaits below.
+	let result = {
+		let mut api = client.runtime_api();
+		api.set_call_context(CallContext::Onchain { import: false });
+		api.check_inherents(at_hash, block.into(), inherent_data)
+			.map_err(CheckInherentsError::Client)?
+	};
+
+	if !result.ok() {
+		for (identifier, error) in result.into_errors() {
+			match inherent_data_providers.try_handle_error(&identifier, &error).await {
+				Some(handled) => handled.map_err(CheckInherentsError::CheckInherents)?,
+				None => return Err(CheckInherentsError::CheckInherentsUnknownError(identifier)),
+			}
 		}
 	}
 

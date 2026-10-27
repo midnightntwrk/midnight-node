@@ -18,11 +18,17 @@ use clap::Parser;
 use crate::cfg::Cfg;
 use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
-use partner_chains_cli::{AURA, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
+use partner_chains_cli::{AURA, BABE, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
 use sc_cli::SubstrateCli;
 use sidechain_domain::McBlockHash;
 
+/// Definition of the BEEFY key, matching `sp_runtime::key_types::BEEFY` and the runtime's
+/// `SessionKeys::beefy` (ECDSA).
+const BEEFY: KeyDefinition<'static> =
+	KeyDefinition { name: "BEEFY", scheme: "ecdsa", key_type: "beef" };
+
+/// The `run` command used to run a node
 #[derive(Debug, Clone, clap::Parser)]
 pub struct RunMidnight {
 	#[clap(flatten)]
@@ -46,6 +52,15 @@ pub struct RunMidnight {
 	/// Connections that exceed this limit will have their subscription requests rejected.
 	#[arg(long, default_value_t = 512)]
 	pub rpc_max_finality_subscriptions: u32,
+
+	/// Serve Midnight ledger snapshots to warp-syncing peers even when running as a validator.
+	///
+	/// Non-validator nodes always serve. Validators don't by default — serializing the ledger
+	/// arena is the warp ledger-sync protocol's most CPU-expensive operation and competes with
+	/// authoring/finality duties — but can opt in with this flag, e.g. on small or local networks
+	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
+	#[arg(long)]
+	pub serve_warp_ledger_sync: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -503,8 +518,7 @@ impl PartnerChainRuntime for MidnightRuntime {
 	}
 
 	fn key_definitions() -> Vec<KeyDefinition<'static>> {
-		// TODO: BEEFY(follow up pr)
-		vec![AURA, GRANDPA, CROSS_CHAIN]
+		vec![AURA, BABE, GRANDPA, BEEFY, CROSS_CHAIN]
 	}
 }
 
