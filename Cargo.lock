@@ -1225,7 +1225,7 @@ checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
 dependencies = [
  "bitcoin_hashes",
  "rand 0.8.5",
- "rand_core 0.6.4",
+ "rand_core 0.4.2",
  "serde",
  "unicode-normalization",
 ]
@@ -3014,7 +3014,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -10949,7 +10949,8 @@ dependencies = [
 [[package]]
 name = "parity-db"
 version = "0.5.7"
-source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#a0f91c861c1ed2cca4cfbca629fb4f08930683a1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7697e37afbb7410115e32f2da9a96e908a601d103c7c769540ad08bb8406aa0c"
 dependencies = [
  "ahash 0.8.12",
  "blake2 0.10.6",
@@ -12346,7 +12347,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -12366,7 +12367,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
