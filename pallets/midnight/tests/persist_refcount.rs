@@ -42,7 +42,7 @@ const NO_LEDGER_STATE: u8 = 151;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
+	let state_key = midnight_node_ledger::init_ledger_storage_standalone(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -126,7 +126,7 @@ fn keep_alive_invariants() {
 			"an intra-block intermediate must never be a GC root"
 		);
 		assert!(
-			has_ledger_state(false, &post_deploy_key),
+			has_ledger_state(&post_deploy_key),
 			"the intermediate must stay addressable until the post-block update"
 		);
 		assert_eq!(
@@ -179,11 +179,11 @@ fn keep_alive_invariants() {
 		// `on_finalize` flushed storage. A released intermediate must be gone from the arena,
 		// not merely unrooted, or that flush wrote it to disk as garbage.
 		assert!(
-			!midnight_node_ledger::has_ledger_state(false, &post_deploy_key),
+			!midnight_node_ledger::has_ledger_state(&post_deploy_key),
 			"a released intermediate must not survive the block's storage flush"
 		);
 		assert!(
-			midnight_node_ledger::has_ledger_state(false, &post_block_1_key),
+			midnight_node_ledger::has_ledger_state(&post_block_1_key),
 			"the persisted post-block tip must survive it"
 		);
 
@@ -191,7 +191,7 @@ fn keep_alive_invariants() {
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), store_tx));
 		let post_store_key = current_state_key();
 		assert_eq!(get_state_root_count(&post_store_key), None, "intermediate, so not rooted");
-		assert!(has_ledger_state(false, &post_store_key));
+		assert!(has_ledger_state(&post_store_key));
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
 			None,
@@ -203,13 +203,13 @@ fn keep_alive_invariants() {
 			"the previous block's persisted tip must not be unpersisted by the next apply"
 		);
 		process_block(2, check_ctx.clone().into());
-		assert!(!has_ledger_state(false, &post_store_key));
+		assert!(!has_ledger_state(&post_store_key));
 
 		// Block 3: apply CHECK, then finalize into the parent of the rollback below.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), check_tx));
 		let post_check_key = current_state_key();
 		assert_eq!(get_state_root_count(&post_check_key), None);
-		assert!(has_ledger_state(false, &post_check_key));
+		assert!(has_ledger_state(&post_check_key));
 		assert_eq!(get_state_root_count(&genesis_key), None);
 		assert_eq!(tagged_pin_count(&genesis_key), Some(1), "genesis still pinned");
 		assert_eq!(
@@ -223,7 +223,7 @@ fn keep_alive_invariants() {
 			"older post-block tips stay pinned for history"
 		);
 		process_block(3, maintenance_ctx.clone().into());
-		assert!(!has_ledger_state(false, &post_check_key));
+		assert!(!has_ledger_state(&post_check_key));
 
 		// --- The release path on a real post-block tip ---
 		//
@@ -288,17 +288,17 @@ fn keep_alive_invariants() {
 			midnight_node_ledger::latest::storage::flush_default_storage_for_test();
 			midnight_node_ledger::gc::collect_garbage(std::time::Duration::from_millis(250))
 				.expect("storage initialised");
-			if !midnight_node_ledger::has_ledger_state(false, &post_block_1_key) {
+			if !midnight_node_ledger::has_ledger_state(&post_block_1_key) {
 				reclaimed = true;
 				break;
 			}
 		}
 		assert!(reclaimed, "the released tip must be swept from the arena");
 		assert!(
-			midnight_node_ledger::has_ledger_state(false, &tip3),
+			midnight_node_ledger::has_ledger_state(&tip3),
 			"a still-pinned tip survives the sweep"
 		);
-		assert!(midnight_node_ledger::has_ledger_state(false, &genesis_key));
+		assert!(midnight_node_ledger::has_ledger_state(&genesis_key));
 
 		// --- Storage rollback ---
 		//
@@ -322,7 +322,7 @@ fn keep_alive_invariants() {
 		assert_eq!(get_state_root_count(&fork_tip), None, "tip is never a raw root");
 		assert_eq!(tagged_pin_count(&fork_tip), Some(1), "one branch finalized: one pin");
 		assert!(
-			!has_ledger_state(false, &replayed_key),
+			!has_ledger_state(&replayed_key),
 			"both holds must be dropped before the block's storage flush"
 		);
 		assert_eq!(

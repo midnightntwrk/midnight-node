@@ -43,7 +43,7 @@ use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
+	let state_key = midnight_node_ledger::init_ledger_storage_standalone(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -596,14 +596,14 @@ fn test_tblock_correction_does_not_affect_mempool_validation() {
 /// `Ledger` with zero `block_fullness`, so it can be recomputed from the ledger state alone.
 fn assert_state_key_is_block_start() {
 	let state_key = StateKey::<Test>::get();
-	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(true));
-	assert_eq!(midnight_node_ledger::block_start_state_key(false, &state_key), Ok(state_key));
+	assert_eq!(midnight_node_ledger::is_block_start(&state_key), Ok(true));
+	assert_eq!(midnight_node_ledger::block_start_state_key(&state_key), Ok(state_key));
 }
 
 /// Guards the assertion above against passing vacuously: inside a block the fullness is non-zero.
 fn assert_state_key_is_mid_block() {
 	let state_key = StateKey::<Test>::get();
-	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(false));
+	assert_eq!(midnight_node_ledger::is_block_start(&state_key), Ok(false));
 }
 
 type ApplySystemTransactionFn =

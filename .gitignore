@@ -35,7 +35,6 @@ scan_reports/
 nohup.out
 test-results.json
 chains/**
-ledger_storage/**
 
 # local node data
 .run

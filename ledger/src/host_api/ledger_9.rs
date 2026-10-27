@@ -29,52 +29,33 @@ use sp_runtime_interface::runtime_interface;
 #[cfg(feature = "std")]
 use {
 	crate::ephemeral::{EphemeralDb, ensure_storage, is_onchain},
-	midnight_primitives_ledger::{LedgerStorageDb, LedgerStorageExt},
-	sp_externalities::{Externalities, ExternalitiesExt},
+	midnight_primitives_ledger::LedgerStorageExt,
+	sp_externalities::Externalities,
 };
 
 #[cfg(feature = "std")]
 type Signature = crate::ledger_9::TransactionSignature;
 
-// `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against
-// `Storage<D>`'s TypeId. The two storage modes register storages with different
-// `D`s — separate uses the default ParityDb (column offset 0); unified uses
-// ParityDb with column offset = NUM_COLUMNS_POLKADOT, sharing one parity-db
-// instance with substrate state. Each host call therefore reads
-// `LedgerStorageExt` and dispatches to the matching `D`.
+// `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against `Storage<D>`'s TypeId, so
+// every host call must name the one instantiation the node registers: the ledger columns appended
+// after Substrate's in the shared parity-db instance (column offset = NUM_COLUMNS_POLKADOT).
 #[cfg(feature = "std")]
-type DbSeparate = crate::ledger_9::ledger_storage_local::db::ParityDb;
-#[cfg(feature = "std")]
-type DbUnified = crate::ledger_9::ledger_storage_local::db::ParityDb<
+type Db = crate::ledger_9::ledger_storage_local::db::ParityDb<
 	storage_sha2::Sha256,
 	crate::ledger_9::ledger_storage_local::db::paritydb::OwnedDb,
 	{ LedgerStorageExt::COLUMN_OFFSET },
 >;
 
-#[cfg(feature = "std")]
-fn is_unified(mut ext: &mut dyn Externalities) -> bool {
-	matches!(
-		ext.extension::<LedgerStorageExt>().map(|e| &e.0.db),
-		Some(LedgerStorageDb::UnifiedDb(_)),
-	)
-}
-
-/// Call `Bridge::$call` instantiated for this call's storage mode, over the shared ledger
-/// storage, or over the ephemeral one when `$ephemeral` (see [`crate::ephemeral`]).
+/// Call `Bridge::$call` over the shared ledger storage, or over the ephemeral one when
+/// `$ephemeral` (see [`crate::ephemeral`]).
 #[cfg(feature = "std")]
 macro_rules! with_bridge {
 	($bridge:ident<$sig:ty>, $ext:expr, $ephemeral:expr, $call:ident($($arg:expr),* $(,)?)) => {
-		match (is_unified($ext), $ephemeral) {
-			(true, false) => $bridge::<$sig, DbUnified>::$call($($arg),*),
-			(false, false) => $bridge::<$sig, DbSeparate>::$call($($arg),*),
-			(true, true) => {
-				ensure_storage::<DbUnified>($ext);
-				$bridge::<$sig, EphemeralDb<DbUnified>>::$call($($arg),*)
-			},
-			(false, true) => {
-				ensure_storage::<DbSeparate>($ext);
-				$bridge::<$sig, EphemeralDb<DbSeparate>>::$call($($arg),*)
-			},
+		if $ephemeral {
+			ensure_storage::<Db>($ext);
+			$bridge::<$sig, EphemeralDb<Db>>::$call($($arg),*)
+		} else {
+			$bridge::<$sig, Db>::$call($($arg),*)
 		}
 	};
 }
@@ -194,7 +175,7 @@ fn as_ledger_9_error(error: crate::ledger_8::types::LedgerApiError) -> LedgerApi
 /// - https://github.com/midnightntwrk/midnight-node/pull/1900
 ///
 /// `$call` names the `Bridge` method and takes its arguments verbatim; only the
-/// storage-mode dispatch and the error translation are supplied here.
+/// error translation is supplied here.
 #[cfg(feature = "std")]
 macro_rules! serve_pre_migration_v8_read {
 	($ext:expr, $state_key:expr, $call:ident($($arg:expr),* $(,)?)) => {
@@ -208,19 +189,11 @@ macro_rules! serve_pre_migration_v8_read {
 #[runtime_interface]
 pub trait Ledger9Bridge {
 	fn set_default_storage(&mut self) {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self)
-		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self)
-		}
+		Bridge::<Signature, Db>::set_default_storage(*self)
 	}
 
 	fn flush_storage(&mut self) {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::flush_storage(*self)
-		} else {
-			Bridge::<Signature, DbSeparate>::flush_storage(*self)
-		}
+		Bridge::<Signature, Db>::flush_storage(*self)
 	}
 
 	fn post_block_update(
@@ -253,11 +226,7 @@ pub trait Ledger9Bridge {
 	fn get_version(&mut self) -> AllocateAndReturnFatPointer<Vec<u8>> {
 		// Dispatch on storage mode even though `get_version` doesn't read storage today —
 		// avoids a footgun if it grows a storage dependency later.
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_version()
-		} else {
-			Bridge::<Signature, DbSeparate>::get_version()
-		}
+		Bridge::<Signature, Db>::get_version()
 	}
 
 	/*
@@ -720,11 +689,7 @@ pub trait Ledger9Bridge {
 	}
 
 	fn is_governance_allowed_system_tx(&mut self, system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::is_governance_allowed_system_tx(system_tx)
-		} else {
-			Bridge::<Signature, DbSeparate>::is_governance_allowed_system_tx(system_tx)
-		}
+		Bridge::<Signature, Db>::is_governance_allowed_system_tx(system_tx)
 	}
 
 	/*
@@ -747,26 +712,16 @@ pub trait Ledger9Bridge {
 		action: u8,
 		nonce: PassFatPointerAndDecode<[u8; 32]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::construct_cnight_generates_dust_event(
-				value, owner, time, action, nonce,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::construct_cnight_generates_dust_event(
-				value, owner, time, action, nonce,
-			)
-		}
+		Bridge::<Signature, Db>::construct_cnight_generates_dust_event(
+			value, owner, time, action, nonce,
+		)
 	}
 
 	fn construct_cnight_generates_dust_system_tx(
 		&mut self,
 		events: PassFatPointerAndDecode<Vec<Vec<u8>>>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::construct_cnight_generates_dust_system_tx(events)
-		} else {
-			Bridge::<Signature, DbSeparate>::construct_cnight_generates_dust_system_tx(events)
-		}
+		Bridge::<Signature, Db>::construct_cnight_generates_dust_system_tx(events)
 	}
 
 	fn construct_distribute_night_cardano_bridge_system_tx(
@@ -775,41 +730,25 @@ pub trait Ledger9Bridge {
 		target_address_bytes: PassFatPointerAndRead<&[u8]>,
 		nonce_bytes: PassFatPointerAndDecode<[u8; 32]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::construct_distribute_night_cardano_bridge_system_tx(
-				amount,
-				target_address_bytes,
-				nonce_bytes,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::construct_distribute_night_cardano_bridge_system_tx(
-				amount,
-				target_address_bytes,
-				nonce_bytes,
-			)
-		}
+		Bridge::<Signature, Db>::construct_distribute_night_cardano_bridge_system_tx(
+			amount,
+			target_address_bytes,
+			nonce_bytes,
+		)
 	}
 
 	fn construct_distribute_reserve_system_tx(
 		&mut self,
 		amount: PassFatPointerAndDecode<u128>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::construct_distribute_reserve_system_tx(amount)
-		} else {
-			Bridge::<Signature, DbSeparate>::construct_distribute_reserve_system_tx(amount)
-		}
+		Bridge::<Signature, Db>::construct_distribute_reserve_system_tx(amount)
 	}
 
 	fn construct_unlock_to_treasury_system_tx(
 		&mut self,
 		amount: PassFatPointerAndDecode<u128>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::construct_unlock_to_treasury_system_tx(amount)
-		} else {
-			Bridge::<Signature, DbSeparate>::construct_unlock_to_treasury_system_tx(amount)
-		}
+		Bridge::<Signature, Db>::construct_unlock_to_treasury_system_tx(amount)
 	}
 
 	/// Ensures the correct ledger storage is initialized for this runtime version.
@@ -819,25 +758,16 @@ pub trait Ledger9Bridge {
 	fn ensure_storage_initialized(&mut self) -> bool {
 		use ledger_storage_ledger_8::storage::try_get_default_storage;
 
-		let unified = is_unified(*self);
-
 		// If normal storage already exists, we're good
-		let already_initialized = if unified {
-			try_get_default_storage::<DbUnified>().is_some()
-		} else {
-			try_get_default_storage::<DbSeparate>().is_some()
-		};
+		let already_initialized = try_get_default_storage::<Db>().is_some();
 		if already_initialized {
 			return false;
 		}
 
 		crate::drop_all_default_storage();
 		// Initialize normal storage
-		if unified {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-		}
+		Bridge::<Signature, Db>::set_default_storage(*self);
+
 		true
 	}
 
@@ -865,22 +795,12 @@ pub trait Ledger9Bridge {
 
 		let parent_hash = overlay_parent_hash(*self);
 		let ephemeral = !is_onchain(*self);
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-			if ephemeral {
-				ensure_storage::<DbUnified>(*self);
-				migrate_state_v8_to_v9::<EphemeralDb<DbUnified>>(*self, state_key, parent_hash)
-			} else {
-				migrate_state_v8_to_v9::<DbUnified>(*self, state_key, parent_hash)
-			}
+		Bridge::<Signature, Db>::set_default_storage(*self);
+		if ephemeral {
+			ensure_storage::<Db>(*self);
+			migrate_state_v8_to_v9::<EphemeralDb<Db>>(*self, state_key, parent_hash)
 		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			if ephemeral {
-				ensure_storage::<DbSeparate>(*self);
-				migrate_state_v8_to_v9::<EphemeralDb<DbSeparate>>(*self, state_key, parent_hash)
-			} else {
-				migrate_state_v8_to_v9::<DbSeparate>(*self, state_key, parent_hash)
-			}
+			migrate_state_v8_to_v9::<Db>(*self, state_key, parent_hash)
 		}
 	}
 
@@ -892,7 +812,7 @@ pub trait Ledger9Bridge {
 	/// any other seed would produce a different arena root and host calls
 	/// like `get_c_to_m_bridge_min_amount` would not resolve.
 	///
-	/// `init_storage_paritydb_separate` internally calls the storage-core's
+	/// `init_ledger_storage_standalone` internally calls the storage-core's
 	/// once-set `set_default_storage`, so subsequent calls across benchmark
 	/// iterations are effectively no-ops; we still gate with a `OnceLock`
 	/// to avoid the re-alloc + parity-db lock churn that would otherwise
@@ -912,12 +832,8 @@ pub trait Ledger9Bridge {
 		INIT.get_or_init(|| {
 			let mut dir = std::env::temp_dir();
 			dir.push(format!("midnight-bench-ledger-{}", std::process::id()));
-			let _ = std::fs::create_dir_all(&dir);
-			let _state_key = crate::ledger_9::storage::init_storage_paritydb_separate(
-				dir,
-				GENESIS_STATE_UNDEPLOYED,
-				10_000,
-			);
+			let _state_key =
+				crate::init_ledger_storage_standalone(dir, GENESIS_STATE_UNDEPLOYED, 10_000);
 		});
 	}
 }

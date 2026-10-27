@@ -27,7 +27,7 @@ use midnight_node_ledger::{
 	ephemeral::EphemeralDb,
 	host_api::ledger_9::ledger_9_bridge as host,
 	ledger_8::api::ledger::Ledger as Ledger8,
-	ledger_9::{BlockContext, api::ledger::Ledger, storage::init_storage_paritydb_separate},
+	ledger_9::{BlockContext, api::ledger::Ledger},
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -41,8 +41,12 @@ use sp_externalities::{Externalities, ExternalitiesExt};
 use sp_state_machine::BasicExternalities;
 use std::sync::{Arc, Mutex};
 
-/// Host calls without a `LedgerStorageExt` use the separate-db storage.
-type Shared = ParityDb;
+/// The one storage instantiation host calls dispatch to: the ledger columns after Substrate's.
+type Shared = ParityDb<
+	storage_sha2::Sha256,
+	ledger_storage_ledger_8::db::paritydb::OwnedDb,
+	{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+>;
 
 const RUNTIME_VERSION: u32 = 1;
 
@@ -166,8 +170,11 @@ fn run_block(
 #[test]
 fn offchain_calls_match_block_execution_without_touching_shared_storage() {
 	let dir = tempfile::tempdir().unwrap();
-	let genesis =
-		init_storage_paritydb_separate(dir.path(), UndeployedNetwork.genesis_state(), 1024);
+	let genesis = midnight_node_ledger::init_ledger_storage_standalone(
+		dir.path(),
+		UndeployedNetwork.genesis_state(),
+		1024,
+	);
 	let (tx, ctx) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let ctx: BlockContext = ctx.into();
 	let system_tx = {

@@ -14,13 +14,13 @@
 //! Derived implementation from polkadot-sdk: substrate/client/db/src/parity_db.rs
 //! Adds custom column definitions for midnight-ledger
 
-use midnight_primitives_ledger::LedgerStorageDb;
+use midnight_primitives_ledger::LedgerStorage;
 use midnight_storage_core::db::paritydb::{NUM_COLUMNS as NUM_COLUMNS_LEDGER, OwnedDb};
 use sc_client_db::Database;
 use sp_database::{Change, ColumnId, Transaction, error::DatabaseError};
 use std::sync::Arc;
 
-use crate::{cfg::midnight_cfg::StorageSeparation, service::StorageInit};
+use crate::service::StorageInit;
 
 pub struct DbAdapter(pub Arc<parity_db::Db>);
 
@@ -72,50 +72,49 @@ pub fn ledger_gc_tagged_from_genesis(db: &parity_db::Db) -> parity_db::Result<bo
 	Ok(db.get(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY)?.is_some())
 }
 
-fn separation_marker(separation: StorageSeparation) -> &'static [u8] {
-	match separation {
-		StorageSeparation::Separate => b"separate",
-		StorageSeparation::Unified => b"unified",
-	}
-}
-
-/// Refuse to open a database in the other `storage_separation` mode than it was created in.
+/// Refuse a database created with the removed `separate` storage layout, and record `unified` in
+/// the META column of one that has no marker yet.
 ///
-/// Switching modes on an existing data directory would silently reinitialise ledger state
-/// from genesis (separate -> unified leaves `ledger_storage/` orphaned and starts on empty
-/// ledger columns; the reverse starts a fresh `ledger_storage/`). Both modes now use the same
-/// ledger column options, so the parity-db column check that used to catch this no longer
-/// does; the mode is recorded explicitly in the META column on first open instead. For a
-/// database that predates the marker, the presence of the separate-mode ledger directory
-/// decides: separate mode always creates it, unified mode never does.
+/// Before the marker existed only separate mode set storage-core's options on the main DB's
+/// ledger columns (unified left them default), so an unmarked indexed DB was created in separate
+/// mode even if `ledger_storage/` was deleted by hand. A first start killed before the marker
+/// commit became durable leaves the same shape, so the refusal names that cause too.
 fn check_storage_separation(
 	db: &parity_db::Db,
-	existed: bool,
+	existing_columns: Option<&[parity_db::ColumnOptions]>,
 	storage_config: &StorageInit,
 ) -> parity_db::Result<()> {
-	let want = separation_marker(storage_config.separation);
 	let recorded = db.get(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY)?;
-	let created_as: Option<&[u8]> = match &recorded {
-		Some(v) => Some(v.as_slice()),
-		None if existed => {
-			Some(if storage_config.db_path.is_dir() { b"separate" } else { b"unified" })
+	let refusal = match &recorded {
+		Some(v) if v.as_slice() == b"separate" => {
+			Some("the META column records the removed `separate` storage layout")
 		},
-		None => None,
+		Some(_) => None,
+		None => existing_columns
+			.is_some_and(|columns| {
+				let node_column = (NUM_COLUMNS_POLKADOT
+					+ midnight_storage_core::db::paritydb::NODE_COLUMN) as usize;
+				storage_config.legacy_ledger_db_path.is_dir()
+					|| columns.get(node_column).is_some_and(|c| c.btree_index)
+			})
+			.then_some(
+				"no storage mode is recorded and the data directory looks like it was created \
+				 with the removed `separate` storage layout, or a previous first start was \
+				 interrupted before the storage mode was recorded",
+			),
 	};
-	if let Some(created_as) = created_as
-		&& created_as != want
-	{
+	if let Some(reason) = refusal {
 		return Err(parity_db::Error::IncompatibleColumnConfig {
 			id: NUM_COLUMNS_POLKADOT,
-			reason: format!(
-				"database was created with storage_separation={}, now configured {}",
-				String::from_utf8_lossy(created_as),
-				String::from_utf8_lossy(want)
-			),
+			reason: reason.into(),
 		});
 	}
 	if recorded.is_none() {
-		db.commit([(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY, Some(want.to_vec()))])?;
+		db.commit([(
+			columns_polkadot::META as u8,
+			STORAGE_SEPARATION_KEY,
+			Some(b"unified".to_vec()),
+		)])?;
 	}
 	Ok(())
 }
@@ -125,7 +124,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
 	upgrade: bool,
 	storage_config: &StorageInit,
-) -> parity_db::Result<(OwnedDb, LedgerStorageDb)> {
+) -> parity_db::Result<(OwnedDb, LedgerStorage)> {
 	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS);
 
 	let compressed = [
@@ -152,22 +151,15 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.preimage = true;
 	tx_col.uniform = true;
 
-	// Set storage-core's options on the ledger columns in BOTH modes. Unified mode is the
-	// one that actually uses these columns: without `btree_index` on the root and node
-	// columns storage-core cannot iterate them (`get_roots`, `size`, the GC scan), and
-	// without the options the node column is stored uncompressed (issue #2294). Separate
-	// mode keeps its own ledger DB (configured by storage-core itself) and leaves these
-	// columns unused, so the options are harmless there.
+	// Without `btree_index` on the root and node columns storage-core cannot iterate them
+	// (`get_roots`, `size`, the GC scan), and without the options the node column is stored
+	// uncompressed (issue #2294).
 	// Column options are fixed when a database is created, and parity-db refuses to open an
 	// existing one with different options (`IncompatibleColumnConfig`), so an existing DB
 	// keeps the ledger column options it was created with; only new databases get these.
 	// The node then starts normally and the ledger GC fails closed on the unindexed columns,
 	// asking for a resync (`ledger_gc::try_spawn`).
-	midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
-		&mut config,
-		NUM_COLUMNS_POLKADOT,
-		true,
-	);
+	midnight_storage_core::db::paritydb::set_init_options(&mut config, NUM_COLUMNS_POLKADOT, true);
 	let existing_meta = parity_db::Options::load_metadata(path)?;
 	if let Some(meta) = &existing_meta {
 		let ledger_cols = NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize;
@@ -183,42 +175,28 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		}
 	}
 
-	// The ledger storage is fresh when the main database is new and, in separate mode, the
-	// ledger directory does not exist yet either (decided before `init_ledger_storage_separate`
-	// creates it). A fresh ledger storage only ever receives tagged roots.
-	let ledger_fresh = existing_meta.is_none()
-		&& match storage_config.separation {
-			StorageSeparation::Separate => !storage_config.db_path.is_dir(),
-			StorageSeparation::Unified => true,
-		};
+	// The ledger is fresh exactly when the main database is new; a fresh ledger only ever
+	// receives tagged roots.
+	let ledger_fresh = existing_meta.is_none();
 
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
-	check_storage_separation(&db, existing_meta.is_some(), storage_config)?;
+	check_storage_separation(
+		&db,
+		existing_meta.as_ref().map(|m| m.columns.as_slice()),
+		storage_config,
+	)?;
 	if ledger_fresh {
 		db.commit([(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY, Some(b"1".to_vec()))])?;
 	}
 
-	match storage_config.separation {
-		StorageSeparation::Separate => {
-			// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during
-			// the 8->9 hardfork; seed the arena with the deserializer matching the
-			// genesis `ledger-state[vN]` tag (see `init_ledger_storage_separate`).
-			midnight_node_ledger::init_ledger_storage_separate(
-				&storage_config.db_path,
-				&storage_config.genesis_state,
-				storage_config.cache_size,
-			);
-			Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
-		},
-		StorageSeparation::Unified => {
-			midnight_node_ledger::init_ledger_storage_unified::<_, NUM_COLUMNS_POLKADOT>(
-				OwnedDb(db.clone()),
-				&storage_config.genesis_state,
-				storage_config.cache_size,
-			);
-			Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
-		},
-	}
+	// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during the 8->9 hardfork; the
+	// arena is seeded with the deserializer matching the genesis `ledger-state[vN]` tag.
+	midnight_node_ledger::init_ledger_storage::<_, NUM_COLUMNS_POLKADOT>(
+		OwnedDb(db.clone()),
+		&storage_config.genesis_state,
+		storage_config.cache_size,
+	);
+	Ok((OwnedDb(db.clone()), LedgerStorage::new(db, storage_config.cache_size)))
 }
 
 fn ref_counted_column(col: u32) -> bool {
