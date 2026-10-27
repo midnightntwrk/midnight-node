@@ -12,3 +12,5 @@ told apart from one still on a format-1 database. Each change has its own change
 details.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2332
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1464
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1983
