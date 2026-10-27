@@ -12,18 +12,16 @@
 // limitations under the License.
 
 //! Storage-open scenarios for the unified-only parity-db layout. A fresh data directory opens
-//! with storage-core's ledger column options and records `unified` plus the ledger GC marker in
-//! the META column; every shape a data directory created with the removed `separate` layout can
+//! with storage-core's ledger column options and records `unified` plus the storage-format marker
+//! in the META column; every shape a data directory created with the removed `separate` layout can
 //! take (ledger directory, 13 columns, separate-era column options, explicit `separate` marker)
 //! is refused with resync guidance, before anything on disk is touched where possible.
 //!
-//! Scenarios intentionally run sequentially inside a single `#[test]` because
-//! `midnight_node_ledger::init_ledger_storage` installs a process-wide
-//! `default_storage` singleton; parallel sub-tests would race on that global.
-//! Each scenario that opens a database calls `drop_all_default_storage()` afterwards
-//! to release the registered `Arc<parity_db::Db>` so the next open sees a clean slate
-//! and parity-db's background commit thread is joined before the `TempDir` removes
-//! the data directory.
+//! Scenarios run sequentially inside a single `#[test]` because
+//! `midnight_node_ledger::init_ledger_storage` installs a process-wide `default_storage`
+//! singleton. Each scenario that opens a database calls `drop_all_default_storage()` afterwards,
+//! so the next open starts clean and parity-db's commit thread is joined before the `TempDir`
+//! removes the data directory.
 
 use midnight_node::backend::open_paritydb;
 use midnight_node::service::StorageInit;
@@ -227,7 +225,7 @@ fn storage_layout_scenarios() {
 
 	// 6. A unified database created before the ledger columns got options (plain parity-db
 	//    defaults, no marker) still opens, keeps the options it was created with (parity-db cannot
-	//    change them), and gets the `unified` marker without the GC marker.
+	//    change them), and gets the `unified` marker without the storage-format marker.
 	{
 		let base = TempDir::new().unwrap();
 		let cfg = storage_init(base.path());

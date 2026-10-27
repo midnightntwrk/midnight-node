@@ -117,10 +117,10 @@ pub fn storage_format(db: &parity_db::Db) -> parity_db::Result<StorageFormat> {
 /// Refuse a database created with the removed `separate` storage layout, and record `unified` in
 /// the META column of one that has no marker yet.
 ///
-/// Before the marker existed only separate mode set storage-core's options on the main DB's
-/// ledger columns (unified left them default), so an unmarked indexed DB was created in separate
-/// mode even if `ledger_storage/` was deleted by hand. A first start killed before the marker
-/// commit became durable leaves the same shape, so the refusal names that cause too.
+/// Only separate mode used to set storage-core's options on the main DB's ledger columns, so an
+/// unmarked indexed DB was created in separate mode even if `ledger_storage/` was deleted by hand.
+/// A first start killed before the marker commit became durable leaves the same shape, so the
+/// refusal names that cause too.
 fn check_storage_separation(
 	db: &parity_db::Db,
 	existing_columns: Option<&[parity_db::ColumnOptions]>,
