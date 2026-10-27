@@ -143,6 +143,16 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
+      # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
+      # but no certs are provisioned on the runner. Beyond fixing this job's own
+      # TLS failure, this keeps the buildkit settings hash byte-identical with
+      # every other self-hosted earthly caller (see continuous-integration.yml) —
+      # a mismatched hash makes earthly force-recreate the shared buildkitd,
+      # cancelling every in-flight build on the box.
+      - name: Disable earthly TLS (self-hosted runner has no certs)
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+
       - name: Run rebuild-chainspec
         env:
           EARTHLY_CONFIG: .earthly/config.yml
