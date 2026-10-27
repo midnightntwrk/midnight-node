@@ -24,5 +24,5 @@ resync guidance.
 Whether a database is on the new storage format is recorded by the `midnight:storage_format` marker
 (see `changes/node/added/storage-format-marker.md`).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2333
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1464
