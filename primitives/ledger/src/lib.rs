@@ -15,10 +15,7 @@ use prometheus_endpoint::{
 	self as prometheus, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, PrometheusError,
 	Registry, U64,
 };
-use std::{
-	path::PathBuf,
-	sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 // Number of columns used by Polkadot in the underlying parity-db. Use this value for column offset
 // when initializing the ledger parity-db backend.
@@ -392,25 +389,19 @@ impl LedgerMetricsExt {
 	}
 }
 
-#[derive(Clone)]
-pub enum LedgerStorageDb {
-	UnifiedDb(Arc<parity_db::Db>),
-	SeparateDb(PathBuf),
-}
-/// Ledger Storage info to be sent to host functions
+/// Ledger Storage info to be sent to host functions.
+///
+/// The ledger arena lives in columns appended after Substrate's in the node's single parity-db
+/// instance (offset [`LedgerStorageExt::COLUMN_OFFSET`]), so `db` is that shared instance.
 #[derive(Clone)]
 pub struct LedgerStorage {
-	pub db: LedgerStorageDb,
+	pub db: Arc<parity_db::Db>,
 	pub cache_size: usize,
 }
 
 impl LedgerStorage {
-	pub fn new_existing(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
-		Self { db: LedgerStorageDb::UnifiedDb(db), cache_size }
-	}
-
-	pub fn new_separate(db_path: PathBuf, cache_size: usize) -> Self {
-		Self { db: LedgerStorageDb::SeparateDb(db_path), cache_size }
+	pub fn new(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
+		Self { db, cache_size }
 	}
 }
 

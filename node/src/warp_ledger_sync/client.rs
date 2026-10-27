@@ -56,8 +56,6 @@ pub struct LedgerSyncClient<B: BlockT, Client, BE, Network: ?Sized> {
 	client: Arc<Client>,
 	network: Arc<Network>,
 	protocol_name: ProtocolName,
-	/// Whether the local arena uses the unified ParityDb layout (forwarded to the importer).
-	unified: bool,
 	_phantom: PhantomData<(B, BE)>,
 }
 
@@ -68,13 +66,8 @@ where
 	Client: StorageProvider<B, BE> + HeaderBackend<B> + Send + Sync + 'static,
 	Network: NetworkRequest + Send + Sync + ?Sized + 'static,
 {
-	pub fn new(
-		client: Arc<Client>,
-		network: Arc<Network>,
-		protocol_name: ProtocolName,
-		unified: bool,
-	) -> Self {
-		Self { client, network, protocol_name, unified, _phantom: PhantomData }
+	pub fn new(client: Arc<Client>, network: Arc<Network>, protocol_name: ProtocolName) -> Self {
+		Self { client, network, protocol_name, _phantom: PhantomData }
 	}
 
 	/// Recover, verify, and import the ledger arena at `target` (the captured warp target N) by
@@ -121,7 +114,6 @@ where
 			// emit a heartbeat so a slow recovery is observable. Verification still happens inside the
 			// importer (recomputed root must equal `state_key`); a failure means the peer served bad
 			// data — discard and try the next one. (A reputation report on the peer belongs here.)
-			let unified = self.unified;
 			let blob_len = blob.len();
 			let state_key = state_key.clone();
 			log::info!(
@@ -132,7 +124,6 @@ where
 			let started = std::time::Instant::now();
 			let mut import = tokio::task::spawn_blocking(move || {
 				midnight_node_ledger::import_verified_ledger_snapshot(
-					unified,
 					&blob,
 					&state_key,
 					parent_hash,

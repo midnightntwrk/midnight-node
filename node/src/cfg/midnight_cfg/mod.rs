@@ -22,11 +22,25 @@ use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 pub mod invariants;
 use invariants::check_mainchain_epoch_invariants;
 
-#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum StorageSeparation {
-	#[default]
-	Separate,
-	Unified,
+/// The former `storage_separation` option: `unified` is the only layout now, so a leftover
+/// `unified` is accepted as a no-op while `separate` fails fast rather than being ignored on a
+/// data directory that has to be resynced.
+fn storage_separation_is_unified(value: &Option<String>) -> Result<(), validation::Error> {
+	match value.as_deref().map(str::trim) {
+		None => Ok(()),
+		Some(v) if v.eq_ignore_ascii_case("unified") => Ok(()),
+		Some(v) if v.eq_ignore_ascii_case("separate") => Err(validation::Error::Custom(
+			"storage_separation = \"separate\" is no longer supported: the node only runs the \
+			 `unified` storage layout. Drop the option (or STORAGE_SEPARATION), and if the chain \
+			 data was created in `separate` mode, remove it and resync from genesis or a \
+			 unified-layout snapshot."
+				.into(),
+		)),
+		Some(v) => Err(validation::Error::Custom(format!(
+			"storage_separation = \"{v}\" is not supported: the option is deprecated and only \
+			 \"unified\" (the sole layout) is accepted; drop it from the config."
+		))),
+	}
 }
 
 /// Which existing main-chain data sources to mock.
@@ -145,8 +159,11 @@ pub struct MidnightCfg {
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 
-	/// Whether substrate and midnight storage should be separate or unified
-	pub storage_separation: StorageSeparation,
+	/// Deprecated: the node stores the ledger in the single Substrate parity-db (the former
+	/// `unified` layout) and the `separate` layout was removed. Only `unified` is accepted, as a
+	/// no-op; `separate` is rejected because such a data directory must be resynced.
+	#[validate(custom = storage_separation_is_unified)]
+	pub storage_separation: Option<String>,
 
 	/// Deprecated: plaintext database connections are no longer permitted.
 	/// This flag is ignored — all connections use TLS. It will be removed in a future release.
@@ -370,6 +387,19 @@ mod tests {
 		let mut cfg = good_cfg();
 		cfg.mc_slot_duration_millis = 2000;
 		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn deprecated_storage_separation_accepts_only_unified() {
+		assert!(storage_separation_is_unified(&None).is_ok());
+		assert!(storage_separation_is_unified(&Some("unified".into())).is_ok());
+		assert!(storage_separation_is_unified(&Some(" Unified ".into())).is_ok());
+
+		let err = storage_separation_is_unified(&Some("separate".into()))
+			.expect_err("separate layout must be rejected");
+		assert!(err.to_string().contains("resync"), "expected resync guidance, got: {err}");
+
+		assert!(storage_separation_is_unified(&Some("hybrid".into())).is_err());
 	}
 
 	#[test]

@@ -85,7 +85,7 @@ use {
 		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -209,9 +209,9 @@ const ANCHORED_STATE_CACHE_TTI: Duration = Duration::from_secs(300);
 
 /// Key for the ledger-state keep-alive caches.
 ///
-/// The `db` discriminator matters: `DbSeparate` and `DbUnified` are distinct arenas
-/// that produce identical content hashes, so without it a release on one would drop
-/// the other's keep-alive.
+/// The `db` discriminator matters: the arena type parameter (the node's parity-db `Db` vs the
+/// in-memory `DefaultDB` used by tests) distinguishes arenas with identical content hashes, so a
+/// release on one must not drop the other's keep-alive.
 #[cfg(feature = "std")]
 #[derive(PartialEq, Eq, Hash, Clone)]
 struct StateCacheKey {
@@ -392,33 +392,18 @@ where
 	pub fn set_default_storage(mut externalities: &mut dyn Externalities) {
 		let maybe_storage = externalities.extension::<LedgerStorageExt>();
 		if let Some(storage) = maybe_storage {
-			match &storage.db {
-				LedgerStorageDb::UnifiedDb(db) => {
-					let res = set_default_storage(|| {
-						let db =
-                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
-						Storage::new(storage.cache_size, db)
-					});
-					if res.is_err() {
-						log::warn!(
-							target: LOG_TARGET,
-							"Warning: Failed to set default storage, already initialized (UnifiedDb)"
-						);
-					}
-				},
-				LedgerStorageDb::SeparateDb(db_path) => {
-					let res = set_default_storage(|| {
-						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
-						Storage::new(storage.0.cache_size, db)
-					});
-					if res.is_err() {
-						log::warn!(
-							target: LOG_TARGET,
-							"Warning: Failed to set default storage, already initialized (SeparateDb)"
-						);
-					}
-				},
-			};
+			let res = set_default_storage(|| {
+				let db = ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(
+					OwnedDb(storage.db.clone()),
+				);
+				Storage::new(storage.cache_size, db)
+			});
+			if res.is_err() {
+				log::warn!(
+					target: LOG_TARGET,
+					"Warning: Failed to set default storage, already initialized"
+				);
+			}
 		} else {
 			log::error!(
 				target: LOG_TARGET,

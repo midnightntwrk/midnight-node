@@ -115,9 +115,6 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub system_rpc_tx: TracingUnboundedSender<sc_rpc::system::Request<Block>>,
 	/// Shared tracker for finality subscription limits.
 	pub subscription_tracker: SubscriptionTracker,
-	/// Whether the ledger arena uses the unified ParityDb layout. Selects the DB
-	/// instantiation `midnight_ledgerStats` reads the arena through.
-	pub ledger_unified: bool,
 }
 
 /// Instantiate all full RPC extensions.
@@ -171,7 +168,6 @@ where
 		network,
 		system_rpc_tx,
 		subscription_tracker,
-		ledger_unified,
 	} = deps;
 
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -250,8 +246,7 @@ where
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
 	module.merge(Midnight::new(client.clone()).into_rpc())?;
 	module.merge(
-		crate::ledger_stats_rpc::LedgerStatsRpc::<_, Block, B>::new(client.clone(), ledger_unified)
-			.into_rpc(),
+		crate::ledger_stats_rpc::LedgerStatsRpc::<_, Block, B>::new(client.clone()).into_rpc(),
 	)?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;

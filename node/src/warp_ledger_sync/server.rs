@@ -52,9 +52,6 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(40);
 /// (multi-million node) arena.
 pub struct LedgerSyncRequestHandler<B: BlockT, Client, BE> {
 	client: Arc<Client>,
-	/// Whether the ledger arena uses the unified ParityDb layout (selects the DB instantiation the
-	/// serializer dispatches to — see [`midnight_node_ledger::serialize_ledger_snapshot`]).
-	unified: bool,
 	request_receiver: async_channel::Receiver<IncomingRequest>,
 	/// `(target_block, compressed serialized blob)` memo for the last block served.
 	cache: Option<(B::Hash, CachedSnapshot)>,
@@ -87,7 +84,6 @@ where
 		genesis_hash: B::Hash,
 		fork_id: Option<&str>,
 		client: Arc<Client>,
-		unified: bool,
 		num_peer_hint: usize,
 		serve: bool,
 	) -> (Option<Self>, N::RequestResponseProtocolConfig) {
@@ -98,8 +94,7 @@ where
 			// Reserve one in-flight request slot per peer.
 			let capacity = std::cmp::max(num_peer_hint, 1);
 			let (tx, request_receiver) = async_channel::bounded(capacity);
-			let handler =
-				Self { client, unified, request_receiver, cache: None, _phantom: PhantomData };
+			let handler = Self { client, request_receiver, cache: None, _phantom: PhantomData };
 			(Some(tx), Some(handler))
 		} else {
 			(None, None)
@@ -165,7 +160,7 @@ where
 		let state_key = read_state_key::<B, Client, BE>(&self.client, target)?
 			.ok_or(HandleError::NoStateKey)?;
 
-		let blob = midnight_node_ledger::serialize_ledger_snapshot(self.unified, &state_key)
+		let blob = midnight_node_ledger::serialize_ledger_snapshot(&state_key)
 			.map_err(HandleError::Serialize)?;
 		let raw_len = blob.len() as u64;
 		let compressed_blob = compress_snapshot(&blob).map_err(HandleError::Compress)?;

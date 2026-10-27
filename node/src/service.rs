@@ -20,7 +20,6 @@ use crate::babe_key_readiness::{
 	reporter::BabeKeyMetrics,
 };
 use crate::backend::{create_database_source, open_paritydb};
-use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
@@ -34,7 +33,7 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
-use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use midnight_primitives_ledger::LedgerMetrics;
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
@@ -76,9 +75,10 @@ use std::{
 use time_source::SystemTimeSource;
 
 pub struct StorageInit {
-	pub separation: StorageSeparation,
-	/// Used only when separation == 'separate'
-	pub db_path: PathBuf,
+	/// Where the removed `separate` storage layout kept its own ledger parity-db
+	/// (`<base-path>/ledger_storage`). Its presence means the data directory predates the
+	/// unified layout and the node refuses to start on it.
+	pub legacy_ledger_db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
 }
@@ -325,7 +325,7 @@ pub fn new_partial(
 		panic!("Midnight node support only parity-db as a backend");
 	};
 
-	let (parity_db_instance, ledger_storage_db, require_create) =
+	let (parity_db_instance, ledger_storage, require_create) =
 		open_paritydb(&db_path, &storage_config)?;
 	let ledger_gc_tagged_from_genesis =
 		crate::backend::custom_parity_db::ledger_gc_tagged_from_genesis(&parity_db_instance.0)
@@ -391,9 +391,6 @@ pub fn new_partial(
 					None
 				},
 			});
-
-	let ledger_storage =
-		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
 
 	let ledger_metrics_arc = Arc::new(Mutex::new(ledger_metrics));
 	client
@@ -632,9 +629,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	serve_warp_ledger_sync: bool,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
-	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
-	// warp ledger-sync server/importer dispatch to.
-	let warp_ledger_unified = matches!(storage_config.separation, StorageSeparation::Unified);
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
@@ -734,7 +728,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			genesis_hash,
 			config.chain_spec.fork_id(),
 			client.clone(),
-			warp_ledger_unified,
 			config.network.default_peers_set_num_full as usize,
 			serve_ledger_sync,
 		);
@@ -800,7 +793,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			network.clone(),
 			warp_ledger_recovery_gate.clone(),
 			ledger_sync_protocol_name.clone(),
-			warp_ledger_unified,
 		),
 	);
 
@@ -903,7 +895,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
 				subscription_tracker: subscription_tracker.clone(),
-				ledger_unified: warp_ledger_unified,
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}
