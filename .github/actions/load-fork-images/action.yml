@@ -73,9 +73,8 @@ runs:
           esac
         done
 
-        # buildkitd reaches the registry over plain HTTP via the gateway address.
-        # Appended under the existing `global:` key; later 4-space appends (tls_enabled)
-        # end the block scalar, so they stay global keys.
+        # Appended under `global:`. A later 4-space append (tls_enabled) ends the block
+        # scalar, so it stays a global key.
         {
           echo "    buildkit_additional_config: |"
           echo "      [registry.\"${REGISTRY_HOST}\"]"

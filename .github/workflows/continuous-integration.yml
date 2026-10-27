@@ -1213,7 +1213,7 @@ jobs:
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag with the submodule's content hash (in the image refs from image_meta)
+          # Retag with the submodule's content hash
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
 
           docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "$INDEXER_API_IMAGE"
