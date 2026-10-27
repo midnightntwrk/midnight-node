@@ -52,6 +52,8 @@ pub struct LedgerMetrics {
 	pub ledger_gc_phase_time: HistogramVec,
 	/// Tagged GC roots (label `kind`: "total", "candidates" or "pinned")
 	pub ledger_gc_tagged_roots: GaugeVec<U64>,
+	/// Storage format of the node's database (labels `version`, `status`); the matching series is 1
+	pub storage_format: GaugeVec<U64>,
 	/// Tagged GC roots released (label `reason`: "dead_position")
 	pub ledger_gc_released_total: CounterVec<U64>,
 	/// 1 while ledger GC is suspended (label `reason`: "mbm", "legacy_roots",
@@ -234,6 +236,17 @@ impl LedgerMetrics {
 						"Tagged GC roots seen by the last ledger GC slice",
 					),
 					&["kind"],
+				)?,
+				registry,
+			)?,
+			storage_format: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"midnight_storage_format",
+						"Storage format of the node's database (1 = legacy, 2 = current bundle); \
+						 the matching series is 1",
+					),
+					&["version", "status"],
 				)?,
 				registry,
 			)?,

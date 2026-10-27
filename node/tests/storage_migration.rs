@@ -131,10 +131,14 @@ fn storage_layout_scenarios() {
 		);
 		assert!(meta.columns[ledger_column(GC_ROOT_COLUMN)].btree_index);
 		assert_eq!(db.0.get(0, MARKER_KEY).unwrap(), Some(b"unified".to_vec()));
-		assert!(
-			midnight_node::backend::custom_parity_db::ledger_gc_tagged_from_genesis(&db.0).unwrap(),
-			"a fresh database is marked as tagged from genesis",
+		let format = midnight_node::backend::custom_parity_db::storage_format(&db.0).unwrap();
+		assert_eq!(format.version, 2);
+		assert_eq!(
+			format.created_by,
+			Some(midnight_node::backend::custom_parity_db::NODE_VERSION.to_string())
 		);
+		assert_eq!(format.status(), "current");
+		assert!(db.0.get(0, b"midnight:ledger_gc_tagged_roots").unwrap().is_none());
 		drop((db, storage));
 		drop_all_default_storage();
 	}
@@ -234,10 +238,13 @@ fn storage_layout_scenarios() {
 			let (db, storage, _) = open_paritydb(&path, &cfg)
 				.unwrap_or_else(|e| panic!("opening a pre-options unified db failed: {e}"));
 			assert_eq!(db.0.get(0, MARKER_KEY).unwrap(), Some(b"unified".to_vec()));
+			let format = midnight_node::backend::custom_parity_db::storage_format(&db.0).unwrap();
+			assert_eq!(format.version, 1);
+			assert_eq!(format.created_by, None);
+			assert_eq!(format.status(), "legacy");
 			assert!(
-				!midnight_node::backend::custom_parity_db::ledger_gc_tagged_from_genesis(&db.0)
-					.unwrap(),
-				"an existing database must not be marked as tagged from genesis",
+				db.0.get(0, b"midnight:storage_format").unwrap().is_none(),
+				"an existing database must not be stamped with the storage format",
 			);
 			drop((db, storage));
 			drop_all_default_storage();

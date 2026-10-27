@@ -21,5 +21,8 @@ unified-layout snapshot. A node already on `unified` keeps its database as is.
 no-op so existing configs keep working, `separate` is rejected at config validation with the same
 resync guidance.
 
+Whether a database is on the new storage format is recorded by the `midnight:storage_format` marker
+(see `changes/node/added/storage-format-marker.md`).
+
 PR:
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1464

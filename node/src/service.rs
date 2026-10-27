@@ -266,10 +266,44 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus::BoxBlockImport<Block>,
 		// Shared ledger metrics handle (also given to the `ExtensionsFactory`), for the ledger GC worker.
 		Arc<Mutex<Option<LedgerMetrics>>>,
-		// Whether the ledger storage was created with tagged roots (ledger GC marker).
+		// Whether the database was created at the current storage format (ledger GC gate).
 		bool,
 	),
 >;
+
+fn log_storage_format(format: &crate::backend::custom_parity_db::StorageFormat) {
+	use crate::backend::custom_parity_db::{CURRENT_STORAGE_FORMAT, NODE_VERSION};
+	if format.is_current() {
+		log::info!(
+			target: "midnight::storage",
+			"Storage format: {} (current), created by node {}",
+			format.version,
+			format.created_by.as_deref().unwrap_or("unknown"),
+		);
+	} else {
+		log::info!(
+			target: "midnight::storage",
+			"Storage format: {} (legacy): created before node {NODE_VERSION}; resync to enable \
+			 ledger GC and compressed ledger columns",
+			format.version,
+		);
+	}
+	if let Some(raw) = &format.unparsable {
+		log::warn!(
+			target: "midnight::storage",
+			"Storage format marker {raw:?} is not a number; treating the database as legacy"
+		);
+	}
+	if format.version > CURRENT_STORAGE_FORMAT {
+		log::warn!(
+			target: "midnight::storage",
+			"The database has storage format {}, newer than this node's {CURRENT_STORAGE_FORMAT}; \
+			 it was created by node {}",
+			format.version,
+			format.created_by.as_deref().unwrap_or("unknown"),
+		);
+	}
+}
 
 #[allow(clippy::result_large_err)]
 fn parse_genesis_extrinsic_values(
@@ -327,9 +361,9 @@ pub fn new_partial(
 
 	let (parity_db_instance, ledger_storage, require_create) =
 		open_paritydb(&db_path, &storage_config)?;
-	let ledger_gc_tagged_from_genesis =
-		crate::backend::custom_parity_db::ledger_gc_tagged_from_genesis(&parity_db_instance.0)
-			.map_err(|e| ServiceError::Other(format!("reading the ledger GC marker: {e}")))?;
+	let storage_format = crate::backend::custom_parity_db::storage_format(&parity_db_instance.0)
+		.map_err(|e| ServiceError::Other(format!("reading the storage format marker: {e}")))?;
+	log_storage_format(&storage_format);
 	db_config.source = create_database_source(parity_db_instance, require_create)?;
 	let backend = sc_service::new_db_backend(db_config)?;
 
@@ -392,6 +426,11 @@ pub fn new_partial(
 				},
 			});
 
+	if let Some(m) = &ledger_metrics {
+		m.storage_format
+			.with_label_values(&[&storage_format.version.to_string(), storage_format.status()])
+			.set(1);
+	}
 	let ledger_metrics_arc = Arc::new(Mutex::new(ledger_metrics));
 	client
 		.execution_extensions()
@@ -605,7 +644,7 @@ pub fn new_partial(
 			babe_link,
 			babe_authoring_block_import,
 			ledger_metrics_arc,
-			ledger_gc_tagged_from_genesis,
+			storage_format.is_current(),
 		),
 	};
 
@@ -652,7 +691,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				babe_link,
 				babe_authoring_block_import,
 				ledger_metrics_arc,
-				ledger_gc_tagged_from_genesis,
+				storage_format_current,
 			),
 	} = new_partial_components;
 
@@ -805,7 +844,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		crate::ledger_gc::GcConfig::from_env(
 			&config.state_pruning,
 			backend.requires_full_sync(),
-			ledger_gc_tagged_from_genesis,
+			storage_format_current,
 		),
 	);
 

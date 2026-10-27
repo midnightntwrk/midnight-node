@@ -65,8 +65,8 @@
 //! Roots written before tagged roots are not wrappers and can never be released,
 //! and an upgraded-in-place database holds the whole chain's history of them. GC
 //! does not run on such a database. The decision is the META-column marker the
-//! database layer writes when it creates a fresh ledger storage
-//! (`custom_parity_db::ledger_gc_tagged_from_genesis`): one point read at startup,
+//! database layer writes when it creates a fresh database
+//! (`custom_parity_db::storage_format`, format 2): one point read at startup,
 //! never a root iteration, so the size of a legacy database is irrelevant. As a
 //! defence the startup probe and every slice also stop the worker at the first
 //! root that is not a wrapper. Either way: a resync message and
@@ -119,9 +119,9 @@ pub struct GcConfig {
 	pub arena_sweep: bool,
 	/// Release lag (the effective `--state-pruning` window); `None` = no worker.
 	pub lag: Option<u32>,
-	/// The ledger storage was created by a node that tags every root (the META
-	/// marker written on first open); `false` = legacy roots, no worker.
-	pub tagged_from_genesis: bool,
+	/// The database was created at the current storage format, so every ledger root is
+	/// tagged; `false` = legacy roots, no worker.
+	pub storage_format_current: bool,
 }
 
 fn env_parse<T: std::str::FromStr>(name: &str, default: T) -> T {
@@ -173,13 +173,13 @@ impl GcConfig {
 	pub fn from_env(
 		state_pruning: &Option<PruningMode>,
 		backend_requires_full_sync: bool,
-		tagged_from_genesis: bool,
+		storage_format_current: bool,
 	) -> Self {
 		Self {
 			slice: Duration::from_millis(env_parse(ENV_SLICE_MS, DEFAULT_SLICE_MS)),
 			arena_sweep: env_bool(ENV_ARENA_SWEEP, true),
 			lag: lag_for(state_pruning, backend_requires_full_sync),
-			tagged_from_genesis,
+			storage_format_current,
 		}
 	}
 }
@@ -376,8 +376,9 @@ fn timed_scan(metrics: &SharedMetrics) -> Result<Vec<TaggedRootInfo>, LegacyRoot
 fn refuse_legacy(metrics: &SharedMetrics) {
 	error!(
 		target: LOG_TARGET,
-		"🛑 Ledger GC disabled: the ledger storage holds roots that predate tagged roots and \
-		 can never be reclaimed. Resync the ledger storage to enable it."
+		"🛑 Ledger GC disabled: the database is storage format 1 (or holds roots that predate \
+		 tagged roots), which can never be reclaimed. Resync the node to create a format-2 \
+		 database and enable it."
 	);
 	with_metrics(metrics, |m| m.set_gc_suspended("legacy_roots", true));
 }
@@ -559,10 +560,10 @@ pub fn try_spawn(
 		);
 		return;
 	};
-	// A ledger storage created by an older node holds roots that were never tagged.
-	// Decided by the META marker written on first open: one point read, no root
-	// iteration, so a multi-million-root legacy database costs nothing here.
-	if !config.tagged_from_genesis {
+	// A database created before storage format 2 holds roots that were never tagged.
+	// Decided by the META storage-format marker: one point read, no root iteration,
+	// so a multi-million-root legacy database costs nothing here.
+	if !config.storage_format_current {
 		refuse_legacy(&metrics);
 		return;
 	}
@@ -874,7 +875,7 @@ mod tests {
 			slice: Duration::from_millis(25),
 			arena_sweep: true,
 			lag: Some(256),
-			tagged_from_genesis: true,
+			storage_format_current: true,
 		};
 		let mut st = WorkerState::new();
 		assert!(sweep_allowed(&st, &cfg));
