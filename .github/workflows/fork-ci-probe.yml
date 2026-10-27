@@ -1,0 +1,80 @@
+# TEMPORARY: fast check of the fork-PR image hand-off for the test PR only. Not for merge.
+name: Fork CI probe
+
+on:
+  pull_request:
+
+permissions: {}
+
+env:
+  IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+  REF: 172.17.0.1:5000/midnight-ntwrk/fork-ci-probe:pr
+
+jobs:
+  build:
+    name: Probe build (no push, save artifact)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+      - name: Report fork detection
+        env:
+          SECRETS_VISIBLE: ${{ secrets.MIDNIGHTCI_PACKAGES_READ != '' }}
+        run: |
+          echo "IS_FORK_PR=$IS_FORK_PR"
+          echo "secrets visible: $SECRETS_VISIBLE"
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+      - name: Build without --push
+        run: . ./.envrc && earthly ./tests/fork-ci-probe+image --REF="$REF"
+      - name: Image landed in the host daemon
+        run: docker image inspect "$REF" --format '{{.Id}}'
+      - uses: ./.github/actions/save-fork-images
+        with:
+          artifact-name: fork-ci-probe
+          images: ${{ env.REF }}
+
+  docker-consumer:
+    name: Probe plain docker consumer
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+      - uses: ./.github/actions/load-fork-images
+        with:
+          artifact-pattern: fork-ci-probe
+      - name: docker run the loaded image
+        run: docker run --rm "$REF" cat /probe.txt | grep fork-ci-probe-ok
+
+  earthly-consumer:
+    name: Probe earthly consumer (local registry)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+      - uses: ./.github/actions/load-fork-images
+        with:
+          artifact-pattern: fork-ci-probe
+          registry: "true"
+      # Same append the self-hosted-style jobs do after loading, to prove the config stays valid.
+      - name: Append tls_enabled like test-toolkit does
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+          cat .earthly/config.yml
+      - name: earthly FROM the fork image
+        run: . ./.envrc && earthly ./tests/fork-ci-probe+consume --REF="$REF"
+      - name: earthly WITH DOCKER --pull the fork image
+        run: . ./.envrc && earthly -P ./tests/fork-ci-probe+pull --REF="$REF"
