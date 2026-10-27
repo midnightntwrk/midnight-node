@@ -49,6 +49,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 			.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())),
 		src.dust_warp,
 		src.fetch_only_cached,
+		src.fetch_best,
 		src.fetch_cache,
 	)
 	.get_txs()

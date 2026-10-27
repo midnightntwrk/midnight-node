@@ -94,6 +94,8 @@ std = [
     "derive-where"
 ]
 runtime-benchmarks = []
+# Testbed only: skip contract and DUST proof verification. Never build production nodes with it.
+mock-proofs = []
 test-utils = []
 
 [lints.rust]

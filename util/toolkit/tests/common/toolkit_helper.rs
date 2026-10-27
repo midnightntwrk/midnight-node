@@ -185,6 +185,7 @@ fn default_source() -> Source {
 	Source {
 		src_url: None,
 		fetch_only_cached: false,
+		fetch_best: false,
 		fetch_concurrency: 0,
 		fetch_compute_concurrency: None,
 		src_files: None,
@@ -344,6 +345,7 @@ impl ToolkitTestHelper {
 			rate: 0.0,
 			dest_file: Some(path_to_string(file)),
 			no_watch_progress: false,
+			no_wait_finality: false,
 		}
 	}
 
@@ -353,6 +355,7 @@ impl ToolkitTestHelper {
 			rate: 1.0,
 			dest_file: None,
 			no_watch_progress: false,
+			no_wait_finality: false,
 		}
 	}
 
@@ -666,6 +669,7 @@ impl ToolkitTestHelper {
 				shielded_destinations: vec![],
 			},
 			dry_run: false,
+			output_onchain_state: None,
 		};
 		send_intent::execute(args).await?;
 

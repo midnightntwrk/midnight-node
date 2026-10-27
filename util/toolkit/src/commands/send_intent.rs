@@ -11,13 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::tx_generator::{
-	TxGenerator,
-	builder::{Builder, CustomContractArgs},
-	destination::Destination,
-	source::Source,
+use crate::{
+	serde_def::SourceTransactions,
+	tx_generator::{
+		TxGenerator,
+		builder::{
+			BuildTxs, Builder, CustomContractArgs, builders::ledger_9::CustomContractBuilder,
+		},
+		destination::Destination,
+		source::Source,
+	},
 };
 use clap::Args;
+use midnight_ledger_unsafe_helpers::{
+	DefaultDB, IntentCustom, ProofMarker, PureGeneratorPedersen, Resolver, SerdeTransaction,
+	Signature, Transaction, deserialize, strictness_without_proofs,
+};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+use std::{fs, path::Path, sync::Arc};
 
 #[derive(Args)]
 pub struct SendIntentArgs {
@@ -25,7 +36,7 @@ pub struct SendIntentArgs {
 	pub source: Source,
 	#[command(flatten)]
 	pub destination: Destination,
-	// Proof Server Host
+	/// Proof server URL, or `mock` to emit mock proofs (accepted only by `mock-proofs` nodes)
 	#[arg(long, short)]
 	pub proof_server: Option<String>,
 	#[command(flatten)]
@@ -33,9 +44,14 @@ pub struct SendIntentArgs {
 	/// Dry-run - don't generate any txs, just print out the settings
 	#[arg(long)]
 	pub dry_run: bool,
+	/// Write the contract's on-chain state as it will be after this transaction, so the next
+	/// circuit call can be prepared without waiting for inclusion.
+	#[arg(long)]
+	pub output_onchain_state: Option<String>,
 }
 
 pub async fn execute(args: SendIntentArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let contract_args = args.contract_args.clone();
 	let builder = Builder::ContractCustom(args.contract_args);
 
 	let generator =
@@ -47,10 +63,71 @@ pub async fn execute(args: SendIntentArgs) -> Result<(), Box<dyn std::error::Err
 	}
 
 	let received_txs = generator.get_txs().await?;
-	let generated_txs = generator.build_txs(&received_txs).await?;
+	let generated_txs = match &args.output_onchain_state {
+		None => generator.build_txs(&received_txs).await?,
+		Some(out) => {
+			build_and_predict_state(&generator, &contract_args, &received_txs, out).await?
+		},
+	};
 	generator.send_txs(&generated_txs).await?;
 
 	Ok(())
+}
+
+/// `TxGenerator::build_txs` drops its ledger context after building, so this keeps one, applies
+/// the built transaction to it and writes the contract's resulting state.
+async fn build_and_predict_state(
+	generator: &TxGenerator,
+	contract_args: &CustomContractArgs,
+	received_txs: &SourceTransactions,
+	out: &str,
+) -> Result<SerializedTxBatches, Box<dyn std::error::Error + Send + Sync>> {
+	let ctx = generator
+		.build_context(received_txs)
+		.await?
+		.and_then(|ctx| ctx.into_ledger9())
+		.ok_or("--output-onchain-state needs a ledger 9 chain and a funding wallet")?;
+	let ctx = Arc::new(ctx);
+
+	let prover = Builder::make_prover(&generator.prover_config);
+	let batches = CustomContractBuilder::new(contract_args.clone(), ctx.clone(), prover)
+		.build_txs_from(received_txs.clone())
+		.await?;
+
+	let raw = batches
+		.batches
+		.first()
+		.and_then(|b| b.first())
+		.ok_or("send-intent built no transaction")?;
+	let tx: Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB> =
+		deserialize(raw.tx.as_bytes())?;
+	let block_context = ctx
+		.latest_block_context
+		.lock()
+		.map_err(|e| format!("block context lock poisoned: {e}"))?
+		.clone()
+		.ok_or("no block context after replay")?;
+	// `prove` has already checked the transaction, with proofs unless they are mock.
+	ctx.update_from_tx_with_strictness(
+		&SerdeTransaction::Midnight(tx),
+		&block_context,
+		strictness_without_proofs(),
+	)?;
+
+	let resolver: &'static Resolver = Box::leak(Box::new(IntentCustom::<DefaultDB>::get_resolver(
+		&contract_args.compiled_contract_dirs,
+	)?));
+	let intent_file =
+		contract_args.intent_files.first().ok_or("send-intent needs an intent file")?;
+	let address = IntentCustom::<DefaultDB>::new_from_file(intent_file, resolver)?
+		.find_contract_address()
+		.ok_or("intent names no contract address")?;
+	let state = crate::commands::fork::ledger_9::contract_state::get_contract_state(&ctx, address)?;
+	if let Some(parent) = Path::new(out).parent() {
+		fs::create_dir_all(parent)?;
+	}
+	fs::write(out, state)?;
+	Ok(batches)
 }
 
 #[cfg(test)]
@@ -130,6 +207,7 @@ mod test {
 			dust_warp: true,
 			ignore_block_context: false,
 			fetch_only_cached: false,
+			fetch_best: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 			ledger_state_db: String::new(),
 			replay_checkpoint_interval: 0,
@@ -140,6 +218,7 @@ mod test {
 			rate: 0.0,
 			dest_file: Some(output_file.to_string()),
 			no_watch_progress: false,
+			no_wait_finality: false,
 		};
 
 		let rng_seed = hex_str_decode::<[u8; 32]>(rng_seed).expect("rng_seed failed");
@@ -160,6 +239,7 @@ mod test {
 			proof_server: None,
 			contract_args,
 			dry_run: false,
+			output_onchain_state: None,
 		};
 
 		execute(args).await.expect("should work during sending");

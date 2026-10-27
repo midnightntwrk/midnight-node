@@ -71,11 +71,17 @@ pub trait BuilderContext<D: DB + Clone>: Send + Sync + 'static {
 	/// Replace the resolver used for proving.
 	async fn update_resolver(&self, resolver: &'static Resolver);
 
-	/// Validate that `tx` is well-formed against the current ledger state.
+	/// Validate that `tx` is well-formed against the current ledger state. `verify_proofs` is
+	/// false for mock-proven transactions, which only `mock-proofs` nodes accept.
 	///
 	/// The local backend checks against its [`crate::ledger_9::LedgerState`]; an indexer-backed
 	/// backend has no full state to check against and relies on the node validating on submission.
-	fn well_formed<S, P, B>(&self, tx: &Transaction<S, P, B, D>, now: Timestamp) -> BuildResult<()>
+	fn well_formed<S, P, B>(
+		&self,
+		tx: &Transaction<S, P, B, D>,
+		now: Timestamp,
+		verify_proofs: bool,
+	) -> BuildResult<()>
 	where
 		S: SignatureKind<D>,
 		P: ProofKind<D> + Storable<D>,

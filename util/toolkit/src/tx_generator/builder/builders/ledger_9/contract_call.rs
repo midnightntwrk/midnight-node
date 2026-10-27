@@ -130,7 +130,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractCallBuilder<C> {
 		tx_info.set_guaranteed_offer(offer_info);
 
 		tx_info.set_funding_seeds(vec![self.funding_seed()]);
-		tx_info.use_mock_proofs_for_fees(false);
+		tx_info.use_mock_proofs_for_fees(true);
 
 		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await.expect("Balancing TX failed");

@@ -241,6 +241,8 @@ try-runtime = [
     "pallet-cnight-observation/try-runtime",
 ]
 experimental = []
+# Testbed only: 2s blocks. Never build a deployed chain with it.
+fast-blocks = []
 
 [package.metadata.cargo-shear]
 ignored = ["serde"]

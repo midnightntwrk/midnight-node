@@ -511,6 +511,8 @@ Notes:
 pub enum ProverConfig {
 	Local,
 	Remote(String),
+	/// Mock proofs; only accepted by `mock-proofs` nodes.
+	Mock,
 }
 
 /// Error when constructing a versioned builder.
@@ -798,15 +800,17 @@ impl Builder {
 			ProverConfig::Remote(url) => {
 				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
 			},
+			ProverConfig::Mock => panic!("mock proofs are not supported for ledger 8"),
 		}
 	}
 
-	fn make_prover(config: &ProverConfig) -> Arc<dyn ProofProvider<DefaultDB>> {
+	pub fn make_prover(config: &ProverConfig) -> Arc<dyn ProofProvider<DefaultDB>> {
 		match config {
 			ProverConfig::Local => Arc::new(LocalProofServer::new()),
 			ProverConfig::Remote(url) => {
 				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
 			},
+			ProverConfig::Mock => Arc::new(MockProofServer),
 		}
 	}
 

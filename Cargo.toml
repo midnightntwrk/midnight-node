@@ -32,6 +32,7 @@ members = [
     "util/aiken-contracts-lib",
     "tests/e2e",
     "tests/e2e/macros",
+    "tests/simulation",
     "relay",
     "docs",
     "partner-chains/toolkit/committee-selection/selection-simulator",
@@ -391,6 +392,16 @@ substrate-test-runtime-client = { default-features = false, git = "https://githu
 
 [profile.release]
 panic = "unwind"
+
+# Throwaway e2e builds; nothing that ships.
+[profile.ci-e2e]
+inherits = "release"
+debug = 0
+# debug = 0 implies strip = "debuginfo", and stripped proc-macro dylibs fail to load on macOS
+strip = "none"
+codegen-units = 256
+lto = false
+incremental = false
 
 [profile.production]
 inherits = "release"

@@ -241,6 +241,7 @@ mod test {
 			dust_warp: true,
 			ignore_block_context: false,
 			fetch_only_cached: false,
+			fetch_best: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 			ledger_state_db: String::new(),
 			replay_checkpoint_interval: 0,

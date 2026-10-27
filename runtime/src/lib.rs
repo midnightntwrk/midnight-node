@@ -322,8 +322,7 @@ runtime_version!("midnight-fork-transition-UNSAFE");
 /// Change this to adjust the block time.
 // NOTE: Currently it is not possible to change the slot duration after the chain has started.
 //       Attempting to do so will brick block production.
-// slot time set to 6s
-pub const SLOT_DURATION: u64 = 6 * 1000;
+pub const SLOT_DURATION: u64 = constants::time_units::MILLISECS_PER_BLOCK;
 
 pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
 	sp_consensus_babe::BabeEpochConfiguration {

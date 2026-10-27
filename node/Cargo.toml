@@ -192,3 +192,7 @@ try-runtime = [
     "pallet-staking/try-runtime",
 ]
 experimental = []
+# Testbed only: accept mock-proven transactions. Never build production nodes with it.
+mock-proofs = ["midnight-node-ledger/mock-proofs"]
+# Testbed only: 2s blocks. Never build production nodes with it.
+fast-blocks = ["midnight-node-runtime/fast-blocks"]

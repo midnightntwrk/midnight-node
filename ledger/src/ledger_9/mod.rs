@@ -1252,7 +1252,7 @@ where
 		let verified_tx =
 			tx.0.well_formed(
 				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
+				node_strictness(),
 				Timestamp::from_secs(strict_key.well_formed_tblock),
 			)
 			.map_err(|e| {
@@ -1606,6 +1606,25 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 	.expect("Hard-coded array should not be empty");
 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
+}
+
+/// With `mock-proofs`, contract and DUST proofs are not verified. The ledger verifies zswap
+/// proofs regardless.
+#[cfg(feature = "std")]
+pub fn node_strictness() -> mn_ledger_local::verify::WellFormedStrictness {
+	let mut strictness = mn_ledger_local::verify::WellFormedStrictness::default();
+	if cfg!(feature = "mock-proofs") {
+		static WARNED: std::sync::Once = std::sync::Once::new();
+		WARNED.call_once(|| {
+			log::warn!(
+				target: LOG_TARGET,
+				"mock-proofs build: contract and DUST proof verification is DISABLED"
+			);
+		});
+		strictness.verify_native_proofs = false;
+		strictness.verify_contract_proofs = false;
+	}
+	strictness
 }
 
 #[cfg(test)]

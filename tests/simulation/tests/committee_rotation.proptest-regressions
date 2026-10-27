@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e550f5353dc1fc0e70d335cd6b5aa88ae5f4d226e0918d6f522de4b0f8e7b3b0 # shrinks to schedule = [Epoch { candidates: [(21, 11)], stable_at_boundary: false }]

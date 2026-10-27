@@ -117,8 +117,10 @@ fi
 
 echo "Calculating target time for synchronised chain start..."
 
-# Local env Partner Chains epochs are 30 seconds long. PC and MC epochs have to align. The following line makes MC epoch 0 start at some PC epoch start.
-target_time=$(( ($(date +%s) / 30 + 1) * 30 ))
+# The node requires the Cardano epoch to be an exact multiple of the partner-chain epoch, so
+# starting MC epoch 0 on an MC epoch boundary also lands it on a PC epoch boundary.
+mc_epoch_length=${CARDANO_EPOCH_LENGTH:-$(/shared/busybox awk -F':|,' '/"epochLength"/ {print $2}' /shared/shelley/genesis.json.base | tr -d ' ')}
+target_time=$(( ($(date +%s) / mc_epoch_length + 1) * mc_epoch_length ))
 echo "$target_time" > /shared/cardano.start
 byron_startTime=$target_time
 shelley_systemStart=$(date --utc +"%Y-%m-%dT%H:%M:%SZ" --date="@$target_time")
@@ -126,12 +128,14 @@ shelley_systemStart=$(date --utc +"%Y-%m-%dT%H:%M:%SZ" --date="@$target_time")
 /shared/busybox sed "s/\"startTime\": [0-9]*/\"startTime\": $byron_startTime/" /shared/byron/genesis.json.base > /shared/byron/genesis.json
 echo "Updated startTime value in Byron genesis.json to: $byron_startTime"
 
-/shared/busybox sed "s/\"systemStart\": \"[^\"]*\"/\"systemStart\": \"$shelley_systemStart\"/" /shared/shelley/genesis.json.base > /shared/shelley/genesis.json
+/shared/busybox sed -e "s/\"systemStart\": \"[^\"]*\"/\"systemStart\": \"$shelley_systemStart\"/" \
+    -e "s/\"epochLength\": [0-9]*/\"epochLength\": $mc_epoch_length/" /shared/shelley/genesis.json.base > /shared/shelley/genesis.json
 echo "Updated systemStart value in Shelley genesis.json to: $shelley_systemStart"
+echo "Shelley epochLength: $mc_epoch_length"
 
 extract_value() {
     local key=$1
-    /shared/busybox awk -F':|,' '/"'$key'"/ {print $2}' /shared/shelley/genesis.json.base
+    /shared/busybox awk -F':|,' '/"'$key'"/ {print $2}' /shared/shelley/genesis.json
 }
 
 echo "Parsing vars from Shelley genesis.json..."

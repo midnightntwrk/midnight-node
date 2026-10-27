@@ -12,9 +12,9 @@
 // limitations under the License.
 
 use crate::ledger_9::{
-	CostModel, DB, KeyLocation, LocalProvingProvider, PUBLIC_PARAMS, PedersenRandomness,
-	ProofMarker, ProofPreimageMarker, Resolver, ResolverTrait, Signature, StdRng, Transaction,
-	ZswapResolver,
+	CostModel, DB, KeyLocation, PUBLIC_PARAMS, PedersenRandomness, ProofMarker,
+	ProofPreimageMarker, Resolver, ResolverTrait, Signature, StdRng, Transaction, ZswapResolver,
+	mock_prove_unsealed, prove_tx_in_parallel,
 };
 use async_trait::async_trait;
 
@@ -30,6 +30,11 @@ pub trait ProofProvider<D: DB + Clone>: Send + Sync {
 		resolver: &'static Resolver,
 		cost_model: CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D>;
+
+	/// False for mock proofs, which only `mock-proofs` nodes accept.
+	fn produces_real_proofs(&self) -> bool {
+		true
+	}
 }
 
 pub struct LocalProofServer {
@@ -87,12 +92,34 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 						.expect("failed to get keys 'keys'");
 				}
 
-				let pp = LocalProvingProvider { rng, resolver, params: &*PUBLIC_PARAMS };
-
-				tx.prove(pp, &cost_model).await.expect("Tx should be provable")
+				prove_tx_in_parallel(&tx, rng, resolver, &cost_model)
+					.await
+					.expect("Tx should be provable")
 			})
 		})
 		.await
 		.expect("local proving task panicked")
+	}
+}
+
+/// Mock contract and DUST proofs with real zswap proofs. Only `mock-proofs` nodes accept them.
+pub struct MockProofServer;
+
+#[async_trait]
+impl<D: DB + Clone + 'static> ProofProvider<D> for MockProofServer {
+	async fn prove(
+		&self,
+		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		rng: StdRng,
+		resolver: &'static Resolver,
+		cost_model: CostModel,
+	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
+		mock_prove_unsealed(tx, resolver, cost_model, Some(rng))
+			.await
+			.expect("Tx should be mock-provable")
+	}
+
+	fn produces_real_proofs(&self) -> bool {
+		false
 	}
 }

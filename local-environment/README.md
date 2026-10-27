@@ -453,11 +453,19 @@ earthly +stop-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
 `scripts/tests/microdao-local-env-e2e.sh` (or `just microdao-local-env-e2e`) brings up a fresh
 local-env and runs every circuit of `compact/test-center/test-contracts/micro-dao.compact` through
 the toolkit: deploy, `set_topic`, then per voter `buy_in` and `vote_commit`, `advance`, per voter
-`vote_reveal`, `advance`, `cash_out`. It checks that no secret key ever reaches the chain and that
-the wallet ends with the funds it started with. Each phase is timed and a summary is printed at
-the end.
+`vote_reveal`, `advance`, `cash_out`. It checks that no secret key ever reaches the chain, that
+every wallet ends with the expected funds and that the final contract state matches the state it
+predicted while pipelining the calls. Each phase is timed and a summary is printed at the end.
 
-The coin circuits need shielded NIGHT, which the stock local genesis does not have, so the script
-regenerates `res/genesis/genesis_{state,block}_local.mn` with a funded DAO wallet, starts the env,
-and restores the committed files. Set `IMAGE_TAG` to run against a different node image (it must
-match the toolkit built from the checkout) and `OUTDIR` to keep the artifacts elsewhere.
+The coin circuits need shielded NIGHT, so the script funds one wallet per actor at genesis through
+`GENESIS_SEEDS` (a JSON object of name to seed, passed to `generate-genesis --seeds-file`). Set
+`IMAGE_TAG` to run against a different node image (it must match the toolkit built from the
+checkout) and `OUTDIR` to keep the artifacts elsewhere.
+
+`scripts/tests/microdao-mock-node-e2e.sh` runs the same flow against a native dev node built with
+`--features mock-proofs,fast-blocks`: no Docker, no Cardano and no contract proving.
+
+Two variables shape the chain's timing. `SLOTS_PER_EPOCH` (default 5) sets the sidechain epoch;
+the first block of each epoch rotates the session and carries no user transactions.
+`CARDANO_EPOCH_LENGTH` (default 60, in seconds) sets the Cardano epoch, which must be an exact
+multiple of `SLOTS_PER_EPOCH` times 6s; bring-up waits two Cardano epochs.

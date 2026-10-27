@@ -101,6 +101,10 @@ pub struct Source {
 	/// Read transactions from the cache only - don't fetch anything from RPC
 	#[arg(long, global = true)]
 	pub fetch_only_cached: bool,
+	/// Fetch up to the best (head) block instead of the finalized one. Blocks fetched this
+	/// way are cached as verified, so only use it on chains that cannot reorg (local devnets).
+	#[arg(long, env = "MN_FETCH_BEST", global = true)]
+	pub fetch_best: bool,
 	/// Number of threads to use when fetching transactions from a live network
 	#[arg(long, conflicts_with = "src_files", default_value = "20", global = true)]
 	pub fetch_concurrency: usize,
@@ -264,6 +268,7 @@ pub struct GetTxsFromUrl {
 	pub num_compute_workers: usize,
 	pub dust_warp: bool,
 	pub fetch_only_cache: bool,
+	pub fetch_best: bool,
 	pub fetch_cache_config: FetchCacheConfig,
 }
 
@@ -274,6 +279,7 @@ impl GetTxsFromUrl {
 		num_compute_workers: usize,
 		dust_warp: bool,
 		fetch_only_cache: bool,
+		fetch_best: bool,
 		fetch_cache_config: FetchCacheConfig,
 	) -> Self {
 		Self {
@@ -282,6 +288,7 @@ impl GetTxsFromUrl {
 			num_compute_workers,
 			dust_warp,
 			fetch_only_cache,
+			fetch_best,
 			fetch_cache_config,
 		}
 	}
@@ -300,6 +307,7 @@ impl GetTxs for GetTxsFromUrl {
 					self.num_fetch_workers,
 					self.num_compute_workers,
 					self.fetch_only_cache,
+					self.fetch_best,
 					fetch_storage::InMemory::default(),
 				)
 				.await?
@@ -310,6 +318,7 @@ impl GetTxs for GetTxsFromUrl {
 					self.num_fetch_workers,
 					self.num_compute_workers,
 					self.fetch_only_cache,
+					self.fetch_best,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
 				)
 				.await?
@@ -320,6 +329,7 @@ impl GetTxs for GetTxsFromUrl {
 					self.num_fetch_workers,
 					self.num_compute_workers,
 					self.fetch_only_cache,
+					self.fetch_best,
 					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
 				)
 				.await?

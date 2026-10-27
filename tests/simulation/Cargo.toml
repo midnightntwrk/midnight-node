@@ -1,0 +1,52 @@
+[package]
+name = "midnight-simulation"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Deterministic simulation testbed: real pallets + real ledger, simulated Cardano, model-based properties"
+license-file.workspace = true
+
+[dependencies]
+pallet-cnight-observation-mock = { workspace = true, default-features = true }
+pallet-cnight-observation = { workspace = true, default-features = true }
+pallet-midnight = { workspace = true, default-features = true }
+pallet-midnight-system = { workspace = true, default-features = true }
+pallet-session = { workspace = true, default-features = true, features = ["historical"] }
+pallet-balances = { workspace = true, default-features = true }
+pallet-session-validator-management = { workspace = true, default-features = true }
+sp-session-validator-management = { workspace = true, default-features = true }
+parity-scale-codec = { workspace = true, default-features = true }
+scale-info = { workspace = true, default-features = true }
+frame-support = { workspace = true, default-features = true }
+frame-system = { workspace = true, default-features = true }
+sp-io = { workspace = true, default-features = true }
+sp-core = { workspace = true, default-features = true }
+sp-runtime = { workspace = true, default-features = true }
+midnight-node-ledger = { workspace = true, default-features = true }
+midnight-ledger-unsafe-helpers.workspace = true
+midnight-node-ledger-helpers.workspace = true
+midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
+midnight-primitives = { workspace = true, default-features = true }
+midnight-primitives-cnight-observation = { workspace = true, default-features = true }
+midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
+sidechain-domain = { workspace = true, default-features = true }
+serde_json.workspace = true
+tempfile.workspace = true
+proptest.workspace = true
+
+[dev-dependencies]
+midnight-node-toolkit.workspace = true
+anyhow.workspace = true
+hex = { workspace = true, features = ["std"] }
+tokio.workspace = true
+
+[features]
+default = ["std"]
+# `construct_runtime!` only derives `BuildStorage` for the genesis config under this feature.
+std = []
+# Accept mock-proven transactions (skips ZK proof verification in the ledger host functions).
+mock-proofs = ["midnight-node-ledger/mock-proofs"]
+
+# Resolved by name from the `construct_runtime!`, pallet and `impl_opaque_keys!` derives.
+[package.metadata.cargo-shear]
+ignored = ["parity-scale-codec", "scale-info"]

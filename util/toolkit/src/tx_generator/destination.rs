@@ -34,6 +34,9 @@ pub struct Destination {
 	/// verdict, so a rejected or dropped tx fails the send. May cause errors when sending batches.
 	#[arg(long, conflicts_with = "dest_file", env = "MN_DONT_WATCH_PROGRESS", global = true)]
 	pub no_watch_progress: bool,
+	/// Wait for inclusion in a best block only, not for finalization.
+	#[arg(long, env = "MN_NO_WAIT_FINALITY", global = true)]
+	pub no_wait_finality: bool,
 }
 
 pub struct SendTxsToFile {
@@ -70,11 +73,17 @@ pub struct SendTxsToUrl {
 	urls: Vec<String>,
 	rate: f32,
 	no_watch_progress: bool,
+	no_wait_finality: bool,
 }
 
 impl SendTxsToUrl {
-	pub fn new(urls: Vec<String>, rate: f32, no_watch_progress: bool) -> Self {
-		Self { urls, rate, no_watch_progress }
+	pub fn new(
+		urls: Vec<String>,
+		rate: f32,
+		no_watch_progress: bool,
+		no_wait_finality: bool,
+	) -> Self {
+		Self { urls, rate, no_watch_progress, no_wait_finality }
 	}
 }
 
@@ -124,7 +133,8 @@ impl SendTxs for SendTxsToUrl {
 			return Err("rate must be greater than 0".into());
 		}
 
-		let sender = Arc::new(Sender::new(&self.urls, self.no_watch_progress).await?);
+		let sender =
+			Arc::new(Sender::new(&self.urls, self.no_watch_progress, self.no_wait_finality).await?);
 
 		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {

@@ -7862,6 +7862,7 @@ dependencies = [
 name = "midnight-ledger-unsafe-helpers"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bech32 0.11.1",
  "bip32",
@@ -8311,6 +8312,7 @@ dependencies = [
  "ogmios-client",
  "parity-scale-codec",
  "postcard",
+ "proptest",
  "rand 0.8.5",
  "rayon",
  "redb",
@@ -8680,6 +8682,42 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.45",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "midnight-simulation"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "midnight-ledger-unsafe-helpers",
+ "midnight-node-ledger",
+ "midnight-node-ledger-helpers",
+ "midnight-node-res",
+ "midnight-node-toolkit",
+ "midnight-primitives",
+ "midnight-primitives-cnight-observation",
+ "midnight-primitives-mainchain-follower",
+ "pallet-balances",
+ "pallet-cnight-observation",
+ "pallet-cnight-observation-mock",
+ "pallet-midnight",
+ "pallet-midnight-system",
+ "pallet-session",
+ "pallet-session-validator-management",
+ "parity-scale-codec",
+ "proptest",
+ "scale-info",
+ "serde_json",
+ "sidechain-domain",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-session-validator-management",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

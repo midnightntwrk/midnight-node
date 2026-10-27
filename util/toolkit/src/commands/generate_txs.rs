@@ -41,7 +41,7 @@ pub struct GenerateTxsArgs {
 	pub source: Source,
 	#[command(flatten)]
 	pub destination: Destination,
-	// Proof Server Host
+	/// Proof server URL, or `mock` to emit mock proofs (accepted only by `mock-proofs` nodes)
 	#[arg(long, short, global = true)]
 	pub proof_server: Option<String>,
 	/// Dry-run - don't generate any txs, just print out the settings
@@ -129,6 +129,7 @@ mod tests {
 					dust_warp: true,
 					ignore_block_context: false,
 					fetch_only_cached: false,
+					fetch_best: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 					ledger_state_db: String::new(),
 					replay_checkpoint_interval: 0,
@@ -138,6 +139,7 @@ mod tests {
 					rate: 1.0,
 					dest_file: Some("out.tx".to_string()),
 					no_watch_progress: false,
+					no_wait_finality: false,
 				},
 				proof_server: None,
 				dry_run: false,

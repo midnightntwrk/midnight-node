@@ -20,7 +20,7 @@ use crate::ledger_9::{
 	ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen,
 	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, Sp, SplittableRng,
 	StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, TransactionSigningKey,
-	UnshieldedOffer, UnshieldedWallet, WalletSeed, serialize,
+	UnshieldedOffer, UnshieldedWallet, WalletSeed, mock_prove_for_fees, serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -255,7 +255,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 			self.apply_dust(&mut paid_tx, &spends, self.rng.clone().split(), now, ttl);
 
 			if self.mock_proofs_for_fees {
-				let mock_proven_tx = self.mock_prove_tx(&paid_tx)?;
+				let mock_proven_tx = self.mock_prove_tx(&paid_tx).await?;
 				let computed_missing_dust = self.compute_missing_dust(&mock_proven_tx).await?;
 				if let Some(dust) = computed_missing_dust {
 					missing_dust += dust;
@@ -315,12 +315,19 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 	}
 
 	#[cfg(not(feature = "erase-proof"))]
-	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
-		Ok(tx.mock_prove()?)
+	async fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+		if let Ok(proven) = tx.mock_prove() {
+			return Ok(proven);
+		}
+		// The ledger's mock_prove refuses contract calls.
+		let resolver = self.context.resolver().await;
+		let cost_model =
+			self.context.ledger_parameters().await.cost_model.runtime_cost_model.clone();
+		Ok(mock_prove_for_fees(tx.clone(), resolver, cost_model).await?)
 	}
 
 	#[cfg(feature = "erase-proof")]
-	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
+	async fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		Ok(tx.erase_proofs())
 	}
 
@@ -529,13 +536,14 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 		let tx_unproven = self.build().await?;
 		let tx_erased_proof = tx_unproven.erase_proofs();
 		let now = self.context.latest_block_context().await.tblock;
-		Self::validate(self.context, now, tx_erased_proof.erase_signatures())
+		Self::validate(self.context, now, tx_erased_proof.erase_signatures(), true)
 	}
 
 	pub async fn prove(mut self) -> Result<FinalizedTransaction<D>> {
 		let tx = self.build().await?;
 		let now = self.context.latest_block_context().await.tblock;
-		Self::validate(self.context, now, tx)
+		let verify_proofs = self.prover.produces_real_proofs();
+		Self::validate(self.context, now, tx, verify_proofs)
 	}
 
 	fn validate<
@@ -546,8 +554,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 		context: Arc<C>,
 		now: Timestamp,
 		tx: Transaction<S, P, B, D>,
+		verify_proofs: bool,
 	) -> Result<Transaction<S, P, B, D>> {
-		context.well_formed(&tx, now)?;
+		context.well_formed(&tx, now, verify_proofs)?;
 		Ok(tx)
 	}
 }

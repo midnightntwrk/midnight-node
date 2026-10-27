@@ -77,6 +77,15 @@ lazy_static! {
 	);
 }
 
+/// Contract and DUST proofs are not verified; zswap proofs still are, since the ledger checks
+/// them unconditionally.
+pub fn strictness_without_proofs() -> WellFormedStrictness {
+	let mut strictness = WellFormedStrictness::default();
+	strictness.verify_native_proofs = false;
+	strictness.verify_contract_proofs = false;
+	strictness
+}
+
 pub struct LedgerContext<D: DB + Clone> {
 	pub ledger_state: Mutex<Sp<LedgerState<D>, D>>,
 	pub latest_block_context: Mutex<Option<BlockContext>>,
@@ -416,7 +425,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 	/// whether to tolerate it: `apply_txs_collect_events` (block replay) does, `update_from_tx`
 	/// (this function's only other caller, used to validate a transaction the caller is about
 	/// to build more transactions on top of or submit itself) does not.
-	fn update_from_tx_with_strictness<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+	pub fn update_from_tx_with_strictness<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
 		block_context: &BlockContext,
@@ -729,6 +738,7 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 		&self,
 		tx: &Transaction<S, P, B, D>,
 		now: Timestamp,
+		verify_proofs: bool,
 	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
 	where
 		S: SignatureKind<D>,
@@ -740,7 +750,12 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 			.lock()
 			.map_err(|_| "ledger state lock was poisoned".to_string())?
 			.clone();
-		tx.well_formed(&*ref_state, WellFormedStrictness::default(), now)?;
+		let strictness = if verify_proofs {
+			WellFormedStrictness::default()
+		} else {
+			strictness_without_proofs()
+		};
+		tx.well_formed(&*ref_state, strictness, now)?;
 		Ok(())
 	}
 }

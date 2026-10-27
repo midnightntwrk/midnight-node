@@ -76,6 +76,15 @@ if [ -f "$LEGACY_FIELDS" ]; then
   echo "Ledger parameters: res/local + $(basename "$LEGACY_FIELDS")"
 fi
 
+# Opt-in for tests: wallets to fund at genesis, as the JSON object `--seeds-file` takes.
+FUNDING_ARGS=()
+if [ -n "${GENESIS_SEEDS:-}" ]; then
+  mkdir -p "$WORK_DIR"
+  echo "$GENESIS_SEEDS" > "$WORK_DIR/genesis-seeds.json"
+  FUNDING_ARGS=(--seeds-file "$WORK_DIR/genesis-seeds.json")
+  echo "Funding genesis wallets: $(jq -r 'keys | join(", ")' "$WORK_DIR/genesis-seeds.json")"
+fi
+
 # --allow-empty-pools is deliberately not passed: empty ICS/reserve pools mean the
 # cNIGHT seeding on Cardano did not land, and that should fail the bring-up loudly
 # here rather than produce a chain with no NIGHT in it. (The flag also does not exist
@@ -86,6 +95,7 @@ fi
   --cnight-generates-dust-config /res/local/cnight-config.json \
   --ics-config /res/local/ics-config.json \
   --reserve-config /res/local/reserve-config.json \
+  "${FUNDING_ARGS[@]}" \
   -o "$GENESIS_DIR"
 
 [ -f "$GENESIS_STATE" ] || { echo "Error: toolkit did not write $GENESIS_STATE"; exit 1; }

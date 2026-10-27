@@ -109,6 +109,7 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		&self,
 		_tx: &Transaction<S, P, B, D>,
 		_now: Timestamp,
+		_verify_proofs: bool,
 	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
 	where
 		S: SignatureKind<D>,

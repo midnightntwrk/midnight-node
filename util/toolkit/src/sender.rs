@@ -149,10 +149,15 @@ pub struct Sender {
 	clients: Vec<ClientHandle>,
 	counter: AtomicUsize,
 	watch_progress: bool,
+	wait_finality: bool,
 }
 
 impl Sender {
-	pub async fn new(urls: &[String], no_watch_progress: bool) -> Result<Self, ClientError> {
+	pub async fn new(
+		urls: &[String],
+		no_watch_progress: bool,
+		no_wait_finality: bool,
+	) -> Result<Self, ClientError> {
 		let clients: Result<Vec<ClientHandle>, ClientError> =
 			futures::future::try_join_all(urls.iter().map(|url| async move {
 				Ok(ClientHandle {
@@ -164,12 +169,15 @@ impl Sender {
 
 		if no_watch_progress {
 			log::warn!("toolkit send will not wait for finalization when sending txs");
+		} else if no_wait_finality {
+			log::warn!("toolkit send will wait for best-block inclusion only, not finalization");
 		}
 
 		Ok(Self {
 			clients: clients?,
 			counter: AtomicUsize::new(0),
 			watch_progress: !no_watch_progress,
+			wait_finality: !no_wait_finality,
 		})
 	}
 
@@ -568,6 +576,10 @@ impl Sender {
 			block_hash = hash_to_str(best_block.block_hash()).as_str();
 			"BEST_BLOCK"
 		);
+
+		if !self.wait_finality {
+			return Ok(());
+		}
 
 		if already_finalized {
 			log::info!(

@@ -162,6 +162,7 @@ pub async fn fetch_all(
 	num_workers: usize,
 	num_compute_workers: usize,
 	fetch_only_cache: bool,
+	fetch_best: bool,
 	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	let client = MidnightNodeClient::new(&url, None).await?;
@@ -177,7 +178,8 @@ pub async fn fetch_all(
 
 		Ok(blocks)
 	} else {
-		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_storage).await
+		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_best, fetch_storage)
+			.await
 	}
 }
 
@@ -186,6 +188,7 @@ pub async fn fetch_from_rpc(
 	chain_id: H256,
 	num_workers: usize,
 	num_compute_workers: usize,
+	fetch_best: bool,
 	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
@@ -196,13 +199,12 @@ pub async fn fetch_from_rpc(
 
 	let t_rpc_total = std::time::Instant::now();
 	log::info!("connecting to {url}...");
-	let client = MidnightNodeClient::new(&url, None).await?;
-	let finalized_height =
-		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
-	let max_height = finalized_height + 1;
+	let mut client = MidnightNodeClient::new(&url, None).await?;
+	let tip_height = fetch_tip_height(&mut client, &url, fetch_best).await?;
+	let max_height = tip_height + 1;
 	let min_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 	log::info!(
-		"chain head (finalized): {finalized_height}, verified in cache: {min_height}, fetching {} blocks",
+		"chain head: {tip_height}, verified in cache: {min_height}, fetching {} blocks",
 		max_height.saturating_sub(min_height)
 	);
 
@@ -225,7 +227,7 @@ pub async fn fetch_from_rpc(
 	let totals = Arc::new(SyncTotals {
 		span: AtomicU64::new(fetch_span),
 		jobs: AtomicU64::new(num_jobs),
-		target_height: AtomicU64::new(finalized_height),
+		target_height: AtomicU64::new(tip_height),
 		truncated: AtomicBool::new(false),
 	});
 
@@ -246,7 +248,6 @@ pub async fn fetch_from_rpc(
 		let url = url.to_string();
 		let totals = totals.clone();
 		let jobs_verified = jobs_verified.clone();
-		let mut client = client;
 		join_set.spawn(async move {
 			let mut next_min = min_height;
 			let mut planned_to = max_height.max(min_height);
@@ -276,7 +277,7 @@ pub async fn fetch_from_rpc(
 					totals.truncated.store(true, Ordering::Relaxed);
 					break;
 				}
-				let new_finalized = match fetch_finalized_height(&mut client, &url).await {
+				let new_tip = match fetch_tip_height(&mut client, &url, fetch_best).await {
 					Ok(height) => height,
 					Err(e) => {
 						log::warn!(
@@ -288,7 +289,7 @@ pub async fn fetch_from_rpc(
 					},
 				};
 
-				let new_max = new_finalized + 1;
+				let new_max = new_tip + 1;
 				let added_blocks = new_max.saturating_sub(planned_to);
 				if added_blocks == 0 {
 					log::info!("caught up with the tip");
@@ -298,9 +299,9 @@ pub async fn fetch_from_rpc(
 				// observe completion of the old total first.
 				totals.span.fetch_add(added_blocks, Ordering::Relaxed);
 				totals.jobs.fetch_add(added_blocks.div_ceil(blocks_per_job), Ordering::Relaxed);
-				totals.target_height.store(new_finalized, Ordering::Relaxed);
+				totals.target_height.store(new_tip, Ordering::Relaxed);
 				log::info!(
-					"chain advanced to {new_finalized} during sync, fetching {added_blocks} more blocks..."
+					"chain advanced to {new_tip} during sync, fetching {added_blocks} more blocks..."
 				);
 				planned_to = new_max;
 			}
@@ -570,15 +571,23 @@ pub async fn fetch_from_rpc(
 }
 
 /// The socket may have dropped while the round was processed; reconnect once.
-async fn fetch_finalized_height(
+async fn fetch_tip_height(
 	client: &mut MidnightNodeClient,
 	url: &str,
+	fetch_best: bool,
 ) -> Result<u64, FetchError> {
-	if let Ok(height) = client.get_finalized_height().await {
+	let tip_height = async |client: &MidnightNodeClient| {
+		if fetch_best {
+			client.get_best_height().await
+		} else {
+			client.get_finalized_height().await
+		}
+	};
+	if let Ok(height) = tip_height(client).await {
 		return Ok(height);
 	}
 	*client = MidnightNodeClient::new(url, None).await?;
-	Ok(client.get_finalized_height().await?)
+	Ok(tip_height(client).await?)
 }
 
 async fn connect_with_retry(url: &str, worker_id: usize) -> Result<MidnightNodeClient, FetchError> {

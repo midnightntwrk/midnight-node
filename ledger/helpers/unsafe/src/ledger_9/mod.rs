@@ -50,11 +50,12 @@ mod utxo_output;
 mod utxo_spend;
 pub mod wallet;
 
+mod mock_proving;
 mod proving;
 
 pub use {
-	context::*, contract::*, input::*, intent::*, offer::*, output::*, proving::*, transaction::*,
-	transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
+	context::*, contract::*, input::*, intent::*, mock_proving::*, offer::*, output::*, proving::*,
+	transaction::*, transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
 };
 
 /// Builds a contract operation from a verifier key plus, from ledger 9 on,

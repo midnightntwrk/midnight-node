@@ -55,6 +55,7 @@ services:
       - ./runtime-values:/runtime-values
     environment:
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+      - CARDANO_EPOCH_LENGTH=${CARDANO_EPOCH_LENGTH:-60}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "32000:32000"
@@ -602,6 +603,8 @@ services:
       - shared-volume:/shared
       - ./configurations/midnight-setup/:/midnight-setup/
       - ../../../../res/:/res/:ro
+    environment:
+      - GENESIS_SEEDS=${GENESIS_SEEDS:-}
     entrypoint: ["/bin/bash", "/midnight-setup/generate-genesis.sh"]
 
   midnight-setup:
@@ -637,6 +640,7 @@ services:
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
+      - SLOTS_PER_EPOCH=${SLOTS_PER_EPOCH:-5}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
 
   mint-cnight-supply:

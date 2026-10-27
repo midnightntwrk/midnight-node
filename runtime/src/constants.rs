@@ -15,7 +15,11 @@ pub mod time_units {
 	use crate::BlockNumber;
 
 	/// Milliseconds between Polkadot-like chain blocks.
+	#[cfg(not(feature = "fast-blocks"))]
 	pub const MILLISECS_PER_BLOCK: u64 = 6000;
+	/// Whole seconds: the ledger's block time is in seconds.
+	#[cfg(feature = "fast-blocks")]
+	pub const MILLISECS_PER_BLOCK: u64 = 2000;
 
 	/// A minute, expressed in Polkadot-like chain blocks.
 	pub const MINUTES: BlockNumber = 60_000 / (MILLISECS_PER_BLOCK as BlockNumber);

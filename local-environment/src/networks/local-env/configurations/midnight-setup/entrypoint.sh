@@ -76,7 +76,7 @@ else
 
   echo "Amending the chain spec..."
   echo "Configuring Epoch Length..."
-  jq '.genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = 5' chain-spec.json > tmp.json && mv tmp.json chain-spec.json
+  jq ".genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = ${SLOTS_PER_EPOCH:-5}" chain-spec.json > tmp.json && mv tmp.json chain-spec.json
 
   check_json_validity chain-spec.json
 
@@ -98,7 +98,7 @@ epoch=$(curl -s --request POST \
     --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
 echo "Current epoch: $epoch"
 while [ "$epoch" -lt "$contracts_active_epoch" ]; do
-  sleep 10
+  sleep 2
   epoch=$(curl -s --request POST \
     --url "http://ogmios:1337" \
     --header 'Content-Type: application/json' \

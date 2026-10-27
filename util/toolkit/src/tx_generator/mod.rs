@@ -25,6 +25,7 @@ use builder::{
 	ensure_ecdsa_supported,
 };
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 use source::{
 	FetchCacheConfig, GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
 	create_file_wallet_cache,
@@ -109,6 +110,7 @@ impl TxGenerator {
 					.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())),
 				src.dust_warp,
 				src.fetch_only_cached,
+				src.fetch_best,
 				src.fetch_cache,
 			))
 		} else {
@@ -139,8 +141,12 @@ impl TxGenerator {
 			log::info!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
 
-		let destination: Box<dyn SendTxs> =
-			Box::new(SendTxsToUrl::new(dest.dest_urls.clone(), dest.rate, dest.no_watch_progress));
+		let destination: Box<dyn SendTxs> = Box::new(SendTxsToUrl::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+			dest.no_wait_finality,
+		));
 
 		dests.push(destination);
 
@@ -148,16 +154,23 @@ impl TxGenerator {
 	}
 
 	pub fn prover_config(proof_server: Option<String>, dry_run: bool) -> ProverConfig {
-		if let Some(url) = proof_server {
-			if dry_run {
-				log::info!("Dry-run: remote prover: {url}");
-			}
-			ProverConfig::Remote(url)
-		} else {
-			if dry_run {
-				log::info!("Dry-run: local prover (no proof server)");
-			}
-			ProverConfig::Local
+		match proof_server.as_deref() {
+			Some("mock") => {
+				log::warn!("mock proofs: transactions will only be accepted by mock-proofs nodes");
+				ProverConfig::Mock
+			},
+			Some(url) => {
+				if dry_run {
+					log::info!("Dry-run: remote prover: {url}");
+				}
+				ProverConfig::Remote(url.to_string())
+			},
+			None => {
+				if dry_run {
+					log::info!("Dry-run: local prover (no proof server)");
+				}
+				ProverConfig::Local
+			},
 		}
 	}
 
@@ -190,10 +203,12 @@ impl TxGenerator {
 		Ok(())
 	}
 
-	pub async fn build_txs(
+	/// The ledger context the configured builder needs, replayed from `received_txs`; `None`
+	/// when the builder involves no wallets.
+	pub async fn build_context(
 		&self,
 		received_txs: &SourceTransactions,
-	) -> Result<SerializedTxBatches, DynamicError> {
+	) -> Result<Option<ForkAwareLedgerContext>, DynamicError> {
 		let seeds = self
 			.builder_config
 			.relevant_wallet_seeds()
@@ -206,23 +221,29 @@ impl TxGenerator {
 		// Reject early with a clear CLI error rather than deep in context construction.
 		ensure_ecdsa_supported(received_txs.tip_ledger_version(), &schemes)?;
 
-		let fork_ctx = if seeds.is_empty() {
-			None
-		} else {
-			let wallet_cache =
-				create_file_wallet_cache(&self.ledger_state_db, &self.fetch_cache_config);
-			let t = std::time::Instant::now();
-			let ctx = build_fork_aware_context_cached_with_schemes(
-				&seeds,
-				received_txs,
-				wallet_cache.as_deref(),
-				&schemes,
-				self.replay_checkpoint_interval,
-			)
-			.await;
-			log::debug!("[perf] build_fork_aware_context_cached took {:?}", t.elapsed());
-			Some(ctx)
-		};
+		if seeds.is_empty() {
+			return Ok(None);
+		}
+		let wallet_cache =
+			create_file_wallet_cache(&self.ledger_state_db, &self.fetch_cache_config);
+		let t = std::time::Instant::now();
+		let ctx = build_fork_aware_context_cached_with_schemes(
+			&seeds,
+			received_txs,
+			wallet_cache.as_deref(),
+			&schemes,
+			self.replay_checkpoint_interval,
+		)
+		.await;
+		log::debug!("[perf] build_fork_aware_context_cached took {:?}", t.elapsed());
+		Ok(Some(ctx))
+	}
+
+	pub async fn build_txs(
+		&self,
+		received_txs: &SourceTransactions,
+	) -> Result<SerializedTxBatches, DynamicError> {
+		let fork_ctx = self.build_context(received_txs).await?;
 
 		let t = std::time::Instant::now();
 		let builder = self.builder_config.clone().to_versioned_builder(

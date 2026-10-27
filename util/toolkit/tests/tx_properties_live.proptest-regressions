@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 66a48d66f3c888eb21bc2882a4560bd5bbb2e2a11dafc9774d64104e6435d947 # shrinks to spec = TxSpec { sender: 2, outputs: [(1, 3390496), (1, 2721104), (3, 4261746)], coin_selection: SmallestFirst, rng_seed: [158, 175, 47, 118, 118, 151, 187, 241, 252, 88, 197, 248, 201, 77, 195, 231, 170, 100, 93, 111, 82, 128, 240, 71, 81, 166, 180, 200, 112, 242, 145, 102] }
+cc 37470044833901d0817b1a48f008141a28db90c54c4a7bc8e5ac7d3470461c57 # shrinks to spec = TxSpec { sender: 2, outputs: [(0, 377616)], coin_selection: LargestFirst, rng_seed: [78, 10, 100, 34, 39, 137, 86, 150, 139, 124, 52, 145, 135, 47, 6, 175, 84, 245, 209, 106, 6, 129, 82, 176, 254, 3, 10, 74, 104, 213, 175, 59] }
+cc 7c8f024b217ff75feaa36d9104c806c4ac0b512fac3dfd56ad9b0bc7917ede9c # shrinks to spec = TxSpec { sender: 3, outputs: [(1, 1433930)], coin_selection: LargestFirst, rng_seed: [22, 91, 196, 206, 4, 77, 163, 255, 157, 151, 17, 97, 214, 165, 80, 51, 230, 200, 162, 127, 237, 46, 198, 148, 42, 230, 162, 114, 136, 52, 32, 43] }
