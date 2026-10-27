@@ -153,14 +153,16 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.uniform = true;
 
 	// Set storage-core's options on the ledger columns in BOTH modes. Unified mode is the
-	// one that actually uses these columns, and without `btree_index` on the root and node
-	// columns storage-core cannot iterate them (`get_roots`, the GC sweep's `scan`): see
-	// issue #2294. Separate mode keeps its own ledger DB (configured by storage-core
-	// itself) and leaves these columns unused, so the options are harmless there.
-	// An existing unified DB created without the index cannot be converted in place (parity-db
-	// would refuse to open it with `IncompatibleColumnConfig`), so an existing DB keeps the
-	// ledger column options it was created with. The node then starts normally and the ledger
-	// GC fails closed on the unindexed columns, asking for a resync (`ledger_gc::try_spawn`).
+	// one that actually uses these columns: without `btree_index` on the root and node
+	// columns storage-core cannot iterate them (`get_roots`, `size`, the GC scan), and
+	// without the options the node column is stored uncompressed (issue #2294). Separate
+	// mode keeps its own ledger DB (configured by storage-core itself) and leaves these
+	// columns unused, so the options are harmless there.
+	// Column options are fixed when a database is created, and parity-db refuses to open an
+	// existing one with different options (`IncompatibleColumnConfig`), so an existing DB
+	// keeps the ledger column options it was created with; only new databases get these.
+	// The node then starts normally and the ledger GC fails closed on the unindexed columns,
+	// asking for a resync (`ledger_gc::try_spawn`).
 	midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
 		&mut config,
 		NUM_COLUMNS_POLKADOT,

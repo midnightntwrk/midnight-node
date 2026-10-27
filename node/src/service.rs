@@ -1066,10 +1066,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		task_manager.spawn_handle().spawn(
 			"committee-membership-watch",
 			None,
-			crate::committee_membership::watch(
-				client.clone(),
-				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
-			),
+			crate::committee_membership::watch(client.clone(), keystore_container.keystore()),
 		);
 
 		// Report whether this validator holds a BABE key registered on Cardano, so
