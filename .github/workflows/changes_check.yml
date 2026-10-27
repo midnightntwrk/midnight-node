@@ -45,7 +45,11 @@ jobs:
         with:
           submodules: true
 
+      # Season is in a private repo and only `season build` uses it, which forks skip.
       - name: Install Season
+        if: >
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.fork == false
         uses: ./.github/actions/install-season
         with:
           gh-token: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
