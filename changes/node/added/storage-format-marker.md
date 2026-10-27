@@ -15,5 +15,5 @@ exposes the Prometheus gauge `midnight_storage_format{version,status}`, whose ma
 
 The marker replaces `midnight:ledger_gc_tagged_roots` as the ledger GC gate.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2333
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1464

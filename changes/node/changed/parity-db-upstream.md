@@ -8,5 +8,5 @@ was lowering `MIN_LOG_SIZE_BYTES` from 64 MiB to 16 MiB, a flush threshold tuned
 `separate` storage layout, where the ledger had its own parity-db. With the node running `unified`
 only, the upstream default applies.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2333
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1464
