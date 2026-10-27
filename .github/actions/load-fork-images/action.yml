@@ -1,0 +1,84 @@
+name: Load fork PR images
+description: >-
+  Load images saved by ./.github/actions/save-fork-images into the local Docker daemon. With
+  `registry: true`, also serve them from a throwaway registry on the runner so earthly
+  (whose buildkitd cannot see the host daemon's images) can FROM / `WITH DOCKER --pull` them.
+
+inputs:
+  artifact-pattern:
+    description: Artifact name, or glob matching several artifacts
+    required: true
+  registry:
+    description: Also push the images to a local registry and let earthly pull from it
+    required: false
+    default: "false"
+  registry-host:
+    description: >-
+      Host:port fork image refs are named under. Must be reachable from inside earthly's
+      buildkitd container, so it is the Docker bridge gateway rather than localhost.
+    required: false
+    default: "172.17.0.1:5000"
+
+runs:
+  using: composite
+  steps:
+    - name: Download images
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: ${{ inputs.artifact-pattern }}
+        path: ${{ runner.temp }}/fork-images
+        merge-multiple: false
+
+    - name: Load images
+      id: load
+      shell: bash
+      run: |
+        : > "$RUNNER_TEMP/fork-images/loaded.txt"
+        while IFS= read -r -d '' f; do
+          zstd -dc "$f" | docker load | tee -a "$RUNNER_TEMP/fork-images/loaded.txt"
+        done < <(find "$RUNNER_TEMP/fork-images" -name '*.tar.zst' -print0)
+        if ! grep -q '^Loaded image: ' "$RUNNER_TEMP/fork-images/loaded.txt"; then
+          echo "::error::no images found in artifacts matching the pattern"
+          exit 1
+        fi
+
+    - name: Serve images from a local registry
+      if: inputs.registry == 'true'
+      shell: bash
+      env:
+        REGISTRY_HOST: ${{ inputs.registry-host }}
+      run: |
+        gateway=$(docker network inspect bridge -f '{{ (index .IPAM.Config 0).Gateway }}')
+        if [ "${REGISTRY_HOST%:*}" != "$gateway" ]; then
+          echo "::error::bridge gateway is $gateway, but fork images are named under $REGISTRY_HOST"
+          exit 1
+        fi
+        port="${REGISTRY_HOST##*:}"
+        docker run -d --name fork-pr-registry -p "${port}:5000" \
+          registry@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e # 3.0.0
+        for _ in $(seq 30); do
+          curl -fs "http://localhost:${port}/v2/" > /dev/null && break
+          sleep 1
+        done
+
+        # The host daemon only allows plain HTTP to localhost, so push through a localhost
+        # alias of the same registry.
+        sed -n 's/^Loaded image: //p' "$RUNNER_TEMP/fork-images/loaded.txt" | while read -r ref; do
+          case "$ref" in
+            "$REGISTRY_HOST"/*)
+              alias="localhost:${port}/${ref#"$REGISTRY_HOST"/}"
+              docker tag "$ref" "$alias"
+              docker push "$alias"
+              ;;
+          esac
+        done
+
+        # buildkitd reaches the registry over plain HTTP via the gateway address.
+        # Appended under the existing `global:` key; later 4-space appends (tls_enabled)
+        # end the block scalar, so they stay global keys.
+        {
+          echo "    buildkit_additional_config: |"
+          echo "      [registry.\"${REGISTRY_HOST}\"]"
+          echo "        http = true"
+          echo "        insecure = true"
+        } >> .earthly/config.yml

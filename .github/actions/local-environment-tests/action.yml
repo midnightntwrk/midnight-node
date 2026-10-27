@@ -17,8 +17,9 @@ inputs:
     description: "Test set to run (premerge or postmerge)"
     required: true
   ghcr-password:
-    description: "Password for Docker login to GHCR"
-    required: true
+    description: "Password for Docker login to GHCR (empty on fork PRs, whose images come from load-fork-images)"
+    required: false
+    default: ""
   dockerhub-username:
     description: "Docker Hub username for authenticated public-image pulls (optional; empty = anonymous, rate-limited)"
     required: false
@@ -64,6 +65,7 @@ runs:
     # GHCR auth for earthly's `--pull` of the private node / indexer / toolkit images
     # into the nested DinD daemon (writes to the per-slot DOCKER_CONFIG the caller set).
     - name: Docker Login
+      if: inputs.ghcr-password != ''
       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
       with:
         registry: ghcr.io
