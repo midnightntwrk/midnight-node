@@ -44,7 +44,6 @@ pub mod server;
 #[cfg(test)]
 mod integration_tests;
 
-use midnight_node_runtime::Runtime;
 use parity_scale_codec::Decode;
 use sc_client_api::{Backend, StorageKey, StorageProvider};
 use sp_runtime::traits::Block as BlockT;
@@ -52,11 +51,19 @@ use sp_runtime::traits::Block as BlockT;
 /// Log target shared by the warp ledger-sync server and client.
 pub(crate) const LOG_TARGET: &str = "midnight-ledger-sync";
 
-/// Read and decode the on-chain `pallet_midnight::StateKey` at `hash` — the tagged
-/// `TypedArenaKey<Ledger>` bytes the ledger arena is keyed by. No runtime API exposes `StateKey` (it
-/// has only a `#[pallet::getter]`), so the server and client read it by storage key. The stored
-/// value is `SCALE(Vec<u8>)`; the inner bytes are the key. Returns `Ok(None)` if the pallet has no
-/// `StateKey` at that block.
+/// Raw storage key for `pallet_midnight::StateKey`: `twox_128("Midnight") ++ twox_128("StateKey")`.
+/// No runtime API exposes `StateKey` (it has only a `#[pallet::getter]`), so both the server and
+/// client read it by raw key.
+pub(crate) fn state_key_storage_key() -> StorageKey {
+	let mut key = Vec::with_capacity(32);
+	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"Midnight"));
+	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"StateKey"));
+	StorageKey(key)
+}
+
+/// Read and decode the on-chain `StateKey` at `hash` — the tagged `TypedArenaKey<Ledger>` bytes the
+/// ledger arena is keyed by. The storage value is `SCALE(Vec<u8>)`; the inner bytes are the key.
+/// Returns `Ok(None)` if the pallet has no `StateKey` at that block.
 pub(crate) fn read_state_key<B, Client, BE>(
 	client: &Client,
 	hash: B::Hash,
@@ -66,61 +73,31 @@ where
 	BE: Backend<B>,
 	Client: StorageProvider<B, BE>,
 {
-	let key = StorageKey(pallet_midnight::StateKey::<Runtime>::hashed_key().to_vec());
-	let Some(raw) = client.storage(hash, &key)? else { return Ok(None) };
-
-	let inner = Vec::<u8>::decode(&mut &raw.0[..]).map_err(|e| {
-		sp_blockchain::Error::Backend(format!("failed to decode pallet StateKey: {e}"))
-	})?;
-
-	Ok(Some(inner))
-}
-
-/// Raw storage key for `pallet_cnight_observation::PreForkStateKey`:
-/// `twox_128("CNightObservation") ++ twox_128("PreForkStateKey")`.
-///
-/// Read by raw key for the same reason [`state_key_storage_key`] is: no runtime API exposes it.
-// ponytail: transient ledger 8 -> 9 hardfork machinery; delete together with
-// `pallet_cnight_observation::migrations::v2` once that fork is behind us.
-pub(crate) fn pre_fork_state_key_storage_key() -> StorageKey {
-	let mut key = Vec::with_capacity(32);
-	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"CNightObservation"));
-	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"PreForkStateKey"));
-	StorageKey(key)
-}
-
-/// Whether `pallet_cnight_observation::PreForkStateKey` is set at `hash`, i.e. whether the cNIGHT
-/// dust generation replay (`pallet_cnight_observation::migrations::v2`) is mid-flight at that
-/// block. Presence is the whole answer — the value is a ledger-8 arena root this node cannot
-/// resolve anyway — so it is never decoded.
-///
-/// The key is written in the hardfork upgrade block and killed when the replay completes *or*
-/// cancels, so it marks exactly the blocks whose execution needs the pre-fork arena.
-pub(crate) fn has_pre_fork_state_key<B, Client, BE>(
-	client: &Client,
-	hash: B::Hash,
-) -> Result<bool, sp_blockchain::Error>
-where
-	B: BlockT,
-	BE: Backend<B>,
-	Client: StorageProvider<B, BE>,
-{
-	Ok(client.storage(hash, &pre_fork_state_key_storage_key())?.is_some())
+	match client.storage(hash, &state_key_storage_key())? {
+		Some(raw) => {
+			let inner = Vec::<u8>::decode(&mut &raw.0[..]).map_err(|e| {
+				sp_blockchain::Error::Backend(format!("failed to decode pallet StateKey: {e}"))
+			})?;
+			Ok(Some(inner))
+		},
+		None => Ok(None),
+	}
 }
 
 #[cfg(test)]
 mod storage_key_tests {
 	use midnight_node_runtime::Runtime;
 
-	/// The pre-fork key is hand-built from pallet/item name strings, so a pallet rename is a
-	/// silent break: the dust-replay guard fails *open* and would stop firing with no compile
-	/// error. Pin it to the real runtime's derived key.
+	/// The key above is hand-built from pallet/item name strings, so a pallet rename is a
+	/// silent break: the server would stop finding `StateKey`, and — worse, because it fails
+	/// *open* — the dust-replay guard would stop firing with no compile error. Pin them to the
+	/// real runtime's derived keys.
 	#[test]
 	fn raw_storage_keys_match_the_runtime() {
 		assert_eq!(
-			super::pre_fork_state_key_storage_key().0,
-			pallet_cnight_observation::PreForkStateKey::<Runtime>::hashed_key().to_vec(),
-			"pallet_cnight_observation::PreForkStateKey moved; update pre_fork_state_key_storage_key()"
+			super::state_key_storage_key().0,
+			pallet_midnight::StateKey::<Runtime>::hashed_key().to_vec(),
+			"pallet_midnight::StateKey moved; update state_key_storage_key()"
 		);
 	}
 }

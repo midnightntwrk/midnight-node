@@ -7948,7 +7948,7 @@ dependencies = [
  "pallet-system-parameters",
  "pallet-system-parameters-rpc",
  "pallet-throttle",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "parity-scale-codec",
  "partner-chains-cli",
  "partner-chains-db-sync-data-sources",
@@ -8098,7 +8098,7 @@ dependencies = [
  "midnight-zswap 8.1.3",
  "midnight-zswap 9.0.0",
  "moka",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "parity-scale-codec",
  "scale-info",
  "scale-info-derive",
@@ -8204,7 +8204,6 @@ dependencies = [
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-session-info",
  "pallet-aura",
- "pallet-authorship",
  "pallet-babe",
  "pallet-beefy",
  "pallet-beefy-mmr",
@@ -8530,7 +8529,7 @@ name = "midnight-primitives-ledger"
 version = "0.1.0"
 dependencies = [
  "log",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "sp-externalities",
  "substrate-prometheus-endpoint",
 ]
@@ -8696,7 +8695,7 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-serialize",
  "midnight-storage-macros",
- "parity-db 0.5.4",
+ "parity-db 0.5.7",
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "serde",
@@ -10397,6 +10396,7 @@ dependencies = [
  "midnight-primitives-consensus-engine",
  "pallet-aura",
  "pallet-babe",
+ "pallet-session",
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
@@ -10722,7 +10722,6 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
- "sp-application-crypto",
  "sp-core",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609)",
  "sp-io",
@@ -10949,8 +10948,8 @@ dependencies = [
 
 [[package]]
 name = "parity-db"
-version = "0.5.4"
-source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#d44ef4fafd15ed8326e74b88f2558afaf458f7f6"
+version = "0.5.7"
+source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#a0f91c861c1ed2cca4cfbca629fb4f08930683a1"
 dependencies = [
  "ahash 0.8.12",
  "blake2 0.10.6",
@@ -18559,9 +18558,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.52.3"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",

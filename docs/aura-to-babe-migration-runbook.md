@@ -23,7 +23,7 @@ in the [midnight-node repository](https://github.com/midnightntwrk/midnight-node
 | ----- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | 0     | Prerequisites: babe keys generated and permissioned candidates list updated                 | Updated permissioned-candidates list active                  |
 | 1     | Binary rollout: source-network checks, 100 % binary rollout, monitoring                     | Exit checklist all green                                     |
-| 2     | Verify permissioned candidates with babe keys observed (1.1), then v3 runtime upgrade (1.2) | Upgrade block **finalized**; ≥ 1 committee rotation after it |
+| 2     | Verify permissioned candidates with babe keys observed (1.1), then v3 runtime upgrade (1.2) | Upgrade block **finalized**; registered BABE keys active     |
 | 3     | Governance: `consensusEngine.scheduleFlip()` — **point of no return**                       | —                                                            |
 | 4     | Flip commits automatically at an epoch boundary                                             | Post-flip verification                                       |
 
@@ -69,11 +69,29 @@ and drives governance motion submit it to Cardano. Two Cardano epoch
 boundaries after update operation have to be observed before the list
 becomes active.
 
+**Gate — before running `change-federated-ops`:** check the
+`PERMISSIONED_CANDIDATES` value it will submit. Stop and fix the list if:
+
+- any candidate has no `babe_pub_key` — it is dropped from the committee from
+  the first rotation after the runtime upgrade (no fallback to its AURA key);
+- two candidates share any session key — from the first rotation after the
+  runtime upgrade the committee stops rotating (`DuplicatedKey`) until the
+  list is fixed;
+- a candidate's BABE key is another candidate's AURA key — the runtime upgrade
+  copies every AURA key into the BABE slot, so the two can collide.
+
+A candidate reusing its own AURA key as BABE works but breaks the fresh-key
+rule of 0.1: decide and record before submitting — accept, or ask for a fresh
+key.
+
 ### 0.3 Gate: permissioned-candidates with BABE keys observed by the Midnight nodes
 
-Query `systemParameters_getAriadneParameters` with the current Cardano
-epoch as parameter on a RPC Midnight node and confirm each candidate entry
-carries a `babe` key and that no two candidates share the same key.
+After the two Cardano epoch boundaries, query
+`systemParameters_getAriadneParameters` with the current Cardano epoch on any
+Midnight RPC node (a 2.1 node works). Repeat the 0.2 checks, confirm every
+entry has `isValid: true`, and confirm the observed list matches the one you
+submitted. A difference means the list was changed or lost on the way to
+Cardano — do not continue to Phase 1 until it is explained.
 
 ## Phase 1 — Binary rollout
 
@@ -159,17 +177,22 @@ From it on, runtime rejects any block from a non-upgraded author.
       `babe.genesisSlot()` is `18446744073709551615`; cadence unchanged.
 - [ ] Every validator has authored at least one **finalized** block since
       the upgrade; no spike in rejected blocks.
-- [ ] After the next committee rotation (session boundary, 300 block in Mainet):
-      `babe.authorities()` is non-empty and matches the registered keys.
-      BABE `NextEpochData` consensus digests now appear at session boundaries.
+- [ ] After the next committee rotation (session boundary, 300 blocks on mainnet):
+      `babe.authorities()` is non-empty and BABE `NextEpochData` consensus
+      digests appear at session boundaries. It still holds the copied AURA
+      keys; the registered BABE keys reach it two or three rotations after
+      the upgrade.
 
 ### Phase 2 gate:
 
 - [ ] The activation block (the block that executed the runtime upgrade)
       is **finalized** by GRANDPA. The runtime cannot check this itself.
       Network operator has to verify it.
-- [ ] `babe.authorities()` is non-empty (≥ 1 committee rotation since the
-      upgrade).
+- [ ] `babe.authorities()` equals the registered BABE keys of the current
+      committee (two or three committee rotations since the upgrade). Copied
+      AURA keys after the third rotation, or a missing member, mean the
+      committee did not rotate onto the registered keys — do not schedule
+      the flip.
 
 ---
 

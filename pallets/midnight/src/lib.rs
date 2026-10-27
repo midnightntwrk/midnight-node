@@ -39,8 +39,6 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-pub mod migrations;
-
 #[frame_support::pallet]
 pub mod pallet {
 	use crate::alloc::string::ToString;
@@ -101,9 +99,6 @@ pub mod pallet {
 		}
 	}
 
-	// v2: ledger v8 -> v9 state translation (see `migrations::v2`). A ledger-8
-	// runtime is at on-chain version 1; upgrading to this runtime runs the
-	// `MigrateV1ToV2` translation. Fresh ledger-9 genesis starts at version 2.
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	// Manually add ~1% of block weight
