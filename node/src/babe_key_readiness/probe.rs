@@ -122,6 +122,20 @@ impl BabeKeyProbe {
 		Self { candidates, keystore }
 	}
 
+	/// Logs every BABE public key this keystore would hand out.
+	pub fn log_babe_public_keys(keystore: Arc<dyn Keystore>) {
+		let keys = keystore.sr25519_public_keys(BABE);
+		if keys.is_empty() {
+			log::warn!(target: LOG_TARGET, "No BABE public key found in keystore");
+		} else {
+			log::info!(
+				target: LOG_TARGET,
+				"BABE public key(s) in keystore: {}",
+				keys.iter().map(|k| format!("0x{}", hex::encode(k))).collect::<Vec<_>>().join(", "),
+			);
+		}
+	}
+
 	/// The node's local BABE keys that are also registered as the `babe` key of a permissioned candidate on Cardano.
 	pub async fn matching_babe_keys(&self) -> Result<Vec<sr25519::Public>, ProbeError> {
 		let local_keys = self.keystore.sr25519_public_keys(BABE);
