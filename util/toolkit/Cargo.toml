@@ -48,7 +48,7 @@ async-channel = "2.5.0"
 redb = "3.1.1"
 postcard = { version = "1.1", features = ["alloc"] }
 serde_bytes = "0.11"
-zstd = "0.13"
+zstd = "0.14"
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 strum.workspace = true
 rayon.workspace = true
