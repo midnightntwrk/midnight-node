@@ -1,0 +1,30 @@
+name: DCO
+
+# The DCO probot app only reports on pull_request events, never on merge
+# groups. With "DCO" in the main ruleset's required status checks, every
+# merge group waited check_response_timeout_minutes (180) for a check that
+# never arrives, then got dequeued - freezing the merge queue
+# (shieldedtech/shielded-gitops#2342).
+#
+# This shim reports a passing check named "DCO" on merge-group commits.
+# It is not a bypass: a PR cannot enter the queue until its own required
+# checks - including the real probot DCO check - are green, and the merge
+# group contains those same validated commits. Genuine sign-off
+# re-validation here would false-fail: the queue's squash commit is
+# GitHub-generated and its message may lack Signed-off-by.
+
+on:
+  merge_group:
+
+# no top level default permissions for security reasons
+permissions: {}
+
+jobs:
+  dco:
+    # Must match the required status check context string exactly.
+    name: DCO
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Report success
+        run: echo "DCO already validated on the pull request; merge-group shim."

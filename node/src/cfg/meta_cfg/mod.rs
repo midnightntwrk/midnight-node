@@ -33,6 +33,7 @@ pub struct MetaCfg {
 	/// Maximum size allowed when reading config files
 	pub safe_read_max_size: Option<u64>,
 	/// Allow symlinks when loading files
+	#[serde(default)]
 	pub unsafe_allow_symlinks: bool,
 }
 

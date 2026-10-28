@@ -1,11 +1,15 @@
 use crate::block::{BlockDataSourceImpl, BlocksCache, MainchainBlock};
 use crate::metrics::mock::test_metrics;
-use chrono::{NaiveDateTime, TimeDelta};
+use chrono::{DateTime, NaiveDateTime, TimeDelta};
+use db_sync_sqlx::SlotNumber;
 use hex_literal::hex;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
 use sidechain_domain::{McBlockHash, McBlockNumber, McEpochNumber, McSlotNumber};
+use sidechain_mc_hash::StableBlockByHashResult;
 use sqlx::PgPool;
 use std::str::FromStr;
+use std::sync::Arc;
+use time_source::{MockedTimeSource, TimeSource};
 
 const BLOCK_4_TS_MILLIS: u64 = 1650561570000;
 const BLOCK_5_TS_MILLIS: u64 = 1650562570000;
@@ -65,10 +69,10 @@ async fn test_get_stable_block_at(pool: PgPool) {
 	let source = mk_datasource(pool, security_parameter);
 	let exact_ts = BLOCK_4_TS_MILLIS.into();
 	let block = source.get_stable_block_for(block_2().hash, exact_ts).await.unwrap();
-	assert_eq!(block, Some(block_2()));
+	assert_eq!(block, StableBlockByHashResult::BlockStable { info: block_2() });
 	let greater_ts = (BLOCK_4_TS_MILLIS + 1).into();
 	let block = source.get_stable_block_for(block_2().hash, greater_ts).await.unwrap();
-	assert_eq!(block, Some(block_2()));
+	assert_eq!(block, StableBlockByHashResult::BlockStable { info: block_2() });
 }
 
 #[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -83,7 +87,7 @@ async fn test_get_stable_block_at_returns_block_that_dont_have_k_blocks_on_them_
 		.get_stable_block_for(block_2().hash, BLOCK_4_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(block, Some(block_2()));
+	assert_eq!(block, StableBlockByHashResult::BlockStable { info: block_2() });
 }
 
 #[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -102,7 +106,7 @@ async fn test_get_stable_block_at_filters_out_by_min_slots_boundary(pool: PgPool
 		.get_stable_block_for(block_2().hash, BLOCK_4_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(block, None);
+	assert_eq!(block, StableBlockByHashResult::BlockTimestampOutRange { info: block_2() });
 }
 
 #[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -121,7 +125,7 @@ async fn test_get_stable_block_at_filters_out_by_max_slots_boundary(pool: PgPool
 		.get_stable_block_for(block_2().hash, BLOCK_4_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(block, None);
+	assert_eq!(block, StableBlockByHashResult::BlockTimestampOutRange { info: block_2() });
 }
 
 #[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -133,7 +137,7 @@ async fn test_get_stable_block_info_by_hash_for_unknown_hash(pool: PgPool) {
 		.get_stable_block_for(unknown_hash, BLOCK_4_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(result, None)
+	assert_eq!(result, StableBlockByHashResult::BlockNotFound)
 }
 
 #[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -223,7 +227,7 @@ async fn test_get_stable_block_caching(pool: PgPool) {
 		.get_stable_block_for(block_0().hash, BLOCK_5_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(result, Some(block_0()));
+	assert_eq!(result, StableBlockByHashResult::BlockStable { info: block_0() });
 
 	update_block_hash_in_db(&pool, 0).await;
 	update_block_hash_in_db(&pool, 1).await;
@@ -234,25 +238,30 @@ async fn test_get_stable_block_caching(pool: PgPool) {
 		.get_stable_block_for(block_1().hash, BLOCK_5_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(result, Some(block_1()));
+	assert_eq!(result, StableBlockByHashResult::BlockStable { info: block_1() });
 
 	let result = source
 		.get_stable_block_for(block_2().hash, BLOCK_5_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(result, Some(block_2()));
+	assert_eq!(result, StableBlockByHashResult::BlockStable { info: block_2() });
 
 	let result = source
 		.get_stable_block_for(block_3().hash, BLOCK_5_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(result, None);
+	assert_eq!(result, StableBlockByHashResult::BlockNotFound);
 
 	let result = source
 		.get_stable_block_for(dummy_hash(3), BLOCK_5_TS_MILLIS.into())
 		.await
 		.unwrap();
-	assert_eq!(result, Some(MainchainBlock { hash: dummy_hash(3), ..block_3() }))
+	assert_eq!(
+		result,
+		StableBlockByHashResult::BlockStable {
+			info: MainchainBlock { hash: dummy_hash(3), ..block_3() }
+		}
+	)
 }
 
 #[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -266,14 +275,104 @@ async fn test_records_cardano_block_metrics(pool: PgPool) {
 		.await
 		.unwrap();
 
-	assert_eq!(result, Some(block_2()));
+	assert_eq!(result, StableBlockByHashResult::BlockStable { info: block_2() });
 	assert_eq!(metrics.latest_cardano_block_number().get(), 5,);
 	assert_eq!(metrics.latest_cardano_block_slot().get(), 193500,);
 	assert_eq!(metrics.referenced_cardano_block_number().get(), 2,);
 	assert_eq!(metrics.referenced_cardano_block_slot().get(), 190500,);
 }
 
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
+async fn test_is_cardano_fresh(pool: PgPool) {
+	let security_parameter = 1;
+	// max_latest_block_age_seconds parameter is 100s, the highest block in migrations is from 2022-04-21T17:36:10Z (timestamp = 1650562570000)
+	// this time source will return highest block timestamp + 99 seconds
+	let time_source_1 = MockedTimeSource { current_time_millis: 1650562570000 + 99000 };
+	let source_1 =
+		mk_datasource_with_time_source(pool.clone(), security_parameter, Arc::new(time_source_1));
+
+	assert!(source_1.is_cardano_tip_fresh().await.unwrap());
+
+	// this time source will return highest block timestamp + 101 seconds
+	let time_source_2 = MockedTimeSource { current_time_millis: 1650562570000 + 101000 };
+	let source_2 =
+		mk_datasource_with_time_source(pool, security_parameter, Arc::new(time_source_2));
+	assert!(!source_2.is_cardano_tip_fresh().await.unwrap());
+}
+
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
+async fn test_is_cardano_ok_chain_growth_rule_test(pool: PgPool) {
+	let security_param = 2; // Max block_no is 8, so blocks 7 and 8 don't have enough confirmations.
+
+	// Block number 6 is from 2022-04-21T17:02:50Z (timestamp = 1650560570000)
+	// By Praos chain growth rule (and test configs) the block can be at most 5000 seconds old.
+	let time_source_ok = MockedTimeSource { current_time_millis: 1650560570000 + 4999000 };
+	let source =
+		mk_datasource_with_time_source(pool.clone(), security_param, Arc::new(time_source_ok));
+	source.is_cardano_ok().await.unwrap();
+
+	let time_source_too_late = MockedTimeSource { current_time_millis: 1650560570000 + 5001000 };
+	let source = mk_datasource_with_time_source(
+		pool.clone(),
+		security_param,
+		Arc::new(time_source_too_late),
+	);
+	assert!(!source.is_cardano_ok().await.unwrap());
+}
+
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
+async fn test_is_cardano_ok_chain_quality_test(pool: PgPool) {
+	// In this test we choose timestamp so chain growth rule is not violated in both case, but chain quality rule (latest block timestamp) is.
+	let security_param = 1;
+
+	// The latest block (8) is from 2022-04-21T17:36:10Z (timestamp = 1650562570000)
+	// By Praos chain quality rule and config of test data source, tip can be at most 1667s old
+	let time_source_ok = MockedTimeSource { current_time_millis: 1650562570000 + 1666000 };
+	let source =
+		mk_datasource_with_time_source(pool.clone(), security_param, Arc::new(time_source_ok));
+	source.is_cardano_ok().await.unwrap();
+
+	let time_source_too_late = MockedTimeSource { current_time_millis: 1650562570000 + 1668000 };
+	let source = mk_datasource_with_time_source(
+		pool.clone(),
+		security_param,
+		Arc::new(time_source_too_late),
+	);
+	assert!(!source.is_cardano_ok().await.unwrap());
+}
+
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
+fn date_time_to_slot_tests(pool: PgPool) {
+	let source = mk_datasource(pool.clone(), 0);
+
+	// Hardcoded values based on [mainchain_epoch_config]
+	let dt = DateTime::from_timestamp(1650558070, 0).unwrap().naive_utc();
+	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(189000));
+
+	let dt = DateTime::from_timestamp(1650558071, 0).unwrap().naive_utc();
+	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(189001));
+
+	let dt = DateTime::parse_from_str("2022-04-21T16:28:00+0000", "%Y-%m-%dT%H:%M:%S%z")
+		.unwrap()
+		.naive_utc();
+	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(189410));
+
+	let dt = DateTime::parse_from_str("2022-04-21T17:36:10+0000", "%Y-%m-%dT%H:%M:%S%z")
+		.unwrap()
+		.naive_utc();
+	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(193500));
+}
+
 fn mk_datasource(pool: PgPool, security_parameter: u32) -> BlockDataSourceImpl {
+	let time_source = Arc::new(time_source::SystemTimeSource);
+	mk_datasource_with_time_source(pool, security_parameter, time_source)
+}
+
+fn mk_datasource_with_time_source(
+	pool: PgPool,
+	security_parameter: u32,
+	time_source: Arc<dyn TimeSource + Send + Sync>,
+) -> BlockDataSourceImpl {
 	BlockDataSourceImpl {
 		pool,
 		security_parameter,
@@ -281,9 +380,11 @@ fn mk_datasource(pool: PgPool, security_parameter: u32) -> BlockDataSourceImpl {
 		max_slot_boundary_as_seconds: TimeDelta::seconds(5000),
 		mainchain_epoch_config: mainchain_epoch_config(),
 		block_stability_margin: 0,
+		max_latest_block_age_seconds: 100,
 		cache_size: 100,
 		stable_blocks_cache: BlocksCache::new_arc_mutex(),
 		metrics_opt: None,
+		time_source,
 	}
 }
 

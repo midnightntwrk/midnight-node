@@ -26,7 +26,7 @@ use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use sc_client_api::{BlockBackend, BlockchainEvents};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
-use sp_core::hashing::blake2_256;
+use sp_crypto_hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -349,16 +349,23 @@ impl ValidationRateLimiter {
 pub struct Midnight<C, Block> {
 	client: Arc<C>,
 	validate_rate_limiter: Arc<ValidationRateLimiter>,
+	/// Whether the ledger arena uses the unified ParityDb layout.
+	ledger_unified: bool,
 	_marker: std::marker::PhantomData<Block>,
 }
 
 impl<C, Block> Midnight<C, Block> {
-	pub fn new(client: Arc<C>, validate_rate_limit_config: ValidateRateLimitConfig) -> Self {
+	pub fn new(
+		client: Arc<C>,
+		validate_rate_limit_config: ValidateRateLimitConfig,
+		ledger_unified: bool,
+	) -> Self {
 		Self {
 			client,
 			validate_rate_limiter: Arc::new(ValidationRateLimiter::new(
 				&validate_rate_limit_config,
 			)),
+			ledger_unified,
 			_marker: Default::default(),
 		}
 	}
@@ -540,14 +547,9 @@ where
 			ErrorObject::owned(-32603, format!("Failed to get validation context: {e}"), None::<()>)
 		})?;
 
-		// Ledger version selects the correct native Bridge for validation.
-		let runtime_ledger_version = api.get_ledger_version(at).map_err(|e| {
-			ErrorObject::owned(-32603, format!("Failed to get ledger version: {e}"), None::<()>)
-		})?;
-
-		// Expensive native validation — dispatches to correct ledger version
+		// Expensive native validation — dispatches on the state key's ledger version
 		match midnight_node_ledger::native_api::validate_transaction_verbose(
-			&runtime_ledger_version,
+			self.ledger_unified,
 			&ctx.state_key,
 			&tx_bytes,
 			ctx.block_context,

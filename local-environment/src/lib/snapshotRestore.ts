@@ -34,6 +34,11 @@ interface RestoreSnapshotOptions {
    * passing 1 strips it so chains/ lands at the data dir root.
    */
   stripComponents?: number;
+  /**
+   * Runs on the extracted snapshot before it is replicated, e.g. to convert it
+   * once so every data dir receives the same prepared state.
+   */
+  prepare?: (unpackedRoot: string) => void;
 }
 
 export async function restoreSnapshot(
@@ -46,6 +51,7 @@ export async function restoreSnapshot(
     env,
     permissive,
     stripComponents,
+    prepare,
   } = options;
   if (!snapshotUri) return [];
 
@@ -93,6 +99,13 @@ export async function restoreSnapshot(
       return [];
     }
 
+    if (prepare) {
+      if (permissive) {
+        makeWritableForContainerUser([unpackedRoot]);
+      }
+      prepare(unpackedRoot);
+    }
+
     replicateSnapshot(unpackedRoot, targetDirs);
 
     if (permissive) {
@@ -105,6 +118,14 @@ export async function restoreSnapshot(
   } finally {
     fs.rmSync(stagingDir, { recursive: true, force: true });
   }
+}
+
+export function discoverComposeDataMounts(composeFile: string): string[] {
+  const resolvedCompose = path.resolve(composeFile);
+  const composeDir = path.dirname(resolvedCompose);
+  const dataRoot = path.resolve(composeDir, "data");
+
+  return discoverDataMounts(resolvedCompose, dataRoot);
 }
 
 function ensureBinary(bin: string, hint: string, env: NodeJS.ProcessEnv) {
@@ -292,7 +313,22 @@ function replicateSnapshot(sourceDir: string, targets: string[]): void {
     for (const entry of entries) {
       const src = path.join(sourceDir, entry);
       const dest = path.join(target, entry);
-      fs.cpSync(src, dest, { recursive: true });
+      // The snapshot is replicated once per node data dir; on APFS use
+      // copy-on-write clones (cp -c) so N replicas cost ~zero extra disk.
+      // Node's own COPYFILE_FICLONE falls back to a full copy on macOS.
+      if (process.platform === "darwin") {
+        const clone = spawnSync("cp", ["-Rc", src, dest], {
+          stdio: "inherit",
+        });
+        if (clone.status !== 0) {
+          throw new Error(`cp -Rc failed for ${src} -> ${dest}`);
+        }
+      } else {
+        fs.cpSync(src, dest, {
+          recursive: true,
+          mode: fs.constants.COPYFILE_FICLONE,
+        });
+      }
     }
   }
 }

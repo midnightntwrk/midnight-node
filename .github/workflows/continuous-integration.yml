@@ -5,11 +5,19 @@ env:
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_EKS_CLUSTER_NAME: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
+  # Registry the images built here are pushed to and pulled from. Derived from the repo owner
+  # so a fork or private clone never touches midnightntwrk's registries. Upstream's private
+  # GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the canonical
+  # branch has to name the repo explicitly rather than derive it. GHCR_REGISTRY_PUBLIC is the
+  # public mirror, which only the canonical repo has; everywhere else it equals GHCR_REGISTRY
+  # and the mirror push is a no-op. Same derivation .envrc forwards to earthly as build args.
+  GHCR_REGISTRY: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnight-ntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+  GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
 
 on:
   merge_group:
   pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
     paths-ignore:
       - "changes/**"
   workflow_dispatch:
@@ -33,18 +41,23 @@ jobs:
       contents: read
     # TEST PR — points at the new self-hosted runner pool to validate end-to-end
     # build performance. Revert before merge.
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
+      node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
+      node_image: ${{ steps.image_tags.outputs.node_image }}
+      toolkit_image: ${{ steps.image_tags.outputs.toolkit_image }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           # Keep `use-cache: false` — that flag controls whether EarthBuild
           # caches state into GitHub Actions cache (which sets up TLS-secured
@@ -54,7 +67,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -73,22 +86,19 @@ jobs:
           echo "--- updated .earthly/config.yml ---"
           cat .earthly/config.yml
 
-      # Self-hosted runners share a persistent HOME (/opt/actions-runner) across
-      # every runner slot on the host, making ~/.docker/config.json shared
-      # mutable state. Concurrent jobs' `docker login` (read-modify-write) race
-      # and clobber each other's registry entries — e.g. a Docker Hub login
-      # wiping the ghcr.io entry — leaving the build's push with no GHCR creds
-      # (anonymous token -> 403). Pin DOCKER_CONFIG to the per-slot runner temp
-      # dir so each job gets an isolated docker config that docker/login-action
-      # writes to and earthly reads from (earthly honors DOCKER_CONFIG). Set via
-      # $GITHUB_ENV in a step because runner.temp is unavailable in job-level env.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Pin DOCKER_CONFIG to a per-job temp dir so concurrent jobs get isolated
+      # docker auth and can't clobber each other's registry logins mid-build
+      # (which would otherwise drop a registry credential and 403 the push).
+      # docker/login-action writes here and earthly reads it (earthly honors
+      # DOCKER_CONFIG). Set via $GITHUB_ENV because runner.temp is unavailable
+      # in job-level env.
+      - name: Isolate docker config
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -98,8 +108,13 @@ jobs:
       # images that resolve to docker.io. With --push, earthly tries to write
       # inline cache back to the midnightntwrk Docker Hub namespace and fails
       # auth without this login.
+      # Non-fatal: the +images push targets ghcr.io only (authed by the GHCR
+      # login above) and the docker.io base images are public, so the build
+      # still pulls + pushes without these creds. Dependabot runs don't have
+      # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -119,20 +134,34 @@ jobs:
         run: |
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          # Image basename follows the repo name, so a fork publishes <owner>/<its-repo>
+          # rather than overwriting midnight-node. Taken from $GITHUB_REPOSITORY rather than
+          # github.event.repository.name, which is absent from merge_group/schedule payloads.
+          image_repo="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "node_image_tag=${version}-dev-${content_hash}-amd64"
+            echo "node_image_tag_no_dev=${version}-${content_hash}-amd64"
+            echo "toolkit_image_tag=${version}-${content_hash}-amd64"
+            echo "image_repo=${image_repo}"
+            echo "node_image=${GHCR_REGISTRY}/${image_repo}"
+            echo "toolkit_image=${GHCR_REGISTRY}/${image_repo}-toolkit"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
           if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          NODE_EXISTS=$(docker manifest inspect "${NODE_IMAGE}:${NODE_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             echo "Images already exist, skipping build"
@@ -161,10 +190,6 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           # Retry the earthly invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
           # underlying containerd resolver) isn't tunable via buildkitd.toml,
@@ -178,7 +203,7 @@ jobs:
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
@@ -191,14 +216,14 @@ jobs:
           exit 1
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Wasm Runtime and binaries (amd64)
           path: artifacts-amd64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Test artifacts (amd64)
@@ -214,10 +239,13 @@ jobs:
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
       sbom-artifact-name: sbom-midnight-node-ci
       skip-attestation: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-toolkit:
     permissions:
@@ -229,10 +257,13 @@ jobs:
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ci
       skip-attestation: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   run-arm64:
     name: Build node and images (arm64)
@@ -243,19 +274,19 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -266,20 +297,29 @@ jobs:
         run: |
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
+          image_repo="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "node_image_tag=${version}-dev-${content_hash}-arm64"
+            echo "toolkit_image_tag=${version}-${content_hash}-arm64"
+            echo "node_image=${GHCR_REGISTRY}/${image_repo}"
+            echo "toolkit_image=${GHCR_REGISTRY}/${image_repo}-toolkit"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
           if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          NODE_EXISTS=$(docker manifest inspect "${NODE_IMAGE}:${NODE_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             echo "Images already exist, skipping build"
@@ -292,26 +332,102 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Wasm Runtime and binaries (arm64)
           path: artifacts-arm64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Test artifacts (arm64)
           path: test-artifacts-arm64/
 
+  # Combine the per-platform images (`<tag>-amd64`, `<tag>-arm64`) pushed by
+  # `run` and `run-arm64` under a single multi-arch tag.
+  push-combined-manifest:
+    name: Push combined multi-arch manifest
+    needs: [run, run-arm64]
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Compute combined image tags
+        id: tags
+        env:
+          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag_no_dev }}
+          TOOLKIT_AMD64_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
+        run: |
+          node_amd64="$NODE_AMD64_TAG"
+          toolkit_amd64="$TOOLKIT_AMD64_TAG"
+          node_combined="${node_amd64%-amd64}"
+          toolkit_combined="${toolkit_amd64%-amd64}"
+          node_arm64="${node_combined}-arm64"
+          toolkit_arm64="${toolkit_combined}-arm64"
+          {
+            echo "node_combined=${node_combined}"
+            echo "node_amd64=${node_amd64}"
+            echo "node_arm64=${node_arm64}"
+            echo "toolkit_combined=${toolkit_combined}"
+            echo "toolkit_amd64=${toolkit_amd64}"
+            echo "toolkit_arm64=${toolkit_arm64}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push combined manifest for midnight-node
+        env:
+          COMBINED_TAG: ${{ steps.tags.outputs.node_combined }}
+          AMD64_TAG: ${{ steps.tags.outputs.node_amd64 }}
+          ARM64_TAG: ${{ steps.tags.outputs.node_arm64 }}
+        run: |
+          # Recomputed here rather than carried as a job output: Actions drops any output
+          # whose value contains a secret, and DOCKERHUB_MIDNIGHTNTWRK_USER is the literal
+          # string "midnightntwrk", which appears in the public image name. The output
+          # arrived empty and `imagetools create -t ":<tag>"` failed with "invalid
+          # reference format". The private ghcr.io/midnight-ntwrk name is hyphenated, so it
+          # is unaffected and still travels as an output.
+          IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}"
+
+          docker buildx imagetools create \
+            -t "${IMAGE}:${COMBINED_TAG}" \
+            "${IMAGE}:${AMD64_TAG}" \
+            "${IMAGE}:${ARM64_TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
+
+      - name: Push combined manifest for midnight-node-toolkit
+        env:
+          COMBINED_TAG: ${{ steps.tags.outputs.toolkit_combined }}
+          AMD64_TAG: ${{ steps.tags.outputs.toolkit_amd64 }}
+          ARM64_TAG: ${{ steps.tags.outputs.toolkit_arm64 }}
+        run: |
+          # Recomputed here rather than carried as a job output: Actions drops any output
+          # whose value contains a secret, and DOCKERHUB_MIDNIGHTNTWRK_USER is the literal
+          # string "midnightntwrk", which appears in the public image name. The output
+          # arrived empty and `imagetools create -t ":<tag>"` failed with "invalid
+          # reference format". The private ghcr.io/midnight-ntwrk name is hyphenated, so it
+          # is unaffected and still travels as an output.
+          IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}-toolkit"
+
+          docker buildx imagetools create \
+            -t "${IMAGE}:${COMBINED_TAG}" \
+            "${IMAGE}:${AMD64_TAG}" \
+            "${IMAGE}:${ARM64_TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
 
   check-unused-deps:
     permissions:
@@ -323,28 +439,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Check Deps
         if: steps.guard.outputs.hit != 'true'
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
-          . ./.envrc && earthly +check-deps
+          . ./.envrc && earth +check-deps
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -353,7 +465,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [ run ]
+    needs: [run]
     permissions:
       id-token: write
       contents: read
@@ -364,23 +476,23 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -399,14 +511,14 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ needs.run.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
-            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
+            --build-arg "TOOLKIT_IMAGE=${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" \
             +rebuild-genesis
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -425,23 +537,23 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
@@ -456,7 +568,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P --strict \
+          . ./.envrc && earth -P --strict \
             +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -471,28 +583,30 @@ jobs:
       actions: write
     name: Test Toolkit
     needs: [run]
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     env:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. runner.temp is not available in job-level env, so set it here.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Isolate docker config per job — see the matching step in the `run` job.
+      # runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
@@ -500,7 +614,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -509,16 +623,20 @@ jobs:
       # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
       # images; earthly pushes inline cache back to those repos under --push,
       # which needs Docker Hub auth.
+      # Non-fatal: pushes target ghcr.io and the docker.io base images are
+      # public, so the build proceeds without these creds (e.g. Dependabot runs,
+      # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
@@ -533,6 +651,10 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
+          # pulls (empty on fork PRs → anonymous, rate-limited).
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true.
           # Force earthly's tempdir to live under $RUNNER_TEMP which is
@@ -547,10 +669,11 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
           # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
-          # cache mount. Pass the PR ref so it's scoped per-branch on this
-          # shared self-hosted runner — see +test's `Run build` step for the
-          # full rationale and why EARTHLY_GIT_BRANCH is unsafe here.
+          # cache mount. Pass the PR ref so the cache is scoped per-branch — see
+          # +test's `Run build` step for the full rationale and why
+          # EARTHLY_GIT_BRANCH is unsafe here.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
           PUSH_FLAG=""
@@ -563,10 +686,13 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+            -P --strict $PUSH_FLAG \
+            --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
             +test-toolkit \
-              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${NODE_IMAGE_TAG}" \
+              --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
               --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -583,7 +709,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -592,8 +718,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -609,7 +735,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -618,8 +744,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-update-ledger-parameters-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -635,7 +761,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -644,8 +770,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-maintenance-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -661,7 +787,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -670,8 +796,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-mint-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -683,11 +809,11 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Unshielded Token E2E
-    needs: [ run ]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -696,8 +822,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-tokens-minter-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -713,20 +839,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -734,68 +860,74 @@ jobs:
 
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
-          . ./.envrc && earthly --ci -P \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+          . ./.envrc && earth --ci -P \
+            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
           key: ${{ steps.guard.outputs.key }}
 
-  mainnet-sync-test:
-    permissions:
-      contents: read
-      packages: read
-    name: Mainnet Sync (1000 blocks)
-    needs: [run]
-    runs-on: [self-hosted, "tier:medium"]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  # Migration to Ledger v9 is not yet supported. Issue #1580.
+  # mainnet-sync-test:
+  #   continue-on-error: true
+  #   permissions:
+  #     contents: read
+  #     packages: read
+  #   name: Mainnet Sync (1000 blocks)
+  #   needs: [run]
+  #   runs-on: [self-hosted, "tier:medium"]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. runner.temp is not available in job-level env, so set it here.
-      - name: Isolate docker config (self-hosted shared HOME)
-        run: |
-          mkdir -p "$RUNNER_TEMP/.docker"
-          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
-      - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+  #     # Isolate docker config per runner slot — see the matching step in the
+  #     # `run` job. runner.temp is not available in job-level env, so set it here.
+  #     - name: Isolate docker config (self-hosted shared HOME)
+  #       run: |
+  #         mkdir -p "$RUNNER_TEMP/.docker"
+  #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
-      - name: Sync first 1000 blocks of mainnet
-        env:
-          NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          SNAPSHOT: static/sync-test/snapshot.sql.xz
-          CFG_PRESET: mainnet
-          SYNC_UNTIL: "1000"
-          SYNC_TIMEOUT_SECS: "1800"
-        run: bash scripts/sync-test/run-sync.sh
+  #     - name: Login to GHCR
+  #       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+  #       with:
+  #         registry: ghcr.io
+  #         username: MidnightCI
+  #         password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - name: Print sync logs
-        if: always()
-        run: |
-          echo "::group::midnight-node.log"
-          cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
-          echo "::endgroup::"
-          echo "::group::midnight-pg.log"
-          cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
-          echo "::endgroup::"
+  #     - name: Sync first 1000 blocks of mainnet
+  #       env:
+  #         NODE_IMAGE: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+  #         SNAPSHOT: static/sync-test/snapshot.sql.xz
+  #         CFG_PRESET: mainnet
+  #         SYNC_UNTIL: "1000"
+  #         SYNC_TIMEOUT_SECS: "1800"
+  #       run: bash scripts/sync-test/run-sync.sh
 
-      - name: Upload sync logs on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
-        with:
-          name: mainnet-sync-logs
-          path: |
-            /tmp/midnight-node.log
-            /tmp/midnight-pg.log
-          if-no-files-found: ignore
+  #     - name: Print sync logs
+  #       if: always()
+  #       run: |
+  #         echo "::group::midnight-node.log"
+  #         cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
+  #         echo "::endgroup::"
+  #         echo "::group::midnight-pg.log"
+  #         cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
+  #         echo "::endgroup::"
+
+  #     - name: Upload sync logs on failure
+  #       if: failure()
+  #       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
+  #       with:
+  #         name: mainnet-sync-logs
+  #         path: |
+  #           /tmp/midnight-node.log
+  #           /tmp/midnight-pg.log
+  #         if-no-files-found: ignore
 
   toolkit-contracts-e2e:
     permissions:
@@ -806,7 +938,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 7.0.1
         with:
           submodules: true
       - id: guard
@@ -815,8 +947,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-contracts-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -832,7 +964,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -841,7 +973,7 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: startup-dev-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -856,10 +988,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -867,7 +999,7 @@ jobs:
 
       - name: Run chainspec validation harness
         env:
-          MIDNIGHT_NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          MIDNIGHT_NODE_IMAGE: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
         run: bash tests/chainspec-validation/run.sh
 
   genesis-undeployed-e2e:
@@ -879,7 +1011,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -888,8 +1020,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: genesis-wallets-undeployed-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -909,7 +1041,7 @@ jobs:
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -926,9 +1058,9 @@ jobs:
           # Use the indexer submodule's tree hash — indexer images depend on submodule content, not main repo
           content_hash=$(git -C indexer rev-parse "HEAD^{tree}" | cut -c1-12)
           {
-            echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${content_hash}"
-            echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}"
-            echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${content_hash}"
+            echo "indexer_api_image=${GHCR_REGISTRY}/indexer-api:${content_hash}"
+            echo "chain_indexer_image=${GHCR_REGISTRY}/chain-indexer:${content_hash}"
+            echo "wallet_indexer_image=${GHCR_REGISTRY}/wallet-indexer:${content_hash}"
             echo "content_hash=${content_hash}"
           } >> "$GITHUB_OUTPUT"
 
@@ -937,9 +1069,9 @@ jobs:
             exit 0
           fi
 
-          API_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/indexer-api:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
-          CHAIN_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
-          WALLET_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/wallet-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          API_EXISTS=$(docker manifest inspect "${GHCR_REGISTRY}/indexer-api:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          CHAIN_EXISTS=$(docker manifest inspect "${GHCR_REGISTRY}/chain-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          WALLET_EXISTS=$(docker manifest inspect "${GHCR_REGISTRY}/wallet-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
 
           if [ "$API_EXISTS" = "true" ] && [ "$CHAIN_EXISTS" = "true" ] && [ "$WALLET_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
@@ -950,11 +1082,11 @@ jobs:
 
       - name: Free disk space
         if: steps.image_meta.outputs.skip_build != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9 #v2.77.7
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 #v2.87.29
         with:
           tool: just
 
@@ -962,6 +1094,7 @@ jobs:
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          CONTENT_HASH: ${{ steps.image_meta.outputs.content_hash }}
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -979,19 +1112,18 @@ jobs:
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag with submodule's content hash
-          CONTENT_HASH="${{ steps.image_meta.outputs.content_hash }}"
+          # Retag with submodule's content hash (CONTENT_HASH comes from the step env)
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
 
-          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
-          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
-          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
+          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/chain-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/wallet-indexer:${CONTENT_HASH}"
 
-          docker push "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
-          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
-          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
+          docker push "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
+          docker push "${GHCR_REGISTRY}/chain-indexer:${CONTENT_HASH}"
+          docker push "${GHCR_REGISTRY}/wallet-indexer:${CONTENT_HASH}"
 
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 #v2.9.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 #v2.9.3
         if: steps.image_meta.outputs.skip_build != 'true'
 
       - name: Configure git for private repos
@@ -1019,17 +1151,16 @@ jobs:
   local-environment-tests:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    needs: [ run, build-indexer-images ]
-    runs-on: [self-hosted, "tier:medium"]
-    # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
-    # cardano-node, ...) binds fixed ports on 0.0.0.0 — 1442, 1337, 8088,
-    # 4222, 5432, 30000, 32000 — so concurrent jobs on the same self-hosted
-    # runner host collide. Serialize across the whole repo with a fixed
-    # concurrency group; queue rather than cancel so a long-running stack
-    # actually finishes (the next PR's job picks up when this one is done).
-    concurrency:
-      group: local-environment-tests-self-hosted
-      cancel-in-progress: false
+    needs: [run, build-indexer-images]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
+    # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
+    # (+local-env-ci), which gives each invocation its own network namespace. The stack
+    # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
+    # so concurrent PRs on the same self-hosted host can't collide — the repo-wide
+    # `local-environment-tests-self-hosted` serialization is gone. Concurrency is now
+    # RAM-bounded (the shared buildkit/RAM pool), which earthly queues, not hard-serialized.
     permissions:
       pull-requests: write
       packages: read
@@ -1037,18 +1168,18 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. The concurrency group only serializes this job against itself;
-      # other self-hosted jobs on the same host can still clobber the shared
-      # ~/.docker. Inherited by the composite action's docker login and pulls.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Isolate docker config per job — see the matching step in the `run` job.
+      # This job runs concurrently, so per-job isolation matters: multiple
+      # instances log in at once and would otherwise clobber each other's docker
+      # auth. Inherited by the composite action's docker login and earthly --pull.
+      - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
@@ -1059,8 +1190,8 @@ jobs:
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
-          image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}
@@ -1068,6 +1199,24 @@ jobs:
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          # Empty on fork PRs → the in-DinD docker login is skipped and public
+          # images (postgres, kupo, …) fall back to anonymous, rate-limited pulls.
+          dockerhub-username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      # Defensive cleanup of an orphaned local-env stack for this job, so leaked
+      # stacks can't accumulate and fill the host disk. Scoped to this job's own
+      # compose project so it never touches other jobs on the host. The project
+      # name derives from runner-provided env (with RUNNER_NAME as fallback).
+      - name: Tear down this job's local-env stack (defensive)
+        if: always()
+        shell: bash
+        run: |
+          proj="local-env-r${RUNNER_SLOT:-${RUNNER_NAME##*-}}"
+          docker ps -aq --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker volume rm -f || true
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -1089,7 +1238,7 @@ jobs:
   #     contents: read
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
   #
   #     - name: Get Version and git commit
   #       id: meta

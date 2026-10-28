@@ -1,6 +1,4 @@
 use super::*;
-use rpc_mock::*;
-use sidechain_domain::*;
 #[allow(deprecated)]
 use sp_sidechain::SidechainStatus;
 

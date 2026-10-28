@@ -89,6 +89,43 @@ CFG_PRESET=dev ./target/release/midnight-node
 ```
 Ports: P2P 30333, RPC 9944
 
+**Compiling contracts locally (compactc):** The Compact compiler source is vendored
+as the `compact/` git submodule (pinned to the 0.31.0 release commit). Build it once
+with nix and expose it to toolkit-js:
+```bash
+git submodule update --init compact
+just compactc   # builds compactc, writes the COMPACT_HOME wrapper
+```
+`.envrc` then exports `COMPACT_HOME`, so `cd util/toolkit-js && npm run compact` uses
+the locally built compiler instead of downloading the prebuilt binary. Re-run
+`just compactc` after bumping the submodule. First build compiles `zkir` from source
+unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`).
+
+`COMPACTC_VERSION` selects which compiler CI uses. It can take one of three forms:
+- `<compiler-version>-<12-char-tree-hash>` (e.g. `0.31.0-6587676a9bb2`) — the pinned
+  `compact/` submodule, produced by `scripts/compact-submodule-version.sh` (the compiler
+  version comes from the submodule's `flake.nix`, the hash is `git rev-parse HEAD^{tree} | cut -c1-12`).
+  Regenerate it after bumping the submodule: `scripts/compact-submodule-version.sh > COMPACTC_VERSION`.
+- `<compiler-version>-<40-char-commit-sha>` (e.g. `0.31.110-3a289c2e7811d2868e7810bd5a5f1f0b7055995f`)
+  — a public **dev build** published from an arbitrary `compact` commit. Set this by hand to pin a
+  dev build without touching the submodule.
+- a plain or pre-release version (e.g. `0.31.108`, `0.30.0-rc.1`) — a conventional release.
+
+`+node-ci-image` decides build-vs-fetch by comparing `COMPACTC_VERSION` against the live
+submodule version (computed `LOCALLY`, since the COPY'd submodule has no `.git`):
+- **Match** (the tree-hash suffix agrees) → build from source via `+compactc-bundle`, which runs
+  `scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled) and emits a
+  self-contained `COMPACT_HOME` bundle.
+- **No match** → fetch the prebuilt binary via `+compactc-fetch`. It picks the release by suffix:
+  a bare 40-char hex commit SHA selects the dev build (`compactc-dev-<sha>` tag /
+  `compactc_dev-<sha>_<arch>…` asset); anything else (plain version or semver pre-release like
+  `-rc.1`) uses the conventional `compactc-v<version>` tag / `compactc_v<version>_<arch>…` asset.
+
+Either way the image then asserts the resulting `compactc --version` equals the
+`COMPACTC_VERSION` prefix (the compiler reports the bare semver, no suffix), so a submodule bump
+without regenerating `COMPACTC_VERSION` fails loudly. The full suffixed `COMPACTC_VERSION` is also
+used in the CI/toolkit image tags.
+
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 
 **Recommended tools:**
@@ -103,6 +140,22 @@ CFLAGS_wasm32_unknown_unknown = "-Wno-error=implicit-function-declaration"
 ```
 
 The symbols still resolve at link time from the real wasi/libc pulled in by the Substrate runtime build.
+
+## Gating Node Behaviour on the Runtime
+
+**Don't gate node behaviour on a hard-coded `spec_version`** (e.g. `if spec_version >= SOME_SPEC_VERSION`).
+That bakes in a guess about which release a change ships in, and a node that doesn't know about a
+newer behaviour silently runs the old one instead of failing.
+
+Gate on API versions instead:
+- **Node depends on new runtime behaviour:** bump the runtime API's `#[api_version(N)]` and branch on
+  `client.runtime_api().api_version::<dyn MyApi<Block>>(at)` (see `node/src/babe_authoring.rs`).
+- **Runtime depends on new node behaviour:** add a new `#[version(N)]` host function in the
+  `#[runtime_interface]` (see `ledger/src/host_api/`). A runtime that calls a version the node
+  binary lacks fails to instantiate. That is an explicit error, not silently wrong behaviour.
+
+Existing offenders (`DATA_ORDERED_UTXOS_SPEC_VERSION`, `ACTIVATION_SPEC_VERSION`) predate this
+rule. Don't copy them.
 
 ## When to Rebuild
 
@@ -142,7 +195,10 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 - DO NOT use Co-authored-by lines for LLM tools (e.g., `Co-Authored-By: Claude <noreply@anthropic.com>`)
   - Instead: append "Assisted-by: AGENT_NAME:MODEL_VERSION"
   - Example: "Assisted-by: Claude:claude-4.7-opus"
-- When creating PRs, add the `ai-assisted` label
+- When creating PRs, add the `bot:ai-assisted` label
+  - Remove the deprecated `ai-assisted` label (without `bot:` prefix) if found
+
+**Comment pass before pushing:** Before every `git push`, run the comment-cleanup skill (`.claude/skills/comment-cleanup/SKILL.md`) over the unpushed commits.
 
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
@@ -150,8 +206,8 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 
 **Signed commits:** All commits must be signed. Use `git commit -S` or configure Git to sign commits by default with `git config commit.gpgsign true`.
 
-**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant JIRA ticket link and add labels as needed:
-- No JIRA link: add `-l skip-changes-check-jira`
+**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant GitHub issue link and add labels as needed:
+- No issue link: add `-l skip-changes-check-issue`
 - No change file: add `-l skip-changes-check-all`
 
 ## Change Files
@@ -171,7 +227,7 @@ Format:
 Longer description of the change
 
 PR: <link to PR>
-JIRA: <link to JIRA ticket, if applicable>
+Issue: <link to Github Issue, if applicable>
 ```
 
 Change files are optional for changes that don't affect products (e.g., CI-only changes), but are worth adding for significant changes anyway.
@@ -197,6 +253,18 @@ When writing or modifying GitHub Actions workflows (`.github/workflows/*.yml`):
 - **`if:` conditions on steps are safe** — `if: inputs.skip-node != true` is evaluated by the Actions runner, not interpolated into shell.
 - **Job-level `if:` on reusable workflow calls uses string comparison** — use `github.event.inputs.skip-node != 'true'` (quoted string), not boolean.
 - **Use `!cancelled() && !failure()`** on downstream jobs to let them run when upstream jobs are skipped (but not when failed).
+- **Never hardcode a publish target.** This repo gets cloned into private forks, and a
+  fork must never push images, packages, or releases into `midnightntwrk`'s registries. Take the registry and image name from the repo — derive
+  from `github.repository_owner` / `${GITHUB_REPOSITORY#*/}`, or an Earthfile
+  `ARG --global` overridden via `EARTHLY_BUILD_ARGS` (`.envrc` already forwards
+  `GHCR_REGISTRY`, `GHCR_REGISTRY_PUBLIC`, `IMAGE_REPO` and `IMAGE_SOURCE_URL` to every
+  earthly invocation that sources it) — and gate anything that publishes outside the
+  current repo's own namespace (the public `ghcr.io/midnightntwrk` mirror, Docker Hub,
+  GitHub releases) on `if: github.repository == 'midnightntwrk/midnight-node'`.
+  Defaults must be the *safe* ones, so a new fork leaks nothing before anyone configures it.
+- **When you touch a workflow, check what it publishes.** If a change adds or moves a push,
+  ask whether a fork running it would write somewhere it does not own. `grep` your diff for
+  `ghcr.io`, `docker push`, `SAVE IMAGE --push`, `gh release`, and `subject-name:`.
 
 ## License Header
 

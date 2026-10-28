@@ -19,6 +19,9 @@ use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use super::validation_utils::{maybe, path_exists};
 use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 
+pub mod invariants;
+use invariants::check_mainchain_epoch_invariants;
+
 #[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StorageSeparation {
 	#[default]
@@ -26,8 +29,49 @@ pub enum StorageSeparation {
 	Unified,
 }
 
+/// Which existing main-chain data sources to mock.
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub enum MainChainFollowerMock {
+	#[default]
+	Disabled,
+	All,
+	Authorities,
+}
+
+impl<'de> Deserialize<'de> for MainChainFollowerMock {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		#[derive(Deserialize)]
+		#[serde(untagged)]
+		enum Value {
+			Bool(bool),
+			Text(String),
+		}
+		match Value::deserialize(deserializer)? {
+			Value::Bool(false) => Ok(Self::Disabled),
+			Value::Bool(true) => Ok(Self::All),
+			Value::Text(value) => match value.as_str() {
+				"false" => Ok(Self::Disabled),
+				"true" => Ok(Self::All),
+				"authorities" => Ok(Self::Authorities),
+				_ => Err(serde::de::Error::custom("expected true, false, or authorities")),
+			},
+		}
+	}
+}
+
+impl Serialize for MainChainFollowerMock {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		match self {
+			Self::Disabled => serializer.serialize_bool(false),
+			Self::All => serializer.serialize_bool(true),
+			Self::Authorities => serializer.serialize_str("authorities"),
+		}
+	}
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
+#[validate(custom = mainchain_epoch_invariants)]
 /// Parameters specific to Midnight
 pub struct MidnightCfg {
 	/// On start-up, wipe the chain
@@ -37,6 +81,11 @@ pub struct MidnightCfg {
 	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
 	pub aura_seed_file: Option<String>,
+
+	/// Path to file containing a secret string to use as the BABE seed (32 bytes)
+	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
+	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
+	pub babe_seed_file: Option<String>,
 
 	/// Path to file containing a secret string to use as the GRANDPA seed (32 bytes)
 	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
@@ -48,9 +97,14 @@ pub struct MidnightCfg {
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
 	pub cross_chain_seed_file: Option<String>,
 
-	/// Mock ariadne parameters
-	pub use_main_chain_follower_mock: bool,
-	/// Required if use_main_chain_follower_mock is true
+	/// Path to file containing a secret string to use as the BEEFY seed (32 bytes)
+	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
+	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
+	pub beefy_seed_file: Option<String>,
+
+	/// false: real sources; true: all mock sources; "authorities": only validator and governance mocks.
+	pub use_main_chain_follower_mock: MainChainFollowerMock,
+	/// Required if use_main_chain_follower_mock is true or "authorities".
 	/// Used in the sidechains library
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub mock_registrations_file: Option<String>,
@@ -128,18 +182,18 @@ pub struct MidnightCfg {
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
 	let missing = |field: &str| {
 		validation::Error::Custom(format!(
-			"{field} must be defined if ariadne is enabled (i.e. if use_main_chain_follower_mock is false)"
+			"{field} must be defined if ariadne is enabled (i.e. if use_main_chain_follower_mock is false or authorities)"
 		))
 	};
 
-	if cfg.use_main_chain_follower_mock {
-		if cfg.mock_registrations_file.is_none() {
-			return Err(validation::Error::Custom(
-				"mock_registrations_file must be defined if use_main_chain_follower_mock is true."
-					.to_string(),
-			));
-		}
-	} else {
+	if cfg.use_main_chain_follower_mock != MainChainFollowerMock::Disabled
+		&& cfg.mock_registrations_file.is_none()
+	{
+		return Err(validation::Error::Custom(
+			"mock_registrations_file must be defined if use_main_chain_follower_mock is true or authorities.".to_string(),
+		));
+	}
+	if cfg.use_main_chain_follower_mock != MainChainFollowerMock::All {
 		if cfg.db_sync_postgres_connection_string.is_none() {
 			return Err(missing("db_sync_postgres_connection_string"));
 		}
@@ -154,6 +208,16 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 		}
 	}
 	Ok(())
+}
+
+/// Validates the self-contained mainchain timing invariants (I1–I4, I6) at config-parse time, so an
+/// internally-incoherent mainchain config fails as a `CfgError` before any service or runtime
+/// construction. The cross-field sidechain↔mainchain invariant (I5) is not checked here: it needs
+/// the sidechain slot configuration, which is only available at service construction.
+fn mainchain_epoch_invariants(cfg: &MidnightCfg) -> Result<(), validation::Error> {
+	let epoch_config: MainchainEpochConfig = cfg.clone().into();
+	check_mainchain_epoch_invariants(&epoch_config)
+		.map_err(|e| validation::Error::Custom(e.to_string()))
 }
 
 impl CfgHelp for MidnightCfg {
@@ -177,5 +241,157 @@ impl From<MidnightCfg> for MainchainEpochConfig {
 				value.mc_slot_duration_millis,
 			),
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn mock_mode_preserves_boolean_configs_and_accepts_environment_strings() {
+		for (value, expected) in [
+			(serde_json::json!(false), MainChainFollowerMock::Disabled),
+			(serde_json::json!(true), MainChainFollowerMock::All),
+			(serde_json::json!("false"), MainChainFollowerMock::Disabled),
+			(serde_json::json!("true"), MainChainFollowerMock::All),
+			(serde_json::json!("authorities"), MainChainFollowerMock::Authorities),
+		] {
+			let cfg = config::Config::builder()
+				.add_source(config::File::from_str(
+					&serde_json::json!({"mode": value}).to_string(),
+					config::FileFormat::Json,
+				))
+				.build()
+				.unwrap();
+			assert_eq!(cfg.get::<MainChainFollowerMock>("mode").unwrap(), expected);
+			let serialized = serde_json::to_value(expected).unwrap();
+			assert_eq!(
+				serde_json::from_value::<MainChainFollowerMock>(serialized.clone()).unwrap(),
+				expected
+			);
+			if expected != MainChainFollowerMock::Authorities {
+				assert!(serialized.is_boolean());
+			}
+		}
+		assert_eq!(
+			MidnightCfg::default().use_main_chain_follower_mock,
+			MainChainFollowerMock::Disabled
+		);
+		for invalid in [serde_json::json!("typo"), serde_json::json!(1), serde_json::Value::Null] {
+			assert!(serde_json::from_value::<MainChainFollowerMock>(invalid).is_err());
+		}
+	}
+
+	#[test]
+	fn authority_mock_requires_registrations_and_real_database_configuration() {
+		let mut cfg = MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::Authorities,
+			..Default::default()
+		};
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("mock_registrations_file")
+		);
+		cfg.mock_registrations_file = Some("registrations.json".into());
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("db_sync_postgres_connection_string")
+		);
+		cfg.db_sync_postgres_connection_string = Some("postgresql://localhost/test".into());
+		cfg.cardano_security_parameter = Some(2160);
+		cfg.cardano_active_slots_coeff = Some(0.05);
+		cfg.block_stability_margin = Some(30);
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
+
+	#[test]
+	fn full_mock_still_does_not_require_a_database() {
+		let cfg = MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::All,
+			mock_registrations_file: Some("registrations.json".into()),
+			..Default::default()
+		};
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
+
+	/// A `MidnightCfg` whose mainchain timing fields are internally coherent (1000 ms slots, a
+	/// 5-day epoch divisible by the slot duration and at least one second). Other fields are left at
+	/// their defaults; the mainchain-invariant validator reads only the `mc_*` fields.
+	fn good_cfg() -> MidnightCfg {
+		MidnightCfg {
+			mc_first_epoch_timestamp_millis: 1_596_059_091_000,
+			mc_first_epoch_number: 208,
+			mc_epoch_duration_millis: 432_000_000,
+			mc_first_slot_number: 4_492_800,
+			mc_slot_duration_millis: 1000,
+			..Default::default()
+		}
+	}
+
+	#[test]
+	fn validator_accepts_coherent_mainchain_config() {
+		assert!(mainchain_epoch_invariants(&good_cfg()).is_ok());
+	}
+
+	#[test]
+	fn validator_rejects_zero_epoch_duration() {
+		let mut cfg = good_cfg();
+		cfg.mc_epoch_duration_millis = 0;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_zero_slot_duration() {
+		let mut cfg = good_cfg();
+		cfg.mc_slot_duration_millis = 0;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_sub_second_epoch_duration() {
+		let mut cfg = good_cfg();
+		cfg.mc_epoch_duration_millis = 999;
+		cfg.mc_slot_duration_millis = 1;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_non_divisible_epoch_slot_pair() {
+		let mut cfg = good_cfg();
+		cfg.mc_epoch_duration_millis = 10_000;
+		cfg.mc_slot_duration_millis = 3000;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_non_1000ms_slot_duration() {
+		// epoch 432_000_000 ms is an exact multiple of a 2000 ms slot, so this passes the I4
+		// divisibility check yet is rejected by I6 because the vendored upstream `slots_per_epoch`
+		// hardcodes a 1000 ms slot.
+		let mut cfg = good_cfg();
+		cfg.mc_slot_duration_millis = 2000;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn serde_valid_validate_surfaces_mainchain_invariant_violation() {
+		// The aggregate `Validate::validate()` path (run by `Cfg::new()` → `cfg.validate()`,
+		// surfacing as a `CfgError`) reports the mainchain-invariant violation. Mock follower vars
+		// are set so the unrelated `main_chain_follower_vars` validator does not mask this failure.
+		let mut cfg = good_cfg();
+		cfg.use_main_chain_follower_mock = MainChainFollowerMock::All;
+		cfg.mock_registrations_file = Some("/dev/null".to_string());
+		cfg.mc_epoch_duration_millis = 0;
+
+		let err = cfg.validate().expect_err("zero epoch duration must be rejected");
+		assert!(
+			err.to_string().contains("mc__epoch_duration_millis"),
+			"validation error should name the offending parameter, got: {err}"
+		);
 	}
 }

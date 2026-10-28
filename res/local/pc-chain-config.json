@@ -1,0 +1,18 @@
+{
+  "chain_parameters": {
+    "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "addr_test1wq8r0s6ku3wk0cps3n2sdpufa0r6h3yg5pfu7ndx2ze34wc96629f",
+    "permissioned_candidates_policy_id": "c85e090e9dc23d47cf7f1ff7d25e589e1c204030b4c7f138eed246d9"
+  },
+  "cardano": {
+    "security_parameter": 5,
+    "active_slots_coeff": 1,
+    "first_epoch_number": 0,
+    "first_slot_number": 0,
+    "epoch_duration_millis": 60000,
+    "first_epoch_timestamp_millis": 1772211480000,
+    "slot_duration_millis": 1000
+  }
+}

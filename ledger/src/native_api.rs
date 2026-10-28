@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::*;
-use common::types::Hash;
+use boundary::types::Hash;
 
 /// Version-agnostic validation error returned across the native API boundary.
 #[derive(Debug)]
@@ -25,69 +25,58 @@ pub struct ValidationError {
 	pub details: String,
 }
 
-type Ledger8Sig = ledger_8::base_crypto_local::signatures::Signature;
-type Ledger8Db = ledger_8::ledger_storage_local::db::ParityDb;
-type Ledger8Bridge = ledger_8::Bridge<Ledger8Sig, Ledger8Db>;
-
-type Ledger7Sig = ledger_7::base_crypto_local::signatures::Signature;
-type Ledger7Db = ledger_7::ledger_storage_local::db::ParityDb;
-type Ledger7Bridge = ledger_7::Bridge<Ledger7Sig, Ledger7Db>;
-
-fn ledger_7_version() -> Vec<u8> {
-	Ledger7Bridge::get_version()
+macro_rules! to_validation_error {
+	($ver:ident) => {
+		|e: $ver::types::DetailedTransactionError| ValidationError {
+			reason: format!("{}", e.error),
+			error_code: e.error.into(),
+			details: e.details,
+		}
+	};
 }
 
-fn ledger_8_version() -> Vec<u8> {
-	Ledger8Bridge::get_version()
-}
-
+/// Validates `tx` against the ledger state at `state_key` without submitting it. Dispatches on the
+/// `StateKey`'s `ledger-state[vNN]` tag and picks the DB instantiation by `unified`, as in
+/// [`crate::ledger_stats`].
 pub fn validate_transaction_verbose(
-	runtime_ledger_version: &[u8],
+	unified: bool,
 	state_key: &[u8],
 	tx: &[u8],
 	block_context: latest::BlockContext,
 	runtime_version: u32,
 	max_weight: u64,
 ) -> Result<Hash, ValidationError> {
-	if runtime_ledger_version == ledger_8_version() {
-		Ledger8Bridge::validate_transaction_verbose(
-			state_key,
-			tx,
-			block_context,
-			runtime_version,
-			max_weight,
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(
+			ledger_9,
+			unified,
+			validate_transaction_verbose(state_key, tx, block_context, runtime_version, max_weight)
 		)
-		.map_err(|e| {
-			let reason = format!("{}", e.error);
-			let error_code: u8 = e.error.into();
-			ValidationError { error_code, reason, details: e.details }
-		})
-	} else if runtime_ledger_version == ledger_7_version() {
-		let l7_ctx = ledger_7::BlockContext {
-			tblock: block_context.tblock,
-			tblock_err: block_context.tblock_err,
-			parent_block_hash: block_context.parent_block_hash,
-		};
-		Ledger7Bridge::validate_transaction_verbose(
-			state_key,
-			tx,
-			l7_ctx,
-			runtime_version,
-			max_weight,
-		)
-		.map_err(|e| {
-			let reason = format!("{}", e.error);
-			let error_code: u8 = e.error.into();
-			ValidationError { error_code, reason, details: e.details }
-		})
-	} else {
-		Err(ValidationError {
+		.map_err(to_validation_error!(ledger_9)),
+		Some(13) => {
+			let block_context = ledger_8::BlockContext {
+				tblock: block_context.tblock,
+				tblock_err: block_context.tblock_err,
+				parent_block_hash: block_context.parent_block_hash,
+				last_block_time: block_context.last_block_time,
+			};
+			bridge_arena_call!(
+				ledger_8,
+				unified,
+				validate_transaction_verbose(
+					state_key,
+					tx,
+					block_context,
+					runtime_version,
+					max_weight
+				)
+			)
+			.map_err(to_validation_error!(ledger_8))
+		},
+		other => Err(ValidationError {
 			error_code: 151, // NoLedgerState
 			reason: "Unsupported ledger version".into(),
-			details: format!(
-				"Unsupported ledger version: {}",
-				String::from_utf8_lossy(runtime_ledger_version)
-			),
-		})
+			details: format!("unsupported ledger-state version {other:?} in StateKey"),
+		}),
 	}
 }

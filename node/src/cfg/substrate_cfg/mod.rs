@@ -56,12 +56,19 @@ impl SubstrateCfg {
 	// Ignore here - the large Result is inherited from Substrate
 	#[allow(clippy::result_large_err)]
 	pub fn into_run_cmd(self, safe_read_opts: &SafeReadOpts) -> sc_cli::Result<RunCmd> {
+		let run_cmd = RunCmd::parse_from(self.argv());
+		self.apply_overrides_to_run_cmd(run_cmd, safe_read_opts)
+	}
+
+	// Ignore here - the large Result is inherited from Substrate
+	#[allow(clippy::result_large_err)]
+	pub fn apply_overrides_to_run_cmd(
+		self,
+		mut run_cmd: RunCmd,
+		safe_read_opts: &SafeReadOpts,
+	) -> sc_cli::Result<RunCmd> {
 		let default_run_cmd = RunCmd::parse_from(&["midnight-node".to_string()]);
 
-		let argv: Vec<String> =
-			self.argv().into_iter().filter(|e| e != "--filter-deploy-txs").collect();
-
-		let mut run_cmd = RunCmd::parse_from(argv);
 		if run_cmd.shared_params.base_path.is_none() && self.base_path.is_some() {
 			run_cmd.shared_params.base_path = self.base_path.map(|p| p.into());
 		}

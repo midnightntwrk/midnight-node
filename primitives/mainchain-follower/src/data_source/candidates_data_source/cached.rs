@@ -40,6 +40,7 @@ pub struct CandidateDataSourceCached {
 		ArcMut<LruCache<AriadneParametersCacheKey, AriadneParameters>>,
 	get_candidates_for_epoch_cache:
 		ArcMut<LruCache<CandidatesCacheKey, Vec<CandidateRegistrations>>>,
+	get_epoch_nonce_for_epoch_cache: ArcMut<LruCache<McEpochNumber, Option<EpochNonce>>>,
 	security_parameter: u32,
 	highest_seen_stable_epoch: ArcMut<Option<McEpochNumber>>,
 }
@@ -82,7 +83,24 @@ impl AuthoritySelectionDataSource for CandidateDataSourceCached {
 		&self,
 		epoch: McEpochNumber,
 	) -> Result<Option<EpochNonce>, Box<dyn std::error::Error + Send + Sync>> {
-		self.inner.get_epoch_nonce(epoch).await
+		if let Ok(mut cache) = self.get_epoch_nonce_for_epoch_cache.lock()
+			&& let Some(resp) = cache.get(&epoch)
+		{
+			log::debug!("Serving cached epoch nonce for epoch: {:?}", epoch.0);
+			return Ok(resp.clone());
+		}
+
+		let response = self.inner.get_epoch_nonce(epoch).await?;
+		// Only cache a present nonce. A `None` here means the db-sync `epoch_param`
+		// row for this epoch hasn't been populated yet; caching it would pin the
+		// miss and keep serving `None` even after the row lands.
+		if response.is_some()
+			&& let Ok(mut cache) = self.get_epoch_nonce_for_epoch_cache.lock()
+		{
+			log::debug!("Caching epoch nonce for epoch: {:?}", epoch.0);
+			cache.put(epoch, response.clone());
+		}
+		Ok(response)
 	}
 
 	async fn data_epoch(
@@ -121,6 +139,9 @@ impl CandidateDataSourceCached {
 				candidates_for_epoch_cache_size.try_into().unwrap(),
 			))),
 			get_candidates_for_epoch_cache: Arc::new(Mutex::new(LruCache::new(
+				candidates_for_epoch_cache_size.try_into().unwrap(),
+			))),
+			get_epoch_nonce_for_epoch_cache: Arc::new(Mutex::new(LruCache::new(
 				candidates_for_epoch_cache_size.try_into().unwrap(),
 			))),
 			security_parameter,

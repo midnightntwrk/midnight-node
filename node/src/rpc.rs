@@ -44,6 +44,7 @@ use pallet_sidechain_rpc::*;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use time_source::TimeSource;
 
+use crate::ledger_stats_rpc::LedgerStatsApiServer;
 use pallet_midnight::MidnightRuntimeApi;
 use pallet_midnight_rpc::{Midnight, MidnightApiServer, ValidateRateLimitConfig};
 use pallet_system_parameters::SystemParametersApi;
@@ -116,6 +117,9 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub validate_rate_limit_config: ValidateRateLimitConfig,
 	/// Shared tracker for finality subscription limits.
 	pub subscription_tracker: SubscriptionTracker,
+	/// Whether the ledger arena uses the unified ParityDb layout. Selects the DB
+	/// instantiation `midnight_ledgerStats` reads the arena through.
+	pub ledger_unified: bool,
 }
 
 /// Instantiate all full RPC extensions.
@@ -128,6 +132,7 @@ where
 	C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static,
 	C: BlockBackend<Block>,
 	C: BlockchainEvents<Block>,
+	C: sc_client_api::StorageProvider<Block, B>,
 	C: Send + Sync + 'static,
 	C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
 	C::Api: BlockBuilder<Block>,
@@ -169,6 +174,7 @@ where
 		system_rpc_tx,
 		validate_rate_limit_config,
 		subscription_tracker,
+		ledger_unified,
 	} = deps;
 
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -245,7 +251,13 @@ where
 	));
 
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
-	module.merge(Midnight::new(client.clone(), validate_rate_limit_config).into_rpc())?;
+	module.merge(
+		Midnight::new(client.clone(), validate_rate_limit_config, ledger_unified).into_rpc(),
+	)?;
+	module.merge(
+		crate::ledger_stats_rpc::LedgerStatsRpc::<_, Block, B>::new(client.clone(), ledger_unified)
+			.into_rpc(),
+	)?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 
