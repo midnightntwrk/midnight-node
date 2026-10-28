@@ -1920,7 +1920,7 @@ async fn deregister_first_mapping() {
             replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed2,
+            seed: midnight_wallet_seed2.clone(),
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
@@ -1980,7 +1980,16 @@ async fn deregister_first_mapping() {
         MidnightClient::calculate_nonce(prefix3, cnight_utxo3.transaction.id, cnight_utxo3.index);
     tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce3);
 
-    //check utxo3 producing dust
+    midnight_client
+        .await_cnight_observations(
+            &[deregister_tx, tx_id3],
+            &ogmios_settings,
+            OBSERVATION_AWAIT_TIMEOUT,
+        )
+        .await
+        .expect("deregister + mint observations should arrive within timeout");
+
+    // With the first mapping gone, the second one is the only mapping and earns the DUST.
     let args3 = DustBalanceArgs {
         source: Source {
             src_files: None,
@@ -1995,7 +2004,7 @@ async fn deregister_first_mapping() {
             replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed.clone(),
+            seed: midnight_wallet_seed2.clone(),
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
@@ -2011,7 +2020,7 @@ async fn deregister_first_mapping() {
         balance = total;
     }
 
-    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+    assert!(matches!(result3, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
     // Wait for Midnight to produce additional blocks so dust can accrue.
     // Midnight block time is 6s; 12s ≈ 2 blocks, enough for the
@@ -2032,7 +2041,7 @@ async fn deregister_first_mapping() {
             replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed,
+            seed: midnight_wallet_seed2,
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
