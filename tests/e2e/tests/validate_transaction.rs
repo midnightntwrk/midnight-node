@@ -77,7 +77,6 @@ async fn validate_transaction_failure_carries_structured_details() {
     }
 }
 
-/// Two back-to-back validations of the same tx must trip the per-tx cooldown.
 #[e2e_test]
 async fn validate_transaction_per_tx_rate_limit_blocks_replay() {
     let settings = Settings::default();

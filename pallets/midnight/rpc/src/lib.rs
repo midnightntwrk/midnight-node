@@ -547,7 +547,6 @@ where
 			ErrorObject::owned(-32603, format!("Failed to get validation context: {e}"), None::<()>)
 		})?;
 
-		// Expensive native validation — dispatches on the state key's ledger version
 		match midnight_node_ledger::native_api::validate_transaction_verbose(
 			self.ledger_unified,
 			&ctx.state_key,
