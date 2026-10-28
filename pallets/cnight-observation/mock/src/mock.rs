@@ -158,6 +158,8 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type LedgerStateProvider = Midnight;
+	type LedgerBlockContextProvider = Midnight;
 	type WeightInfo = ();
 }
 

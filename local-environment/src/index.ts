@@ -11,21 +11,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { fullUpgrade } from "./commands/fullUpgrade";
+import { consensusUpgradeScheduleFlip } from "./commands/consensusUpgrade";
 import { verifyFinality } from "./commands/verifyFinality";
 import {
   RunOptions,
   ImageUpgradeOptions,
   FederatedRuntimeUpgradeOptions,
   FullUpgradeOptions,
+  GovernanceCallOptions,
 } from "./lib/types";
 
 const program = new Command();
+
+const NUM_VALIDATORS_DESCRIPTION =
+  "Number of mock validators to run in a well-known network fork (requires --from-snapshot)";
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new InvalidArgumentError("must be a positive integer");
+  }
+  return parsed;
+}
 
 // Local type for direct values received in Image Upgrade command
 interface ImageUpgradeCliOpts {
@@ -38,11 +51,13 @@ interface ImageUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   fromSnapshot?: string;
+  numValidators?: number;
   waitBefore?: number;
 }
 
 interface FederatedRuntimeUpgradeCliOpts {
-  wasm: string;
+  wasm?: string;
+  wasmFromImage?: string;
   rpcUrl?: string;
   councilUris: string[];
   technicalUris: string[];
@@ -51,7 +66,20 @@ interface FederatedRuntimeUpgradeCliOpts {
   envFile?: string[];
   skipRun?: boolean;
   fromSnapshot?: string;
+  numValidators?: number;
   allowSameVersion?: boolean;
+}
+
+interface ConsensusUpgradeCliOpts {
+  rpcUrl?: string;
+  councilUris: string[];
+  technicalUris: string[];
+  executorUri: string;
+  profiles?: string[];
+  envFile?: string[];
+  skipRun?: boolean;
+  fromSnapshot?: string;
+  numValidators?: number;
 }
 
 interface FullUpgradeCliOpts {
@@ -64,7 +92,8 @@ interface FullUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   // governance runtime upgrade surface
-  wasm: string;
+  wasm?: string;
+  wasmFromImage?: string;
   rpcUrl?: string;
   councilUris: string[];
   technicalUris: string[];
@@ -74,6 +103,7 @@ interface FullUpgradeCliOpts {
   profiles?: string[];
   envFile?: string[];
   fromSnapshot?: string;
+  numValidators?: number;
 }
 
 program
@@ -84,8 +114,21 @@ program
     "--from-snapshot <uri>",
     "http(s):// snapshot URI to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
   )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
+  )
+  .option(
+    "--from-genesis",
+    "Bring up the well-known network's base compose from block 0 instead of forking a snapshot. Requires the network's validator seeds and main-chain data-source env vars (see README).",
+  )
+  .option(
+    "--compose-override <path...>",
+    "Extra docker-compose override file(s) applied after the generated genesis override (from-genesis mode only), e.g. to point nodes at a mock main-chain follower for fully local runs.",
+  )
   .description(
-    "Bring up a forked well-known network from a snapshot using mock-authorities, reuse an existing local fork, or run the local-env target.",
+    "Bring up a forked well-known network from a snapshot using mock-authorities, reuse an existing local fork, start a well-known network from genesis, or run the local-env target.",
   )
   .action(async (network: string, options: RunOptions) => {
     await run(network, options);
@@ -124,6 +167,11 @@ program
     "--from-snapshot <uri>",
     "http(s):// snapshot URI to fork the network from before rolling the image",
   )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
+  )
   .description(
     "Gradually roll out a new docker image tag across services in the given network",
   )
@@ -142,6 +190,7 @@ program
       healthTimeoutSec: cliOpts.healthTimeout ?? 180,
       requireHealthy: cliOpts.requireHealthy !== false,
       fromSnapshot: cliOpts.fromSnapshot,
+      numValidators: cliOpts.numValidators,
     };
     await imageUpgrade(network, opts);
   });
@@ -211,7 +260,14 @@ program
 
 program
   .command("governance-runtime-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .option(
+    "--wasm <path>",
+    "Path to the runtime wasm blob, relative to local-environment/artifacts/",
+  )
+  .option(
+    "--wasm-from-image <image>",
+    "Take the runtime wasm from this node image instead of --wasm (node images ship it under /artifacts-<arch>/). Defaults to $NEW_NODE_IMAGE, else $NODE_IMAGE / $MIDNIGHT_NODE_IMAGE, when --wasm is omitted.",
+  )
   .requiredOption(
     "--council-uris <uri...>",
     "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
@@ -237,6 +293,11 @@ program
   .option(
     "--from-snapshot <uri>",
     "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+  )
+  .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
   )
   .option(
     "--allow-same-version",
@@ -269,11 +330,13 @@ program
 
     const opts: FederatedRuntimeUpgradeOptions = {
       wasmPath: cliOpts.wasm,
+      wasmFromImage: cliOpts.wasmFromImage,
       rpcUrl: cliOpts.rpcUrl,
       skipRun: cliOpts.skipRun,
       profiles,
       envFile: cliOpts.envFile,
       fromSnapshot: cliOpts.fromSnapshot,
+      numValidators: cliOpts.numValidators,
       councilUris,
       techCommitteeUris: techUris,
       motionExecutorUri: executorUri,
@@ -285,7 +348,14 @@ program
 
 program
   .command("full-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .option(
+    "--wasm <path>",
+    "Path to the runtime wasm blob, relative to local-environment/artifacts/",
+  )
+  .option(
+    "--wasm-from-image <image>",
+    "Take the runtime wasm from this node image instead of --wasm (node images ship it under /artifacts-<arch>/). Defaults to $NEW_NODE_IMAGE, else $NODE_IMAGE / $MIDNIGHT_NODE_IMAGE, when --wasm is omitted.",
+  )
   .requiredOption(
     "--council-uris <uri...>",
     "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
@@ -334,6 +404,11 @@ program
     "http(s):// snapshot URI to restore before phase 1. Required for the first bring-up of a well-known network.",
   )
   .option(
+    "--num-validators <count>",
+    NUM_VALIDATORS_DESCRIPTION,
+    parsePositiveInteger,
+  )
+  .option(
     "--allow-same-version",
     "Use system.authorizeUpgradeWithoutChecks in phase 2 so the upgrade is accepted even if the candidate wasm shares spec_version with the running runtime. Local-rehearsal escape hatch; do not use against production-shaped networks.",
   )
@@ -373,6 +448,7 @@ program
       requireHealthy: cliOpts.requireHealthy !== false,
       // runtime upgrade surface
       wasmPath: cliOpts.wasm,
+      wasmFromImage: cliOpts.wasmFromImage,
       rpcUrl: cliOpts.rpcUrl,
       councilUris,
       techCommitteeUris: techUris,
@@ -382,9 +458,104 @@ program
       profiles,
       envFile: cliOpts.envFile,
       fromSnapshot: cliOpts.fromSnapshot,
+      numValidators: cliOpts.numValidators,
     };
 
     await fullUpgrade(network, opts);
   });
+
+// The consensus-engine transition (schedule-flip) uses the same governance
+// surface as runtime upgrades: a federated-authority motion that dispatches a
+// fixed pallet-consensus-engine call as root.
+function parseGovernanceCallCliOpts(
+  cliOpts: ConsensusUpgradeCliOpts,
+): GovernanceCallOptions {
+  const profiles = cliOpts.profiles
+    ?.map((s: string) => s.trim())
+    .filter(Boolean);
+  const councilUris = (cliOpts.councilUris || [])
+    .map((uri: string) => uri.trim())
+    .filter(Boolean);
+  const techUris = (cliOpts.technicalUris || [])
+    .map((uri: string) => uri.trim())
+    .filter(Boolean);
+  const executorUri = cliOpts.executorUri?.trim();
+
+  if (!councilUris.length) {
+    throw new Error("At least one council URI is required.");
+  }
+  if (!techUris.length) {
+    throw new Error("At least one technical committee URI is required.");
+  }
+  if (!executorUri) {
+    throw new Error("executor-uri is required and cannot be empty");
+  }
+
+  return {
+    rpcUrl: cliOpts.rpcUrl,
+    skipRun: cliOpts.skipRun,
+    profiles,
+    envFile: cliOpts.envFile,
+    fromSnapshot: cliOpts.fromSnapshot,
+    numValidators: cliOpts.numValidators,
+    councilUris,
+    techCommitteeUris: techUris,
+    motionExecutorUri: executorUri,
+  };
+}
+
+function registerConsensusUpgradeCommand(
+  name: string,
+  description: string,
+  handler: (network: string, opts: GovernanceCallOptions) => Promise<void>,
+) {
+  program
+    .command(`${name} <network>`)
+    .requiredOption(
+      "--council-uris <uri...>",
+      "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
+    )
+    .requiredOption(
+      "--technical-uris <uri...>",
+      "Space-separated sr25519 URIs for technical committee proposers and voters (must meet the 2/3 threshold)",
+    )
+    .requiredOption(
+      "--executor-uri <uri>",
+      "Key URI used to close the federated motion and dispatch the consensus-engine call as root",
+    )
+    .option(
+      "--rpc-url <url>",
+      "WebSocket RPC endpoint (default ws://localhost:9944)",
+    )
+    .option(
+      "--skip-run",
+      "Do not ensure docker-compose is running before submitting the motion",
+    )
+    .option(
+      "-p, --profiles <profile...>",
+      "Docker Compose profiles to activate",
+    )
+    .option("--env-file <path...>", "specify one or more env files")
+    .option(
+      "--from-snapshot <uri>",
+      "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+    )
+    .option(
+      "--num-validators <count>",
+      NUM_VALIDATORS_DESCRIPTION,
+      parsePositiveInteger,
+    )
+    .description(description)
+    .action(async (network: string, cliOpts: ConsensusUpgradeCliOpts) => {
+      const opts = parseGovernanceCallCliOpts(cliOpts);
+      await handler(network, opts);
+    });
+}
+
+registerConsensusUpgradeCommand(
+  "consensus-upgrade-schedule-flip",
+  "Schedule the AURA-to-BABE consensus flip (pallet-consensus-engine schedule_flip) via a federated-authority motion",
+  consensusUpgradeScheduleFlip,
+);
 
 program.parse();
