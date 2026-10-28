@@ -160,8 +160,8 @@ MN_LEDGER_CACHE_DB="" midnight-node-toolkit generate-txs ...  # disable wallet c
 
 The cache directory is structured as:
 ```
-<root>/<chain_id_hex>/ledger/<block_height>.zstd   # ledger snapshots (~49MB each, zstd-compressed)
-<root>/<chain_id_hex>/wallets/<seed_hash_hex>.bin   # per-wallet state (5–15KB each)
+<root>/<chain_id_hex>/ledger/<block_height>.zstd   # ledger snapshots (zstd-compressed, ~40MB each)
+<root>/<chain_id_hex>/wallets/<seed_hash_hex>.bin   # per-wallet state (~60–100KB each)
 ```
 
 Ledger snapshots are shared across wallets; only one snapshot per block height is stored regardless of how many wallets are tracked. Unused snapshots are garbage-collected automatically after a grace period.

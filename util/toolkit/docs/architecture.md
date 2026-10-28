@@ -45,7 +45,7 @@ The toolkit is a transaction generator and testing tool for Midnight. It fetches
                        ▼  SourceTransactions
  ┌───────────────────────────────────────────┐       ┌──────────────────────────────────────┐
  │  Builder (tx_generator/builder/)          │       │  Ledger Wallet Cache                 │
- │  ForkAwareLedgerContext (Ledger7|Ledger8) │◄ ─── ►│  wallet_state_cache.rs               │
+ │  ForkAwareLedgerContext (Ledger8|Ledger9) │◄ ─── ►│  wallet_state_cache.rs               │
  │  Dual-compiled common/ builders           │       │  MN_LEDGER_CACHE_DB                  │
  │  Prover: Local | Remote (remote_prover.rs)│       │  Snapshots + per-wallet state        │
  └───────────────────────────────────────────┘       └──────────────────────────────────────┘
@@ -71,7 +71,7 @@ The toolkit is a transaction generator and testing tool for Midnight. It fetches
 | Fetcher | Indexer | Parallel block fetching, extraction, and caching with pluggable storage backends |
 | Builder | Wallet | Ledger context management, wallet state, proof generation |
 | toolkit_js | midnight-js | Thin wrapper around compact.js (which wraps the compact-runtime) via Node.js bridge; Deploy/Circuit/Maintain |
-| CLI | -- | Command dispatch with fork-aware subcommands (`commands/fork/ledger_7.rs`, `ledger_8.rs`) |
+| CLI | -- | Command dispatch with fork-aware subcommands (`commands/fork/ledger_8.rs`, `ledger_9.rs`, one module per ledger version) |
 | TxGenerator | -- | Source → Builder → Destination pipeline |
 
 ## Fetcher Pipeline
@@ -91,16 +91,16 @@ Wallet state is cached across runs via `wallet_state_cache.rs`.
 
 The toolkit must support multiple ledger versions which have incompatible type hierarchies -- different `Transaction`, `Wallet`, `LedgerState` types, etc. Rather than abstracting over them with generics (which would require a shared trait boundary that doesn't exist), the builder code is written once in `common/` and compiled twice with different type aliases.
 
-The `ledger-helpers` crate (`util/ledger-helpers/`) defines the transaction building primitives (wallet, ledger context, proof providers). It uses the same pattern -- `ledger_7` and `ledger_8` modules expose the same interface against different ledger versions.
+The `ledger-helpers` crate (`ledger/helpers/`) defines the transaction building primitives (wallet, ledger context, proof providers). It uses the same pattern -- `ledger_8` and `ledger_9` modules expose the same interface against different ledger versions.
 
-In the toolkit builders, `ledger_7.rs` and `ledger_8.rs` each re-root the `common/` directory as a module, aliasing the correct ledger version before the module declarations:
+In the toolkit builders, `ledger_8.rs` and `ledger_9.rs` (one file per supported ledger version) each re-root the `common/` directory as a module, aliasing the correct ledger version before the module declarations:
 
 ```
-  builders/ledger_7.rs                    builders/ledger_8.rs
+  builders/ledger_8.rs                    builders/ledger_9.rs
   ┌────────────────────────────────┐      ┌────────────────────────────────┐
   │ #[path = "common"]             │      │ #[path = "common"]             │
   │ pub mod inner {                │      │ pub mod inner {                │
-  │   use ...::ledger_7            │      │   use ...::ledger_8            │
+  │   use ...::ledger_8            │      │   use ...::ledger_9            │
   │     as ledger_helpers_local;   │      │     as ledger_helpers_local;   │
   │   mod batches;                 │      │   mod batches;                 │
   │   mod contract_deploy;         │      │   mod contract_deploy;         │
@@ -116,7 +116,9 @@ In the toolkit builders, `ledger_7.rs` and `ledger_8.rs` each re-root the `commo
 
 The same pattern is used in `commands/fork/` for fork-aware read-only commands.
 
-### Ledger 7 Limitations
+### Fork Transitions
 
-- **No Remote Prover** -- returns `BuilderConstructionError::RemoteProverNotSupportedForLedger7`
-- **Auto-transition** -- `update_from_block()` detects when a Ledger7 context receives a Ledger8 block and calls `next_fork()` → `fork_context_7_to_8()` to migrate state
+`replay_blocks()` (`tx_generator/builder/mod.rs`) splits fetched blocks by ledger version and replays each run against the matching `ForkAwareLedgerContext` variant. The state migrations live in `ledger/helpers/src/fork/` (e.g. `fork_context_8_to_9()`).
+
+- **No mixed Ledger 9 replay yet** -- a chain containing Ledger 9 blocks alongside earlier-version blocks trips an assertion in `replay_blocks()`
+- **Wallet cache is Ledger 9 only** -- snapshots and per-wallet state are saved only once the context is on Ledger 9
