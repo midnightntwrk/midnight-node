@@ -41,6 +41,8 @@ where
 pub struct InitialAuthorityData {
 	#[serde(rename = "aura_pub_key", deserialize_with = "from_hex")]
 	pub aura_pubkey: sp_core::sr25519::Public,
+	#[serde(rename = "babe_pub_key", deserialize_with = "from_hex")]
+	pub babe_pubkey: sp_core::sr25519::Public,
 	#[serde(rename = "grandpa_pub_key", deserialize_with = "from_hex")]
 	pub grandpa_pubkey: sp_core::ed25519::Public,
 	#[serde(rename = "sidechain_pub_key", deserialize_with = "from_hex")]
@@ -55,6 +57,9 @@ impl InitialAuthorityData {
 		let aura_pub_key = sp_core::sr25519::Pair::from_string(uri, None)
 			.expect("failed to generate aura keypair from uri")
 			.public();
+		let babe_pub_key = sp_core::sr25519::Pair::from_string(uri, None)
+			.expect("failed to generate babe keypair from uri")
+			.public();
 		let grandpa_pub_key = sp_core::ed25519::Pair::from_string(uri, None)
 			.expect("failed to generate grandpa keypair from uri")
 			.public();
@@ -64,6 +69,7 @@ impl InitialAuthorityData {
 
 		InitialAuthorityData {
 			aura_pubkey: aura_pub_key,
+			babe_pubkey: babe_pub_key,
 			grandpa_pubkey: grandpa_pub_key,
 			crosschain_pubkey: ecdsa_pub_key,
 			beefy_pubkey: ecdsa_pub_key,
@@ -130,6 +136,11 @@ pub struct PermissionedCandidatesConfig {
 pub struct C2MBridgeConfig {
 	pub initial_data_checkpoint: Option<String>,
 	pub subminimal_transfers_flush_threshold: u64,
+	/// Mainchain tx hashes (hex) to pre-approve at genesis, so bridge transfers made
+	/// before chain start are claimable without a governance round (e.g. the local-env
+	/// faucet seeding transfer).
+	#[serde(default)]
+	pub approved_txs: Vec<String>,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {

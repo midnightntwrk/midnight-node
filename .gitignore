@@ -98,3 +98,17 @@ util/toolkit-js/result.json
 
 # AGENTS.local.md - locally-defined rules for AI agents
 AGENTS.local.md
+
+# Local-only image bundle for +local-env-ci-localimg (docker save → load); never commit
+local-env-images.tar
+toolkit-image.tar
+
+# Scratch dir written by the feature-unification workflow's "Collect scope
+# inputs" step, then COPYed into the +check-feature-unification container
+.scope/
+
+# Generated compactc wrapper from `just compactc` (points into the nix store)
+.compact-home/
+
+# component-rn-draft working dir
+.rn-drafts/

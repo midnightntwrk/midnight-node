@@ -31,6 +31,7 @@ substrate-prometheus-endpoint = { workspace = true }
 derive-new = { workspace = true }
 lru = { workspace = true }
 sp-timestamp = { workspace = true, features = ["std"] }
+time-source = { workspace = true, features = ["mock"] }
 sidechain-mc-hash = { workspace = true, optional = true }
 pallet-sidechain-rpc = { workspace = true, optional = true }
 authority-selection-inherents = { workspace = true, features = [
@@ -48,7 +49,7 @@ pretty_assertions = { workspace = true }
 
 [features]
 default = []
-block-source = []
+block-source = ["sidechain-mc-hash"]
 candidate-source = ["authority-selection-inherents"]
 mc-hash = ["sidechain-mc-hash", "block-source"]
 sidechain-rpc = ["pallet-sidechain-rpc", "block-source"]

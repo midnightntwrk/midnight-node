@@ -242,13 +242,21 @@ mod committee_rotation_tests {
 			// rotate the committee
 			assert_eq!(rotate_committee(), Some(vec![ALICE.authority_id]));
 
-			// verify that the committee storage is set
+			// the rotated committee is queued (the session machinery applies it one session
+			// later), while the current committee is the previously queued one
 			assert_eq!(
-				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				SessionCommitteeManagement::queued_committee_storage().committee.clone(),
 				ids_and_keys_fn(&[ALICE])
 			);
-
-			// verify that the committee epoch is advanced
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().epoch,
+				current_epoch_number()
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			// the promoted committee's epoch is stamped with the epoch it starts serving in
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().epoch,
 				current_epoch_number()
@@ -256,14 +264,27 @@ mod committee_rotation_tests {
 
 			// verify that the next committee is not set
 			assert_eq!(SessionCommitteeManagement::next_committee(), None);
+
+			// the next rotation promotes the queued committee to the current one
+			set_validators_through_inherents(&[BOB]);
+			increment_epoch();
+			assert_eq!(rotate_committee(), Some(vec![BOB.authority_id]));
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().epoch,
+				current_epoch_number()
+			);
 		});
 	}
 
-	/// Test that in case of a stale committee (where one or more epochs have passed without blocks), the committee rotation
-	/// is able to recover by making each missed committee produce a block in their order (a session of length 1 that only
-	/// rotates the committee to the next one).
-	/// Note that currently this behaviour is more of an example than a real test, because the
-	/// source of the next committee is the ariadne_cdp that we can't mock yet.
+	/// After epochs without any block, the first rotation catches up in one step: the committee
+	/// that was due in a skipped epoch is queued stamped with the *current* epoch, the inherent
+	/// selects the following committee for the epoch after it, and no second rotation is asked
+	/// for in this epoch (a second BABE epoch change in one BABE epoch would be rejected by the
+	/// BABE client).
 	#[test]
 	fn test_recover_from_stale_committee() {
 		new_test_ext().execute_with(|| {
@@ -293,50 +314,64 @@ mod committee_rotation_tests {
 				ids_and_keys_fn(&[ALICE, BOB])
 			);
 
-			// Alice, which was the next committee, is still the next committee
+			// Alice, which was the next committee, is still the next committee, selected for an
+			// epoch that has already passed
 			assert_eq!(SessionCommitteeManagement::next_committee(), Some(authority_ids(&[ALICE])));
 			assert_eq!(
 				SessionCommitteeManagement::next_committee_storage().unwrap().epoch,
 				current_epoch - 2
 			);
 
-			// the first block after 3 epochs rotates to the next committee (Alice)
+			// the first block after 3 epochs rotates to the next committee (Alice), which is
+			// queued for application at the following session — stamped with the current epoch,
+			// not the one it was selected for, so the pipeline is caught up in this one rotation
 			assert_eq!(rotate_committee(), Some(vec![ALICE.authority_id]));
 			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE])
+			);
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, current_epoch);
+			// Alice and Bob, promoted from the queue, serve the current epoch and are stamped so
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().epoch,
-				current_epoch - 2
+				current_epoch
 			);
 
-			// in the second block the committee  rotates to Charlie
+			// the inherent now selects the committee for the *next* epoch, not for the skipped ones
+			assert_eq!(SessionCommitteeManagement::next_committee(), None);
+			assert_eq!(
+				SessionCommitteeManagement::get_next_unset_epoch_number(),
+				current_epoch + 1
+			);
 			set_validators_through_inherents(&[CHARLIE]);
 			assert_eq!(
 				SessionCommitteeManagement::next_committee_storage().unwrap().epoch,
-				current_epoch - 1
+				current_epoch + 1
 			);
+
+			// and no further rotation is due in this epoch
+			assert!(!<SessionCommitteeManagement as pallet_session::ShouldEndSession<u64>>::should_end_session(2));
+
+			// the next epoch rotates as usual: Alice serves, Charlie is queued
+			increment_epoch();
+			assert!(<SessionCommitteeManagement as pallet_session::ShouldEndSession<u64>>::should_end_session(3));
 			assert_eq!(rotate_committee(), Some(vec![CHARLIE.authority_id]));
 			assert_eq!(
-				SessionCommitteeManagement::current_committee_storage().epoch,
-				current_epoch - 1
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE])
 			);
-
-			// in the third block the committee rotates to Dave
-			set_validators_through_inherents(&[DAVE]);
-			assert_eq!(
-				SessionCommitteeManagement::next_committee_storage().unwrap().epoch,
-				current_epoch
-			);
-			assert_eq!(rotate_committee(), Some(vec![DAVE.authority_id]));
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().epoch,
-				current_epoch
+				current_epoch_number()
 			);
-
-			// in the fourth block the committee sets the next committee to Eve,
-			set_validators_through_inherents(&[EVE]);
-			// but because we are already caught up the rotation will happen at the end of the epoch
-
-			// verify that the next committee epoch is correct
-			assert_eq!(SessionCommitteeManagement::next_committee(), Some(authority_ids(&[EVE])));
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().epoch,
+				current_epoch_number()
+			);
 		});
 	}
 
@@ -371,37 +406,7 @@ mod committee_rotation_tests {
 	}
 }
 
-#[test]
-fn get_authority_round_robin_works() {
-	new_test_ext().execute_with(|| {
-		initialize_first_committee();
-		set_validators_through_inherents(&[BOB]);
-		increment_epoch();
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(0),
-			Some(ALICE.ids_and_keys())
-		);
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(1),
-			Some(BOB.ids_and_keys())
-		);
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(2),
-			Some(ALICE.ids_and_keys())
-		);
-		assert!(rotate_committee().is_some());
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(0),
-			Some(BOB.ids_and_keys())
-		);
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(1),
-			Some(BOB.ids_and_keys())
-		);
-	});
-}
-
-fn increment_epoch() {
+pub(crate) fn increment_epoch() {
 	mock_pallet::CurrentEpoch::<Test>::put(current_epoch_number() + 1);
 }
 
