@@ -36,7 +36,7 @@ fi
 
 if [[ -z "$NODE_IMAGE" ]]; then
     echo "Building container..."
-    earthly +node-image
+    earth +node-image
     NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:latest"
 fi
 
