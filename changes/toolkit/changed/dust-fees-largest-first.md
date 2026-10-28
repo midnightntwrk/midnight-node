@@ -8,3 +8,5 @@ the fee was drawn from dozens of small ones, and every extra spend raised the fe
 paid. The fee loop then gave up with `Could not balance TX`, although the wallet held far
 more DUST than the fee. Outputs are now spent largest first, so a single spend usually
 covers the fee.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2344
