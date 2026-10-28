@@ -98,7 +98,6 @@ where
 		sp_timestamp::InherentDataProvider,
 		McHashIDP,
 		AriadneIDP,
-		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
 		MidnightCNightObservationInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 		TokenBridgeInherentDataProvider<BridgeRecipient>,
@@ -154,13 +153,6 @@ where
 			log::warn!("Failed to create authority_selection inherent data for proposal: {e}");
 			e
 		})?;
-		/*
-		#[cfg(feature = "experimental")]
-		let block_beneficiary_provider = BlockBeneficiaryInherentProvider::<BeneficiaryId>::from_env(
-			"SIDECHAIN_BLOCK_BENEFICIARY",
-		)?;
-		 */
-
 		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
 			client.clone(),
 			cnight_observation_data_source.as_ref(),
@@ -202,8 +194,6 @@ where
 			timestamp,
 			mc_hash,
 			ariadne_data_provider,
-			//#[cfg(feature = "experimental")]
-			//block_beneficiary_provider,
 			cnight_observation,
 			federated_authority,
 			bridge,

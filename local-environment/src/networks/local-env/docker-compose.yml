@@ -5,7 +5,7 @@ services:
     # shared volume once at startup; using the multi-arch busybox image lets Docker
     # fetch the right arch automatically, so no per-arch binaries are vendored.
     container_name: busybox-init
-    image: busybox:1.35.0-uclibc
+    image: busybox:1.35.0-uclibc@sha256:e5877866756a3714cd11309f0b34e7c2c62406fdbfcae39c96beabb5dd4005a7
     platform: ${ARCHITECTURE}
     command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
     security_opt:
@@ -189,7 +189,7 @@ services:
       -c ssl=on
       -c ssl_cert_file=/etc/ssl/postgres/server.crt
       -c ssl_key_file=/etc/ssl/postgres/server.key
-      -c max_connections=120
+      -c max_connections=400
       -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -431,6 +431,7 @@ services:
       AURA_SEED_FILE: "/seeds/aura.seed"
       CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
       GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
+      BEEFY_SEED_FILE: "/seeds/beefy.seed"
       RPC_PORT: "9935"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:

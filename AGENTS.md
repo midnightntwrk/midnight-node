@@ -141,6 +141,22 @@ CFLAGS_wasm32_unknown_unknown = "-Wno-error=implicit-function-declaration"
 
 The symbols still resolve at link time from the real wasi/libc pulled in by the Substrate runtime build.
 
+## Gating Node Behaviour on the Runtime
+
+**Don't gate node behaviour on a hard-coded `spec_version`** (e.g. `if spec_version >= SOME_SPEC_VERSION`).
+That bakes in a guess about which release a change ships in, and a node that doesn't know about a
+newer behaviour silently runs the old one instead of failing.
+
+Gate on API versions instead:
+- **Node depends on new runtime behaviour:** bump the runtime API's `#[api_version(N)]` and branch on
+  `client.runtime_api().api_version::<dyn MyApi<Block>>(at)` (see `node/src/babe_authoring.rs`).
+- **Runtime depends on new node behaviour:** add a new `#[version(N)]` host function in the
+  `#[runtime_interface]` (see `ledger/src/host_api/`). A runtime that calls a version the node
+  binary lacks fails to instantiate. That is an explicit error, not silently wrong behaviour.
+
+Existing offenders (`DATA_ORDERED_UTXOS_SPEC_VERSION`, `ACTIVATION_SPEC_VERSION`) predate this
+rule. Don't copy them.
+
 ## When to Rebuild
 
 **Metadata** (use `/bot rebuild-metadata` on PR, or `earthly -P +rebuild-metadata`):
@@ -181,6 +197,8 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
   - Example: "Assisted-by: Claude:claude-4.7-opus"
 - When creating PRs, add the `bot:ai-assisted` label
   - Remove the deprecated `ai-assisted` label (without `bot:` prefix) if found
+
+**Comment pass before pushing:** Before every `git push`, run the comment-cleanup skill (`.claude/skills/comment-cleanup/SKILL.md`) over the unpushed commits.
 
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
