@@ -1,0 +1,6 @@
+{
+  "_comment": "Fields that toolkit releases older than the checkout still require in ledger-parameters-config.json, merged under res/local/ledger-parameters-config.json by generate-genesis.sh so one local-env can generate genesis with any pinned TOOLKIT_IMAGE. Values that exist in res/local win; these only fill gaps, and newer toolkits ignore what they no longer know. cost_model.parallelism_factor: required up to node-1.0.x, dropped afterwards.",
+  "cost_model": {
+    "parallelism_factor": 4
+  }
+}

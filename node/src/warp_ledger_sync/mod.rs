@@ -83,3 +83,21 @@ where
 		None => Ok(None),
 	}
 }
+
+#[cfg(test)]
+mod storage_key_tests {
+	use midnight_node_runtime::Runtime;
+
+	/// The key above is hand-built from pallet/item name strings, so a pallet rename is a
+	/// silent break: the server would stop finding `StateKey`, and — worse, because it fails
+	/// *open* — the dust-replay guard would stop firing with no compile error. Pin them to the
+	/// real runtime's derived keys.
+	#[test]
+	fn raw_storage_keys_match_the_runtime() {
+		assert_eq!(
+			super::state_key_storage_key().0,
+			pallet_midnight::StateKey::<Runtime>::hashed_key().to_vec(),
+			"pallet_midnight::StateKey moved; update state_key_storage_key()"
+		);
+	}
+}

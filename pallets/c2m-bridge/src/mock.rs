@@ -1,7 +1,20 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use frame_support::{construct_runtime, derive_impl, traits::ConstU32};
 use frame_system::EnsureRoot;
 use midnight_node_ledger::types::Hash;
-use midnight_primitives::MidnightSystemTransactionExecutor;
+use midnight_primitives::MidnightSystemTransactionBridgeExecutor;
 use sp_io::TestExternalities;
 use sp_runtime::{AccountId32, BuildStorage};
 
@@ -31,13 +44,26 @@ pub mod mock_pallet {
 	#[pallet::storage]
 	pub type TransfersCount<T: Config> = StorageValue<_, u8, ValueQuery>;
 
-	impl<T> MidnightSystemTransactionExecutor for Pallet<T> {
+	/// When set, the executor rejects every system transaction, simulating a ledger that
+	/// can't apply it (e.g. because the block is already full).
+	#[pallet::storage]
+	pub type ExecutorFails<T: Config> = StorageValue<_, bool, ValueQuery>;
+
+	impl<T> MidnightSystemTransactionBridgeExecutor for Pallet<T> {
 		fn execute_system_transaction(tx: Vec<u8>) -> Result<Hash, DispatchError> {
+			if ExecutorFails::<Test>::get() {
+				return Err(DispatchError::Other("ledger rejected the system transaction"));
+			}
 			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx.clone().try_into().unwrap();
 			Transfers::<Test>::append(bounded_vec);
 			let count = TransfersCount::<Test>::get();
 			TransfersCount::<Test>::put(count + 1);
 			Ok([count; 32])
+		}
+
+		fn is_block_limit_exceeded(_err: &DispatchError) -> bool {
+			// This mock records rather than applies, so it never fails at all.
+			false
 		}
 	}
 

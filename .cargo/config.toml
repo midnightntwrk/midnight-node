@@ -13,3 +13,10 @@ debug = 1
 
 [alias]
 test-e2e-local = "test --test e2e_tests --no-default-features --features local -- --test-threads=1 --nocapture"
+
+[env]
+# rustc 1.98.1 dropped `--allow-undefined` from the wasm32v1-none target spec's
+# pre-link-args. Substrate's `sp_io` declares host functions as bare `extern "C"`
+# blocks, relying on that flag to have lld emit them as wasm imports instead of
+# erroring on undefined symbols. Restore it for the runtime wasm build.
+WASM_BUILD_RUSTFLAGS = "-C link-arg=--allow-undefined"

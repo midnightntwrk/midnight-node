@@ -1,0 +1,45 @@
+[package]
+name = "midnight-ledger-unsafe-helpers"
+description = "Utilities for toolkit and tests. Do not use in node, especially consensus."
+version = "0.1.0"
+edition = "2024"
+license-file.workspace = true
+
+[dependencies]
+hex.workspace = true
+sha2.workspace = true
+
+midnight-node-ledger-helpers = { workspace = true }
+
+base-crypto = { workspace = true }
+midnight-serialize = { workspace = true }
+transient-crypto = { workspace = true }
+
+mn-ledger-8 = { workspace = true, features = ["proving"] }
+ledger-storage-ledger-8 = { workspace = true }
+
+mn-ledger-9 = { workspace = true, features = ["proving"] }
+
+# v8->v9 state translation table, used by the fork boundary (`fork::fork_8_to_9`).
+v8-to-v9-state-translation = { workspace = true }
+
+rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
+rayon.workspace = true
+log.workspace = true
+lazy_static.workspace = true
+itertools = { workspace = true, features = ["use_alloc"] }
+thiserror.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+bip32.workspace = true
+derive-where.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+bech32 = "0.11.0"
+
+[features]
+default = []
+erase-proof = []
+test-utils = []
+fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]

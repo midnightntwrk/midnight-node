@@ -11,12 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The Ledger crate provide host functions for the Node runtime
+//! The Ledger crate provides host functions for the Node runtime.
 //!
-//! We make use of module-parameterization here, an un-intentional feature of Rust
-//! See this example code: https://www.reddit.com/r/rust/comments/yrihwb/comment/ivuzmgt
-//!
-//! This means we can use the same code for two different versions of the ledger crate
+//! One module per ledger generation ([`ledger_8`], [`ledger_9`]), each a
+//! self-contained copy bound to its own ledger crates. The two directories
+//! deliberately duplicate each other: `diff -r src/ledger_8 src/ledger_9` shows
+//! exactly where the generations diverge, and an edit to one cannot leak into
+//! the other. Genuinely version-independent code lives in [`boundary`] (the
+//! SCALE types crossing the runtime/client interface) and is compiled once.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
@@ -29,116 +31,8 @@ mod utils;
 
 pub mod host_api;
 
-#[path = "versions"]
-pub mod ledger_7 {
-	#[cfg(feature = "std")]
-	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
-		ledger_storage as ledger_storage_local,
-		midnight_node_ledger_helpers::ledger_7 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger as mn_ledger_local,
-		onchain_runtime as onchain_runtime_local, transient_crypto as transient_crypto_local,
-		zswap as zswap_local,
-	};
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "block_context/pre_ledger_8.rs"]
-	mod block_context;
-	pub use block_context::*;
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "error_ext/ledger_7.rs"]
-	mod error_ext;
-
-	#[path = "system_tx/ledger_7.rs"]
-	mod system_tx;
-
-	#[path = "guaranteed_validation/ledger_7.rs"]
-	mod guaranteed_validation;
-
-	#[path = "post_block_update/ledger_7.rs"]
-	mod post_block_update;
-
-	pub const CRATE_NAME: &str = "mn-ledger";
-	#[cfg(feature = "std")]
-	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
-	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-}
-
-#[path = "versions"]
-pub mod ledger_8 {
-	#[cfg(feature = "std")]
-	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
-		ledger_storage_ledger_8 as ledger_storage_local,
-		midnight_node_ledger_helpers::ledger_8 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger_8 as mn_ledger_local,
-		onchain_runtime_ledger_8 as onchain_runtime_local,
-		transient_crypto as transient_crypto_local, zswap_ledger_8 as zswap_local,
-	};
-
-	#[path = "block_context/post_ledger_8.rs"]
-	mod block_context;
-	pub use block_context::*;
-
-	#[path = "error_ext/ledger_8.rs"]
-	mod error_ext;
-
-	#[path = "system_tx/ledger_8.rs"]
-	mod system_tx;
-
-	#[path = "guaranteed_validation/ledger_8.rs"]
-	mod guaranteed_validation;
-
-	#[path = "post_block_update/ledger_8.rs"]
-	mod post_block_update;
-
-	pub const CRATE_NAME: &str = "mn-ledger-8";
-	#[cfg(feature = "std")]
-	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
-	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-}
-
-#[path = "versions"]
-pub mod ledger_9 {
-	#[cfg(feature = "std")]
-	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
-		ledger_storage_ledger_8 as ledger_storage_local,
-		midnight_node_ledger_helpers::ledger_9 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
-		onchain_runtime_ledger_9 as onchain_runtime_local,
-		transient_crypto_ledger_9 as transient_crypto_local, zswap_ledger_9 as zswap_local,
-	};
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "block_context/post_ledger_8.rs"]
-	mod block_context;
-	pub use block_context::*;
-
-	#[path = "error_ext/ledger_9.rs"]
-	mod error_ext;
-
-	#[path = "system_tx/ledger_9.rs"]
-	mod system_tx;
-
-	#[path = "guaranteed_validation/ledger_9.rs"]
-	mod guaranteed_validation;
-
-	#[path = "post_block_update/ledger_9.rs"]
-	mod post_block_update;
-
-	pub const CRATE_NAME: &str = "mn-ledger-9";
-	#[cfg(feature = "std")]
-	pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
-	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-}
+pub mod ledger_8;
+pub mod ledger_9;
 
 pub use ledger_9 as latest;
 
@@ -149,15 +43,13 @@ pub use ledger_9 as latest;
 /// example after Tokio/node shutdown completes) to ensure DB-backed storage is
 /// released deterministically.
 pub fn drop_all_default_storage() {
-	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();
 	ledger_9::storage::drop_default_storage_if_exists();
 }
 
 /// Parse the `vNN` from a `ledger-state[vNN]` tag embedded in a tagged blob (a `StateKey` or a
 /// genesis_state). Used to dispatch warp serialize/import (and genesis-init) to the ledger module
-/// whose `LedgerState` serialization matches: **v5 → `ledger_7`, v13 → `ledger_8`,
-/// v16/v17/v18 → `ledger_9`**.
+/// whose `LedgerState` serialization matches: **v13 → `ledger_8`, v16/v17/v18 → `ledger_9`**.
 /// A warp-syncing node can target a chain governed by an *older* ledger version than this build's
 /// latest (e.g. a real devnet whose arena is still v13), so the version is read from the data, not
 /// assumed to be the tip's.
@@ -171,7 +63,7 @@ pub fn ledger_state_tag_version(tagged: &[u8]) -> Option<u32> {
 }
 
 /// Expand to the `(DbSeparate, DbUnified)`-parameterized call of a `Bridge` arena method on the given
-/// ledger version module (`ledger_7`/`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
+/// ledger version module (`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
 #[cfg(feature = "std")]
 macro_rules! bridge_arena_call {
 	($ver:ident, $unified:expr, $method:ident ( $($arg:expr),* )) => {{
@@ -207,7 +99,24 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 		},
 		Some(13) => bridge_arena_call!(ledger_8, unified, serialize_ledger_snapshot(state_key))
 			.map_err(|e| format!("{e:?}")),
-		Some(5) => bridge_arena_call!(ledger_7, unified, serialize_ledger_snapshot(state_key))
+		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
+	}
+}
+
+/// O(1) collection sizes held at the `LedgerState` root (`midnight_ledgerStats`): the unshielded
+/// UTXO set size, the zswap/DUST commitment and nullifier totals, and the contract count. Reads
+/// annotations maintained at each storage trie root rather than iterating, so the cost does not
+/// grow with the state.
+///
+/// `unified` selects the ParityDb instantiation and dispatch on the `StateKey`'s
+/// `ledger-state[vNN]` tag picks the ledger module, exactly as in [`serialize_ledger_snapshot`].
+/// Error rendered to `String` (the underlying `LedgerApiError` is version-specific).
+#[cfg(feature = "std")]
+pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStats, String> {
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(ledger_9, unified, ledger_stats(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, unified, ledger_stats(state_key))
 			.map_err(|e| format!("{e:?}")),
 		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
 	}
@@ -228,7 +137,6 @@ pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
 		},
 		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
-		Some(5) => bridge_arena_call!(ledger_7, unified, get_ledger_state_root(state_key)).is_ok(),
 		_ => false,
 	}
 }
@@ -295,13 +203,6 @@ pub fn import_verified_ledger_snapshot(
 		Some(13) => {
 			bridge_arena_call!(
 				ledger_8,
-				unified,
-				import_verified_ledger_snapshot(blob, expected_state_key)
-			)
-		},
-		Some(5) => {
-			bridge_arena_call!(
-				ledger_7,
 				unified,
 				import_verified_ledger_snapshot(blob, expected_state_key)
 			)
@@ -377,10 +278,10 @@ pub(crate) fn is_ledger_8_state_key(state_key: &[u8]) -> bool {
 	}
 }
 
-mod common;
+mod boundary;
 
 pub mod types {
-	pub use super::common::types::*;
+	pub use super::boundary::types::*;
 
 	pub use super::host_api::ledger_9::ledger_9_bridge as active_ledger_bridge;
 	pub use super::latest::types as active_version;
