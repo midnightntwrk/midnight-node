@@ -1,0 +1,11 @@
+[workspace]
+members = ["beefy", "program", "host"]
+resolver = "2"
+
+[patch.crates-io]
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.10.0" }
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.10.0" }
+
+[profile.release]
+debug = 0
+strip = "debuginfo"

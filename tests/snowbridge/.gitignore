@@ -1,0 +1,5 @@
+node_modules/
+contracts/broadcast/
+rust/target/
+__pycache__/
+sp1/target/

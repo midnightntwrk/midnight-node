@@ -59,6 +59,13 @@ pub trait MidnightSystemTransactionCNightExecutor {
 	fn is_block_limit_exceeded(err: &DispatchError) -> bool;
 }
 
+/// Dedicated capability for an authenticated Ethereum bridge deposit.
+pub trait MidnightSystemTransactionEthereumExecutor {
+	fn credit_ethereum_asset(
+		credit: midnight_node_ledger::ethereum_bridge::EthereumCredit,
+	) -> Result<Hash, DispatchError>;
+}
+
 /// Allows `pallet-c2m-bridge` to execute only the system transaction variants it
 /// is permitted to construct (`UnlockToTreasury`, `DistributeReserve`,
 /// `DistributeNight(ClaimKind::CardanoBridge, _)`).

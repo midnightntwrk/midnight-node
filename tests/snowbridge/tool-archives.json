@@ -1,0 +1,10 @@
+{
+  "compact": {
+    "file": "compact.zip",
+    "sha256": "ce458c4062f1a1dd2920591a0bb5ab657be02f4ab8422f2d76988773f60103c3"
+  },
+  "foundry": {
+    "file": "foundry.tar.gz",
+    "sha256": "d6bc05ee937b4308bded496068728c8ba140abe49dd7527f37e025bc335b91ec"
+  }
+}

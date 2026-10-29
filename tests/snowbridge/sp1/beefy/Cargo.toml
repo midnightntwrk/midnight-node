@@ -1,0 +1,14 @@
+[package]
+name = "midnight-beefy"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+parity-scale-codec = { version = "=3.7.5", default-features = false, features = ["derive"] }
+k256 = { version = "=0.13.4", default-features = false, features = ["ecdsa", "alloc"] }
+tiny-keccak = { version = "=2.0.2", features = ["keccak"] }
+
+[dev-dependencies]
+hex = "0.4"
+polkadot-ckb-merkle-mountain-range = "=0.8.2"

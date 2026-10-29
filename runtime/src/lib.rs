@@ -113,6 +113,8 @@ pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+#[cfg(feature = "ethereum-bridge-poc")]
+mod ethereum_bridge;
 /// Fork-transition support. Off by default; see the module docs before
 /// enabling -- a runtime built with this feature must never be released.
 #[cfg(feature = "fork-transition")]
@@ -539,7 +541,7 @@ parameter_types! {
 	///
 	/// Hence we expect `major` to be changed really rarely (think never).
 	/// See [`MmrLeafVersion`] type documentation for more details.
-	pub LeafVersion: MmrLeafVersion = MmrLeafVersion::new(0, 0);
+	pub LeafVersion: MmrLeafVersion = MmrLeafVersion::new(if cfg!(feature = "ethereum-bridge-poc") { 1 } else { 0 }, 0);
 }
 
 pub struct RawBeefyId;
@@ -551,9 +553,18 @@ impl Convert<BeefyId, Vec<u8>> for RawBeefyId {
 
 impl pallet_beefy_mmr::Config for Runtime {
 	type LeafVersion = LeafVersion;
+	#[cfg(not(feature = "ethereum-bridge-poc"))]
 	type BeefyAuthorityToMerkleLeaf = RawBeefyId;
+	#[cfg(feature = "ethereum-bridge-poc")]
+	type BeefyAuthorityToMerkleLeaf = pallet_beefy_mmr::BeefyEcdsaToEthereum;
+	#[cfg(not(feature = "ethereum-bridge-poc"))]
 	type LeafExtra = Vec<u8>;
+	#[cfg(not(feature = "ethereum-bridge-poc"))]
 	type BeefyDataProvider = ();
+	#[cfg(feature = "ethereum-bridge-poc")]
+	type LeafExtra = sp_core::H256;
+	#[cfg(feature = "ethereum-bridge-poc")]
+	type BeefyDataProvider = ethereum_bridge::BridgeCommitment;
 	type WeightInfo = weights::pallet_beefy_mmr::WeightInfo<Runtime>;
 }
 
@@ -1155,6 +1166,19 @@ mod runtime {
 
 	#[runtime::pallet_index(33)]
 	pub type C2MBridge = pallet_c2m_bridge::Pallet<Runtime>;
+
+	#[cfg(feature = "ethereum-bridge-poc")]
+	#[runtime::pallet_index(34)]
+	pub type EthereumBeaconClient = snowbridge_pallet_ethereum_client::Pallet<Runtime>;
+	#[cfg(feature = "ethereum-bridge-poc")]
+	#[runtime::pallet_index(35)]
+	pub type EthereumBridge = pallet_ethereum_bridge::Pallet<Runtime>;
+	#[cfg(feature = "ethereum-bridge-poc")]
+	#[runtime::pallet_index(36)]
+	pub type EthereumOutboundQueue = snowbridge_pallet_outbound_queue_v2::Pallet<Runtime>;
+	#[cfg(feature = "ethereum-bridge-poc")]
+	#[runtime::pallet_index(37)]
+	pub type EthereumMessageQueue = pallet_message_queue::Pallet<Runtime>;
 
 	// Governance
 	#[runtime::pallet_index(40)]

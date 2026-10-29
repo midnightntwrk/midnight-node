@@ -11,6 +11,14 @@ publish = false
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
+snowbridge-outbound-queue-primitives = { workspace = true, optional = true }
+snowbridge-pallet-outbound-queue-v2 = { workspace = true, optional = true }
+pallet-message-queue = { workspace = true, optional = true }
+bp-relayers = { workspace = true, optional = true }
+staging-xcm = { workspace = true, optional = true }
+pallet-ethereum-bridge = { workspace = true, optional = true }
+snowbridge-pallet-ethereum-client = { workspace = true, optional = true }
+snowbridge-beacon-primitives = { workspace = true, optional = true }
 log.workspace = true
 parity-scale-codec.workspace = true
 scale-info.workspace = true
@@ -103,6 +111,8 @@ serde.workspace = true
 substrate-wasm-builder = { workspace = true, optional = true, default-features = true }
 
 [features]
+# Disposable fresh-genesis bridge build; requires the explicit patched-ledger checkout.
+ethereum-bridge-poc = ["dep:snowbridge-outbound-queue-primitives", "dep:snowbridge-pallet-outbound-queue-v2", "dep:pallet-message-queue", "dep:bp-relayers", "dep:staging-xcm", "dep:pallet-ethereum-bridge", "dep:snowbridge-pallet-ethereum-client", "dep:snowbridge-beacon-primitives", "midnight-node-ledger/ethereum-bridge-poc", "pallet-midnight-system/ethereum-bridge-poc"]
 default = ["std"]
 
 # Relaxes block verification at exactly one block height so a node can sync a
@@ -117,6 +127,15 @@ default = ["std"]
 # build. Release builds reject it (`scripts/assert-no-fork-transition.sh`).
 fork-transition = []
 std = [
+    "pallet-ethereum-bridge?/std",
+    "snowbridge-outbound-queue-primitives?/std",
+    "snowbridge-pallet-outbound-queue-v2?/std",
+    "pallet-message-queue?/std",
+    "bp-relayers?/std",
+    "staging-xcm?/std",
+
+    "snowbridge-pallet-ethereum-client?/std",
+    "snowbridge-beacon-primitives?/std",
     "binary-merkle-tree/std",
     "authority-selection-inherents/std",
     "frame-try-runtime?/std",

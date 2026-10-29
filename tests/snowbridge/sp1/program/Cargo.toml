@@ -1,0 +1,9 @@
+[package]
+name = "midnight-sp1-guest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+midnight-beefy = { path = "../beefy" }
+parity-scale-codec = { version = "=3.7.5", default-features = false }
+sp1-zkvm = "=6.10.0"

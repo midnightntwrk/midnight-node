@@ -177,6 +177,7 @@ sp-keystore = { workspace = true, features = ["std"] }
 substrate-build-script-utils.workspace = true
 
 [features]
+ethereum-bridge-poc = ["midnight-node-runtime/ethereum-bridge-poc", "midnight-node-ledger/ethereum-bridge-poc"]
 default = []
 
 # Dependencies that are only required if runtime benchmarking should be build.

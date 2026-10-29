@@ -83,8 +83,35 @@ impl Contains<RuntimeCall> for FederatedMotionCalls {
 	}
 }
 
-/// Nothing but Governance calls are allowed
-type CallFilter = GovernanceAuthorityCallFilter;
+/// Signed bridge relays are available only in the disposable PoC runtime.
+/// Keep this separate from the governance filter used by safe mode: a bridge
+/// relay must not inherit governance's permission to bypass a traffic pause.
+pub struct SignedTransactionCallFilter;
+impl Contains<RuntimeCall> for SignedTransactionCallFilter {
+	fn contains(call: &RuntimeCall) -> bool {
+		if GovernanceAuthorityCallFilter::contains(call) {
+			return true;
+		}
+		#[cfg(feature = "ethereum-bridge-poc")]
+		if matches!(
+			call,
+			RuntimeCall::EthereumBeaconClient(
+				snowbridge_pallet_ethereum_client::Call::submit { .. }
+			) | RuntimeCall::EthereumBridge(
+				pallet_ethereum_bridge::Call::submit_deposit { .. }
+					| pallet_ethereum_bridge::Call::materialize_deposit { .. }
+					| pallet_ethereum_bridge::Call::export_redemption { .. }
+					| pallet_ethereum_bridge::Call::retry_redemption { .. }
+					| pallet_ethereum_bridge::Call::submit_redemption_receipt { .. }
+			)
+		) {
+			return true;
+		}
+		false
+	}
+}
+
+type CallFilter = SignedTransactionCallFilter;
 
 /// `TransactionExtension` that enforces the `CallFilter`` rules
 #[derive(Encode, Decode, Debug, DecodeWithMemTracking, Clone, Eq, PartialEq, TypeInfo)]
@@ -116,4 +143,53 @@ impl TransactionExtension<RuntimeCall> for CheckCallFilter {
 	}
 
 	impl_tx_ext_default!(RuntimeCall; weight prepare);
+}
+
+#[cfg(all(test, feature = "ethereum-bridge-poc"))]
+mod bridge_tests {
+	use super::*;
+	use sp_runtime::traits::TrailingZeroInput;
+
+	#[test]
+	fn bridge_relays_are_allowed_but_are_not_governance_or_root_calls() {
+		let relay =
+			RuntimeCall::EthereumBridge(pallet_ethereum_bridge::Call::materialize_deposit {
+				id: Default::default(),
+			});
+		assert!(SignedTransactionCallFilter::contains(&relay));
+		assert!(!GovernanceAuthorityCallFilter::contains(&relay));
+		let update =
+			RuntimeCall::EthereumBeaconClient(snowbridge_pallet_ethereum_client::Call::submit {
+				update: Decode::decode(&mut TrailingZeroInput::zeroes()).unwrap(),
+			});
+		assert!(SignedTransactionCallFilter::contains(&update));
+		assert!(!GovernanceAuthorityCallFilter::contains(&update));
+		let bootstrap = RuntimeCall::EthereumBeaconClient(
+			snowbridge_pallet_ethereum_client::Call::force_checkpoint {
+				update: Decode::decode(&mut TrailingZeroInput::zeroes()).unwrap(),
+			},
+		);
+		assert!(!SignedTransactionCallFilter::contains(&bootstrap));
+		let activation = RuntimeCall::EthereumBridge(pallet_ethereum_bridge::Call::activate {
+			config: Decode::decode(&mut TrailingZeroInput::zeroes()).unwrap(),
+		});
+		assert!(!SignedTransactionCallFilter::contains(&activation));
+		for relay in [
+			pallet_ethereum_bridge::Call::export_redemption { sequence: 0 },
+			pallet_ethereum_bridge::Call::retry_redemption { id: Default::default() },
+			pallet_ethereum_bridge::Call::submit_redemption_receipt {
+				event: Decode::decode(&mut TrailingZeroInput::zeroes()).unwrap(),
+			},
+		] {
+			let relay = RuntimeCall::EthereumBridge(relay);
+			assert!(SignedTransactionCallFilter::contains(&relay));
+			assert!(!GovernanceAuthorityCallFilter::contains(&relay));
+		}
+		let rewards = RuntimeCall::EthereumOutboundQueue(
+			snowbridge_pallet_outbound_queue_v2::Call::submit_delivery_receipt {
+				event: Decode::decode(&mut TrailingZeroInput::zeroes()).unwrap(),
+			},
+		);
+		assert!(!SignedTransactionCallFilter::contains(&rewards));
+	}
 }

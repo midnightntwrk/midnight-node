@@ -93,6 +93,10 @@ pub mod pallet {
 		SystemTransactionNotAllowedForCNight,
 		#[codec(index = 16)]
 		SystemTransactionNotAllowedForBridge,
+		/// Rejected by the dedicated Ethereum host capability.
+		#[cfg(feature = "ethereum-bridge-poc")]
+		#[codec(index = 17)]
+		SystemTransactionNotAllowedForEthereum,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -213,6 +217,20 @@ pub mod pallet {
 
 		fn is_block_limit_exceeded(err: &DispatchError) -> bool {
 			*err == Error::<T>::BlockLimitExceededError.into()
+		}
+	}
+
+	#[cfg(feature = "ethereum-bridge-poc")]
+	impl<T: Config> midnight_primitives::MidnightSystemTransactionEthereumExecutor for Pallet<T> {
+		fn credit_ethereum_asset(
+			credit: midnight_node_ledger::ethereum_bridge::EthereumCredit,
+		) -> Result<Hash, DispatchError> {
+			let tx = LedgerApi::create_ethereum_credit(credit).map_err(Error::<T>::from)?;
+			Self::apply_and_emit(
+				tx,
+				LedgerApi::apply_ethereum_system_transaction,
+				Error::<T>::SystemTransactionNotAllowedForEthereum,
+			)
 		}
 	}
 

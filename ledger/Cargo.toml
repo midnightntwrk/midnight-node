@@ -53,6 +53,8 @@ midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
 midnight-ledger-unsafe-helpers = { workspace = true }
 
 [features]
+# Requires the explicit patched-ledger build profile in tests/snowbridge.
+ethereum-bridge-poc = []
 default = [
     "std",
     "test-utils"

@@ -112,3 +112,11 @@ toolkit-image.tar
 
 # component-rn-draft working dir
 .rn-drafts/
+
+# Generated bridge review documents; editable sources and the renderer stay in Git.
+/deliverables/bridge-production/*.html
+/deliverables/bridge-production/*.json
+/deliverables/bridge-production/*.zip
+/deliverables/bridge-production/diagrams/
+/output/pdf/midnight-ethereum-bridge-*.pdf
+/tmp/pdfs/bridge-production/

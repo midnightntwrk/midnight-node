@@ -1,0 +1,373 @@
+diff --git a/contracts/src/BeefyClient.sol b/contracts/src/BeefyClient.sol
+index fd2307f..6292121 100644
+--- a/contracts/src/BeefyClient.sol
++++ b/contracts/src/BeefyClient.sol
+@@ -225,6 +225,7 @@ contract BeefyClient {
+     uint256 public immutable fiatShamirRequiredSignatures;
+ 
+     /* Errors */
++    error InteractivePathDisabled();
+     error InvalidBitfield();
+     error InvalidBitfieldLength();
+     error InvalidCommitment();
+@@ -250,7 +251,8 @@ contract BeefyClient {
+         ValidatorSet memory _initialValidatorSet,
+         ValidatorSet memory _nextValidatorSet
+     ) {
+-        if (_nextValidatorSet.id != _initialValidatorSet.id + 1) {
++        if (_nextValidatorSet.id != _initialValidatorSet.id + 1 ||
++            _initialValidatorSet.length == 0 || _nextValidatorSet.length == 0) {
+             revert("invalid-constructor-params");
+         }
+         randaoCommitDelay = _randaoCommitDelay;
+@@ -281,65 +283,7 @@ contract BeefyClient {
+         uint256[] calldata bitfield,
+         ValidatorProof calldata proof
+     ) external {
+-        if (commitment.blockNumber <= latestBeefyBlock) {
+-            revert StaleCommitment();
+-        }
+-
+-        ValidatorSetState storage vset = currentValidatorSet;
+-        uint16 signatureUsageCount;
+-        if (commitment.validatorSetID == currentValidatorSet.id) {
+-            signatureUsageCount = currentValidatorSet.usageCounters.get(proof.index);
+-            currentValidatorSet.usageCounters
+-                .set(proof.index, signatureUsageCount.saturatingAdd(1));
+-        } else if (commitment.validatorSetID == nextValidatorSet.id) {
+-            signatureUsageCount = nextValidatorSet.usageCounters.get(proof.index);
+-            nextValidatorSet.usageCounters.set(proof.index, signatureUsageCount.saturatingAdd(1));
+-            vset = nextValidatorSet;
+-        } else {
+-            revert InvalidCommitment();
+-        }
+-
+-        // Check if merkle proof is valid based on the validatorSetRoot and if proof is included in bitfield
+-        if (
+-            !isValidatorInSet(vset, proof.account, proof.index, proof.proof)
+-                || !Bitfield.isSet(bitfield, proof.index)
+-        ) {
+-            revert InvalidValidatorProof();
+-        }
+-
+-        // Check if validatorSignature is correct, ie. check if it matches
+-        // the signature of senderPublicKey on the commitmentHash
+-        bytes32 commitmentHash = keccak256(encodeCommitment(commitment));
+-        if (ECDSA.recover(commitmentHash, proof.v, proof.r, proof.s) != proof.account) {
+-            revert InvalidSignature();
+-        }
+-
+-        // For the initial submission, the supplied bitfield should claim that more than
+-        // two thirds of the validator set have sign the commitment
+-        if (
+-            bitfield.length != Bitfield.containerLength(vset.length)
+-                || Bitfield.countSetBits(bitfield, vset.length) < computeQuorum(vset.length)
+-        ) {
+-            revert InvalidBitfield();
+-        }
+-
+-        // Validate that all padding bits (beyond vset.length) are zero
+-        // This ensures the bitfield was created by createInitialBitfield or equivalent
+-        Bitfield.validatePadding(bitfield, vset.length);
+-
+-        tickets[createTicketID(msg.sender, commitmentHash)] = Ticket({
+-            blockNumber: uint64(block.number),
+-            validatorSetLen: uint32(vset.length),
+-            numRequiredSignatures: uint32(
+-                computeNumRequiredSignatures(
+-                    vset.length, signatureUsageCount, minNumRequiredSignatures
+-                )
+-            ),
+-            prevRandao: 0,
+-            bitfieldHash: keccak256(abi.encodePacked(bitfield))
+-        });
+-
+-        emit NewTicket(msg.sender, commitment.blockNumber);
++        revert InteractivePathDisabled();
+     }
+ 
+     /**
+@@ -347,31 +291,7 @@ contract BeefyClient {
+      * @param commitmentHash contains the commitmentHash signed by the validators
+      */
+     function commitPrevRandao(bytes32 commitmentHash) external {
+-        bytes32 ticketID = createTicketID(msg.sender, commitmentHash);
+-        Ticket storage ticket = tickets[ticketID];
+-
+-        if (ticket.blockNumber == 0) {
+-            revert InvalidTicket();
+-        }
+-
+-        if (ticket.prevRandao != 0) {
+-            revert PrevRandaoAlreadyCaptured();
+-        }
+-
+-        // relayer must wait `randaoCommitDelay` blocks
+-        if (block.number < ticket.blockNumber + randaoCommitDelay) {
+-            revert WaitPeriodNotOver();
+-        }
+-
+-        // relayer can capture within `randaoCommitExpiration` blocks
+-        if (block.number > ticket.blockNumber + randaoCommitDelay + randaoCommitExpiration) {
+-            delete tickets[ticketID];
+-            emit TicketExpired();
+-            return;
+-        }
+-
+-        // Post-merge, the difficulty opcode now returns PREVRANDAO
+-        ticket.prevRandao = block.prevrandao;
++        revert InteractivePathDisabled();
+     }
+ 
+     /**
+@@ -391,51 +311,7 @@ contract BeefyClient {
+         bytes32[] calldata leafProof,
+         uint256 leafProofOrder
+     ) external {
+-        bytes32 commitmentHash = keccak256(encodeCommitment(commitment));
+-        bytes32 ticketID = createTicketID(msg.sender, commitmentHash);
+-        validateTicket(ticketID, commitment, bitfield);
+-
+-        bool is_next_session = false;
+-        ValidatorSetState storage vset = currentValidatorSet;
+-        if (commitment.validatorSetID == nextValidatorSet.id) {
+-            is_next_session = true;
+-            vset = nextValidatorSet;
+-        } else if (commitment.validatorSetID != currentValidatorSet.id) {
+-            revert InvalidCommitment();
+-        }
+-
+-        // Validate that all padding bits (beyond vset.length) are zero
+-        // This ensures the bitfield was created by createInitialBitfield or equivalent
+-        Bitfield.validatePadding(bitfield, vset.length);
+-
+-        verifyCommitment(commitmentHash, ticketID, bitfield, vset, proofs);
+-
+-        bytes32 newMMRRoot = ensureProvidesMMRRoot(commitment);
+-
+-        if (is_next_session) {
+-            // The id for candidate nextValidatorSet should be greater than the current
+-            // nextValidatorSet id
+-            if (leaf.nextAuthoritySetID <= nextValidatorSet.id) {
+-                revert InvalidMMRLeaf();
+-            }
+-            bool leafIsValid = MMRProof.verifyLeafProof(
+-                newMMRRoot, keccak256(encodeMMRLeaf(leaf)), leafProof, leafProofOrder
+-            );
+-            if (!leafIsValid) {
+-                revert InvalidMMRLeafProof();
+-            }
+-            currentValidatorSet = nextValidatorSet;
+-            nextValidatorSet.id = leaf.nextAuthoritySetID;
+-            nextValidatorSet.length = leaf.nextAuthoritySetLen;
+-            nextValidatorSet.root = leaf.nextAuthoritySetRoot;
+-            nextValidatorSet.usageCounters = createUint16Array(leaf.nextAuthoritySetLen);
+-        }
+-
+-        latestMMRRoot = newMMRRoot;
+-        latestBeefyBlock = commitment.blockNumber;
+-        delete tickets[ticketID];
+-
+-        emit NewMMRRoot(newMMRRoot, commitment.blockNumber);
++        revert InteractivePathDisabled();
+     }
+ 
+     /**
+@@ -571,7 +447,7 @@ contract BeefyClient {
+         if (is_next_session) {
+             // The id for candidate nextValidatorSet should be greater than the current
+             // nextValidatorSet id
+-            if (leaf.nextAuthoritySetID <= nextValidatorSet.id) {
++            if (leaf.nextAuthoritySetID <= nextValidatorSet.id || leaf.nextAuthoritySetLen == 0) {
+                 revert InvalidMMRLeaf();
+             }
+             bool leafIsValid = MMRProof.verifyLeafProof(
+@@ -701,9 +577,7 @@ contract BeefyClient {
+         ValidatorSetState storage vset,
+         ValidatorProof[] calldata proofs
+     ) internal view {
+-        uint256 requiredSignatures = Math.min(
+-            fiatShamirRequiredSignatures, computeMaxRequiredSignatures(vset.length)
+-        );
++        uint256 requiredSignatures = computeQuorum(vset.length);
+         if (proofs.length != requiredSignatures) {
+             revert InvalidValidatorProofLength();
+         }
+@@ -768,7 +642,7 @@ contract BeefyClient {
+         bytes32 bitFieldHash = keccak256(abi.encodePacked(bitfield));
+         bytes32 fiatShamirHash = createFiatShamirHash(commitmentHash, bitFieldHash, vset);
+         uint256 requiredSignatures =
+-            Math.min(fiatShamirRequiredSignatures, computeMaxRequiredSignatures(vset.length));
++            computeQuorum(vset.length);
+         return
+             Bitfield.subsample(uint256(fiatShamirHash), bitfield, vset.length, requiredSignatures);
+     }
+@@ -781,6 +655,7 @@ contract BeefyClient {
+     {
+         for (uint256 i = 0; i < commitment.payload.length; i++) {
+             if (commitment.payload[i].payloadID == MMR_ROOT_ID) {
++                if (commitment.payload[i].data.length != 32) revert InvalidMMRRootLength();
+                 return bytes32(commitment.payload[i].data);
+             }
+         }
+diff --git a/contracts/src/Gateway.sol b/contracts/src/Gateway.sol
+index 7bed791..fbd5b26 100644
+--- a/contracts/src/Gateway.sol
++++ b/contracts/src/Gateway.sol
+@@ -141,101 +141,7 @@ contract Gateway is IGatewayBase, IGatewayV1, IGatewayV2, IInitializable, IUpgra
+         bytes32[] calldata leafProof,
+         Verification.Proof calldata headerProof
+     ) external nonreentrant {
+-        uint256 startGas = gasleft();
+-
+-        Channel storage channel = Functions.ensureChannel(message.channelID);
+-
+-        // Ensure this message is not being replayed
+-        if (message.nonce != channel.inboundNonce + 1) {
+-            revert IGatewayBase.InvalidNonce();
+-        }
+-
+-        // Increment nonce for origin.
+-        // This also prevents the re-entrancy case in which a malicious party tries to re-enter by
+-        // calling `submitInbound` again with the same (message, leafProof, headerProof) arguments.
+-        channel.inboundNonce++;
+-
+-        // Produce the commitment (message root) by applying the leaf proof to the message leaf
+-        bytes32 leafHash = keccak256(abi.encode(message));
+-        bytes32 commitment = MerkleProof.processProof(leafProof, leafHash);
+-
+-        // Verify that the commitment is included in a parachain header finalized by BEEFY.
+-        if (!_verifyCommitment(commitment, headerProof, false)) {
+-            revert IGatewayBase.InvalidProof();
+-        }
+-
+-        // Make sure relayers provide enough gas so that inner message dispatch
+-        // does not run out of gas.
+-        uint256 maxDispatchGas = message.maxDispatchGas;
+-        if (gasleft() * 63 / 64 < maxDispatchGas + DISPATCH_OVERHEAD_GAS_V1) {
+-            revert IGatewayBase.NotEnoughGas();
+-        }
+-
+-        bool success = true;
+-
+-        // Dispatch message to a handler
+-        if (message.command == CommandV1.AgentExecute) {
+-            try Gateway(this).v1_handleAgentExecute{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.SetOperatingMode) {
+-            try Gateway(this).v1_handleSetOperatingMode{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.Upgrade) {
+-            try Gateway(this).v1_handleUpgrade{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.SetTokenTransferFees) {
+-            try Gateway(this).v1_handleSetTokenTransferFees{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.SetPricingParameters) {
+-            try Gateway(this).v1_handleSetPricingParameters{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.UnlockNativeToken) {
+-            try Gateway(this).v1_handleUnlockNativeToken{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.RegisterForeignToken) {
+-            try Gateway(this).v1_handleRegisterForeignToken{gas: maxDispatchGas}(message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else if (message.command == CommandV1.MintForeignToken) {
+-            try Gateway(this)
+-            .v1_handleMintForeignToken{gas: maxDispatchGas}(message.channelID, message.params) {}
+-            catch {
+-                success = false;
+-            }
+-        } else {
+-            success = false;
+-        }
+-
+-        // Calculate a gas refund, capped to protect against huge spikes in `tx.gasprice`
+-        // that could drain funds unnecessarily. During these spikes, relayers should back off.
+-        uint256 gasUsed = v1_transactionBaseGas() + (startGas - gasleft());
+-        uint256 refund = gasUsed * Math.min(tx.gasprice, message.maxFeePerGas);
+-
+-        // Add the reward to the refund amount. If the sum is more than the funds available
+-        // in the gateway, then reduce the total amount
+-        uint256 amount = Math.min(refund + message.reward, address(this).balance);
+-
+-        // Do the payment if there are funds available in the gateway
+-        if (amount > Functions.dustThreshold()) {
+-            payable(msg.sender).safeNativeTransfer(amount);
+-        }
+-
+-        emit IGatewayV1.InboundMessageDispatched(
+-            message.channelID, message.nonce, message.id, success
+-        );
++        revert IGatewayV2.InvalidCommand();
+     }
+ 
+     function operatingMode()
+@@ -282,7 +188,7 @@ contract Gateway is IGatewayBase, IGatewayV1, IGatewayV2, IInitializable, IUpgra
+     }
+ 
+     function depositEther() external payable {
+-        emit Deposited(msg.sender, msg.value);
++        revert IGatewayV2.InvalidCommand();
+     }
+ 
+     function queryForeignTokenID(address token) external view returns (bytes32) {
+@@ -306,9 +212,7 @@ contract Gateway is IGatewayBase, IGatewayV1, IGatewayV2, IInitializable, IUpgra
+         uint128 destinationFee,
+         uint128 amount
+     ) external payable nonreentrant {
+-        CallsV1.sendToken(
+-            token, msg.sender, destinationChain, destinationAddress, destinationFee, amount
+-        );
++        revert IGatewayV2.InvalidCommand();
+     }
+ 
+     // @dev Get token address by tokenID
+@@ -404,6 +308,7 @@ contract Gateway is IGatewayBase, IGatewayV1, IGatewayV2, IInitializable, IUpgra
+         Verification.Proof calldata headerProof,
+         bytes32 rewardAddress
+     ) external nonreentrant {
++        require(message.commands.length == 1, IGatewayV2.InvalidCommand());
+         CoreStorage.Layout storage $ = CoreStorage.layout();
+ 
+         if ($.inboundNonce.get(message.nonce)) {
+@@ -450,7 +355,7 @@ contract Gateway is IGatewayBase, IGatewayV1, IGatewayV2, IInitializable, IUpgra
+         bytes calldata claimer,
+         uint128 executionFee,
+         uint128 relayerFee
+-    ) external payable nonreentrant {
++    ) external payable virtual nonreentrant {
+         CallsV2.sendMessage(xcm, assets, claimer, executionFee, relayerFee);
+     }
+ 
+@@ -460,14 +365,14 @@ contract Gateway is IGatewayBase, IGatewayV1, IGatewayV2, IInitializable, IUpgra
+         uint8 network,
+         uint128 executionFee,
+         uint128 relayerFee
+-    ) external payable nonreentrant {
++    ) external payable virtual nonreentrant {
+         require(network == uint8(Network.Polkadot), IGatewayV2.InvalidNetwork());
+         CallsV2.registerToken(token, Network(network), executionFee, relayerFee);
+     }
+ 
+     // See docs for `IGateway.v2_createAgent`
+     function v2_createAgent(bytes32 id) external {
+-        CallsV2.createAgent(id);
++        revert IGatewayV2.InvalidCommand();
+     }
+ 
+     // Dispatch all the commands within the batch of commands in the message payload. Each command is processed

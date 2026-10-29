@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "pallets/ethereum-bridge",
     "ledger",
     "ledger/helpers",
     "ledger/helpers/unsafe",
@@ -124,6 +125,16 @@ midnight-storage-core = { version = "1.2.0", features = ["layout-v2", "gc-v1"] }
 midnight-serialize = { version = "=1.2.0", package = "midnight-serialize" }
 
 # Midnight local dependencies
+snowbridge-pallet-ethereum-client-fixtures = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+snowbridge-pallet-ethereum-client = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+snowbridge-beacon-primitives = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+snowbridge-inbound-queue-primitives = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+snowbridge-outbound-queue-primitives = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+snowbridge-pallet-outbound-queue-v2 = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+pallet-message-queue = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+bp-relayers = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+staging-xcm = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
+pallet-ethereum-bridge = { path = "pallets/ethereum-bridge", default-features = false }
 midnight-node-ledger = { path = "ledger", default-features = false }
 midnight-node-metadata = { path = "metadata", default-features = false }
 midnight-node-ledger-helpers = { path = "ledger/helpers", default-features = false }

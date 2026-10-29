@@ -1,0 +1,185 @@
+{
+  "adaptedNativeAccepted": [
+    {
+      "block": 261,
+      "file": "beefy-261.scale",
+      "mmrRoot": "0xe933581bfa1b1a9e3d399a5d4273d689ecef6cd41ad4eaff6135d91ac8feffa9",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 269,
+      "file": "beefy-269.scale",
+      "mmrRoot": "0xfa2e65424f2e48dfc532bcab7765997ccd4e8a0e77e7d6acb1113b841a8dd75d",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 277,
+      "file": "beefy-277.scale",
+      "mmrRoot": "0x570392962cb32fd721f98da138b368253eed72bdac995ea1eb76e2fb619f8ff1",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 285,
+      "file": "beefy-285.scale",
+      "mmrRoot": "0xac3ecb565d75e32add7224e0df2b936dd79204770661033f8108c54556b9f25b",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 293,
+      "file": "beefy-293.scale",
+      "mmrRoot": "0x96f24872baa15ff39b9a449403ebbb127b89ee0a2d44b83521bfcc96e146198a",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 301,
+      "file": "beefy-301.scale",
+      "mmrRoot": "0xa5dfaf661a644546b77e921c53c052a484bdb8fc2ad7b395c99727d14fc74f53",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 309,
+      "file": "beefy-309.scale",
+      "mmrRoot": "0x4899b0e9fd2a4c8921d1a46deb786a57760118bd05fadd555a0f14668743080a",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 317,
+      "file": "beefy-317.scale",
+      "mmrRoot": "0xe43fe7a30320f22c497ce29316b5654e0aaba3b06da8bceec80a95e199d83030",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 325,
+      "file": "beefy-325.scale",
+      "mmrRoot": "0x8a72c84c44a79bc60cb8966897f7877c0effedb7cab7d2988237997be7d49640",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 333,
+      "file": "beefy-333.scale",
+      "mmrRoot": "0xe3ad9217baf5e28718240020dfb47d9ba17d9a0147b184cef2884895177983db",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 341,
+      "file": "beefy-341.scale",
+      "mmrRoot": "0x3b2f820eefac9d7687bd7a60ff02b7dc8bb7ba102e3a56ea0bb3739280458c92",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 349,
+      "file": "beefy-349.scale",
+      "mmrRoot": "0xaf1fe2d46a7ba3d4f8210917ef2e37d31f8c6fbec59e10a7648e7e6a59db7917",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 357,
+      "file": "beefy-357.scale",
+      "mmrRoot": "0xbb98c90962c2de0e5fbd69d091d88cc9a4b740be58532cd5ba68c927e9cecd2c",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 365,
+      "file": "beefy-365.scale",
+      "mmrRoot": "0x00b95bb0abcec11b10407c54e398bfdba9e37ba34fe25478f685795a321505f8",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 373,
+      "file": "beefy-373.scale",
+      "mmrRoot": "0x5663261e55c2cc9070e24c2c91639459317ce6b4a1df9af2f39b4723dc086202",
+      "publicValuesBytes": 225,
+      "setId": 1,
+      "signatures": 1
+    },
+    {
+      "block": 377,
+      "file": "beefy-377.scale",
+      "mmrRoot": "0x76b3c27edb278e5bbc1fc1c94a5724f76d3c645907858a5d2d2e66cc327d8ad5",
+      "publicValuesBytes": 225,
+      "setId": 2,
+      "signatures": 1
+    },
+    {
+      "block": 385,
+      "file": "beefy-385.scale",
+      "mmrRoot": "0x8a427b71bc757b2a287a63a55f72e6d7d5207d932b3792ccc218b17dd91ec135",
+      "publicValuesBytes": 225,
+      "setId": 2,
+      "signatures": 1
+    },
+    {
+      "block": 393,
+      "file": "beefy-393.scale",
+      "mmrRoot": "0xce12fa9f249b0a8b20282b80cd9c6deccbbea23db972890bc71bb8cf03b3255a",
+      "publicValuesBytes": 225,
+      "setId": 2,
+      "signatures": 1
+    },
+    {
+      "block": 401,
+      "file": "beefy-401.scale",
+      "mmrRoot": "0x9d59b9696874a7a431a67e3670dfc72e9107626712a93db9dcfc2fb4c423e64b",
+      "publicValuesBytes": 225,
+      "setId": 2,
+      "signatures": 1
+    },
+    {
+      "block": 409,
+      "file": "beefy-409.scale",
+      "mmrRoot": "0x825ffc4d4cf5d549dc4fae931679ff11dd2845aefc26be5c087fedfc84017cd0",
+      "publicValuesBytes": 225,
+      "setId": 2,
+      "signatures": 1
+    },
+    {
+      "block": 417,
+      "file": "beefy-417.scale",
+      "mmrRoot": "0xa3a90438370d1540e804f694af05f3fb76bcd24fc9bce3d9b0749c94bb147eb8",
+      "publicValuesBytes": 225,
+      "setId": 2,
+      "signatures": 1
+    }
+  ],
+  "bothEthereumReleaseRootsMatched": true,
+  "evmSp1VerificationTested": false,
+  "negativeChecks": 84,
+  "originalFailure": "current authority commitment mismatch",
+  "originalVerifierRejected": 21,
+  "profile": "PoC Ethereum address || u64 stake; explicitly selected, no witness-controlled fallback",
+  "realSp1ProofGenerated": false,
+  "sourceRun": "artifacts/snowbridge/ethereum-pos/run-fllxkhdn",
+  "trustAnchor": "saved live genesis + current/next Ethereum authority roots; keys matched; fixed stake=1 per source runtime",
+  "exampleRevision": "e64f7f285545fe15fa94b80853ed374d9595d878",
+  "sourceSha256": "1ee0f20b39c13b82e93df1ece313b798e9e85def6b34034bedf7d0e5ca6cb393",
+  "adaptedSourceSha256": "aa883be605c350f41af906c753ad2f7f582d83160ab317994c47efb9d8a5429c",
+  "lockSha256": "b84b338b0a80e132e4ab25487d58754d3436e2a748c056a8aec417fe4be8245c"
+}

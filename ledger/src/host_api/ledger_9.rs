@@ -105,6 +105,71 @@ macro_rules! serve_pre_migration_v8_read {
 
 #[runtime_interface]
 pub trait Ledger9Bridge {
+	fn validate_bridge_escrow(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		config: PassFatPointerAndDecode<crate::ethereum_bridge::EscrowConfig>,
+	) -> AllocateAndReturnByCodec<Result<(), crate::ethereum_bridge::EscrowError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::validate_bridge_escrow(state_key, config)
+		} else {
+			Bridge::<Signature, DbSeparate>::validate_bridge_escrow(state_key, config)
+		}
+	}
+
+	#[cfg(feature = "ethereum-bridge-poc")]
+	fn create_ethereum_credit(
+		&mut self,
+		credit: PassFatPointerAndDecode<crate::ethereum_bridge::EthereumCredit>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::create_ethereum_credit(credit)
+		} else {
+			Bridge::<Signature, DbSeparate>::create_ethereum_credit(credit)
+		}
+	}
+
+	#[cfg(feature = "ethereum-bridge-poc")]
+	fn apply_ethereum_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_ethereum_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_ethereum_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	/// V1 of the fixed compiler-0.34 escrow reader. Older nodes lack this host import.
+	fn get_bridge_redemption(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		config: PassFatPointerAndDecode<crate::ethereum_bridge::EscrowConfig>,
+		sequence: u64,
+	) -> AllocateAndReturnByCodec<
+		Result<crate::ethereum_bridge::Redemption, crate::ethereum_bridge::EscrowError>,
+	> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_bridge_redemption(state_key, config, sequence)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_bridge_redemption(state_key, config, sequence)
+		}
+	}
+
 	fn set_default_storage(&mut self) {
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self)

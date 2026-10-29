@@ -37,6 +37,8 @@ mod block_context;
 pub use block_context::*;
 
 mod error_ext;
+#[cfg(feature = "std")]
+pub mod ethereum_bridge;
 mod guaranteed_validation;
 mod post_block_update;
 mod system_tx;
@@ -1481,6 +1483,8 @@ fn is_system_transaction(bytes: &[u8]) -> bool {
 #[cfg(feature = "std")]
 fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiError> {
 	match tx {
+		#[cfg(feature = "ethereum-bridge-poc")]
+		SystemTransaction::CreditEthereumAsset { .. } => Ok("credit_ethereum_asset"),
 		SystemTransaction::OverwriteParameters(_) => Ok("overwrite_parameters"),
 		SystemTransaction::DistributeNight(claim_kind, _) => match claim_kind {
 			ClaimKind::Reward => Ok("distribute_night_reward"),

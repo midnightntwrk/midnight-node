@@ -1,0 +1,66 @@
+{
+  "profile": "historical-local-poc-publication-snapshot",
+  "preparedOn": "2026-10-29",
+  "nodeBaseRevision": "5b9e6724ad0abc1570d43b66b7d568ee4511faf6",
+  "sourceScope": "Recorded runs used the base revision plus then-uncommitted bridge implementation; these reports do not attest a new commit or a new live run.",
+  "files": [
+    {
+      "path": "run-mjrg6180.validation.json",
+      "recordedRunDate": "2026-10-26",
+      "originalArtifact": "artifacts/snowbridge/ethereum-pos/run-mjrg6180/validation.json",
+      "originalSha256": "5b372349bae43829225cefcc7fcac680fba7d71de47bca70277b53c706b61eab",
+      "sha256": "5b372349bae43829225cefcc7fcac680fba7d71de47bca70277b53c706b61eab",
+      "rawEvidenceBase": "artifacts/snowbridge/ethereum-pos/run-mjrg6180",
+      "verifiedRawEvidenceFiles": 197,
+      "sanitizedFields": []
+    },
+    {
+      "path": "run-oiulvrxd.validation.json",
+      "recordedRunDate": "2026-10-25",
+      "originalArtifact": "artifacts/snowbridge/ethereum-pos/run-oiulvrxd/validation.json",
+      "originalSha256": "eb35fcdfccb5c70a9873272c1499bf8f2255a33bd0448c8bf6d7e5daadb2a8cd",
+      "sha256": "eb35fcdfccb5c70a9873272c1499bf8f2255a33bd0448c8bf6d7e5daadb2a8cd",
+      "rawEvidenceBase": "artifacts/snowbridge/ethereum-pos/run-oiulvrxd",
+      "verifiedRawEvidenceFiles": 145,
+      "sanitizedFields": []
+    },
+    {
+      "path": "run-fllxkhdn.validation.json",
+      "recordedRunDate": "2026-10-23",
+      "originalArtifact": "artifacts/snowbridge/ethereum-pos/run-fllxkhdn/validation.json",
+      "originalSha256": "bc3e7010f8f98f297bc18d8e5f742404d98390b11018947f6af547213a1a2e03",
+      "sha256": "bc3e7010f8f98f297bc18d8e5f742404d98390b11018947f6af547213a1a2e03",
+      "rawEvidenceBase": "artifacts/snowbridge/ethereum-pos/run-fllxkhdn",
+      "verifiedRawEvidenceFiles": 65,
+      "sanitizedFields": []
+    },
+    {
+      "path": "committee-boundary-validation.json",
+      "originalArtifact": "artifacts/snowbridge/committee-boundary-validation.json",
+      "originalSha256": "895aaf03a63baf7f7324aa8acf1f0280829d5247a26a69d60688ac724fbfc55a",
+      "sha256": "895aaf03a63baf7f7324aa8acf1f0280829d5247a26a69d60688ac724fbfc55a",
+      "sanitizedFields": []
+    },
+    {
+      "path": "native-compatibility.json",
+      "originalArtifact": "artifacts/snowbridge/sp1-feasibility/native-compatibility.json",
+      "originalSha256": "a3af7321addb72dc361b5bfd578956e4ac46d94b9bb46d1ee92dd72f49197b70",
+      "sha256": "a854855a8a52d1f8a2d6aafdf35eecbae10788caf85c9c83930ad163cf2da5ad",
+      "sanitizedFields": [
+        "sourceRun: absolute path replaced with repository-relative path"
+      ]
+    },
+    {
+      "path": "../fixtures/sp1-committee-boundary-proof.json",
+      "originalArtifact": "artifacts/snowbridge/committee-boundary-proof/proof.json",
+      "sha256": "a86b7f960aaed2d0755c6a05e7743647f5437a7f45ec40c74f3ea11f145bfde1",
+      "sanitizedFields": []
+    },
+    {
+      "path": "../fixtures/sp1-committee-boundary-initial.scale",
+      "originalArtifact": "artifacts/snowbridge/ethereum-pos/run-6j0ve_3d/sp1-initial.scale",
+      "sha256": "ef5dc96bf4001b6d21f33b5364b0c459a3db64663a81ed00274424fade77b24c",
+      "sanitizedFields": []
+    }
+  ]
+}

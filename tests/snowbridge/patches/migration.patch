@@ -1,0 +1,12 @@
+diff --git a/v8-to-v9-state-translation/src/lib.rs b/v8-to-v9-state-translation/src/lib.rs
+index ec207d50..6f9081e5 100644
+--- a/v8-to-v9-state-translation/src/lib.rs
++++ b/v8-to-v9-state-translation/src/lib.rs
+@@ -321,6 +321,7 @@ impl<D: DB>
+         };
+ 
+         Ok(Some(ledger_v9::structure::LedgerState {
++            ethereum_deposits: Map::new(),
+             network_id: source.network_id.clone(),
+             parameters: parameters.force_downcast(),
+             locked_pool: source.locked_pool,

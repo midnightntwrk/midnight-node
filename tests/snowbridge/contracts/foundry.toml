@@ -1,0 +1,25 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "../../../artifacts/snowbridge/solidity-out"
+cache_path = "../../../artifacts/snowbridge/solidity-cache"
+solc_version = "0.8.34"
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 20000
+via_ir = true
+gas_limit = 30000000
+allow_paths = ["../../../artifacts/snowbridge/sp1-contracts/contracts", "../../../artifacts/snowbridge/upstream/contracts"]
+libs = ["../../../artifacts/snowbridge/upstream/contracts/lib"]
+remappings = [
+  "sp1-contracts/=../../../artifacts/snowbridge/sp1-contracts/contracts/src/",
+  "snowbridge/=../../../artifacts/snowbridge/upstream/contracts/src/",
+  "forge-std/=../../../artifacts/snowbridge/upstream/contracts/lib/forge-std/src/",
+  "openzeppelin/=../../../artifacts/snowbridge/upstream/contracts/lib/openzeppelin-contracts/contracts/",
+  "prb/math/=../../../artifacts/snowbridge/upstream/contracts/lib/prb-math/"
+]
+fs_permissions = [
+  { access = "read-write", path = "../../../artifacts/snowbridge" },
+  { access = "read", path = "../fixtures" }
+]

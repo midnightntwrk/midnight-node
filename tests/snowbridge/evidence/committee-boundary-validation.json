@@ -1,0 +1,29 @@
+{
+  "realGroth16": true,
+  "evmVerified": true,
+  "fullBridgeE2E": false,
+  "committeeStateVerified": true,
+  "deferredBoundary": 176,
+  "verifiedBlocks": [
+    184,
+    256
+  ],
+  "provingSeconds": 232.299531875,
+  "programVKey": "0x00b14d8d06202aa774f702bdd5ea82d64da5effb5dfee74a9cff01886f24fc66",
+  "elfSha256": "c2c00e9bda3555dc4b44f6e5a3d6b5a774dcb5ae78c9a50dbe1d8785f1bebc4f",
+  "sha256": {
+    "committee-boundary-proof/input.scale": "017a8e2773e1b2f4b6830c0e96bcba511bb0052a3bd4a4c1782722730b244bc6",
+    "committee-boundary-proof/proof.json": "a86b7f960aaed2d0755c6a05e7743647f5437a7f45ec40c74f3ea11f145bfde1",
+    "committee-boundary-proof/proof.bin": "07daecae9646493f7356e17c6c9b44d4fc6d9bf8613526d31ba785b9de7da8ac",
+    "committee-boundary-proof/checkpoint.scale": "0858a0c7b9ea0a2827910e2115f15772ae3b5fc72904148e8ea28935009d45ef",
+    "committee-boundary-evm.log": "65ed99f16a65a46d14e9e881b9fbc256c8319734c3805c8b89014eda27e9e230",
+    "committee-boundary-selection.json": "bd4e9ea4a7a3701264ccbdadd325552ab19da6d2cef90548cfd270becc3362f3",
+    "ethereum-pos/run-6j0ve_3d/sp1-initial.scale": "ef5dc96bf4001b6d21f33b5364b0c459a3db64663a81ed00274424fade77b24c",
+    "ethereum-pos/run-6j0ve_3d/beefy-176.scale": "acb7085910831ab4a6becd6ce0aa0d9b9182f482fa03740c1b05dbe12fd95467",
+    "ethereum-pos/run-6j0ve_3d/committee-176.json": "1392654f5bac8497d775dad409c4199fb089b84b65e47f7ca422d3437b12a63f",
+    "ethereum-pos/run-6j0ve_3d/beefy-184.scale": "30055c24fae4af09326a7c516a5ca2c1ace7172fec702d6001cfd0b40255b87d",
+    "ethereum-pos/run-6j0ve_3d/committee-184.json": "831c237ee7f0a3358f7ef3cd197d4c596a9d8bc4264a74c43f518d9f0fbd9649",
+    "ethereum-pos/run-6j0ve_3d/beefy-256.scale": "aaf66c99bad19f4f04b3c600075b01c1fcb893a521e9c8e21867510b3bb09365",
+    "ethereum-pos/run-6j0ve_3d/committee-256.json": "5087e988bcdf9511308a8f6991077145b26a861fb5ce8dc05fab5e24fcda1a7b"
+  }
+}

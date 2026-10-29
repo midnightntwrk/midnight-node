@@ -1,0 +1,52 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+pragma language_version >= 0.22.0;
+import CompactStandardLibrary;
+
+struct Redemption {
+  amount: Uint<128>;
+  recipient: Bytes<20>;
+}
+
+export ledger schemaVersion: Uint<8>;
+export ledger bridgeDomain: Bytes<32>;
+export ledger tokenDomain: Bytes<32>;
+export ledger nextSequence: Uint<64>;
+export ledger totalRetired: Uint<128>;
+export ledger records: Map<Uint<64>, Redemption>;
+
+constructor(domain: Bytes<32>, namespace: Bytes<32>) {
+  schemaVersion = 1;
+  bridgeDomain = disclose(domain);
+  tokenDomain = disclose(namespace);
+  nextSequence = 0;
+  totalRetired = 0;
+}
+
+export circuit retire(amount: Uint<128>, recipient: Bytes<20>): Uint<64> {
+  const paid = disclose(amount);
+  const destination = disclose(recipient);
+  assert(paid > 0 && paid <= 1000000000000, "invalid amount");
+  assert(destination != default<Bytes<20>>, "zero recipient");
+  assert(nextSequence < 64, "retirement capacity exhausted");
+  const sequence = nextSequence;
+  assert(!records.member(sequence), "duplicate retirement");
+  receiveUnshielded(tokenType(tokenDomain, kernel.self()), paid);
+  records.insert(sequence, Redemption { amount: paid, recipient: destination });
+  totalRetired = (totalRetired + paid) as Uint<128>;
+  nextSequence = (sequence + 1) as Uint<64>;
+  return sequence;
+}

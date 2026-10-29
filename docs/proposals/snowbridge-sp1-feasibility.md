@@ -1,5 +1,14 @@
 # SP1 verification of Midnight BEEFY messages: integration feasibility
 
+**Implementation update, 2026-10-25:** the integration and full live bidirectional
+test now pass with real Groth16 proofs. See the [SP1 runbook](../../tests/snowbridge/sp1/README.md)
+and [acceptance report](../../tests/snowbridge/evidence/run-oiulvrxd.validation.json).
+The public report is a saved result; [evidence provenance](../../tests/snowbridge/evidence/README.md)
+describes its scope and the raw artifacts omitted from Git.
+The native-only findings and outstanding-work table below describe the earlier
+feasibility investigation. The implementation uses a bounded batch of ordered
+justifications while preserving its final SCALE output format.
+
 ## Finding and evidence
 
 This is feasible without changing the BEEFY signed-message format, quorum rule,
@@ -45,7 +54,7 @@ The script checks the original run's evidence hashes, pins the sibling revision
 and verifies its native verifier source is unmodified. It stages a separate copy
 under `artifacts/snowbridge/sp1-feasibility`, compiles it alongside the original,
 and records source/lock hashes in
-[`native-compatibility.json`](../../artifacts/snowbridge/sp1-feasibility/native-compatibility.json).
+[`native-compatibility.json`](../../tests/snowbridge/evidence/native-compatibility.json).
 This command runs native verification only. The copied crate is an explicit
 compatibility experiment, not a deployed SP1 guest or a replacement production verifier.
 

@@ -1,0 +1,44 @@
+[package]
+name = "midnight-snowbridge-fixtures"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace]
+
+[features]
+compact-ledger = []
+
+[dependencies]
+ledger = { package = "midnight-ledger-v9", version = "=1.0.0", features = ["proving", "test-utilities"] }
+coin-structure = { package = "midnight-coin-structure", version = "=3.0.0" }
+base-crypto = { package = "midnight-base-crypto", version = "=1.1.0" }
+storage = { package = "midnight-storage", version = "=2.0.4" }
+serialize = { package = "midnight-serialize", version = "=1.2.0" }
+onchain-runtime = { package = "midnight-onchain-runtime", version = "=4.0.0" }
+snowbridge-inbound-queue-primitives = { git = "https://github.com/shieldedtech/polkadot-sdk.git", rev = "9c7455eabd0cc2e77da867e837dfb466b11fbcf6" }
+sp-core = { git = "https://github.com/shieldedtech/polkadot-sdk.git", rev = "9c7455eabd0cc2e77da867e837dfb466b11fbcf6" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+transient-crypto = { package = "midnight-transient-crypto", version = "=3.0.0" }
+rand = "0.8.5"
+serde_json = "1"
+hex = "0.4"
+
+[patch.crates-io]
+# Preserve the node baseline's distinct per-crate ledger revisions.
+midnight-ledger-v9 = { path = "../../../artifacts/snowbridge/ledger/ledger" }
+midnight-ledger-static        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.6" }
+midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-9.0.0-rc.5" }
+midnight-coin-structure       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.2" }
+midnight-base-crypto          = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.4" }
+midnight-base-crypto-derive   = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
+midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-3.0.0-rc.3" }
+midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
+midnight-onchain-vm           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-rc.4" }
+midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-4.0.0-rc.5" }
+midnight-onchain-runtime      = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-onchain-runtime-4.0.0-rc.5" }
+midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-2.2.0-rc.4" }
+midnight-serialize            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.2" }
+midnight-storage              = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-2.0.4-rc.1" }
+midnight-storage-core         = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.2-rc.1" }
+

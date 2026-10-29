@@ -29,6 +29,7 @@ pub mod json;
 #[cfg(feature = "std")]
 mod utils;
 
+pub mod ethereum_bridge;
 pub mod host_api;
 
 pub mod ledger_8;
@@ -59,7 +60,12 @@ pub fn ledger_state_tag_version(tagged: &[u8]) -> Option<u32> {
 	let start = tagged.windows(NEEDLE.len()).position(|w| w == NEEDLE)? + NEEDLE.len();
 	let rest = &tagged[start..];
 	let end = rest.iter().position(|&b| b == b']')?;
-	core::str::from_utf8(&rest[..end]).ok()?.parse().ok()
+	let version = core::str::from_utf8(&rest[..end]).ok()?;
+	#[cfg(feature = "ethereum-bridge-poc")]
+	if version == "18-ethereum-poc" {
+		return Some(18);
+	}
+	version.parse().ok()
 }
 
 /// Expand to the `(DbSeparate, DbUnified)`-parameterized call of a `Bridge` arena method on the given

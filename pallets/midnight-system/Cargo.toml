@@ -32,6 +32,7 @@ midnight-node-ledger-helpers.workspace = true
 tempfile.workspace = true
 
 [features]
+ethereum-bridge-poc = ["midnight-node-ledger/ethereum-bridge-poc"]
 default = ["std"]
 std = [
 	"frame-support/std",

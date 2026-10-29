@@ -1,0 +1,164 @@
+diff --git a/ledger/src/error.rs b/ledger/src/error.rs
+index 28b0666c..c0f86f04 100644
+--- a/ledger/src/error.rs
++++ b/ledger/src/error.rs
+@@ -68,6 +68,10 @@ impl<D: DB> From<InvariantViolation> for TransactionInvalid<D> {
+ 
+ #[derive(Debug)]
+ pub enum SystemTransactionError {
++    InvalidEthereumCredit,
++    EthereumDepositAlreadyPresent,
++    EthereumOutputAlreadyPresent,
++    EthereumDepositCapacityExceeded,
+     IllegalPayout {
+         claimed_amount: Option<u128>,
+         supply: u128,
+@@ -95,6 +99,12 @@ pub enum SystemTransactionError {
+ impl Display for SystemTransactionError {
+     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+         match self {
++            Self::InvalidEthereumCredit => write!(f, "invalid Ethereum asset credit"),
++            Self::EthereumDepositAlreadyPresent => write!(f, "Ethereum deposit already issued"),
++            Self::EthereumOutputAlreadyPresent => write!(f, "Ethereum output already exists"),
++            Self::EthereumDepositCapacityExceeded => {
++                write!(f, "Ethereum deposit capacity exceeded")
++            }
+             SystemTransactionError::IllegalPayout {
+                 claimed_amount: Some(amount),
+                 supply,
+diff --git a/ledger/src/semantics.rs b/ledger/src/semantics.rs
+index c4cbb6da..67f53197 100644
+--- a/ledger/src/semantics.rs
++++ b/ledger/src/semantics.rs
+@@ -561,6 +561,38 @@ impl<D: DB> LedgerState<D> {
+         tblock: Timestamp,
+     ) -> Result<MaybeEvents<D>, SystemTransactionError> {
+         let res = match tx {
++            SystemTransaction::CreditEthereumAsset {
++                deposit_id,
++                output_id,
++                token_type,
++                amount,
++                recipient,
++            } => {
++                if *amount == 0 || *amount > 1_000_000_000_000 || *token_type == NIGHT {
++                    return Err(SystemTransactionError::InvalidEthereumCredit);
++                }
++                if self.ethereum_deposits.contains_key(deposit_id) {
++                    return Err(SystemTransactionError::EthereumDepositAlreadyPresent);
++                }
++                if self.ethereum_deposits.size() >= 64 {
++                    return Err(SystemTransactionError::EthereumDepositCapacityExceeded);
++                }
++                let utxo = Utxo {
++                    value: *amount,
++                    owner: *recipient,
++                    type_: *token_type,
++                    intent_hash: *output_id,
++                    output_no: 0,
++                };
++                if self.utxo.utxos.contains_key(&utxo) {
++                    return Err(SystemTransactionError::EthereumOutputAlreadyPresent);
++                }
++                let mut state = self.clone();
++                state.utxo = Sp::new(self.utxo.insert(utxo, UtxoMeta { ctime: tblock }));
++                state.ethereum_deposits = self.ethereum_deposits.insert(*deposit_id, ());
++                state.check_night_balance_invariant()?;
++                Ok((state, vec![]))
++            }
+             SystemTransaction::OverwriteParameters(new_params) => {
+                 if new_params.cardano_to_midnight_bridge_fee_basis_points > 10_000 {
+                     return Err(SystemTransactionError::InvalidBasisPoints(
+@@ -2123,6 +2155,7 @@ mod tests {
+             treasury: Map::new(),
+             zswap: Sp::new(State::default()),
+             contract: Map::new(),
++            ethereum_deposits: Map::new(),
+             utxo: Sp::new(UtxoState::default()),
+             replay_protection: Sp::new(ReplayProtectionState::new()),
+             dust: Sp::new(DustState::default()),
+@@ -2177,6 +2210,7 @@ mod tests {
+             treasury: Map::new(),
+             zswap: Sp::new(State::default()),
+             contract: Map::new(),
++            ethereum_deposits: Map::new(),
+             utxo: Sp::new(UtxoState::default()),
+             replay_protection: Sp::new(ReplayProtectionState::new()),
+             dust: Sp::new(DustState::default()),
+@@ -2233,6 +2267,7 @@ mod tests {
+             treasury: Map::new(),
+             zswap: Sp::new(State::default()),
+             contract: Map::new(),
++            ethereum_deposits: Map::new(),
+             utxo: Sp::new(UtxoState::default()),
+             replay_protection: Sp::new(ReplayProtectionState::new()),
+             dust: Sp::new(DustState::default()),
+@@ -2288,6 +2323,7 @@ mod tests {
+             treasury: Map::new(),
+             zswap: Sp::new(State::default()),
+             contract: Map::new(),
++            ethereum_deposits: Map::new(),
+             utxo: Sp::new(UtxoState::default()),
+             replay_protection: Sp::new(ReplayProtectionState::new()),
+             dust: Sp::new(DustState::default()),
+diff --git a/ledger/src/structure.rs b/ledger/src/structure.rs
+index c679f8a6..13270bc3 100644
+--- a/ledger/src/structure.rs
++++ b/ledger/src/structure.rs
+@@ -730,12 +730,20 @@ pub struct CardanoBridge {
+ tag_enforcement_test!(CardanoBridge);
+ 
+ #[derive(Clone, Debug, PartialEq, Serializable, Storable)]
+-#[tag = "system-transaction[v9]"]
++#[tag = "system-transaction[v9-ethereum-poc]"]
+ #[storable(base)]
+ #[non_exhaustive]
+ // TODO: Getting `Box` to serialize is a pain right now. Revisit later.
+ #[allow(clippy::large_enum_variant)]
+ pub enum SystemTransaction {
++    /// Restricted bridge capability; consensus must authenticate the source deposit.
++    CreditEthereumAsset {
++        deposit_id: HashOutput,
++        output_id: IntentHash,
++        token_type: UnshieldedTokenType,
++        amount: u128,
++        recipient: UserAddress,
++    },
+     OverwriteParameters(LedgerParameters),
+     DistributeNight(ClaimKind, Vec<OutputInstructionUnshielded>),
+     PayBlockRewardsToTreasury {
+@@ -2475,6 +2483,14 @@ impl SystemTransaction {
+         use SystemTransaction::*;
+         let model = &params.cost_model;
+         match self {
++            CreditEthereumAsset { .. } => {
++                model.map_index(6)
++                    + model.map_insert(6, false)
++                    + model.cell_write(PERSISTENT_HASH_BYTES as u64, false)
++                    + model.map_index(EXPECTED_UTXO_DEPTH)
++                    + model.map_insert(EXPECTED_UTXO_DEPTH, false)
++                    + model.cell_write(UTXO_SIZE as u64, false)
++            }
+             OverwriteParameters(new_params) => params
+                 .cost_model
+                 .cell_write(new_params.serialized_size() as u64, true),
+@@ -3332,9 +3348,10 @@ impl<D: DB> Default for UtxoState<D> {
+ #[derive(Storable)]
+ #[derive_where(Clone, Debug, PartialEq, Eq)]
+ #[storable(db = D)]
+-#[tag = "ledger-state[v18]"]
++#[tag = "ledger-state[v18-ethereum-poc]"]
+ #[must_use]
+ pub struct LedgerState<D: DB> {
++    pub ethereum_deposits: Map<HashOutput, (), D>,
+     pub network_id: String,
+     #[storable(child)]
+     pub parameters: Sp<LedgerParameters, D>,
+@@ -3388,6 +3405,7 @@ impl<D: DB> LedgerState<D> {
+         treasury: u128,
+     ) -> Result<Self, InvariantViolation> {
+         let result = LedgerState {
++            ethereum_deposits: Map::new(),
+             network_id: network_id.into(),
+             parameters: Sp::new(parameters),
+             locked_pool,
