@@ -12,4 +12,5 @@ Only `bootNodes` changes. Genesis is byte-identical, so the genesis hash is
 unaffected. `res/preview/bootnodes-config.json` is added too, so the genesis
 construction wizard keeps them on a future rebuild.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2346
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2236
