@@ -14,10 +14,15 @@
 //! Indexer-backed wallet sync (`--indexer-url`), shared by every command that reads wallets from
 //! the indexer instead of replaying blocks. See issue #1186.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::HashMap,
+	sync::Arc,
+	time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use midnight_ledger_unsafe_helpers::{
-	IndexerClient, UnshieldedSignatureScheme, WalletSeed, WalletSyncState, ledger_8, ledger_9,
+	IndexerClient, UnshieldedSignatureScheme, WalletSeed, WalletSyncState,
+	indexer_client::BlockInfo, ledger_8, ledger_9,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use subxt::utils::H256;
@@ -30,6 +35,32 @@ use crate::fetcher::{
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// A live chain makes a block every 6s, so an indexer tip this old means the indexer has stopped
+/// following the node (e.g. at an upgrade to a node build it doesn't support) or the chain stalled.
+const MAX_INDEXER_TIP_AGE: Duration = Duration::from_secs(5 * 60);
+
+/// A warning when the indexer's tip is stale. Not an error: on a stalled chain, reading the
+/// indexer is still how you debug it.
+fn stale_indexer_tip_warning(block: &BlockInfo, now: SystemTime) -> Option<String> {
+	// A fresh node's genesis can carry a timestamp from whenever its chainspec was built.
+	if block.height == 0 {
+		return None;
+	}
+	let age = now
+		.duration_since(UNIX_EPOCH + Duration::from_secs(block.timestamp))
+		.unwrap_or_default();
+	(age > MAX_INDEXER_TIP_AGE).then(|| {
+		format!(
+			"the indexer's latest block is #{} from {}s ago (protocol version {}): either the chain \
+			 has stalled or the indexer has stopped following it, e.g. at an upgrade to a node \
+			 version it doesn't support. Balances may be stale and built transactions rejected.",
+			block.height,
+			age.as_secs(),
+			block.protocol_version,
+		)
+	})
+}
 
 /// An indexer context for the ledger generation of the chain the indexer serves.
 pub enum IndexerLedgerContext {
@@ -74,6 +105,9 @@ pub async fn sync_indexer(
 
 	let client = IndexerClient::new(indexer_url)?;
 	let block = client.latest_block().await?;
+	if let Some(warning) = stale_indexer_tip_warning(&block, SystemTime::now()) {
+		log::warn!("{warning}");
+	}
 	let spec_version = block.protocol_version;
 	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
 		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
@@ -160,6 +194,29 @@ mod tests {
 	};
 	use midnight_ledger_unsafe_helpers::UnshieldedUtxoRaw;
 	use std::num::NonZeroUsize;
+
+	#[test]
+	fn stale_indexer_tip_warns() {
+		let tip = |height, timestamp| BlockInfo {
+			height,
+			protocol_version: 2_001_000,
+			timestamp,
+			parent_hash: [0; 32],
+			last_block_time: timestamp,
+			zswap_end_index: 0,
+			ledger_parameters: Vec::new(),
+		};
+		let now = UNIX_EPOCH + Duration::from_secs(10_000);
+		let max = MAX_INDEXER_TIP_AGE.as_secs();
+
+		assert!(stale_indexer_tip_warning(&tip(5, 10_000 - max), now).is_none());
+		assert!(stale_indexer_tip_warning(&tip(5, 10_000 - max - 1), now).is_some());
+		assert!(
+			stale_indexer_tip_warning(&tip(5, 20_000), now).is_none(),
+			"clock skew isn't staleness"
+		);
+		assert!(stale_indexer_tip_warning(&tip(0, 0), now).is_none(), "genesis time is arbitrary");
+	}
 
 	fn wallet(seed: &ledger_9::WalletSeed) -> Wallet<DefaultDB> {
 		Wallet {
