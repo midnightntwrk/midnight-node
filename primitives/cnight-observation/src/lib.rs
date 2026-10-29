@@ -543,6 +543,10 @@ impl TypeInfo for ObservationBatch {
 /// `destroy_gas` per `AssetSpend`, registered or not: the pallet's weight plus the
 /// cNIGHT-generates-DUST update's ledger price, which depends only on the event
 /// counts. Summing the two resources is pessimistic and safe.
+///
+/// `budget_bytes` also bounds the encoded UTXOs: registrations and deregistrations
+/// carry no ledger gas, so cost alone admits a batch too big for the block, which
+/// proposers then drop.
 #[derive(Encode, Decode, TypeInfo, Clone, Debug, PartialEq, Eq)]
 pub struct ObservationCostModel {
 	/// Pallet weight (`ref_time`) of processing one observed UTXO of any kind.
@@ -555,6 +559,8 @@ pub struct ObservationCostModel {
 	pub budget_gas: u64,
 	/// The whole block.
 	pub full_gas: u64,
+	/// Share of the block's encoded length the batch's UTXOs may consume.
+	pub budget_bytes: u32,
 }
 
 decl_runtime_apis! {
