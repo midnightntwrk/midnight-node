@@ -8169,7 +8169,10 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-runtime-interface",
+ "sp-state-machine",
  "sp-tracing",
+ "substrate-prometheus-endpoint",
+ "tempfile",
  "v8-to-v9-state-translation",
 ]
 
@@ -10603,6 +10606,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-primitives",
+ "midnight-primitives-ledger",
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",

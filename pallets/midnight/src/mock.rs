@@ -106,9 +106,12 @@ impl pallet_midnight::Config for Test {
 	type MaxTransactionNodes = frame_support::traits::ConstU32<1024>;
 }
 
-// Build genesis storage according to the mock runtime.
+// Build genesis storage according to the mock runtime. Calls run as block execution.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
+	let mut ext: sp_io::TestExternalities =
+		frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into();
+	ext.register_extension(midnight_primitives_ledger::LedgerOnchainExt::default());
+	ext
 }
 
 pub fn midnight_events() -> Vec<super::Event> {
