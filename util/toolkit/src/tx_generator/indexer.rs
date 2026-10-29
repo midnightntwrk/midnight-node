@@ -36,8 +36,7 @@ use crate::fetcher::{
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// A live chain makes a block every 6s, so an indexer tip this old means the indexer has stopped
-/// following the node (e.g. at an upgrade to a node build it doesn't support) or the chain stalled.
+/// 50 block times: past this, the chain has stalled or the indexer stopped following it.
 const MAX_INDEXER_TIP_AGE: Duration = Duration::from_secs(5 * 60);
 
 /// A warning when the indexer's tip is stale. Not an error: on a stalled chain, reading the
