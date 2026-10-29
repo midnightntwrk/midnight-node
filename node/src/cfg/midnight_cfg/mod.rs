@@ -29,6 +29,46 @@ pub enum StorageSeparation {
 	Unified,
 }
 
+/// Which existing main-chain data sources to mock.
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub enum MainChainFollowerMock {
+	#[default]
+	Disabled,
+	All,
+	Authorities,
+}
+
+impl<'de> Deserialize<'de> for MainChainFollowerMock {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		#[derive(Deserialize)]
+		#[serde(untagged)]
+		enum Value {
+			Bool(bool),
+			Text(String),
+		}
+		match Value::deserialize(deserializer)? {
+			Value::Bool(false) => Ok(Self::Disabled),
+			Value::Bool(true) => Ok(Self::All),
+			Value::Text(value) => match value.as_str() {
+				"false" => Ok(Self::Disabled),
+				"true" => Ok(Self::All),
+				"authorities" => Ok(Self::Authorities),
+				_ => Err(serde::de::Error::custom("expected true, false, or authorities")),
+			},
+		}
+	}
+}
+
+impl Serialize for MainChainFollowerMock {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		match self {
+			Self::Disabled => serializer.serialize_bool(false),
+			Self::All => serializer.serialize_bool(true),
+			Self::Authorities => serializer.serialize_str("authorities"),
+		}
+	}
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 #[validate(custom = mainchain_epoch_invariants)]
@@ -57,9 +97,14 @@ pub struct MidnightCfg {
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
 	pub cross_chain_seed_file: Option<String>,
 
-	/// Mock ariadne parameters
-	pub use_main_chain_follower_mock: bool,
-	/// Required if use_main_chain_follower_mock is true
+	/// Path to file containing a secret string to use as the BEEFY seed (32 bytes)
+	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
+	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
+	pub beefy_seed_file: Option<String>,
+
+	/// false: real sources; true: all mock sources; "authorities": only validator and governance mocks.
+	pub use_main_chain_follower_mock: MainChainFollowerMock,
+	/// Required if use_main_chain_follower_mock is true or "authorities".
 	/// Used in the sidechains library
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub mock_registrations_file: Option<String>,
@@ -131,18 +176,18 @@ pub struct MidnightCfg {
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
 	let missing = |field: &str| {
 		validation::Error::Custom(format!(
-			"{field} must be defined if ariadne is enabled (i.e. if use_main_chain_follower_mock is false)"
+			"{field} must be defined if ariadne is enabled (i.e. if use_main_chain_follower_mock is false or authorities)"
 		))
 	};
 
-	if cfg.use_main_chain_follower_mock {
-		if cfg.mock_registrations_file.is_none() {
-			return Err(validation::Error::Custom(
-				"mock_registrations_file must be defined if use_main_chain_follower_mock is true."
-					.to_string(),
-			));
-		}
-	} else {
+	if cfg.use_main_chain_follower_mock != MainChainFollowerMock::Disabled
+		&& cfg.mock_registrations_file.is_none()
+	{
+		return Err(validation::Error::Custom(
+			"mock_registrations_file must be defined if use_main_chain_follower_mock is true or authorities.".to_string(),
+		));
+	}
+	if cfg.use_main_chain_follower_mock != MainChainFollowerMock::All {
 		if cfg.db_sync_postgres_connection_string.is_none() {
 			return Err(missing("db_sync_postgres_connection_string"));
 		}
@@ -196,6 +241,77 @@ impl From<MidnightCfg> for MainchainEpochConfig {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn mock_mode_preserves_boolean_configs_and_accepts_environment_strings() {
+		for (value, expected) in [
+			(serde_json::json!(false), MainChainFollowerMock::Disabled),
+			(serde_json::json!(true), MainChainFollowerMock::All),
+			(serde_json::json!("false"), MainChainFollowerMock::Disabled),
+			(serde_json::json!("true"), MainChainFollowerMock::All),
+			(serde_json::json!("authorities"), MainChainFollowerMock::Authorities),
+		] {
+			let cfg = config::Config::builder()
+				.add_source(config::File::from_str(
+					&serde_json::json!({"mode": value}).to_string(),
+					config::FileFormat::Json,
+				))
+				.build()
+				.unwrap();
+			assert_eq!(cfg.get::<MainChainFollowerMock>("mode").unwrap(), expected);
+			let serialized = serde_json::to_value(expected).unwrap();
+			assert_eq!(
+				serde_json::from_value::<MainChainFollowerMock>(serialized.clone()).unwrap(),
+				expected
+			);
+			if expected != MainChainFollowerMock::Authorities {
+				assert!(serialized.is_boolean());
+			}
+		}
+		assert_eq!(
+			MidnightCfg::default().use_main_chain_follower_mock,
+			MainChainFollowerMock::Disabled
+		);
+		for invalid in [serde_json::json!("typo"), serde_json::json!(1), serde_json::Value::Null] {
+			assert!(serde_json::from_value::<MainChainFollowerMock>(invalid).is_err());
+		}
+	}
+
+	#[test]
+	fn authority_mock_requires_registrations_and_real_database_configuration() {
+		let mut cfg = MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::Authorities,
+			..Default::default()
+		};
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("mock_registrations_file")
+		);
+		cfg.mock_registrations_file = Some("registrations.json".into());
+		assert!(
+			main_chain_follower_vars(&cfg)
+				.unwrap_err()
+				.to_string()
+				.contains("db_sync_postgres_connection_string")
+		);
+		cfg.db_sync_postgres_connection_string = Some("postgresql://localhost/test".into());
+		cfg.cardano_security_parameter = Some(2160);
+		cfg.cardano_active_slots_coeff = Some(0.05);
+		cfg.block_stability_margin = Some(30);
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
+
+	#[test]
+	fn full_mock_still_does_not_require_a_database() {
+		let cfg = MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::All,
+			mock_registrations_file: Some("registrations.json".into()),
+			..Default::default()
+		};
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
 
 	/// A `MidnightCfg` whose mainchain timing fields are internally coherent (1000 ms slots, a
 	/// 5-day epoch divisible by the slot duration and at least one second). Other fields are left at
@@ -262,7 +378,7 @@ mod tests {
 		// surfacing as a `CfgError`) reports the mainchain-invariant violation. Mock follower vars
 		// are set so the unrelated `main_chain_follower_vars` validator does not mask this failure.
 		let mut cfg = good_cfg();
-		cfg.use_main_chain_follower_mock = true;
+		cfg.use_main_chain_follower_mock = MainChainFollowerMock::All;
 		cfg.mock_registrations_file = Some("/dev/null".to_string());
 		cfg.mc_epoch_duration_millis = 0;
 

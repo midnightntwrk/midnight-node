@@ -103,6 +103,25 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 	}
 }
 
+/// O(1) collection sizes held at the `LedgerState` root (`midnight_ledgerStats`): the unshielded
+/// UTXO set size, the zswap/DUST commitment and nullifier totals, and the contract count. Reads
+/// annotations maintained at each storage trie root rather than iterating, so the cost does not
+/// grow with the state.
+///
+/// `unified` selects the ParityDb instantiation and dispatch on the `StateKey`'s
+/// `ledger-state[vNN]` tag picks the ledger module, exactly as in [`serialize_ledger_snapshot`].
+/// Error rendered to `String` (the underlying `LedgerApiError` is version-specific).
+#[cfg(feature = "std")]
+pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStats, String> {
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(ledger_9, unified, ledger_stats(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, unified, ledger_stats(state_key))
+			.map_err(|e| format!("{e:?}")),
+		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
+	}
+}
+
 /// Whether the local ledger arena holds the ledger state `state_key` points to (the `Ledger` root
 /// node is readable). Cheap — a single arena root lookup, no DAG traversal.
 ///
