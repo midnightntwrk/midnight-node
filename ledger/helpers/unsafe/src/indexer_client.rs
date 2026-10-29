@@ -479,9 +479,13 @@ impl IndexerClient {
 	/// `block` (no offset) — the latest indexed block.
 	pub async fn latest_block(&self) -> IndexerResult<BlockInfo> {
 		let data = self.run_query::<LatestBlock>(latest_block::Variables {}).await?;
-		let block = data
-			.block
-			.ok_or_else(|| IndexerClientError::Malformed("no block returned".into()))?;
+		let block = data.block.ok_or_else(|| {
+			IndexerClientError::Malformed(
+				"the indexer has no blocks yet (still starting, or it doesn't support this node \
+				 version)"
+					.into(),
+			)
+		})?;
 		map_latest_block(block)
 	}
 
