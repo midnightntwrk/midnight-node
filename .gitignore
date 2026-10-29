@@ -109,3 +109,6 @@ toolkit-image.tar
 
 # Generated compactc wrapper from `just compactc` (points into the nix store)
 .compact-home/
+
+# component-rn-draft working dir
+.rn-drafts/
