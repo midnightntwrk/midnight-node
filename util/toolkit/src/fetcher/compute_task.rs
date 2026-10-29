@@ -26,7 +26,8 @@ use crate::{
 		runtimes::{
 			MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
 			MidnightMetadata1_0_0, MidnightMetadata1_0_3, MidnightMetadata2_0_0,
-			MidnightMetadata2_1_0, MidnightMetadata3_0_0, RuntimeVersion, RuntimeVersionError,
+			MidnightMetadata2_1_0, MidnightMetadata3_0_0, MidnightMetadata4_0_0, RuntimeVersion,
+			RuntimeVersionError,
 		},
 	},
 };
@@ -192,6 +193,14 @@ impl ComputeTask {
 			},
 			RuntimeVersion::V3_0_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata3_0_0>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
+			},
+			RuntimeVersion::V4_0_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata4_0_0>(
 					block,
 					&header,
 					spec_version,
