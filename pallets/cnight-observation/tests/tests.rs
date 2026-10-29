@@ -2038,6 +2038,13 @@ fn observation_cost_model_prices_singleton_cnight_generates_dust_updates() {
 		let full_gas = max_block_ref_time();
 		assert_eq!(model.full_gas, full_gas);
 		assert_eq!(model.budget_gas, full_gas / 2, "default budget is 50 % of the block");
+		let full_bytes =
+			*<<Test as frame_system::Config>::BlockLength as frame_support::traits::Get<
+				frame_system::limits::BlockLength,
+			>>::get()
+			.max
+			.get(DispatchClass::Mandatory);
+		assert_eq!(model.budget_bytes, full_bytes / 2);
 		assert!(model.create_gas > 0 && model.destroy_gas > 0);
 		assert!(model.create_gas >= model.destroy_gas);
 		assert!(model.utxo_gas > 0, "every UTXO costs its pallet weight");

@@ -72,7 +72,8 @@ pub enum UtxoActionType {
 	Destroy,
 }
 
-/// Default share of the block's ledger cost limits one observation batch may use.
+/// Default share of the block's ledger cost and length limits one observation batch
+/// may use.
 pub const DEFAULT_OBSERVATION_BUDGET_PERCENT: u32 = 50;
 
 /// Serialized zero field element: a valid dust public key for pricing dummy events.
@@ -319,9 +320,10 @@ pub mod pallet {
 		DEFAULT_OBSERVATION_BUDGET_PERCENT
 	}
 
-	/// Share of the block's ledger cost limits one observation batch may consume, in
-	/// percent. `CNightObservation` runs before `C2MBridge`, whose system transactions
-	/// are silently dropped when the block is already full, so this must leave headroom.
+	/// Share of the block's ledger cost and length limits one observation batch may
+	/// consume, in percent. `CNightObservation` runs before `C2MBridge`, whose system
+	/// transactions are silently dropped when the block is already full, so this must
+	/// leave headroom.
 	#[pallet::storage]
 	pub type ObservationBudgetPercent<T: Config> =
 		StorageValue<_, u32, ValueQuery, DefaultObservationBudgetPercent>;
@@ -509,6 +511,8 @@ pub mod pallet {
 		/// parameters. `None` if any price is unavailable.
 		pub fn observation_cost_model() -> Option<ObservationCostModel> {
 			let full_gas = T::BlockWeights::get().max_block.ref_time();
+			let percent = ObservationBudgetPercent::<T>::get();
+			let full_bytes = *T::BlockLength::get().max.get(DispatchClass::Mandatory);
 			let weight = |n: u32| T::WeightInfo::process_tokens(n).ref_time();
 			let utxo_gas = weight(1).saturating_sub(weight(0));
 			if utxo_gas == 0 {
@@ -525,10 +529,9 @@ pub mod pallet {
 					utxo_gas,
 					create_gas,
 					destroy_gas,
-					budget_gas: full_gas
-						.saturating_mul(ObservationBudgetPercent::<T>::get().into())
-						/ 100,
+					budget_gas: full_gas.saturating_mul(percent.into()) / 100,
 					full_gas,
+					budget_bytes: (u64::from(full_bytes) * u64::from(percent) / 100) as u32,
 				}),
 				(create, destroy) => {
 					log::error!(
@@ -1005,9 +1008,9 @@ pub mod pallet {
 			Ok(())
 		}
 
-		/// Sets the share of the block's ledger cost limits one cNIGHT observation
-		/// batch may consume, in percent. The remainder stays available to the
-		/// bridge and to user transactions.
+		/// Sets the share of the block's ledger cost and length limits one cNIGHT
+		/// observation batch may consume, in percent. The remainder stays available to
+		/// the bridge and to user transactions.
 		///
 		/// This extrinsic needs Root origin.
 		#[pallet::call_index(5)]

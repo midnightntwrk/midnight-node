@@ -10,7 +10,10 @@ The `process_tokens` inherent no longer rejects batches by UTXO count
   observed UTXO by the pallet's own `process_tokens` weight, and a one-`Create` and a
   one-`Destroy` cNIGHT-generates-DUST update via the ledger, so the node can bound
   the batch by cost before building the inherent. Registrations and deregistrations are bounded by
-  their weight; creates and spends by weight plus ledger price.
+  their weight; creates and spends by weight plus ledger price. The model's
+  `budget_bytes` also bounds the batch's encoded UTXOs by the block's length limit:
+  reg/dereg rows cost little gas, so cost alone admits a batch larger than the
+  1 MiB block, which proposers drop and importers then reject, halting the chain.
 - Storage `NextCardanoPosition` becomes `NextCardanoCursor { position, utxo_offset }`,
   read by the new `CNightObservationApi::get_next_cardano_cursor` (API version 2),
   which replaces `get_next_cardano_position`. `utxo_offset` is how many UTXOs of the
@@ -24,7 +27,7 @@ The `process_tokens` inherent no longer rejects batches by UTXO count
   must update.
 - New root call `set_observation_budget_percent` and storage
   `ObservationBudgetPercent` (default 50) set the share of the block's ledger cost
-  limits one observation batch may consume, leaving headroom for the bridge and
+  and length limits one observation batch may consume, leaving headroom for the bridge and
   user transactions.
 - `process_tokens` runs inside a storage layer. If the ledger still refuses the
   cNIGHT-generates-DUST update as exceeding the block limit, the batch is rolled

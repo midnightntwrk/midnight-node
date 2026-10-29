@@ -26,6 +26,7 @@ use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
 	ObservationBatch, ObservationCostModel, ObservedUtxos,
 };
+use parity_scale_codec::Encode;
 use sidechain_domain::{McBlockHash, McTxHash};
 pub use sqlx::PgPool;
 use std::fmt::Debug;
@@ -265,7 +266,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				"cNIGHT observation batch ends inside the Cardano transaction at {resume_at}; resuming there"
 			),
 			Cut::Cost(resume_at) => log::warn!(
-				"cNIGHT observation falling behind the Cardano tip: cNIGHT activity exceeds one block's ledger budget, admitted {} UTXOs, resuming at {resume_at}",
+				"cNIGHT observation falling behind the Cardano tip: cNIGHT activity exceeds one block's ledger or size budget, admitted {} UTXOs, resuming at {resume_at}",
 				utxos.len()
 			),
 			_ => {},
@@ -326,9 +327,9 @@ enum Cut {
 	NotSaturated,
 	/// The Cardano transaction count of an [`ObservationBound::Count`] was reached.
 	TxCapacity,
-	/// The pessimistic ledger cost bound was hit at a UTXO of the transaction at this
-	/// position. If earlier UTXOs of that transaction were admitted, the runtime records
-	/// how many and the next batch resumes after them.
+	/// The pessimistic ledger cost or encoded size bound was hit at a UTXO of the
+	/// transaction at this position. If earlier UTXOs of that transaction were admitted,
+	/// the runtime records how many and the next batch resumes after them.
 	Cost(CardanoPosition),
 	/// The page frontier: the transaction at this position may be incomplete, so the
 	/// next batch fetches it afresh.
@@ -381,9 +382,9 @@ fn page_limit(
 /// [`ObservationBound::Count`] admits fewer than that many whole transactions.
 /// [`ObservationBound::Cost`] admits UTXOs, before the `frontier`, while the
 /// batch's pessimistic price, counting every `AssetCreate` and `AssetSpend` as a
-/// ledger event, fits `budget_gas`. It may stop inside a Cardano transaction, so a
-/// transaction of any size drains over as many blocks as it needs. The first UTXO is
-/// always admitted.
+/// ledger event, fits `budget_gas` and their encoding fits `budget_bytes`. It may
+/// stop inside a Cardano transaction, so a transaction of any size drains over as
+/// many blocks as it needs. The first UTXO is always admitted.
 fn admit_prefix(
 	mut utxos: ObservationBatch,
 	bound: &ObservationBound,
@@ -405,6 +406,7 @@ fn admit_prefix(
 		},
 		ObservationBound::Cost(model) => {
 			let mut gas = 0u64;
+			let mut bytes = 0usize;
 			let mut cut = Cut::NotSaturated;
 			for utxo in utxos.iter() {
 				let position = &utxo.header.tx_position;
@@ -418,11 +420,14 @@ fn admit_prefix(
 					_ => 0,
 				};
 				let bound = gas.saturating_add(model.utxo_gas).saturating_add(ledger_gas);
-				if bound > model.budget_gas && admitted > 0 {
+				let size = bytes + utxo.encoded_size();
+				if (bound > model.budget_gas || size > model.budget_bytes as usize) && admitted > 0
+				{
 					cut = Cut::Cost(position.clone());
 					break;
 				}
 				gas = bound;
+				bytes = size;
 				admitted += 1;
 			}
 			cut
@@ -892,6 +897,7 @@ mod tests {
 			destroy_gas: 5,
 			budget_gas: 100,
 			full_gas: 200,
+			budget_bytes: u32::MAX,
 		}
 	}
 
@@ -991,6 +997,20 @@ mod tests {
 		assert_eq!(admitted.len(), 9);
 		assert_eq!(cut, Cut::Cost(position(2, 0)));
 		assert_eq!(cut.end(&admitted, &position(1, 0), position(9, 0)), position(2, 0));
+	}
+
+	#[test]
+	fn registrations_cheap_by_cost_are_cut_by_encoded_size() {
+		let utxos = tx(1, 0, 50, Kind::Registration);
+		let one = utxos[0].encoded_size() as u32;
+		let bound = ObservationBound::Cost(ObservationCostModel {
+			budget_gas: u64::MAX,
+			budget_bytes: 10 * one + one / 2,
+			..model()
+		});
+		let (admitted, cut) = admit_prefix(sorted(utxos), &bound, None);
+		assert_eq!(admitted.len(), 10);
+		assert_eq!(cut, Cut::Cost(position(1, 0)));
 	}
 
 	#[test]
@@ -1162,6 +1182,7 @@ mod tests {
 			destroy_gas: 6_166_908_418,
 			budget_gas: 1_000_000_000_000,
 			full_gas: 2_000_000_000_000,
+			budget_bytes: 1024 * 1024 / 2,
 		};
 		let bound = ObservationBound::Cost(model.clone());
 		let rows = [
