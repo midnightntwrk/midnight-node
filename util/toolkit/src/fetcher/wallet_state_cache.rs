@@ -18,8 +18,8 @@
 
 use midnight_ledger_unsafe_helpers::{
 	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged, ledger_8,
-	serialize_untagged,
+	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged,
+	fork::fork_aware_context::watch_only_ecdsa_wallet_8, ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
@@ -432,7 +432,8 @@ pub fn restore_context_from_ledger_snapshot_8(
 	Ok((context, ledger_state, snapshot.block_height))
 }
 
-/// Ledger-8 variant of [`inject_wallet_from_cache`].
+/// Ledger-8 variant of [`inject_wallet_from_cache`]. An `ecdsa:` seed gets a watch-only wallet
+/// (see [`watch_only_ecdsa_wallet_8`]); the cached state itself does not depend on the scheme.
 pub fn inject_wallet_from_cache_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
 	cached: &CachedWalletState,
@@ -442,11 +443,14 @@ pub fn inject_wallet_from_cache_8(
 ) -> Result<(), CacheError> {
 	let seed_8 = ledger_8::WalletSeed::try_from(seed.as_bytes())
 		.map_err(|_| CacheError::DeserializeWalletState("seed conversion to ledger 8".into()))?;
-	let scheme_8 = match scheme {
-		UnshieldedSignatureScheme::Schnorr => ledger_8::UnshieldedSignatureScheme::Schnorr,
-		UnshieldedSignatureScheme::Ecdsa => ledger_8::UnshieldedSignatureScheme::Ecdsa,
+	let mut wallet = match scheme {
+		UnshieldedSignatureScheme::Schnorr => {
+			ledger_8::Wallet::default(seed_8.clone(), ledger_state)
+		},
+		UnshieldedSignatureScheme::Ecdsa => {
+			watch_only_ecdsa_wallet_8(seed, seed_8.clone(), ledger_state)
+		},
 	};
-	let mut wallet = ledger_8::Wallet::new(seed_8.clone(), ledger_state, scheme_8);
 
 	if !cached.shielded_state_bytes.is_empty() {
 		let shielded_state = ledger_8::deserialize_untagged::<
@@ -1057,7 +1061,7 @@ mod tests {
 		// Replay remaining blocks
 		use crate::tx_generator::builder::{WalletSchemes, replay_blocks};
 		let fork_ctx = ForkAwareLedgerContext::Ledger9(restored);
-		let fork_ctx = replay_blocks(fork_ctx, &second_half, &[], &WalletSchemes::new());
+		let fork_ctx = replay_blocks(fork_ctx, &second_half, &[], &WalletSchemes::new(), &[]);
 		let incremental_context = fork_ctx.into_ledger9().expect("expected ledger 9 after replay");
 
 		// Compare ledger state
