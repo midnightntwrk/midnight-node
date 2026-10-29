@@ -77,19 +77,6 @@ struct Env {
 	indexer_url: String,
 }
 
-/// Opt-in via `MN_RUN_INDEXER_E2E=1`: the `indexer-standalone` image is not yet published and
-/// pinned in CI (issue #1186 follow-up).
-fn e2e_enabled(test: &str) -> bool {
-	let enabled = std::env::var_os("MN_RUN_INDEXER_E2E").is_some();
-	if !enabled {
-		eprintln!(
-			"skipping {test}: set MN_RUN_INDEXER_E2E=1 to run \
-			 (requires Docker plus the midnight-node and indexer-standalone images)"
-		);
-	}
-	enabled
-}
-
 /// `tag` keeps container names distinct between tests of this process run in parallel.
 async fn start_env(tag: &str) -> Env {
 	// Unique names so concurrent runs don't collide on the shared network / container names.
@@ -98,7 +85,7 @@ async fn start_env(tag: &str) -> Env {
 	let node_name = format!("mn-node-{suffix}");
 
 	// --- node ---------------------------------------------------------------------------------
-	let (node_image, node_tag) = test_image("midnight-node");
+	let (node_image, node_tag) = test_image("midnight-node-indexer-e2e");
 	let node = GenericImage::new(node_image, node_tag)
 		.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 		.with_exposed_port(ContainerPort::Tcp(9944))
@@ -142,9 +129,6 @@ async fn start_env(tag: &str) -> Env {
 
 #[tokio::test]
 async fn indexer_show_wallet_reports_genesis_balances() {
-	if !e2e_enabled("indexer_show_wallet_reports_genesis_balances") {
-		return;
-	}
 	let env = start_env("show").await;
 	let (node_ws, indexer_url) = (env.node_ws.as_str(), env.indexer_url.as_str());
 
@@ -198,9 +182,6 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 
 #[tokio::test]
 async fn indexer_generate_txs_single_tx_reaches_destination() {
-	if !e2e_enabled("indexer_generate_txs_single_tx_reaches_destination") {
-		return;
-	}
 	const AMOUNT: u64 = 1_000_000;
 	let env = start_env("gen").await;
 
@@ -295,9 +276,6 @@ async fn transfer(env: &Env, destination: &str, amount: u64, count: usize) {
 /// so it only balances if the indexer context tracks the txs it has built.
 #[tokio::test]
 async fn indexer_generate_txs_batches_chain_within_a_run() {
-	if !e2e_enabled("indexer_generate_txs_batches_chain_within_a_run") {
-		return;
-	}
 	const TOTAL: u64 = 10_000;
 	// Batch 0 pays the first two wallets, batch 1 moves their funds on to the last two.
 	// `batches` counts its seeds up from `…10` in *binary* (`Wallet::increment_seed`).

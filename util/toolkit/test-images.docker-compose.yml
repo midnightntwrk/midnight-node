@@ -16,7 +16,16 @@ services:
       guard:
         condition: service_completed_successfully
   indexer-standalone:
-    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:4.4.0-pre-alpha.11-l91r2-n2r1-bridge-and-events-epics-f5deb45}
+    image: ${INDEXER_STANDALONE_IMAGE:-ghcr.io/midnight-ntwrk/indexer-standalone:4.4.0-rc.6-68702121}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
+
+  # Node for the indexer e2e: the exact node build the pinned indexer was generated against (its
+  # `NODE_VERSIONS`), not `midnight-node` (CI's fresh build). The indexer rejects node versions it
+  # doesn't map, and same-spec builds with other metadata crash it at genesis.
+  midnight-node-indexer-e2e:
+    image: ${INDEXER_E2E_NODE_IMAGE:-midnightntwrk/midnight-node:2.1.0-rc.4}
     depends_on:
       guard:
         condition: service_completed_successfully
