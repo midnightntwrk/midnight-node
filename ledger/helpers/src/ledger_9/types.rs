@@ -321,6 +321,7 @@ impl From<Segment> for Option<u16> {
 	}
 }
 
+/// Stored inside the node's `Ledger` wrapper, so changing its layout changes `pallet_midnight::StateKey`.
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]

@@ -49,6 +49,7 @@ pub enum AppliedStage<D: DB> {
 	PartialSuccess(BTreeMap<u16, Result<(), TransactionInvalid<D>>>),
 }
 
+/// The arena root behind `pallet_midnight::StateKey`; changing its layout changes `StateKey`.
 #[derive(Debug, Storable)]
 #[derive_where(Clone)]
 #[storable(db = D)]
@@ -396,6 +397,57 @@ mod tests {
 		ledger = Ledger::<DefaultDB>::post_block_update(ledger.clone(), block_context)
 			.expect("Post block update failed");
 		assert!(ledger.is_block_start(), "the end-of-block update starts a new block");
+	}
+
+	/// `pallet_midnight::on_finalize` ends every block with `apply_post_block_update`, so it must
+	/// reset `block_fullness` exactly like `post_block_update` does.
+	#[test]
+	fn is_block_start_after_apply_post_block_update() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+		let (deploy_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
+		let block_context: BlockContext = block_context.into();
+
+		assert_apply_transaction_only(&api, &mut ledger, &deploy_tx, &block_context);
+		assert!(!ledger.is_block_start(), "a transaction has been applied in this block");
+
+		ledger = Ledger::<DefaultDB>::apply_post_block_update(ledger.clone(), block_context);
+		assert!(ledger.is_block_start(), "the end-of-block update starts a new block");
+	}
+
+	/// Both end-of-block updates must leave `block_fullness` at zero, so that the arena key of the
+	/// result equals that of `Ledger::new(state)`, which is how external consumers such as the
+	/// indexer reproduce `pallet_midnight::StateKey`. Needs no fixtures, so it runs for every
+	/// ledger version.
+	#[test]
+	fn end_of_block_state_key_matches_ledger_new() {
+		let mid_block = || {
+			let non_zero = SyntheticCost { block_usage: 1, ..SyntheticCost::ZERO };
+			Sp::new(Ledger::<DefaultDB>::new_with_block_fullness(
+				LedgerState::new("undeployed"),
+				non_zero,
+			))
+		};
+		let block_start_key = |ledger: &Sp<Ledger<DefaultDB>>| {
+			Sp::new(Ledger::new(ledger.state.clone())).as_typed_key()
+		};
+
+		let ledger = mid_block();
+		assert!(!ledger.is_block_start(), "a transaction has been applied in this block");
+		assert_ne!(ledger.as_typed_key(), block_start_key(&ledger));
+
+		let applied = Ledger::apply_post_block_update(mid_block(), BlockContext::default());
+		assert!(applied.is_block_start(), "apply_post_block_update starts a new block");
+		assert_eq!(applied.as_typed_key(), block_start_key(&applied));
+
+		let updated = Ledger::post_block_update(mid_block(), BlockContext::default())
+			.expect("Post block update failed");
+		assert!(updated.is_block_start(), "post_block_update starts a new block");
+		assert_eq!(updated.as_typed_key(), block_start_key(&updated));
 	}
 
 	#[test]

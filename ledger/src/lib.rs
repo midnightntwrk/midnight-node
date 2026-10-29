@@ -141,6 +141,32 @@ pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 	}
 }
 
+/// Whether the `Ledger` at `state_key` has zero `block_fullness`. `unified` and the version
+/// dispatch work as in [`ledger_stats`].
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn is_block_start(unified: bool, state_key: &[u8]) -> Result<bool, String> {
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(ledger_9, unified, is_block_start(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, unified, is_block_start(state_key))
+			.map_err(|e| format!("{e:?}")),
+		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
+	}
+}
+
+/// The `StateKey` an external consumer derives for the ledger state at `state_key`: the tagged
+/// arena key of `Ledger { state, block_fullness: 0 }`. Dispatches as in [`ledger_stats`].
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn block_start_state_key(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(ledger_9, unified, block_start_state_key(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, unified, block_start_state_key(state_key))
+			.map_err(|e| format!("{e:?}")),
+		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
+	}
+}
+
 /// Failure modes of [`import_verified_ledger_snapshot`]. All are non-fatal to the chain: the caller
 /// discards the data, reports the peer, and retries from another.
 #[cfg(feature = "std")]
