@@ -1313,8 +1313,8 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
-    # Keep in sync with util/toolkit/test-images.docker-compose.yml. Always pre-pulled: it is a
-    # private GHCR image, which testcontainers inside the DinD can't authenticate for.
+    # Keep in sync with util/toolkit/test-images.docker-compose.yml. Private, so pre-pulled even
+    # without NODE_IMAGE.
     ARG INDEXER_STANDALONE_IMAGE=ghcr.io/midnight-ntwrk/indexer-standalone:4.4.0-rc.6-68702121
     ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine
