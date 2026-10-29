@@ -1313,9 +1313,9 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
-    # Optional: pin the indexer-standalone image for the indexer e2e
-    # (gated behind MN_RUN_INDEXER_E2E in the test; see util/toolkit/tests/indexer_e2e.rs).
-    ARG INDEXER_STANDALONE_IMAGE
+    # Keep in sync with util/toolkit/test-images.docker-compose.yml. Always pre-pulled: it is a
+    # private GHCR image, which testcontainers inside the DinD can't authenticate for.
+    ARG INDEXER_STANDALONE_IMAGE=ghcr.io/midnight-ntwrk/indexer-standalone:4.4.0-rc.6-68702121
     ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
@@ -1327,9 +1327,7 @@ test-toolkit:
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
     END
-    IF [ -n "$INDEXER_STANDALONE_IMAGE" ]
-        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE -e MN_RUN_INDEXER_E2E=1"
-    END
+    SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE"
     IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
     END
@@ -1344,7 +1342,8 @@ test-toolkit:
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
-                --pull $NODE_IMAGE
+                --pull $NODE_IMAGE \
+                --pull $INDEXER_STANDALONE_IMAGE
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
@@ -1362,7 +1361,9 @@ test-toolkit:
                 rm -f /root/.docker/config.json
         END
     ELSE
-        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+        WITH DOCKER \
+                --load test-toolkit:latest=+build-test-toolkit \
+                --pull $INDEXER_STANDALONE_IMAGE
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
