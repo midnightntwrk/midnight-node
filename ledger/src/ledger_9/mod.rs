@@ -182,8 +182,7 @@ lazy_static! {
 			.build();
 }
 
-/// Which path invoked transaction validation. Used only to tag log lines so the same
-/// `do_validate_transaction` body produces accurate messages for each caller.
+/// Which path invoked transaction validation; used only to tag log lines.
 #[derive(Clone, Copy, Debug)]
 pub enum ValidationCaller {
 	/// The mempool / runtime-API validation path (`validate_transaction`).
@@ -1302,10 +1301,6 @@ where
 
 	/// Validates a transaction using the soft cache.
 	///
-	/// Shared by two callers — the mempool/runtime-API path (`validate_transaction`) and the
-	/// `midnight_validateTransaction` RPC path (`validate_transaction_verbose`). The `caller`
-	/// tag distinguishes them in the logs that oncall greps for.
-	///
 	/// Uses `tx_hash` only for quick revalidation of transactions already validated.
 	/// The soft cache prevents redundant ZK proof verification.
 	///
@@ -1322,12 +1317,10 @@ where
 	{
 		let soft_key = SoftTxValidationKey { tx_hash: tx_hash.0 };
 
-		// Check soft cache first (quick tx_hash-only lookup for revalidation)
 		if let Some(cached) = SOFT_TX_VALIDATION_CACHE.get(&soft_key) {
 			return cached.map(|_| true).map_err(types::DetailedTransactionError::from);
 		}
 
-		// Cache miss: transaction is being validated for the first time or re-validated
 		let tx_hash_hex = hex::encode(tx.hash());
 		let verified_tx =
 			match Self::get_verified_transaction(ledger, tx, block_context, tx_hash, false) {
@@ -1464,10 +1457,7 @@ where
 		let ledger =
 			Self::get_ledger(&api, state_key).map_err(types::DetailedTransactionError::from)?;
 
-		// Reject transactions that can't fit the block weight budget. `get_transaction_cost`
-		// normalizes the tx cost against the block limits and returns `BlockLimitExceededError`
-		// when it overflows, so a tx the runtime would never include is rejected here with a
-		// clear error instead of passing the verbose validator.
+		// Called only for its `BlockLimitExceededError`: rejects txs no block could include.
 		Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)
 			.map_err(types::DetailedTransactionError::from)?;
 

@@ -252,9 +252,8 @@ pub struct ValidateRateLimitConfig {
 
 type KeyedRateLimiter = RateLimiter<[u8; 32], DefaultKeyedStateStore<[u8; 32]>, DefaultClock>;
 
-/// Sweep the keyed `per_tx` store once it holds more than this many keys. This is a memory cap
-/// on the otherwise-unbounded `DashMap` (~32B key + governor state + map overhead per entry),
-/// set well above any legitimate working set so normal traffic never triggers a sweep.
+/// Memory cap on the keyed `per_tx` store, set well above any legitimate working set so normal
+/// traffic never triggers a sweep.
 const PER_TX_GC_THRESHOLD: usize = 50_000;
 
 struct ValidationRateLimiter {
@@ -264,25 +263,10 @@ struct ValidationRateLimiter {
 		DefaultClock,
 	>,
 	per_tx: KeyedRateLimiter,
-	/// Eviction bookkeeping for the keyed `per_tx` limiter.
-	///
-	/// The keyed store is an unbounded `DashMap` and governor never evicts on its own
-	/// (`retain_recent`/`shrink_to_fit` exist precisely because it doesn't): every distinct
-	/// tx hash inserts a key that lives until we reclaim it. Because the per-tx check runs
-	/// *before* the global limit — so a replayed tx can't burn the shared budget — insertion
-	/// is not throttled by the global quota, and a flood of uniquely-hashing txs grows the
-	/// store at the incoming request rate. We cap it by sweeping once it exceeds `gc_threshold`:
-	/// [`RateLimiter::retain_recent`] drops keys whose cooldown has fully elapsed (keys that
-	/// would pass the check anyway), then `shrink_to_fit` releases the backing capacity.
-	///
-	/// Note `retain_recent` can only reclaim *stale* keys, so under a sustained flood of fresh
-	/// unique hashes the store settles around `request_rate * cooldown` keys — the threshold
-	/// bounds the steady state but can't drop keys that are still actively rate-limiting.
-	///
-	/// The sweep is triggered opportunistically from the validation handler rather than a
-	/// background timer — `Midnight` is constructed per RPC connection (see `node/src/rpc.rs`),
-	/// so a per-connection timer would be wasteful. `gc_lock` serializes concurrent sweeps so
-	/// callers don't all scan the map at once; a caller that can't grab it skips this round.
+	/// governor never evicts from the keyed store, and inserts aren't throttled by the global
+	/// quota (see [`Self::check`]), so every distinct tx hash adds a key until swept. A sweep only
+	/// reclaims expired keys: a sustained flood of unique hashes still settles at
+	/// ~`request_rate * cooldown` keys.
 	gc_threshold: usize,
 	gc_lock: std::sync::Mutex<()>,
 }
@@ -312,8 +296,6 @@ impl ValidationRateLimiter {
 		}
 	}
 
-	/// Evict stale keys from the `per_tx` store once it grows past `gc_threshold`. Non-blocking:
-	/// if another thread is already sweeping we skip this round rather than contend on the lock.
 	fn maybe_gc(&self) {
 		if self.per_tx.len() < self.gc_threshold {
 			return;
@@ -328,12 +310,8 @@ impl ValidationRateLimiter {
 		}
 	}
 
-	/// Decide whether a `validate_transaction` request may proceed.
-	///
-	/// The per-tx cooldown is checked *before* the global limit, so a replayed tx is rejected
-	/// without consuming a global token and cannot starve the shared budget for other callers.
-	/// Stale keys are swept before the keyed insert. See [`ValidationRateLimiter`] for the memory
-	/// trade-off this ordering implies.
+	/// Per-tx cooldown before the global limit, so a replayed tx is rejected without spending a
+	/// global token and can't starve other callers.
 	fn check(&self, tx_key: &[u8; 32]) -> Result<(), RateLimitRejection> {
 		self.maybe_gc();
 		if self.per_tx.check_key(tx_key).is_err() {
@@ -505,12 +483,6 @@ where
 			)
 		})?;
 
-		// Rate limiting: the per-tx cooldown (keyed by blake2_256 of tx bytes) is checked before
-		// the global limit, so a client replaying the *same* transaction — typically a buggy
-		// client retrying in a tight loop — is rejected without consuming a global token and so
-		// can't drain the shared budget for every other caller. The trade-off: insertion is no
-		// longer throttled by the global limit, so the keyed store is bounded by size instead
-		// (see `ValidationRateLimiter`).
 		match self.validate_rate_limiter.check(&blake2_256(&tx_bytes)) {
 			Ok(()) => {},
 			Err(RateLimitRejection::PerTx) => {
@@ -529,9 +501,6 @@ where
 
 		let api = self.client.runtime_api();
 
-		// The validation context (state key, block context, spec version, max block weight) is
-		// served by `get_validation_context`, added to MidnightRuntimeApi in v6. Reject politely
-		// on older runtimes rather than dispatching a method they don't implement.
 		let api_version = get_api_version::<C, Block>(&api, at).map_err(|e| {
 			ErrorObject::owned(-32603, format!("Runtime API error: {e}"), None::<()>)
 		})?;
@@ -589,23 +558,15 @@ mod tests {
 		})
 	}
 
-	/// A distinct 32-byte tx key per `n`.
 	fn key(n: u8) -> [u8; 32] {
 		let mut k = [0u8; 32];
 		k[0] = n;
 		k
 	}
 
-	/// Replaying the *same* transaction is rejected by the per-tx cooldown without spending a
-	/// global token — i.e. the per-tx check runs before the global one. We prove the global
-	/// budget was untouched by the replays by showing it still admits exactly
-	/// `global_rate_limit - 1` further *distinct* transactions afterwards.
-	///
-	/// Under the old global-first ordering this test fails: each replay would consume a global
-	/// token before the per-tx check, so the budget would be exhausted by the replays and the
-	/// later distinct txs would be rejected (and an over-budget replay would surface as
-	/// `Global`, not `PerTx`). Run synchronously so quota replenishment (1 token / 100ms at
-	/// rate 10) stays negligible across the whole test.
+	/// Replays rejected by the per-tx cooldown must not spend global tokens: afterwards the global
+	/// budget still admits exactly `global_rate_limit - 1` distinct txs. Synchronous so quota
+	/// replenishment (1 token / 100ms at rate 10) stays negligible.
 	#[test]
 	fn per_tx_cooldown_does_not_consume_global_budget() {
 		// Cooldown long enough that every replay falls inside the per-tx window.
@@ -615,13 +576,11 @@ mod tests {
 		// First sighting of A is admitted, consuming 1 of 10 global tokens.
 		assert_eq!(rl.check(&a), Ok(()));
 
-		// 100 immediate replays of A are all rejected by the per-tx cooldown...
 		for _ in 0..100 {
 			assert_eq!(rl.check(&a), Err(RateLimitRejection::PerTx));
 		}
 
-		// ...and did not touch the global budget: 9 more distinct txs still pass, using up
-		// the remaining tokens (1 + 9 == 10).
+		// Replays spent no global tokens: 9 more distinct txs fit (1 + 9 == 10).
 		for n in 2..=10u8 {
 			assert_eq!(
 				rl.check(&key(n)),
@@ -630,8 +589,6 @@ mod tests {
 			);
 		}
 
-		// The 11th distinct tx exhausts the global budget and is rejected there — not by the
-		// per-tx cooldown, since it is a fresh key.
 		assert_eq!(rl.check(&key(11)), Err(RateLimitRejection::Global));
 	}
 }
