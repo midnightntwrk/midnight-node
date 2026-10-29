@@ -348,6 +348,31 @@ mod tests {
 		assert!(try_get_default_storage::<ParityDb>().is_none());
 	}
 
+	/// Ledger-state versions whose `StateKey` contract is pinned by tests: zero end-of-block
+	/// `block_fullness` and a golden block-0 `StateKey` shared with midnight-indexer.
+	const STATE_KEY_CONTRACT_VERSIONS: &[u32] = &[13, 18];
+
+	/// midnight-indexer validates every block by recomputing `StateKey`, so a new ledger-state
+	/// version must not become `latest` without that contract pinned for it.
+	#[test]
+	fn latest_ledger_state_version_has_its_state_key_contract_pinned() {
+		use crate::latest::{
+			ledger_storage_local::DefaultDB, mn_ledger_local::structure::LedgerState,
+		};
+		use midnight_serialize::Tagged;
+
+		let tag = <LedgerState<DefaultDB> as Tagged>::tag();
+		let version = super::ledger_state_tag_version(tag.as_bytes())
+			.expect("ledger-state tag carries a version");
+		assert!(
+			STATE_KEY_CONTRACT_VERSIONS.contains(&version),
+			"ledger-state[v{version}] has no pinned StateKey contract: add a golden block-0 StateKey \
+			 test (like `ledger_9::storage::tests`), the end-of-block fullness tests and the \
+			 `is_block_start`/`block_start_state_key` dispatch arms, add the same vector to \
+			 midnight-indexer's `node_state_key_matches_node_at_genesis`, then list v{version} here"
+		);
+	}
+
 	/// `is_ledger_8_state_key` is what the ledger-9 host API dispatches on to read the
 	/// `set_code` block of the 8->9 hardfork, whose `StateKey` is one version behind
 	/// its `:code` (GH #1959). It has to tell a ledger-8 arena root from a ledger-9
