@@ -32,6 +32,7 @@
     "@midnight-ntwrk/node-toolkit-compact-0.31.0": "^0.1.0",
     "@midnight-ntwrk/node-toolkit-compact-0.33.0": "^0.1.0",
     "@midnight-ntwrk/node-toolkit-compact-0.34.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.35.0": "^0.1.0",
     "effect": "^3.21.0"
   },
   "devDependencies": {
@@ -45,7 +46,7 @@
   "overrides": {
     "toml": "^5.0.1",
     "esbuild": "0.28.1",
-    "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
+    "@midnightntwrk/ledger-v9": "1.0.0-rc.6",
     "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"
   }
 }
