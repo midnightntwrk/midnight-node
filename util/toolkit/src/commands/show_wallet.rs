@@ -13,7 +13,6 @@
 
 use std::collections::HashMap;
 
-#[cfg(feature = "indexer-client")]
 use crate::fetcher::wallet_state_cache::{CachedWalletState, indexer_wallet_cache_key};
 use crate::source::Source;
 use crate::tx_generator::builder::{
@@ -26,11 +25,8 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
-#[cfg(feature = "indexer-client")]
 use midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY;
-#[cfg(feature = "indexer-client")]
 use midnight_ledger_unsafe_helpers::{IndexerClient, WalletSyncState};
-#[cfg(feature = "indexer-client")]
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]

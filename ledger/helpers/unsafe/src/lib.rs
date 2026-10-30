@@ -31,7 +31,6 @@ pub mod extract_tx_with_context;
 /// with `CoinSelectionStrategy` below. Only decoding the blobs into wallet updates is
 /// per-generation, in each `ledger_N::context::indexer_context`.
 pub mod indexer_client;
-#[cfg(feature = "indexer-client")]
 pub use indexer_client::{IndexerClient, IndexerClientError, WalletSyncState};
 
 /// Process-wide counters of replayed transactions that did not fully apply,
