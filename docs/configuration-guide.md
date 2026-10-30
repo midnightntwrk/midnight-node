@@ -364,7 +364,7 @@ Common Substrate flags for SREs:
 - `--state-pruning archive` - Keep full state history
 - `--ledger-state-pruning <N>` - Midnight flag: keep the ledger state of only the last `N`
   finalized blocks in the ledger storage, even with `--state-pruning archive`. Requires an
-  indexer that validates against `pallet_midnight::StateKey` (midnight-indexer 1724+) and a
+  indexer that validates against `pallet_midnight::StateKey` (the indexer release that includes midnight-indexer PR 1724) and a
   ledger storage created by a node with ledger GC
 - `--blocks-pruning archive` - Keep all blocks
 - `--rpc-external` - Expose RPC to external connections
