@@ -26,6 +26,29 @@ pub enum ForkAwareLedgerContext {
 	Ledger9(crate::ledger_9::context::LedgerContext<Db9>),
 }
 
+/// Ledger-8 wallet for an `ecdsa:` seed: real shielded and dust sub-wallets, watch-only unshielded
+/// one at the ECDSA address. Ledger 8 cannot derive that address, so it is computed with the
+/// ledger-9 types; `UserAddress` is the same 32-byte hash in both.
+pub fn watch_only_ecdsa_wallet_8(
+	seed: &crate::ledger_9::WalletSeed,
+	seed_8: crate::ledger_8::WalletSeed,
+	ledger_state: &crate::ledger_8::LedgerState<Db8>,
+) -> crate::ledger_8::Wallet<Db8> {
+	let address = crate::ledger_9::UnshieldedWallet::new(
+		seed.clone(),
+		crate::ledger_9::UnshieldedSignatureScheme::Ecdsa,
+	)
+	.user_address;
+	let address_8 = crate::ledger_8::UserAddress(crate::ledger_8::HashOutput(address.0.0));
+
+	crate::ledger_8::Wallet {
+		root_seed: Some(seed_8.clone()),
+		shielded: crate::ledger_8::ShieldedWallet::default(seed_8.clone()),
+		unshielded: crate::ledger_8::UnshieldedWallet::from(address_8),
+		dust: crate::ledger_8::DustWallet::default(seed_8, Some(&ledger_state.parameters)),
+	}
+}
+
 impl ForkAwareLedgerContext {
 	/// Create a new context at the given ledger version.
 	pub fn new(version: LedgerVersion, network_id: impl Into<String>) -> Self {
@@ -69,9 +92,8 @@ impl ForkAwareLedgerContext {
 
 	/// Like [`Self::new_from_wallet_seeds`] but with a per-seed unshielded signature scheme.
 	///
-	/// ECDSA identities are only representable from ledger 9. On an earlier generation any ECDSA
-	/// scheme is rejected with a clear panic here rather than being allowed to blow up deep inside
-	/// the ledger-8 ECDSA stubs.
+	/// Ledger 8 cannot hold an ECDSA key, so there such seeds get a watch-only wallet (see
+	/// [`watch_only_ecdsa_wallet_8`]) and their keys are installed after the 8->9 fork.
 	pub fn new_from_wallet_seeds_with_schemes(
 		version: LedgerVersion,
 		network_id: impl Into<String>,
@@ -85,17 +107,31 @@ impl ForkAwareLedgerContext {
 				),
 			),
 			LedgerVersion::Ledger8 => {
-				assert!(
-					seeds.iter().all(|(_, scheme)| matches!(
-						scheme,
-						crate::ledger_9::UnshieldedSignatureScheme::Schnorr
-					)),
-					"ECDSA unshielded signatures are only supported from ledger 9; \
-					 the source chain is on {version:?}"
-				);
+				use crate::ledger_9::UnshieldedSignatureScheme as Scheme;
+				let (schnorr, ecdsa): (Vec<_>, Vec<_>) =
+					seeds.iter().partition(|(_, scheme)| *scheme == Scheme::Schnorr);
+
 				let plain: Vec<crate::ledger_9::WalletSeed> =
-					seeds.iter().map(|(s, _)| s.clone()).collect();
-				Self::new_from_wallet_seeds(version, network_id, &plain)
+					schnorr.iter().map(|(s, _)| s.clone()).collect();
+				let Self::Ledger8(ctx) = Self::new_from_wallet_seeds(version, network_id, &plain)
+				else {
+					unreachable!("Ledger8 version builds a Ledger8 context")
+				};
+
+				if !ecdsa.is_empty() {
+					let ledger_state =
+						ctx.ledger_state.lock().expect("failed to lock ledger state").clone();
+					let mut wallets = ctx.wallets.lock().expect("failed to lock wallets");
+					for (seed, _) in ecdsa {
+						let seed_8 = crate::ledger_8::WalletSeed::try_from(seed.as_bytes())
+							.expect("ledger seed format should be backwards compatible");
+						wallets.insert(
+							seed_8.clone(),
+							watch_only_ecdsa_wallet_8(seed, seed_8, &ledger_state),
+						);
+					}
+				}
+				Self::Ledger8(ctx)
 			},
 		}
 	}
@@ -244,4 +280,73 @@ pub fn apply_block_9(
 		block.state.as_ref(),
 	)
 	.expect("failed to update ledger 9 context from block")
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::ledger_9::{UnshieldedSignatureScheme, UnshieldedWallet, WalletSeed};
+
+	fn seed() -> WalletSeed {
+		WalletSeed::Short([0x42; 16])
+	}
+
+	/// No key is derived pre-fork, and the watched address is the ECDSA one, not the Schnorr one.
+	#[test]
+	fn ecdsa_seed_is_watch_only_before_the_fork() {
+		let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
+			LedgerVersion::Ledger8,
+			"undeployed",
+			&[(seed(), UnshieldedSignatureScheme::Ecdsa)],
+		);
+		let ForkAwareLedgerContext::Ledger8(ctx) = ctx else {
+			panic!("expected a ledger-8 context")
+		};
+
+		let seed_8 = crate::ledger_8::WalletSeed::try_from(seed().as_bytes()).unwrap();
+		let wallets = ctx.wallets.lock().unwrap();
+		let wallet = wallets.get(&seed_8).expect("the ECDSA seed still gets a wallet");
+
+		assert!(
+			wallet.unshielded.maintenance_verifying_key().is_none(),
+			"no key material may be derived for an ECDSA identity on ledger 8",
+		);
+
+		let ecdsa = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address;
+		let schnorr =
+			UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Schnorr).user_address;
+		assert_ne!(ecdsa.0.0, schnorr.0.0, "the two identities must be distinct");
+		assert_eq!(wallet.unshielded.user_address.0.0, ecdsa.0.0, "must watch the ECDSA address");
+	}
+
+	/// Shielded and dust identities do not depend on the scheme, so pre-fork history still replays.
+	#[test]
+	fn ecdsa_seed_keeps_a_usable_shielded_subwallet_before_the_fork() {
+		let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
+			LedgerVersion::Ledger8,
+			"undeployed",
+			&[(seed(), UnshieldedSignatureScheme::Ecdsa)],
+		);
+		let ForkAwareLedgerContext::Ledger8(ctx) = ctx else {
+			panic!("expected a ledger-8 context")
+		};
+
+		let seed_8 = crate::ledger_8::WalletSeed::try_from(seed().as_bytes()).unwrap();
+		let wallets = ctx.wallets.lock().unwrap();
+		let wallet = wallets.get(&seed_8).unwrap();
+
+		let expected = crate::ledger_8::ShieldedWallet::<Db8>::default(seed_8);
+		assert_eq!(
+			wallet.shielded.coin_public_key, expected.coin_public_key,
+			"shielded identity must be the seed's own, so pre-fork offers are picked up",
+		);
+		let expected_dust = crate::ledger_8::DustWallet::<Db8>::default(
+			crate::ledger_8::WalletSeed::try_from(seed().as_bytes()).unwrap(),
+			None,
+		);
+		assert_eq!(
+			wallet.dust.public_key, expected_dust.public_key,
+			"dust identity must be the seed's own, so dust events replay",
+		);
+	}
 }

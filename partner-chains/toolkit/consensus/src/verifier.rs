@@ -107,6 +107,7 @@ where
 mod tests {
 	use super::*;
 	use crate::test_support::*;
+	use sp_api::CallContext;
 	use sp_runtime::{DigestItem, OpaqueExtrinsic};
 	use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -178,6 +179,30 @@ mod tests {
 		// The inherent check ran against inherent data recreated from the slot and
 		// inherent digest of the header (asserted in the test CIDP).
 		assert!(check_inherents_called.load(Ordering::SeqCst));
+	}
+
+	#[tokio::test]
+	async fn checks_inherents_in_the_on_chain_call_context() {
+		// The block author builds in the on-chain context, which (with `system_version >= 3`)
+		// resolves a runtime upgrade staged in `:pending_code`. The check must run in the
+		// same context: in the default off-chain one the first post-upgrade block would be
+		// checked by the old runtime and rejected if an inherent's encoding changed.
+		let (client, _) = test_client(false);
+		let verifier: TestVerifier = PartnerChainsVerifier::new(
+			InnerVerifier { fail: false },
+			client.clone(),
+			test_create_inherent_data_providers(),
+		);
+
+		verifier
+			.verify(block_import_params(Some(vec![])))
+			.await
+			.expect("verification succeeds");
+
+		assert_eq!(
+			client.check_inherents_call_context(),
+			Some(CallContext::Onchain { import: false })
+		);
 	}
 
 	#[tokio::test]
