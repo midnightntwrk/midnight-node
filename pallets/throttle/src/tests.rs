@@ -16,7 +16,7 @@
 //! These tests exercise both the `AccountUsage` storage directly and the
 //! `CheckThrottle` TransactionExtension via its `validate()` and `prepare()` methods.
 
-use crate::{AccountUsage, CheckThrottle, UsageStats, mock::*};
+use crate::{AccountUsage, CheckThrottle, THROTTLE_LIMIT_EXCEEDED, UsageStats, mock::*};
 use frame_support::assert_ok;
 use sp_runtime::{
 	traits::{TransactionExtension, TxBaseImplication},
@@ -160,7 +160,7 @@ fn validate_rejects_over_limit() {
 		let result = validate_signed(1, MaxBytes::get() as usize + 1);
 		assert_eq!(
 			result.unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }
@@ -177,7 +177,7 @@ fn validate_rejects_accumulated_over_limit() {
 		let result = validate_signed(1, 5 * 1024 * 1024);
 		assert_eq!(
 			result.unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }
@@ -213,7 +213,7 @@ fn validate_rejects_one_byte_over_limit() {
 		validate_and_prepare(1, MaxBytes::get() as usize);
 		assert_eq!(
 			validate_signed(1, 1).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }
@@ -230,7 +230,7 @@ fn validate_rejects_when_tx_count_exceeded() {
 
 		assert_eq!(
 			validate_signed(1, 0).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }
@@ -255,7 +255,7 @@ fn validate_rejects_one_tx_over_limit() {
 
 		assert_eq!(
 			validate_signed(1, 0).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }
@@ -282,7 +282,7 @@ fn validate_tx_count_does_not_reset_before_window_expires() {
 
 		assert_eq!(
 			validate_signed(1, 0).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }
@@ -350,7 +350,7 @@ fn validate_does_not_reset_before_window_expires() {
 
 		assert_eq!(
 			validate_signed(1, 1).unwrap_err(),
-			TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources)
+			TransactionValidityError::Invalid(InvalidTransaction::Custom(THROTTLE_LIMIT_EXCEEDED))
 		);
 	});
 }

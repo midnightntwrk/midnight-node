@@ -45,9 +45,9 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -88,7 +88,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff #v2.87.8
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 #v2.87.29
         with:
           tool: just
 
@@ -132,9 +132,9 @@ jobs:
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
         run: |
           echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
-          . ./.envrc && earthly +extract-node-artifacts \
+          . ./.envrc && earth +extract-node-artifacts \
             --NODE_IMAGE="${NODE_IMAGE}:${IMAGE_TAG}-amd64"
-          . ./.envrc && earthly +extract-toolkit-artifacts \
+          . ./.envrc && earth +extract-toolkit-artifacts \
             --TOOLKIT_IMAGE="${TOOLKIT_IMAGE}:${IMAGE_TAG}-amd64"
 
       - name: Free disk space
@@ -151,8 +151,8 @@ jobs:
         run: |
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -184,7 +184,7 @@ jobs:
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  #v7.0.2
         if: success() || failure()
         with:
           name: midnight-node-amd64
@@ -270,7 +270,7 @@ jobs:
             "SHA256SUMS-${PLATFORM}"
 
       - name: Archive release notes
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
           path: RELEASE_NOTES.md
@@ -286,9 +286,9 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -345,9 +345,9 @@ jobs:
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
         run: |
           echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
-          . ./.envrc && earthly +extract-node-artifacts \
+          . ./.envrc && earth +extract-node-artifacts \
             --NODE_IMAGE="${NODE_IMAGE}:${IMAGE_TAG}-arm64"
-          . ./.envrc && earthly +extract-toolkit-artifacts \
+          . ./.envrc && earth +extract-toolkit-artifacts \
             --TOOLKIT_IMAGE="${TOOLKIT_IMAGE}:${IMAGE_TAG}-arm64"
 
       - name: Run Node and toolkit builds
@@ -355,8 +355,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -387,7 +387,7 @@ jobs:
 
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  #v7.0.2
         if: success() || failure()
         with:
           name: midnight-node-arm64
