@@ -20,14 +20,11 @@ Both ledger generations are supported. The indexer carries v8 and v9 itself and 
 in its own encodings, so `show-wallet` reads `Block.protocolVersion` and dispatches to the matching
 `IndexerContext` rather than assuming the latest. The existing replay path is unchanged.
 
-The client's GraphQL operations are typed against the indexer's committed schema
-(`indexer/indexer-api/graphql/schema-v4.graphql`, read from the submodule at compile time via
-`graphql_client`), so an incompatible schema change in the submodule breaks the build rather than
-failing at runtime. The whole indexer client lives behind a new `indexer-client` cargo feature —
-on by default for the toolkit, off for `midnight-ledger-unsafe-helpers` — so the node and other
-consumers still build without the indexer submodule. `--workspace`/toolkit builds (which enable
-the feature) need the submodule checked out; the relevant Earthly targets copy just the schema
-file, and `tests/e2e` opts out of the feature.
+Indexers 4.3 (4.3.3 onwards) and 4.4 are supported. Their GraphQL schemas are vendored in
+`ledger/helpers/unsafe/graphql/schema/`: the client is typed against the newest, and a unit test
+checks every query document against all of them. The whole indexer client lives behind a new
+`indexer-client` cargo feature — on by default for the toolkit, off for
+`midnight-ledger-unsafe-helpers`.
 
 An end-to-end test (`util/toolkit/tests/indexer_show_wallet_e2e.rs`) spins up a node plus
 `indexer-standalone` on a shared Docker network and asserts the synced wallet reports the funded
