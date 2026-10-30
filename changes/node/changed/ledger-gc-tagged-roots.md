@@ -35,8 +35,16 @@ the pruning window.
   pruning window at the upgrade block. Pallets must not keep an old ledger root in ordinary
   storage outside a multi-block migration, and migration code must persist through the tagged
   path, never raw `persist`.
-- **Archive modes** (`archive`, `archive-canonical`, unbounded constrained) run no GC; logged
-  once at startup.
+- **Archive modes** (`archive`, `archive-canonical`, unbounded constrained) run no GC by
+  default; logged once at startup. `--ledger-state-pruning <N>` opts such a node in: the ledger
+  state of every block below `finalized - N` is released, stale forks included, while Substrate
+  state stays archival. Anything that loads the ledger state of an older block on that node
+  fails (runtime APIs such as `get_zswap_state_root` at that block, warp ledger-sync requests
+  for it), so an indexer served by the node must validate against `pallet_midnight::StateKey`
+  (midnight-indexer PR 1724 or later) before the flag is enabled. On a node with a bounded
+  `--state-pruning` window the flag may only widen the ledger window; a smaller value is
+  refused at startup. The marker rule above applies unchanged: the flag needs a ledger storage
+  created by a node with ledger GC.
 - **Unified storage** (issue 2294): the ledger columns get storage-core's btree index in unified
   mode too, so they can be iterated. An existing unified database keeps its old column options
   and still opens; the worker probes once at startup and disables itself with a resync message
@@ -65,6 +73,7 @@ the pruning window.
   fires above twice the budget.
 - `MIDNIGHT_LEDGER_GC_ARENA_SWEEP`: `0` releases tips but never sweeps; escape hatch if the
   sweep's mark set uses too much memory on a very large arena.
+- `--ledger-state-pruning <N>`: explicit ledger window (see *Archive modes*).
 - Per-slice work grows with the `--state-pruning` window (one read and one header lookup per
   root).
 
