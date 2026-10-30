@@ -220,7 +220,6 @@ pub fn wallet_cache_key(seed: &WalletSeed, scheme: UnshieldedSignatureScheme) ->
 /// identity has its own unshielded address.
 ///
 /// The chain itself is the existing `chain_id` directory namespace (block 1's hash).
-#[cfg(feature = "indexer-client")]
 pub fn indexer_wallet_cache_key(
 	seed: &WalletSeed,
 	scheme: UnshieldedSignatureScheme,
@@ -315,7 +314,6 @@ impl CachedWalletState {
 	/// `block_height` is the indexer tip the run synced against. It is not a resume cursor here —
 	/// the three stream cursors are — but it keeps `write_wallet_if_newer`'s monotonic guard
 	/// meaningful, so a slow run cannot clobber a fresher entry.
-	#[cfg(feature = "indexer-client")]
 	pub fn from_sync_state(
 		seed_hash: H256,
 		block_height: u64,
@@ -334,7 +332,6 @@ impl CachedWalletState {
 
 	/// Read an indexer-path entry back as a resume point. Only meaningful for an entry fetched
 	/// under [`indexer_wallet_cache_key`].
-	#[cfg(feature = "indexer-client")]
 	pub fn to_sync_state(&self) -> midnight_ledger_unsafe_helpers::WalletSyncState {
 		midnight_ledger_unsafe_helpers::WalletSyncState {
 			shielded_state: (!self.shielded_state_bytes.is_empty()).then(|| {
@@ -934,7 +931,6 @@ mod tests {
 
 	/// The indexer path's entries carry stream cursors and no ledger snapshot, so serving one
 	/// against the replay path (or across the v8→v9 hardfork) would resume from meaningless state.
-	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn indexer_cache_key_is_disjoint_from_replay_and_per_generation() {
 		let seed = WalletSeed::try_from_hex_str(
@@ -959,7 +955,6 @@ mod tests {
 		}
 	}
 
-	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn sync_state_roundtrips_through_a_cache_entry() {
 		use midnight_ledger_unsafe_helpers::{
@@ -993,7 +988,6 @@ mod tests {
 
 	/// A drain that ended merkle-misaligned persists no shielded state; the next run must read that
 	/// back as "no shielded resume point" rather than as an empty `WalletState` blob.
-	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn absent_shielded_state_roundtrips_as_none() {
 		use midnight_ledger_unsafe_helpers::WalletSyncState;
