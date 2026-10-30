@@ -48,12 +48,14 @@ export interface GenesisOverrideResult {
 /**
  * Per-key-type seed file names and the env var suffix that overrides each.
  * For a base var `MIDNIGHT_NODE_01_0_SEED`, the per-type vars are
- * `MIDNIGHT_NODE_01_0_AURA_SEED`, `..._GRANDPA_SEED`, `..._CROSS_CHAIN_SEED`.
+ * `MIDNIGHT_NODE_01_0_AURA_SEED`, `..._GRANDPA_SEED`, `..._CROSS_CHAIN_SEED`,
+ * `..._BEEFY_SEED`.
  */
 const SEED_FILE_TYPES = [
   { file: "aura.seed", envSuffix: "AURA" },
   { file: "grandpa.seed", envSuffix: "GRANDPA" },
   { file: "cross_chain.seed", envSuffix: "CROSS_CHAIN" },
+  { file: "beefy.seed", envSuffix: "BEEFY" },
 ] as const;
 
 /**
@@ -62,19 +64,19 @@ const SEED_FILE_TYPES = [
  *
  * The base compose files pass each validator's seed phrase as a `SEED_PHRASE`
  * env var, but the node only imports keystore keys from AURA_SEED_FILE /
- * GRANDPA_SEED_FILE / CROSS_CHAIN_SEED_FILE (see node/src/command.rs), so a
- * bare bring-up would start every validator with an empty keystore. For each
- * service whose SEED_PHRASE references a set env var, this writes the phrase
- * to a per-service seed file and points all three *_SEED_FILE vars at it —
- * the node derives the sr25519/ed25519/ecdsa keypairs from the same phrase,
- * matching how the pre-fork tooling populated keystores from the single
- * MIDNIGHT_NODE_*_SEED secret.
+ * GRANDPA_SEED_FILE / CROSS_CHAIN_SEED_FILE / BEEFY_SEED_FILE (see
+ * node/src/command.rs), so a bare bring-up would start every validator with an
+ * empty keystore. For each service whose SEED_PHRASE references a set env var,
+ * this writes the phrase to a per-service seed file and points all four
+ * *_SEED_FILE vars at it — the node derives the sr25519/ed25519/ecdsa keypairs
+ * from the same phrase, matching how the pre-fork tooling populated keystores
+ * from the single MIDNIGHT_NODE_*_SEED secret.
  *
  * Networks whose validators were deployed with a distinct phrase per key type
  * can set per-type vars instead (the base var's `_SEED` suffix is replaced by
- * `_AURA_SEED` / `_GRANDPA_SEED` / `_CROSS_CHAIN_SEED`); each key type falls
- * back to the base var when its per-type var is unset. A service is seeded
- * only when all three key types resolve to a phrase.
+ * `_AURA_SEED` / `_GRANDPA_SEED` / `_CROSS_CHAIN_SEED` / `_BEEFY_SEED`); each
+ * key type falls back to the base var when its per-type var is unset. A
+ * service is seeded only when all four key types resolve to a phrase.
  */
 export function generateGenesisComposeOverride(
   opts: GenesisOverrideOptions,
@@ -142,6 +144,7 @@ export function generateGenesisComposeOverride(
         AURA_SEED_FILE: "/seeds/aura.seed",
         GRANDPA_SEED_FILE: "/seeds/grandpa.seed",
         CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed",
+        BEEFY_SEED_FILE: "/seeds/beefy.seed",
         // The node does not consume SEED_PHRASE; blank it so nothing appears
         // to depend on it and the raw phrase stays out of container env.
         SEED_PHRASE: "",

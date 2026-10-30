@@ -242,9 +242,8 @@ impl TxGenerator {
 			return result;
 		}
 
-		// Guard: ECDSA unshielded identities are only representable from ledger 9. Reject early with
-		// a clear CLI error instead of letting the loud panic fire deep in context construction.
-		ensure_ecdsa_supported(received_txs.ledger_version(), &schemes)?;
+		// Reject early with a clear CLI error rather than deep in context construction.
+		ensure_ecdsa_supported(received_txs.tip_ledger_version(), &schemes)?;
 
 		let fork_ctx = if seeds.is_empty() {
 			None
