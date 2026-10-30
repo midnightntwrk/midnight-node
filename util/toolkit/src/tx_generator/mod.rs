@@ -18,7 +18,6 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub mod builder;
 pub mod destination;
-#[cfg(feature = "indexer-client")]
 pub mod indexer;
 pub mod source;
 
@@ -38,10 +37,6 @@ pub enum TxGeneratorError {
 	SourceError(#[from] SourceError),
 	#[error("invalid destination: {0}")]
 	DestinationError(#[from] DestinationError),
-	#[error(
-		"this toolkit was built without the `indexer-client` feature; rebuild with it enabled to use --indexer-url"
-	)]
-	IndexerClientDisabled,
 }
 
 #[derive(Debug, Error)]
@@ -77,9 +72,6 @@ impl TxGenerator {
 		let replay_checkpoint_interval = src.replay_checkpoint_interval;
 		let indexer_source = src.indexer_url.is_some().then(|| src.clone());
 		let source: Box<dyn GetTxs> = match &indexer_source {
-			#[cfg(not(feature = "indexer-client"))]
-			Some(_) => return Err(TxGeneratorError::IndexerClientDisabled),
-			#[cfg(feature = "indexer-client")]
 			Some(src) => {
 				if dry_run {
 					log::info!("Dry-run: Source wallets from indexer: {:?}", &src.indexer_url);
@@ -225,7 +217,6 @@ impl TxGenerator {
 			.relevant_wallet_schemes()
 			.map_err(|e| DynamicError { error: e.into() })?;
 
-		#[cfg(feature = "indexer-client")]
 		if let Some(source) = &self.indexer_source
 			&& let Some(indexer_url) = source.indexer_url.as_deref()
 		{

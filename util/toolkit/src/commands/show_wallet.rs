@@ -70,15 +70,7 @@ pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	if let Some(indexer_url) = args.source.indexer_url.clone() {
-		#[cfg(feature = "indexer-client")]
 		return execute_indexer(args, &indexer_url).await;
-		#[cfg(not(feature = "indexer-client"))]
-		{
-			let _ = indexer_url;
-			return Err("this toolkit was built without the `indexer-client` feature; \
-			            rebuild with it enabled to use --indexer-url"
-				.into());
-		}
 	}
 
 	let ledger_state_db = args.source.ledger_state_db.clone();
@@ -168,7 +160,6 @@ pub async fn execute(
 }
 /// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
 /// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
-#[cfg(feature = "indexer-client")]
 async fn execute_indexer(
 	args: ShowWalletArgs,
 	indexer_url: &str,
@@ -275,7 +266,6 @@ mod tests {
 				replay_checkpoint_interval: 0,
 				indexer_url: None,
 				network: "undeployed".to_string(),
-				#[cfg(feature = "indexer-client")]
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 				#[cfg(feature = "indexer-client")]
@@ -334,7 +324,6 @@ mod tests {
 				replay_checkpoint_interval: 0,
 				indexer_url: None,
 				network: "undeployed".to_string(),
-				#[cfg(feature = "indexer-client")]
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 				#[cfg(feature = "indexer-client")]
@@ -382,7 +371,6 @@ mod tests {
 				replay_checkpoint_interval: 0,
 				indexer_url: None,
 				network: "undeployed".to_string(),
-				#[cfg(feature = "indexer-client")]
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 				#[cfg(feature = "indexer-client")]
@@ -409,7 +397,6 @@ mod tests {
 
 	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
 	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
-	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn indexer_concurrency_rejects_zero() {
 		use clap::Parser;

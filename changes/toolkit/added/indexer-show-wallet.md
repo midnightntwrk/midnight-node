@@ -22,9 +22,7 @@ in its own encodings, so `show-wallet` reads `Block.protocolVersion` and dispatc
 
 Indexers 4.3 (4.3.3 onwards) and 4.4 are supported. Their GraphQL schemas are vendored in
 `ledger/helpers/unsafe/graphql/schema/`: the client is typed against the newest, and a unit test
-checks every query document against all of them. The whole indexer client lives behind a new
-`indexer-client` cargo feature — on by default for the toolkit, off for
-`midnight-ledger-unsafe-helpers`.
+checks every query document against all of them.
 
 An end-to-end test (`util/toolkit/tests/indexer_e2e.rs`) spins up a node plus
 `indexer-standalone` on a shared Docker network and asserts the synced wallet reports the funded
