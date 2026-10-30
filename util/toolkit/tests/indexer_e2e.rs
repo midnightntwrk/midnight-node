@@ -75,6 +75,7 @@ struct Env {
 	_indexer: ContainerAsync<GenericImage>,
 	node_ws: String,
 	indexer_url: String,
+	dust_snapshots_verify: bool,
 }
 
 /// An indexer release line and a node build it supports, as `test-images.docker-compose.yml`
@@ -84,15 +85,23 @@ struct IndexerLine {
 	name: &'static str,
 	node: &'static str,
 	indexer: &'static str,
+	/// False for an index-range `dustGenerations` (most of 4.3): its snapshots rarely verify, so
+	/// DUST fast sync falls back to the replay.
+	dust_snapshots_verify: bool,
 }
 
-const INDEXER_4_4: IndexerLine =
-	IndexerLine { name: "4-4", node: "midnight-node-indexer-e2e", indexer: "indexer-standalone" };
+const INDEXER_4_4: IndexerLine = IndexerLine {
+	name: "4-4",
+	node: "midnight-node-indexer-e2e",
+	indexer: "indexer-standalone",
+	dust_snapshots_verify: true,
+};
 /// A ledger-8 chain.
 const INDEXER_4_3: IndexerLine = IndexerLine {
 	name: "4-3",
 	node: "midnight-node-indexer-e2e-4-3",
 	indexer: "indexer-standalone-4-3",
+	dust_snapshots_verify: false,
 };
 
 /// `tag` keeps container names distinct between tests of this process run in parallel.
@@ -142,7 +151,13 @@ async fn start_env(tag: &str, line: IndexerLine) -> Env {
 	// to compare a parent against.
 	wait_for_indexer_height(&indexer_url, node_height.max(2), Duration::from_secs(180)).await;
 
-	Env { _node: node, _indexer: indexer, node_ws, indexer_url }
+	Env {
+		_node: node,
+		_indexer: indexer,
+		node_ws,
+		indexer_url,
+		dust_snapshots_verify: line.dust_snapshots_verify,
+	}
 }
 
 #[tokio::test]
@@ -162,7 +177,7 @@ async fn show_wallet_reports_genesis_balances(env: &Env) {
 
 	// --- run show-wallet against the indexer --------------------------------------------------
 	// Baseline: caching disabled, so every stream drains from the origin.
-	let baseline = show_wallet(indexer_url, FUNDED_SEED, None);
+	let baseline = show_wallet(env, FUNDED_SEED, None);
 
 	let utxos = baseline["utxos"].as_array().expect("`utxos` should be an array");
 	let coins = baseline["coins"].as_object().expect("`coins` should be an object");
@@ -175,12 +190,12 @@ async fn show_wallet_reports_genesis_balances(env: &Env) {
 	// --- incremental wallet cache ---------------------------------------------------------------
 	let cache = tempfile::tempdir().expect("failed to create cache dir");
 	assert_eq!(
-		show_wallet(indexer_url, FUNDED_SEED, Some(cache.path())),
+		show_wallet(env, FUNDED_SEED, Some(cache.path())),
 		baseline,
 		"enabling the cache must not change the first (still cold) run's answer",
 	);
 	assert_eq!(
-		show_wallet(indexer_url, FUNDED_SEED, Some(cache.path())),
+		show_wallet(env, FUNDED_SEED, Some(cache.path())),
 		baseline,
 		"a cache-resumed sync must reproduce the full drain exactly",
 	);
@@ -199,7 +214,7 @@ async fn show_wallet_reports_genesis_balances(env: &Env) {
 		.expect("failed to rename chain-id directory");
 
 	assert_eq!(
-		show_wallet(indexer_url, FUNDED_SEED, Some(cache.path())),
+		show_wallet(env, FUNDED_SEED, Some(cache.path())),
 		baseline,
 		"a cache entry under another chain id must be ignored, not served",
 	);
@@ -220,7 +235,7 @@ async fn single_tx_reaches_destination(env: &Env) {
 	const AMOUNT: u64 = 1_000_000;
 
 	assert!(
-		unshielded_values(show_wallet(&env.indexer_url, UNFUNDED_SEED, None)).is_empty(),
+		unshielded_values(show_wallet(env, UNFUNDED_SEED, None)).is_empty(),
 		"the destination seed must start unfunded"
 	);
 
@@ -231,12 +246,16 @@ async fn single_tx_reaches_destination(env: &Env) {
 	transfer(&env, &destination, AMOUNT, 1).await;
 
 	// The transfer's fee spent the source's DUST, so its fast sync followed a spend chain.
-	assert_fast_sync_matches_replay(&env.indexer_url, FUNDED_SEED);
+	assert_fast_sync_matches_replay(env, FUNDED_SEED);
+	// The rest checks fast-sync resumes, which need snapshots that verify.
+	if !env.dust_snapshots_verify {
+		return;
+	}
 
 	let cache = tempfile::tempdir().expect("failed to create cache dir");
-	let (_, first) = show_wallet_logged(&env.indexer_url, FUNDED_SEED, Some(cache.path()));
+	let (_, first) = show_wallet_logged(env, FUNDED_SEED, Some(cache.path()));
 	assert!(!first.resumed, "an empty cache has no frontier to resume from");
-	let (_, idle) = show_wallet_logged(&env.indexer_url, FUNDED_SEED, Some(cache.path()));
+	let (_, idle) = show_wallet_logged(env, FUNDED_SEED, Some(cache.path()));
 	assert!(
 		idle.resumed && idle.pass_events.is_some(),
 		"a cached run must resume by a dust event pass"
@@ -248,9 +267,8 @@ async fn single_tx_reaches_destination(env: &Env) {
 	);
 
 	transfer(&env, &destination, AMOUNT, 2).await;
-	let (resumed_wallet, resumed) =
-		show_wallet_logged(&env.indexer_url, FUNDED_SEED, Some(cache.path()));
-	let (fresh_wallet, fresh) = show_wallet_logged(&env.indexer_url, FUNDED_SEED, None);
+	let (resumed_wallet, resumed) = show_wallet_logged(env, FUNDED_SEED, Some(cache.path()));
+	let (fresh_wallet, fresh) = show_wallet_logged(env, FUNDED_SEED, None);
 	eprintln!(
 		"[dust fast sync] after 1 transfer: fresh {first:?}, resumed {idle:?}; after 2: fresh \
 		 {fresh:?}, resumed {resumed:?}"
@@ -259,7 +277,7 @@ async fn single_tx_reaches_destination(env: &Env) {
 	assert_eq!(resumed_wallet, fresh_wallet, "a resumed DUST fast sync must match a fresh one");
 	assert_eq!(
 		resumed_wallet,
-		show_wallet_with(&env.indexer_url, FUNDED_SEED, None, &["--no-fast-sync"]).0,
+		show_wallet_with(env, FUNDED_SEED, None, &["--no-fast-sync"]).0,
 		"a resumed DUST fast sync must match the event replay",
 	);
 	assert!(
@@ -273,28 +291,31 @@ async fn single_tx_reaches_destination(env: &Env) {
 /// `count` UTXOs of that value. The indexer serves finalized blocks only, hence the polling.
 async fn transfer(env: &Env, destination: &str, amount: u64, count: usize) {
 	let amount_arg = amount.to_string();
-	run_toolkit(&[
-		"generate-txs",
-		"--indexer-url",
-		&env.indexer_url,
-		"--network",
-		NETWORK,
-		"--fetch-cache",
-		"inmemory",
-		"--dest-url",
-		&env.node_ws,
-		"single-tx",
-		"--source-seed",
-		FUNDED_SEED,
-		"--unshielded-amount",
-		&amount_arg,
-		"--destination-address",
-		destination,
-	]);
+	run_toolkit(
+		env,
+		&[
+			"generate-txs",
+			"--indexer-url",
+			&env.indexer_url,
+			"--network",
+			NETWORK,
+			"--fetch-cache",
+			"inmemory",
+			"--dest-url",
+			&env.node_ws,
+			"single-tx",
+			"--source-seed",
+			FUNDED_SEED,
+			"--unshielded-amount",
+			&amount_arg,
+			"--destination-address",
+			destination,
+		],
+	);
 
 	let start = Instant::now();
 	loop {
-		let values = unshielded_values(show_wallet(&env.indexer_url, UNFUNDED_SEED, None));
+		let values = unshielded_values(show_wallet(env, UNFUNDED_SEED, None));
 		if values.iter().filter(|value| **value == amount).count() == count {
 			break;
 		}
@@ -330,36 +351,39 @@ async fn batches_chain_within_a_run(env: &Env) {
 	];
 
 	let total = TOTAL.to_string();
-	run_toolkit(&[
-		"generate-txs",
-		"--indexer-url",
-		&env.indexer_url,
-		"--network",
-		NETWORK,
-		"--fetch-cache",
-		"inmemory",
-		"--dest-url",
-		&env.node_ws,
-		"batches",
-		"--funding-seed",
-		FUNDED_SEED,
-		"--num-txs-per-batch",
-		"2",
-		// Concurrent builds race on the fee payer's DUST (replay path too) and the node rejects one.
-		"--concurrency",
-		"1",
-		"--num-batches",
-		"1",
-		"--initial-unshielded-intent-value",
-		&total,
-	]);
+	run_toolkit(
+		env,
+		&[
+			"generate-txs",
+			"--indexer-url",
+			&env.indexer_url,
+			"--network",
+			NETWORK,
+			"--fetch-cache",
+			"inmemory",
+			"--dest-url",
+			&env.node_ws,
+			"batches",
+			"--funding-seed",
+			FUNDED_SEED,
+			"--num-txs-per-batch",
+			"2",
+			// Concurrent builds race on the fee payer's DUST (replay path too) and the node rejects one.
+			"--concurrency",
+			"1",
+			"--num-batches",
+			"1",
+			"--initial-unshielded-intent-value",
+			&total,
+		],
+	);
 
 	let expected = [vec![], vec![], vec![TOTAL / 2], vec![TOTAL / 2]];
 	let start = Instant::now();
 	loop {
 		let values: Vec<Vec<u64>> = BATCH_SEEDS
 			.iter()
-			.map(|seed| unshielded_values(show_wallet(&env.indexer_url, seed, None)))
+			.map(|seed| unshielded_values(show_wallet(env, seed, None)))
 			.collect();
 		if values == expected {
 			break;
@@ -374,14 +398,14 @@ async fn batches_chain_within_a_run(env: &Env) {
 	// The funding seed paid fees in DUST and spent a genesis NIGHT, so one of its generations
 	// carries a decay time; the batch wallets' NIGHT is unregistered, which checks the empty case.
 	for seed in std::iter::once(&FUNDED_SEED).chain(&BATCH_SEEDS) {
-		assert_fast_sync_matches_replay(&env.indexer_url, seed);
+		assert_fast_sync_matches_replay(env, seed);
 	}
 }
 
-fn assert_fast_sync_matches_replay(indexer_url: &str, seed: &str) {
+fn assert_fast_sync_matches_replay(env: &Env, seed: &str) {
 	assert_eq!(
-		show_wallet(indexer_url, seed, None),
-		show_wallet_with(indexer_url, seed, None, &["--no-fast-sync"]).0,
+		show_wallet(env, seed, None),
+		show_wallet_with(env, seed, None, &["--no-fast-sync"]).0,
 		"DUST fast sync for {seed} must match the event replay",
 	);
 }
@@ -398,9 +422,10 @@ fn unshielded_values(wallet: serde_json::Value) -> Vec<u64> {
 /// Run the toolkit binary with `args`, panicking with its output on failure; returns stdout and
 /// stderr.
 ///
-/// Also fails if the DUST fast sync fell back to the replay: the fallback is silent apart from its
-/// warning, and would leave the fast-sync checks comparing the replay with itself.
-fn run_toolkit(args: &[&str]) -> (String, String) {
+/// Where `env`'s DUST snapshots verify, also fails if the DUST fast sync fell back to the replay:
+/// the fallback is silent apart from its warning, and would leave the fast-sync checks comparing
+/// the replay with itself.
+fn run_toolkit(env: &Env, args: &[&str]) -> (String, String) {
 	let output = Command::new(env!("CARGO_BIN_EXE_midnight-node-toolkit"))
 		.args(args)
 		// The fast-sync report is an info line from the helpers crate, which the default filter
@@ -416,8 +441,9 @@ fn run_toolkit(args: &[&str]) -> (String, String) {
 		output.status.code(),
 	);
 	assert!(
-		!stderr.contains("DUST fast sync failed")
-			&& !stderr.contains("DUST fast-sync probe failed"),
+		!env.dust_snapshots_verify
+			|| !stderr.contains("DUST fast sync failed")
+				&& !stderr.contains("DUST fast-sync probe failed"),
 		"midnight-node-toolkit {args:?} fell back to the DUST replay\nstderr:\n{stderr}",
 	);
 	(stdout.into_owned(), stderr.into_owned())
@@ -427,8 +453,8 @@ fn run_toolkit(args: &[&str]) -> (String, String) {
 ///
 /// `cache_dir` enables the wallet cache under that directory; `None` disables it, which is what
 /// `--fetch-cache inmemory` means to the toolkit.
-fn show_wallet(indexer_url: &str, seed: &str, cache_dir: Option<&Path>) -> serde_json::Value {
-	show_wallet_with(indexer_url, seed, cache_dir, &[]).0
+fn show_wallet(env: &Env, seed: &str, cache_dir: Option<&Path>) -> serde_json::Value {
+	show_wallet_with(env, seed, cache_dir, &[]).0
 }
 
 /// What a run's DUST fast sync reported.
@@ -443,11 +469,11 @@ struct FastSync {
 
 /// [`show_wallet`], plus its DUST fast-sync report.
 fn show_wallet_logged(
-	indexer_url: &str,
+	env: &Env,
 	seed: &str,
 	cache_dir: Option<&Path>,
 ) -> (serde_json::Value, FastSync) {
-	let (wallet, stderr) = show_wallet_with(indexer_url, seed, cache_dir, &[]);
+	let (wallet, stderr) = show_wallet_with(env, seed, cache_dir, &[]);
 	let line = stderr
 		.lines()
 		.find(|line| line.contains("DUST fast sync at block"))
@@ -470,7 +496,7 @@ fn show_wallet_logged(
 
 /// [`show_wallet`] with `extra` flags; also returns its stderr.
 fn show_wallet_with(
-	indexer_url: &str,
+	env: &Env,
 	seed: &str,
 	cache_dir: Option<&Path>,
 	extra: &[&str],
@@ -478,7 +504,7 @@ fn show_wallet_with(
 	let mut args = vec![
 		"show-wallet".to_string(),
 		"--indexer-url".to_string(),
-		indexer_url.to_string(),
+		env.indexer_url.clone(),
 		"--network".to_string(),
 		NETWORK.to_string(),
 		"--seed".to_string(),
@@ -496,7 +522,7 @@ fn show_wallet_with(
 	args.extend(extra.iter().map(|flag| flag.to_string()));
 
 	let args: Vec<&str> = args.iter().map(String::as_str).collect();
-	let (stdout, stderr) = run_toolkit(&args);
+	let (stdout, stderr) = run_toolkit(env, &args);
 	let wallet = serde_json::from_str(&stdout)
 		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"));
 	(wallet, stderr)
