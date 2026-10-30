@@ -21,11 +21,19 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
+use governor::{
+	Quota, RateLimiter,
+	clock::DefaultClock,
+	state::{InMemoryState, NotKeyed},
+};
+use moka::sync::Cache;
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use sc_client_api::{BlockBackend, BlockchainEvents};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
+use sp_crypto_hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 pub const API_VERSIONS: [u32; 1] = [2];
@@ -72,6 +80,9 @@ pub trait MidnightApi<BlockHash> {
 	/// If `at` is `None`, the best block is used.
 	#[method(name = "midnight_ledgerVersion")]
 	fn get_ledger_version(&self, at: Option<BlockHash>) -> Result<String, BlockRpcError>;
+
+	#[method(name = "midnight_validateTransaction")]
+	fn validate_transaction(&self, tx_hex: String, at: Option<BlockHash>) -> RpcResult<String>;
 }
 
 #[derive(Debug)]
@@ -238,16 +249,80 @@ pub struct RpcBlock<Header> {
 	pub transactions_index: Vec<(String, String)>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ValidateRateLimitConfig {
+	pub global_rate_limit: u32,
+	pub per_tx_cooldown_secs: u64,
+}
+
+/// Memory cap on `per_tx`, well above any legitimate working set. Past it, a flood of unique txs
+/// evicts older keys early, which only shortens their cooldown; the global limit still applies.
+const PER_TX_CAPACITY: u64 = 50_000;
+
+struct ValidationRateLimiter {
+	global: RateLimiter<NotKeyed, InMemoryState, DefaultClock>,
+	per_tx: Cache<[u8; 32], ()>,
+}
+
+/// Why a `validate_transaction` request was rejected by the rate limiter.
+#[derive(Debug, PartialEq, Eq)]
+enum RateLimitRejection {
+	/// The same transaction was resubmitted within its per-tx cooldown.
+	PerTx,
+	/// The node-wide validation throughput limit is saturated.
+	Global,
+}
+
+impl ValidationRateLimiter {
+	fn new(config: &ValidateRateLimitConfig) -> Self {
+		let cooldown_secs = config.per_tx_cooldown_secs.max(1);
+		let global_quota =
+			Quota::per_second(NonZeroU32::new(config.global_rate_limit.max(1)).unwrap());
+
+		Self {
+			global: RateLimiter::direct(global_quota),
+			per_tx: Cache::builder()
+				.max_capacity(PER_TX_CAPACITY)
+				.time_to_live(std::time::Duration::from_secs(cooldown_secs))
+				.build(),
+		}
+	}
+
+	/// Per-tx cooldown before the global limit, so a replayed tx is rejected without spending a
+	/// global token and can't starve other callers.
+	fn check(&self, tx_key: &[u8; 32]) -> Result<(), RateLimitRejection> {
+		if !self.per_tx.entry(*tx_key).or_insert(()).is_fresh() {
+			return Err(RateLimitRejection::PerTx);
+		}
+		if self.global.check().is_err() {
+			return Err(RateLimitRejection::Global);
+		}
+		Ok(())
+	}
+}
+
 pub struct Midnight<C, Block> {
-	/// Shared reference to the client.
 	client: Arc<C>,
-	//todo do I need this one?
+	validate_rate_limiter: Arc<ValidationRateLimiter>,
+	/// Whether the ledger arena uses the unified ParityDb layout.
+	ledger_unified: bool,
 	_marker: std::marker::PhantomData<Block>,
 }
 
 impl<C, Block> Midnight<C, Block> {
-	pub fn new(client: Arc<C>) -> Self {
-		Self { client, _marker: Default::default() }
+	pub fn new(
+		client: Arc<C>,
+		validate_rate_limit_config: ValidateRateLimitConfig,
+		ledger_unified: bool,
+	) -> Self {
+		Self {
+			client,
+			validate_rate_limiter: Arc::new(ValidationRateLimiter::new(
+				&validate_rate_limit_config,
+			)),
+			ledger_unified,
+			_marker: Default::default(),
+		}
 	}
 }
 
@@ -370,5 +445,127 @@ where
 			.map_err(|_e| BlockRpcError::BlockNotFound)?;
 
 		Ok(String::from_utf8_lossy(&ledger_version).to_string())
+	}
+
+	fn validate_transaction(
+		&self,
+		tx_hex: String,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> RpcResult<String> {
+		let tx_bytes = hex::decode(&tx_hex).map_err(|e| {
+			ErrorObject::owned(
+				INVALID_PARAMS_CODE,
+				format!("Invalid hex encoding: {e}"),
+				None::<()>,
+			)
+		})?;
+
+		match self.validate_rate_limiter.check(&blake2_256(&tx_bytes)) {
+			Ok(()) => {},
+			Err(RateLimitRejection::PerTx) => {
+				return Err(ErrorObject::owned(
+					-32005,
+					"Rate limit exceeded: per-transaction cooldown",
+					None::<()>,
+				));
+			},
+			Err(RateLimitRejection::Global) => {
+				return Err(ErrorObject::owned(-32005, "Rate limit exceeded", None::<()>));
+			},
+		}
+
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		let api = self.client.runtime_api();
+
+		let api_version = get_api_version::<C, Block>(&api, at).map_err(|e| {
+			ErrorObject::owned(-32603, format!("Runtime API error: {e}"), None::<()>)
+		})?;
+		if api_version < 6 {
+			return Err(ErrorObject::owned(
+				-32601,
+				"midnight_validateTransaction requires MidnightRuntimeApi version >= 6",
+				None::<()>,
+			));
+		}
+
+		let ctx = api.get_validation_context(at).map_err(|e| {
+			ErrorObject::owned(-32603, format!("Failed to get validation context: {e}"), None::<()>)
+		})?;
+
+		match midnight_node_ledger::native_api::validate_transaction_verbose(
+			self.ledger_unified,
+			&ctx.state_key,
+			&tx_bytes,
+			ctx.block_context,
+			ctx.spec_version,
+			ctx.max_block_weight,
+		) {
+			Ok(tx_hash) => Ok(format!("0x{}", hex::encode(tx_hash))),
+			Err(validation_err) => {
+				#[derive(Serialize)]
+				struct ValidationErrorData {
+					error_code: u8,
+					reason: String,
+					details: String,
+				}
+
+				Err(ErrorObject::owned(
+					-32001,
+					"Transaction validation failed",
+					Some(ValidationErrorData {
+						error_code: validation_err.error_code,
+						reason: validation_err.reason,
+						details: validation_err.details,
+					}),
+				))
+			},
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{RateLimitRejection, ValidateRateLimitConfig, ValidationRateLimiter};
+
+	fn limiter(global_rate_limit: u32, per_tx_cooldown_secs: u64) -> ValidationRateLimiter {
+		ValidationRateLimiter::new(&ValidateRateLimitConfig {
+			global_rate_limit,
+			per_tx_cooldown_secs,
+		})
+	}
+
+	fn key(n: u8) -> [u8; 32] {
+		let mut k = [0u8; 32];
+		k[0] = n;
+		k
+	}
+
+	/// Replays rejected by the per-tx cooldown must not spend global tokens: afterwards the global
+	/// budget still admits exactly `global_rate_limit - 1` distinct txs. Synchronous so quota
+	/// replenishment (1 token / 100ms at rate 10) stays negligible.
+	#[test]
+	fn per_tx_cooldown_does_not_consume_global_budget() {
+		// Cooldown long enough that every replay falls inside the per-tx window.
+		let rl = limiter(10, 3600);
+		let a = key(1);
+
+		// First sighting of A is admitted, consuming 1 of 10 global tokens.
+		assert_eq!(rl.check(&a), Ok(()));
+
+		for _ in 0..100 {
+			assert_eq!(rl.check(&a), Err(RateLimitRejection::PerTx));
+		}
+
+		// Replays spent no global tokens: 9 more distinct txs fit (1 + 9 == 10).
+		for n in 2..=10u8 {
+			assert_eq!(
+				rl.check(&key(n)),
+				Ok(()),
+				"distinct tx {n} must be admitted; replays must not have spent global tokens",
+			);
+		}
+
+		assert_eq!(rl.check(&key(11)), Err(RateLimitRejection::Global));
 	}
 }

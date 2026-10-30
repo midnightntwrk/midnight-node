@@ -5019,6 +5019,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "governor"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be93b4ec2e4710b04d9264c0c7350cdd62a8c20e5e4ac732552ebb8f0debe8eb"
+dependencies = [
+ "cfg-if",
+ "futures-sink",
+ "futures-timer",
+ "futures-util",
+ "getrandom 0.3.4",
+ "no-std-compat",
+ "nonzero_ext",
+ "parking_lot 0.12.5",
+ "portable-atomic",
+ "rand 0.9.2",
+ "smallvec",
+ "spinning_top",
+ "web-time",
+]
+
+[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10581,14 +10602,19 @@ dependencies = [
 name = "pallet-midnight-rpc"
 version = "0.1.0"
 dependencies = [
+ "governor 0.8.1",
  "hex",
  "jsonrpsee",
+ "midnight-node-ledger",
+ "midnight-primitives",
+ "moka 0.12.15",
  "pallet-midnight",
  "sc-client-api",
  "schemars 0.8.22",
  "serde",
  "sp-api",
  "sp-blockchain",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609)",
  "sp-runtime",
 ]
 
@@ -14436,7 +14462,7 @@ dependencies = [
  "async-channel 1.9.0",
  "fastbloom",
  "futures",
- "governor",
+ "governor 0.6.3",
  "log",
  "parity-scale-codec",
  "rand 0.8.5",
@@ -14700,7 +14726,7 @@ dependencies = [
  "dyn-clone",
  "forwarded-header-value",
  "futures",
- "governor",
+ "governor 0.6.3",
  "http 1.4.0",
  "http-body-util",
  "hyper 1.9.0",

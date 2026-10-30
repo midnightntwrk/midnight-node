@@ -103,6 +103,10 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 	}
 }
 
+// Declared after `bridge_arena_call!`, which it uses.
+#[cfg(feature = "std")]
+pub mod native_api;
+
 /// O(1) collection sizes held at the `LedgerState` root (`midnight_ledgerStats`): the unshielded
 /// UTXO set size, the zswap/DUST commitment and nullifier totals, and the contract count. Reads
 /// annotations maintained at each storage trie root rather than iterating, so the cost does not

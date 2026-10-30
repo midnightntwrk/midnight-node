@@ -25,6 +25,26 @@ use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
 
+/// `tblock_err` of a [`BlockContext`], in seconds. Mirrors substrate's private
+/// `MAX_TIMESTAMP_DRIFT_MILLIS` in `frame/timestamp`; keep in sync.
+pub const MAX_TIMESTAMP_DRIFT_SECS: u32 = 30;
+
+/// Context for validating a transaction off-chain without submitting it to the txpool.
+///
+/// Served by the runtime API rather than read from storage by the node, so a storage layout change
+/// can't silently break it, and every field comes from the same block.
+#[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
+pub struct ValidationContext {
+	/// Serialized ledger state key at the queried block.
+	pub state_key: Vec<u8>,
+	/// Exactly as built by block authoring.
+	pub block_context: BlockContext,
+	/// Runtime spec version at the queried block.
+	pub spec_version: u32,
+	/// Maximum block weight (ref_time) the runtime will admit; used to reject oversized txs.
+	pub max_block_weight: u64,
+}
+
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
 
 /// Trait to allow pallets to read the current Ledger state key

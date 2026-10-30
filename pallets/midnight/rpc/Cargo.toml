@@ -13,16 +13,23 @@ serde.workspace = true
 hex.workspace = true
 sc-client-api.workspace = true
 sp-api.workspace = true
+sp-crypto-hashing.workspace = true
 sp-runtime.workspace = true
 sp-blockchain.workspace = true
 pallet-midnight.workspace = true
+midnight-primitives.workspace = true
+midnight-node-ledger = { workspace = true, default-features = true }
+governor.workspace = true
+moka.workspace = true
 
 [features]
 default = ["std"]
 std = [
     "sp-api/std",
     "sp-runtime/std",
-    "pallet-midnight/std"
+    "sp-crypto-hashing/std",
+    "pallet-midnight/std",
+    "midnight-primitives/std"
 ]
 
 [lints]

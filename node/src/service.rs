@@ -624,6 +624,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	serve_warp_ledger_sync: bool,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
+	let validate_rate_limit_config = pallet_midnight_rpc::ValidateRateLimitConfig {
+		global_rate_limit: midnight_cfg.rpc_validate_rate_limit,
+		per_tx_cooldown_secs: midnight_cfg.rpc_validate_per_tx_cooldown,
+	};
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
 	// warp ledger-sync server/importer dispatch to.
 	let warp_ledger_unified = matches!(storage_config.separation, StorageSeparation::Unified);
@@ -847,6 +851,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let epoch_config = epoch_config.clone();
 		let network_for_rpc = network.clone();
 		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
+		let validate_rate_limit_config = validate_rate_limit_config.clone();
 		let subscription_tracker = subscription_tracker.clone();
 
 		#[allow(clippy::result_large_err)]
@@ -879,6 +884,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				backend: backend.clone(),
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
+				validate_rate_limit_config: validate_rate_limit_config.clone(),
 				subscription_tracker: subscription_tracker.clone(),
 				ledger_unified: warp_ledger_unified,
 			};
