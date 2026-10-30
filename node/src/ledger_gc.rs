@@ -621,8 +621,8 @@ pub fn try_spawn(
 	let Some(lag) = config.lag else {
 		info!(
 			target: LOG_TARGET,
-			"ℹ️  ledger GC disabled: archive or unbounded state pruning; tip reclaim and arena \
-			 sweep need a bounded pruning window"
+			"ℹ️  ledger GC disabled: archive or unbounded state pruning; set \
+			 --ledger-state-pruning <N> to release ledger states below finalized - N"
 		);
 		return;
 	};
