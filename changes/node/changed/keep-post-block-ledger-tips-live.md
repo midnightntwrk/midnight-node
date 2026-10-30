@@ -10,3 +10,4 @@ Adds `cache_type="anchored"` (`anchored_ledger_8` for ledger 8) to the
 `ledger_state_cache_size` gauge.
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1442
+PR: https://github.com/midnightntwrk/midnight-node/pull/2349
