@@ -488,8 +488,8 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 }
 
 /// The parent timestamp that makes the correction land a minute before the block context the
-/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies. So the
-/// correction, when it applies, turns an accepted block into a rejected one.
+/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies, while the
+/// block's own timestamp still does (the shape of mainnet #1788980).
 fn parent_ts_that_the_correction_rejects(block_context: &BlockContext) -> u64 {
 	block_context.tblock - 60 - TBLOCK_CORRECTION_OFFSET_SECS
 }
@@ -541,53 +541,4 @@ fn test_tblock_correction_does_not_affect_mempool_validation() {
 	});
 }
 
-#[cfg(feature = "experimental")]
-#[ignore = "TODO UNSHIELDED - fix when Claim Mint is properly handled for Unshielded"]
-#[test]
-fn test_send_claim_mint() {
-	/*
-	test commented out because it references block_rewards which no longer exist
-		use crate::mock::BeneficiaryId;
-		use frame_support::{
-			pallet_prelude::ProvideInherent,
-			traits::{OnFinalize, UnfilteredDispatchable},
-		};
-		use midnight_node_res::undeployed::transactions::CLAIM_MINT_TX;
-		use sp_inherents::InherentData;
-
-		mock::new_test_ext().execute_with(|| {
-			init_ledger_state(BlockContext::default());
-
-			let mut inherent_data = InherentData::new();
-
-			let block_beneficiary_provider = sp_block_rewards::BlockBeneficiaryInherentProvider::<
-				BeneficiaryId,
-			>::from_env("SIDECHAIN_BLOCK_BENEFICIARY")
-			.expect("SIDECHAIN_BLOCK_BENEFICIARY env variable not provided");
-
-			inherent_data
-				.put_data(
-					sp_block_rewards::INHERENT_IDENTIFIER,
-					&block_beneficiary_provider.beneficiary_id,
-				)
-				.unwrap();
-
-			let call = <mock::BlockRewards as ProvideInherent>::create_inherent(&inherent_data)
-				.expect("Creating test inherent should not fail");
-
-			call.dispatch_bypass_filter(RuntimeOrigin::none())
-				.expect("dispatching test call should work");
-
-			mock::Midnight::on_finalize(mock::System::block_number());
-			let events = mock::midnight_events();
-
-			assert_matches!(events[0], Event::PayoutMinted(_));
-
-			assert_ok!(mock::Midnight::send_mn_transaction(
-				RuntimeOrigin::none(),
-				hex::encode(CLAIM_MINT_TX).into_bytes()
-			));
-		});
-	*/
-}
 // grcov-excl-stop

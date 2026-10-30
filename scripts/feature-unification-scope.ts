@@ -38,8 +38,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 
-const EXCLUDED = ["partner-chains-demo-node", "partner-chains-demo-runtime"];
-const WORKSPACE_ARGS = `--workspace ${EXCLUDED.map((e) => `--exclude ${e}`).join(" ")}`;
+const WORKSPACE_ARGS = "--workspace";
 const MAX_BUFFER = 512 * 1024 * 1024; // ~0.4MB today; headroom, not a limit
 
 // Global inputs with no diffable crate mapping: cargo config, test-runner
@@ -232,15 +231,10 @@ function main(): void {
 	if (changed.some((f) => GLOBAL.some((re) => re.test(f)))) {
 		out = WORKSPACE_ARGS;
 	} else {
-		const closure = reverseClosure(deps, names, [...new Set([...touched, ...extra])]).filter(
-			(n) => !EXCLUDED.includes(n),
-		);
-		const allNonExcluded = names.filter((n) => !EXCLUDED.includes(n)).sort();
+		const closure = reverseClosure(deps, names, [...new Set([...touched, ...extra])]);
+		const allNames = [...names].sort();
 		if (closure.length === 0) out = "";
-		else if (
-			closure.length === allNonExcluded.length &&
-			closure.every((c, i) => c === allNonExcluded[i])
-		)
+		else if (closure.length === allNames.length && closure.every((c, i) => c === allNames[i]))
 			out = WORKSPACE_ARGS;
 		else out = closure.map((p) => "-p " + p).join(" ");
 	}
