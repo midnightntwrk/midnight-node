@@ -376,6 +376,8 @@ pub fn new_partial(
 		)?;
 	let client = Arc::new(client);
 
+	BabeKeyProbe::log_babe_public_keys(keystore_container.keystore());
+
 	// Register Prometheus Ledger Metrics
 	let ledger_metrics =
 		config

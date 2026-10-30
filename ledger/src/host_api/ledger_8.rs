@@ -596,6 +596,8 @@ pub trait Ledger8Bridge {
 	/*
 	 * Returns the pure ledger state root: the untagged-serialized typed-key of
 	 * `LedgerState<D>` (without the surrounding `Ledger` block_fullness wrapper).
+	 * Untagged, like `get_zswap_state_root`: the wire shape since #663, which the toolkit's
+	 * `compute_state_root` reproduces byte-for-byte.
 	 */
 	fn get_ledger_state_root(
 		&mut self,
