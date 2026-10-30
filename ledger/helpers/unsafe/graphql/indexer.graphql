@@ -1,6 +1,6 @@
-# GraphQL operations for the indexer-backed `BuilderContext` (feature `indexer-client`). Indexers
-# reject the whole document if any operation in it is invalid, so everything here must validate
-# against every schema in `schema/`.
+# GraphQL operations for the indexer-backed `BuilderContext`. Indexers reject the whole document if
+# any operation in it is invalid, so everything here must validate against every schema in
+# `schema/`.
 
 query LatestBlock {
   block {

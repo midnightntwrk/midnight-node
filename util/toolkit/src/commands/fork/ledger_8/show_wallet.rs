@@ -106,7 +106,6 @@ pub fn show_wallet_from_address(
 /// The indexer's blobs are the chain's native ledger encodings, so they decode with this
 /// generation's codecs; `show_wallet::execute` picks the copy matching the chain's protocol
 /// version.
-#[cfg(feature = "indexer-client")]
 pub async fn show_wallet_from_indexer(
 	indexer_url: &str,
 	network: &str,
