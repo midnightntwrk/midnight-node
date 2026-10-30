@@ -37,8 +37,6 @@ pub mod config;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-pub mod migrations;
-
 pub mod weights;
 
 /// Cardano-based Midnight System Transaction (CMST)  Header
@@ -176,15 +174,18 @@ pub mod pallet {
 		MappingRemoved(MappingEntry),
 		SystemTransactionApplied(SystemTransactionApplied),
 		/// The hardfork upgrade block armed the dust generation replay
-		/// (`migrations::v2`) by saving the pre-fork ledger state key.
+		/// by saving the pre-fork ledger state key.
+		/// It was emitted by the past migration.
 		DustReapplyStarted,
 		/// One replay batch failed to apply; its nonces were not restored. The
 		/// replay continues with the next batch.
+		/// It was emitted by the past migration.
 		DustReapplyBatchFailed {
 			nonces: Vec<T::Hash>,
 		},
 		/// The replay finished. `applied` entries were restored; `skipped` were
 		/// not (untracked, already destroyed, or in a failed batch).
+		/// It was emitted by the past migration.
 		DustReapplyCompleted {
 			applied: u32,
 			skipped: u32,
@@ -193,6 +194,7 @@ pub mod pallet {
 		/// wipe dust state, no pre-fork state key was recorded, that key became
 		/// unreadable, or a batch priced above what a whole block affords. The
 		/// reason is logged.
+		/// It was emitted by the past migration.
 		DustReapplySkipped {
 			applied: u32,
 			skipped: u32,
@@ -328,9 +330,10 @@ pub mod pallet {
 	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
 
 	/// The ledger-8 arena root as of the hardfork upgrade block, retained so the
-	/// dust replay (`migrations::v2`) can read pre-wipe night values and owners
+	/// dust replay (V1 to V2 migration) can read pre-wipe night values and owners
 	/// after `pallet_midnight::StateKey` has moved on to the v9 root. Mirrors
 	/// that item's shape. Killed when the replay finishes.
+	/// It was was by the past migration.
 	#[pallet::storage]
 	#[pallet::unbounded]
 	pub type PreForkStateKey<T: Config> = StorageValue<_, Vec<u8>, OptionQuery>;
@@ -338,11 +341,13 @@ pub mod pallet {
 	/// Ledger time stamped on every replayed dust event: the fork block's own
 	/// time, backdated by the dust `time_to_cap` so every restored entry lands
 	/// at its DUST cap rather than at zero. Written by the first replay step.
+	/// It was emitted by the past migration.
 	#[pallet::storage]
 	pub type DustReapplyCtime<T: Config> = StorageValue<_, u64, OptionQuery>;
 
 	/// Running (applied, skipped) tallies of the dust replay — the only on-chain
 	/// evidence it ran to completion. Killed when the replay finishes.
+	/// It was emitted by the past migration.
 	#[pallet::storage]
 	pub type DustReapplyProgress<T: Config> = StorageValue<_, (u32, u32), ValueQuery>;
 
