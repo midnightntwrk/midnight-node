@@ -168,7 +168,6 @@ pub struct Source {
 	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
 	/// for a large seed set against an indexer that can take the load; lower it if the indexer
 	/// starts dropping connections.
-	#[cfg(feature = "indexer-client")]
 	#[arg(
 		long,
 		env = "MN_INDEXER_CONCURRENCY",
@@ -178,7 +177,6 @@ pub struct Source {
 	pub indexer_concurrency: std::num::NonZeroUsize,
 	/// Indexer path only: always replay the chain-wide DUST event log, instead of rebuilding each
 	/// wallet's DUST from an indexer snapshot where the indexer supports it.
-	#[cfg(feature = "indexer-client")]
 	#[arg(long, env = "MN_INDEXER_NO_FAST_SYNC", global = true)]
 	pub no_fast_sync: bool,
 }

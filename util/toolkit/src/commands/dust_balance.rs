@@ -197,10 +197,8 @@ mod tests {
 			replay_checkpoint_interval: 0,
 			indexer_url: None,
 			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
-			#[cfg(feature = "indexer-client")]
 			no_fast_sync: false,
 		}
 	}
@@ -368,10 +366,8 @@ mod tests {
 			replay_checkpoint_interval: 0,
 			indexer_url: None,
 			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
-			#[cfg(feature = "indexer-client")]
 			no_fast_sync: false,
 		};
 		let src = TxGenerator::source(source, false).await.expect("build source");

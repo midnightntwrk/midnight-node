@@ -796,7 +796,6 @@ impl Builder {
 	}
 
 	/// Construct a builder over a synced indexer context.
-	#[cfg(feature = "indexer-client")]
 	pub fn to_indexer_builder(
 		self,
 		ctx: &crate::tx_generator::indexer::IndexerLedgerContext,

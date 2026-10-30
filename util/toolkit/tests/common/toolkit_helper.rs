@@ -195,10 +195,8 @@ fn default_source() -> Source {
 		replay_checkpoint_interval: 0,
 		indexer_url: None,
 		network: "undeployed".to_string(),
-		#[cfg(feature = "indexer-client")]
 		indexer_concurrency:
 			midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
-		#[cfg(feature = "indexer-client")]
 		no_fast_sync: false,
 	}
 }

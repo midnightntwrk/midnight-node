@@ -11,10 +11,8 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["indexer-client"]
+default = []
 erase-proof = ["midnight-ledger-unsafe-helpers/erase-proof"]
-# Indexer backend (`--indexer-url`).
-indexer-client = ["midnight-ledger-unsafe-helpers/indexer-client"]
 compact-contract-tests = []
 
 [dependencies]
