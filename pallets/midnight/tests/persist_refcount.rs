@@ -14,6 +14,8 @@
 // In `tests/` rather than `src/tests.rs` so it gets its own test binary, isolating the
 // global ledger storage backend from other pallet tests.
 
+#![allow(deprecated)]
+
 use frame_support::{assert_ok, traits::OnFinalize};
 use midnight_node_ledger::{
 	latest::storage::{get_state_root_count, transient_state_is_retained},

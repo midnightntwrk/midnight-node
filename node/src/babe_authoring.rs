@@ -32,7 +32,7 @@
 //!   notifications for sync-origin imports, so a notification watcher never fires there — and it is
 //!   what lets non-authorities import the first BABE block; they run no flip watcher at all.
 //!
-//! Seeding is idempotent and its check-and-reset is atomic under the epoch-tree lock, so both
+//! Seeding is idempotent and its check-and-import is atomic under the epoch-tree lock, so both
 //! triggers may run concurrently on an authority.
 //!
 //! [`configuration_at_startup`] is the other start-of-day seam: `BabeBlockImport` is built in
@@ -51,10 +51,10 @@ use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
 use parity_scale_codec::Encode;
 use sc_client_api::{AuxStore, BlockchainEvents, UsageProvider};
 use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key};
-use sc_consensus_epochs::{EpochChanges, IsDescendentOfBuilder, descendent_query};
+use sc_consensus_epochs::{EpochChanges, IsDescendentOfBuilder, ViableEpoch, descendent_query};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
-use sp_consensus_babe::{BabeApi, BabeConfiguration};
+use sp_consensus_babe::{BabeApi, BabeConfiguration, digests::NextEpochDescriptor};
 use sp_consensus_slots::{Slot, SlotDuration};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT, NumberFor};
 use std::future::Future;
@@ -258,19 +258,52 @@ where
 		.map_err(|e| e.to_string())
 }
 
+/// Add the flip block `at`'s epoch pair to the tree, as the pair a genesis block announces: its
+/// children resolve to `current`, and to `next` from `next`'s start slot.
+///
+/// The pair is built through the tree's own increment of `current`, the shape every later epoch
+/// change extends, and checked against the `next` the runtime reports so a disagreement between
+/// the two is an error rather than a silently diverging epoch 1.
+fn seed_tree_at_flip_block<D>(
+	epoch_changes: &mut EpochChanges<Hash, NumberFor<Block>, sc_consensus_babe::Epoch>,
+	descendent_of_builder: D,
+	parent_hash: Hash,
+	at: Hash,
+	number: NumberFor<Block>,
+	current: sc_consensus_babe::Epoch,
+	next: &sc_consensus_babe::Epoch,
+) -> Result<(), String>
+where
+	D: IsDescendentOfBuilder<Hash>,
+{
+	let descriptor =
+		NextEpochDescriptor { authorities: next.authorities.clone(), randomness: next.randomness };
+	let pair = ViableEpoch::<sc_consensus_babe::Epoch>::UnimportedGenesis(current)
+		.increment((descriptor, next.config.clone()));
+	if pair.as_ref() != next {
+		return Err(format!(
+			"the next epoch the runtime reports at {at:?} does not follow its current epoch",
+		));
+	}
+	epoch_changes
+		.import(descendent_of_builder, at, number, parent_hash, pair)
+		.map_err(|e| e.to_string())
+}
+
 /// Seed BABE's epoch tree so authoring/verification can resolve epochs for children of `at`.
 ///
 /// Before the flip nothing is imported through the BABE pipeline, so its `EpochChanges` is empty
 /// and the first BABE block (a child of the flip block) has no epoch to be authored/verified under.
-/// This mirrors the warp-sync bootstrap (`import_state`): it resets the tree to the `current`/`next`
-/// epochs the runtime reports at `at`. `migrate_to_babe` makes those runtime APIs return the
-/// epoch-0 genesis, and the flip block carries a BABE pre-digest (from the BABE pre-digest
-/// proposer wrapper) so its slot is readable.
+/// It records the `current`/`next` epochs the runtime reports at `at` under `at` itself, as the
+/// pair a genesis block announces. `migrate_to_babe` makes those runtime APIs return the epoch-0
+/// genesis, and the flip block carries a BABE pre-digest (from the BABE pre-digest proposer
+/// wrapper) so its slot is readable.
 ///
 /// It is a no-op when the tree already covers children of `at` — the other trigger got there first,
-/// or a restart after the flip reloaded a populated tree from the aux DB. It refuses (with an error)
-/// to reset a non-empty tree that does not cover `at`: `reset` discards everything BABE has recorded
-/// since the flip, so that is never the right move for a block that is not the flip block.
+/// or a restart after the flip reloaded a populated tree from the aux DB. The pair is added to the
+/// tree, never reset into it: a fork across the flip has a flip block per branch, and a node that
+/// seeded at the losing one must still verify the winning one, so each flip block keeps its own
+/// pair and finality prunes the loser's.
 pub fn seed_epoch_tree_if_needed<C>(
 	client: &Arc<C>,
 	babe_link: &BabeLink<Block>,
@@ -304,24 +337,18 @@ where
 			return Ok(());
 		}
 
-		// `reset` discards the whole tree. A tree that has content but does not cover the flip
-		// block's children is not a seeding situation — it is either a bug in the coverage check
-		// or a block that is not the flip block — and wiping it would destroy the epochs BABE has
-		// recorded from block digests since the flip (which is exactly what a stale seed did once:
-		// the node kept the flip-time `next_epoch` for epoch 1 while the rest of the network used
-		// the epoch-1 descriptor announced at the first BABE block, and forked at the epoch
-		// boundary). Refuse loudly instead.
-		if epoch_changes.tree().iter().next().is_some() {
-			return Err(format!(
-				"BABE epoch tree is non-empty but does not cover children of {at:?}; refusing to \
-				 reset it",
-			));
-		}
-
 		let current = client.runtime_api().current_epoch(at).map_err(|e| e.to_string())?;
 		let next = client.runtime_api().next_epoch(at).map_err(|e| e.to_string())?;
 		let (current_index, next_index) = (current.epoch_index, next.epoch_index);
-		epoch_changes.reset(parent_hash, at, number, current.into(), next.into());
+		seed_tree_at_flip_block(
+			&mut epoch_changes,
+			descendent_query(&**client),
+			parent_hash,
+			at,
+			number,
+			current.into(),
+			&next.into(),
+		)?;
 		log::info!(
 			target: LOG_TARGET,
 			"seeded BABE epoch tree at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
@@ -480,6 +507,28 @@ mod tests {
 		}
 	}
 
+	/// Ancestry for the fork tests: `(block, parent)` edges. The fake head is resolved via the
+	/// `current` hint as in [`LinearChain`].
+	struct ForkedChain(Vec<(H256, H256)>);
+	impl IsDescendentOfBuilder<H256> for &ForkedChain {
+		type Error = sp_blockchain::Error;
+		type IsDescendentOf = Box<dyn Fn(&H256, &H256) -> Result<bool, sp_blockchain::Error>>;
+		fn build_is_descendent_of(&self, current: Option<(H256, H256)>) -> Self::IsDescendentOf {
+			let mut edges = self.0.clone();
+			edges.extend(current);
+			Box::new(move |base, block| {
+				let mut cursor = *block;
+				while let Some((_, parent)) = edges.iter().find(|(child, _)| *child == cursor) {
+					if parent == base {
+						return Ok(true);
+					}
+					cursor = *parent;
+				}
+				Ok(false)
+			})
+		}
+	}
+
 	fn epoch(index: u64, start_slot: u64) -> sc_consensus_babe::Epoch {
 		sp_consensus_babe::Epoch {
 			epoch_index: index,
@@ -505,7 +554,8 @@ mod tests {
 
 		assert!(!tree_covers_children_of(&tree, &chain, &flip, 56, flip_slot).unwrap());
 
-		tree.reset(parent, flip, 56, epoch(0, 810), epoch(1, 815));
+		seed_tree_at_flip_block(&mut tree, &chain, parent, flip, 56, epoch(0, 810), &epoch(1, 815))
+			.unwrap();
 		assert!(
 			tree_covers_children_of(&tree, &chain, &flip, 56, flip_slot).unwrap(),
 			"a seeded tree must report the flip block's children as covered"
@@ -516,6 +566,50 @@ mod tests {
 				.unwrap()
 				.is_none()
 		);
+	}
+
+	#[test]
+	fn seeding_at_a_second_flip_block_keeps_both_forks_covered() {
+		// Two branches from #54 each commit the flip in their own #56 at slot 809.
+		let root = H256::repeat_byte(54);
+		let (a1, f1) = (H256::repeat_byte(0x51), H256::repeat_byte(0x56));
+		let (a2, f2) = (H256::repeat_byte(0x61), H256::repeat_byte(0x66));
+		let chain = ForkedChain(vec![(a1, root), (f1, a1), (a2, root), (f2, a2)]);
+		let mut tree = EpochChanges::<Hash, NumberFor<Block>, sc_consensus_babe::Epoch>::new();
+		let flip_slot = Slot::from(809u64);
+
+		seed_tree_at_flip_block(&mut tree, &chain, a1, f1, 56, epoch(0, 810), &epoch(1, 815))
+			.unwrap();
+		assert!(tree_covers_children_of(&tree, &chain, &f1, 56, flip_slot).unwrap());
+		assert!(!tree_covers_children_of(&tree, &chain, &f2, 56, flip_slot).unwrap());
+
+		// The second flip block gets its own pair; the first branch stays verifiable.
+		seed_tree_at_flip_block(&mut tree, &chain, a2, f2, 56, epoch(0, 810), &epoch(1, 815))
+			.unwrap();
+		assert!(tree_covers_children_of(&tree, &chain, &f1, 56, flip_slot).unwrap());
+		assert!(tree_covers_children_of(&tree, &chain, &f2, 56, flip_slot).unwrap());
+		assert_eq!(tree.tree().iter().count(), 2);
+	}
+
+	#[test]
+	fn seeding_rejects_a_next_epoch_that_does_not_follow_the_current_one() {
+		let (parent, flip) = (H256::repeat_byte(55), H256::repeat_byte(56));
+		let chain = LinearChain(vec![parent, flip]);
+		let mut tree = EpochChanges::<Hash, NumberFor<Block>, sc_consensus_babe::Epoch>::new();
+
+		let error = seed_tree_at_flip_block(
+			&mut tree,
+			&chain,
+			parent,
+			flip,
+			56,
+			epoch(0, 810),
+			&epoch(1, 900),
+		)
+		.unwrap_err();
+
+		assert!(error.contains("does not follow"), "{error}");
+		assert!(tree.tree().iter().next().is_none());
 	}
 
 	#[test]
