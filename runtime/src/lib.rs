@@ -79,8 +79,6 @@ use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
-//#[cfg(feature = "experimental")]
-//use sp_block_rewards::GetBlockRewardPoints;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
@@ -98,8 +96,6 @@ use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use crate::{constants::time_units::HOURS, currency::CurrencyWaiver};
 use alloc::{vec, vec::Vec};
-#[cfg(feature = "std")]
-use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // Make the WASM binary available.
@@ -117,6 +113,10 @@ pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
+/// Fork-transition support. Off by default; see the module docs before
+/// enabling -- a runtime built with this feature must never be released.
+#[cfg(feature = "fork-transition")]
+pub mod fork_transition;
 mod migrations;
 pub mod weights;
 
@@ -163,9 +163,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ecdsa, ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -217,8 +217,8 @@ pub mod opaque {
 		pub struct SessionKeys {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
-			// todo: add the beefy
-			// pub beefy: Beefy,
+			pub babe: Babe,
+			pub beefy: Beefy,
 		}
 	}
 
@@ -228,7 +228,16 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+			let babe = keys.find(BABE)?;
+			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
+			let beefy = keys.find(BEEFY)?;
+			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
+			Some(Self {
+				aura: aura.into(),
+				grandpa: grandpa.into(),
+				babe: babe.into(),
+				beefy: beefy.into(),
+			})
 		}
 	}
 
@@ -240,9 +249,14 @@ pub mod opaque {
 					value.aura.into_inner().to_raw().to_vec(),
 				),
 				sidechain_domain::CandidateKey::new(
+					BABE,
+					value.babe.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
+				sidechain_domain::CandidateKey::new(BEEFY, value.beefy.into_inner().to_raw_vec()),
 			])
 		}
 	}
@@ -264,23 +278,41 @@ pub mod opaque {
 
 pub type CrossChainPublic = opaque::cross_chain_app::Public;
 
-// To learn more about runtime versioning, see:
-// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
-#[allow(clippy::zero_prefixed_literal)]
-#[sp_version::runtime_version]
-pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: Cow::Borrowed("midnight"),
-	impl_name: Cow::Borrowed("midnight"),
-	authoring_version: 1,
-	// The version of the runtime specification. A full node will not attempt to use its native
-	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
-	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 003_000_000,
-	impl_version: 0,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 4,
-	system_version: 3,
-};
+/// The `impl_name` of a runtime built with `fork-transition`, so one is
+/// identifiable from `state_getRuntimeVersion` or from its wasm: release
+/// builds check for this string (`scripts/assert-no-fork-transition.sh`).
+pub const FORK_TRANSITION_IMPL_NAME: &str = "midnight-fork-transition-UNSAFE";
+
+// `#[sp_version::runtime_version]` only accepts string literals, so `impl_name`
+// is chosen per feature by expanding the one definition twice rather than by a
+// const. `spec_version` must stay single-sourced: `codeSubstitutes` matches on
+// it, so a fork runtime that drifted from the stock one would silently not apply.
+macro_rules! runtime_version {
+	($impl_name:tt) => {
+		// To learn more about runtime versioning, see:
+		// https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
+		#[allow(clippy::zero_prefixed_literal)]
+		#[sp_version::runtime_version]
+		pub const VERSION: RuntimeVersion = RuntimeVersion {
+			spec_name: Cow::Borrowed("midnight"),
+			impl_name: Cow::Borrowed($impl_name),
+			authoring_version: 1,
+			// The version of the runtime specification. A full node will not attempt to use its native
+			//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
+			//   `spec_version`, and `authoring_version` are the same between Wasm and native.
+			spec_version: 004_000_000,
+			impl_version: 0,
+			apis: RUNTIME_API_VERSIONS,
+			transaction_version: 4,
+			system_version: 3,
+		};
+	};
+}
+
+#[cfg(not(feature = "fork-transition"))]
+runtime_version!("midnight");
+#[cfg(feature = "fork-transition")]
+runtime_version!("midnight-fork-transition-UNSAFE");
 
 /// This determines the average expected block time that we are targeting.
 /// Blocks will be produced at a minimum duration defined by `SLOT_DURATION`.
@@ -298,12 +330,6 @@ pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
 		c: (1, 4),
 		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
 	};
-
-/// The version information used to identify this runtime when compiled natively.
-#[cfg(feature = "std")]
-pub fn native_version() -> NativeVersion {
-	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
-}
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
@@ -374,15 +400,23 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes the QueuedCommittee storage added in v2
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-		// See migrations::authority_keys when opaque::SessionKeys changes shape.
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE and BEEFY keys, and activates the
+		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
+		// `on_initialize` sees the first BABE pre-digest).
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
+		// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
+		// on the unsigned mandatory block 1 since launch, and the session-key migration above
+		// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a
+		// session rotation has made `pallet_beefy::Authorities` track the committee. One-shot:
+		// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
+		// re-enabled (see `migrations::beefy_genesis`).
+		migrations::beefy_genesis::ResetBeefyGenesis,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
 	type PostInherents = ();
 	type PostTransactions = ();
-	type ExtensionsWeightInfo = ();
+	type ExtensionsWeightInfo = weights::frame_system_extensions::WeightInfo<Runtime>;
 }
 
 impl pallet_aura::Config for Runtime {
@@ -393,17 +427,14 @@ impl pallet_aura::Config for Runtime {
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
-impl pallet_authorship::Config for Runtime {
-	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
-	type EventHandler = ();
-}
-
 impl pallet_babe::Config for Runtime {
 	type EpochDuration = SidechainEpochDuration;
 	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
 	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
 	type DisabledValidators = ();
-	// TODO: Issue #1863
+	// Default weights implemented by `()` are the best thing we have for BABE.
+	// Pallet does not define benchmarks for methods in the `WeightInfo`, so
+	// running benchmarks does not add any value.
 	type WeightInfo = ();
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
@@ -543,14 +574,11 @@ parameter_types! {
 
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
-	#[cfg(not(feature = "runtime-benchmarks"))]
-	// Append-only: `ActiveCursor.index` indexes this tuple.
-	type Migrations = (
-		pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,
-		pallet_cnight_observation::migrations::v2::MigrateV1ToV2<Runtime>,
-	);
-	// Benchmarks need mocked migrations to guarantee that they succeed.
-	#[cfg(feature = "runtime-benchmarks")]
+	#[cfg(not(any(feature = "runtime-benchmarks", test)))]
+	type Migrations = ();
+	// Benchmarks need mocked migrations to guarantee that they succeed, and the unit tests
+	// use them to drive a migration into failure (see `tests::failed_mbm_recovery`).
+	#[cfg(any(feature = "runtime-benchmarks", test))]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
 	type CursorMaxLen = ConstU32<65_536>;
 	type IdentifierMaxLen = ConstU32<256>;
@@ -647,14 +675,6 @@ impl pallet_session_validator_management::Config for Runtime {
 
 pub struct LogBeneficiaries;
 impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
-	#[cfg(feature = "experimental")]
-	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
-		//let rewards = BlockRewards::get_rewards_and_clear();
-		//log::info!("Rewards accrued in epoch {old_epoch}: {rewards:?}");
-
-		ParityDbWeight::get().reads_writes(1, 1)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn on_new_epoch(_old_epoch: ScEpochNumber, _new_epoch: ScEpochNumber) -> Weight {
 		Weight::zero()
 	}
@@ -675,43 +695,12 @@ pub type BeneficiaryId = midnight_node_ledger::types::Hash;
 pub type BlockRewardPoints = u128;
 pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
 
-/*
-#[cfg(feature = "experimental")]
-pub struct LedgerBlockRewardPoints;
-#[cfg(feature = "experimental")]
-impl GetBlockRewardPoints<BlockRewardPoints> for LedgerBlockRewardPoints {
-	fn get_block_reward() -> BlockRewardPoints {
-		BLOCK_REWARD_POINTS
-	}
-}
-*/
-
 pub struct LedgerBlockReward;
 impl Get<BlockReward> for LedgerBlockReward {
-	#[cfg(feature = "experimental")]
-	fn get() -> BlockReward {
-		/*
-		(
-			<Runtime as pallet_block_rewards::Config>::GetBlockRewardPoints::get_block_reward(),
-			pallet_block_rewards::CurrentBlockBeneficiary::<Runtime>::get(),
-		)
-		*/
-		(0, None)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn get() -> BlockReward {
 		(0, None)
 	}
 }
-
-/*
-#[cfg(feature = "experimental")]
-impl pallet_block_rewards::Config for Runtime {
-	type BeneficiaryId = BeneficiaryId;
-	type BlockRewardPoints = BlockRewardPoints;
-	type GetBlockRewardPoints = LedgerBlockRewardPoints;
-}
-*/
 
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
@@ -725,16 +714,9 @@ impl pallet_midnight_system::Config for Runtime {
 	type LedgerBlockContextProvider = Midnight;
 }
 
-pub struct ValidatorSet;
-impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
-	fn get() -> BoundedVec<AuraId, MaxAuthorities> {
-		pallet_aura::Authorities::<Runtime>::get()
-	}
-}
-
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
-	type WeightInfo = pallet_version::VersionWeight<Runtime>;
+	type WeightInfo = weights::pallet_version::WeightInfo<Runtime>;
 	type RuntimeVersion = Version;
 }
 
@@ -791,7 +773,7 @@ impl pallet_safe_mode::Config for Runtime {
 	type ForceDepositOrigin = EnsureRoot<AccountId>;
 	type Notify = ();
 	type ReleaseDelay = ();
-	type WeightInfo = pallet_safe_mode::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_safe_mode::WeightInfo<Runtime>;
 }
 
 pub const MOTION_DURATION: BlockNumber = 5 * DAYS;
@@ -972,7 +954,7 @@ parameter_types! {
 	pub const MaxBytes: u64 = 10 * 1024 * 1024;
 	/// Maximum transactions a single account can submit within a throttle window
 	pub const MaxTxs: u64 = 100;
-	/// Number of blocks that define a throttle window (1 day at 6s/block).
+	/// Number of blocks that define a throttle window (1 hour: 600 blocks at 6 s/block).
 	pub const WindowSize: u32 = HOURS;
 }
 
@@ -993,6 +975,8 @@ impl pallet_consensus_engine::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type EpochDuration = SidechainEpochDuration;
 	type EpochConfiguration = BabeEpochConfigurationValue;
+	// The predicate `Session` (30) evaluates later in the same block.
+	type ShouldEndSession = SessionCommitteeManagement;
 	// Unit weights for now. Issue #1863.
 	type WeightInfo = ();
 }
@@ -1121,14 +1105,10 @@ mod runtime {
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
 
-	// Authorship must be before Session (polkadot-sdk hook order).
-	#[runtime::pallet_index(9)]
-	pub type Authorship = pallet_authorship::Pallet<Runtime>;
-
 	// Consensus engine transition state machine. Hook order (pallet index order) is
 	// load-bearing: its `on_initialize` digest guards must run after Babe (which
 	// consumes BABE pre-digests) but before anything that mutates the state they
-	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
+	// check against — Scheduler (18) can dispatch `schedule_flip` from
 	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
 	// which the `authority_index == slot % n` transition guard compares with. Both
 	// the block author and the AURA seal verifier work from the parent state, so
@@ -1141,8 +1121,6 @@ mod runtime {
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
-	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1239,24 +1217,11 @@ pub type Executive = frame_executive::Executive<
 	frame_system::ChainContext<Runtime>,
 	Runtime,
 	AllPalletsWithSystem,
-	Migrations,
+	(),
 >;
 
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
-/// Migrations to apply on runtime upgrade.
-pub type Migrations = (
-	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
-	// MUST precede the pallet-midnight translation below: it captures the
-	// still-untranslated v8 state key, which the cNIGHT dust generation replay
-	// (`pallet_cnight_observation::migrations::v2::MigrateV1ToV2`) reads the
-	// wiped entries' values and owners from.
-	pallet_cnight_observation::migrations::v2::RecordPreForkState<Runtime>,
-	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
-	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
-	// this ledger-9 runtime (storage version 2).
-	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
-);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -1365,6 +1330,11 @@ mod benches {
 	define_benchmarks!(
 		[frame_benchmarking, BaselineBench::<Runtime>]
 		[frame_system, SystemBench::<Runtime>]
+		// The `TxExtension` checks every signed transaction pays for. Without this
+		// entry `frame_system::Config::ExtensionsWeightInfo` falls back to upstream's
+		// `()` impl, whose numbers are Parity's reference hardware and RocksDB —
+		// this runtime is ParityDb.
+		[frame_system_extensions, SystemExtensionsBench::<Runtime>]
 		[pallet_beefy_mmr, BeefyMmrLeaf]
 		[pallet_grandpa, Grandpa]
 		[pallet_timestamp, Timestamp]
@@ -1373,6 +1343,10 @@ mod benches {
 		[pallet_preimage, Preimage]
 		[pallet_scheduler, Scheduler]
 		[pallet_tx_pause, TxPause]
+		// Load-bearing since #2079 made safe mode the failed-migration handler.
+		// `enter`/`extend`/`release_deposit` report Weightless here: deposits are
+		// disabled in this runtime, so those calls are unusable by design.
+		[pallet_safe_mode, SafeMode]
 		[pallet_collective, Council]
 		[pallet_collective, TechnicalCommittee]
 		[pallet_membership, CouncilMembership]
@@ -1384,6 +1358,8 @@ mod benches {
 		[pallet_cnight_observation, CNightObservation]
 		[pallet_c2m_bridge, C2MBridge]
 		[pallet_partner_chains_bridge, Bridge]
+		// No extrinsics; the benchmark measures the per-block `on_initialize` digest write.
+		[pallet_version, NodeVersion]
 	);
 }
 
@@ -1409,6 +1385,14 @@ impl_runtime_apis! {
 		}
 
 		fn execute_block(block: <Block as BlockT>::LazyBlock) {
+			// The fork block carries a storage delta instead of the inherents a
+			// proposer would have produced; applying it is the whole execution.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				crate::fork_transition::execute_fork_block(&block);
+				return;
+			}
+
 			Executive::execute_block(block);
 		}
 
@@ -1507,6 +1491,34 @@ impl_runtime_apis! {
 			block: <Block as BlockT>::LazyBlock,
 			data: sp_inherents::InherentData,
 		) -> sp_inherents::CheckInherentsResult {
+			// The fork block has no inherents to check -- it was never proposed.
+			#[cfg(feature = "fork-transition")]
+			if crate::fork_transition::is_fork_block(&block) {
+				return sp_inherents::CheckInherentsResult::new();
+			}
+
+			// Verifiers check the first block after a runtime upgrade with this, the new,
+			// runtime (the node calls this API in the on-chain context, which resolves the
+			// upgrade staged in `:pending_code`), against the parent state the old runtime
+			// left behind. Apply the pending migrations first, so the checks read storage in
+			// the layout they expect. The runtime storage writes are discarded with the
+			// runtime API call; the block's own execution runs the migrations again, for real.
+			//
+			// Host-side effects are NOT discarded: anything a migration does through a host
+			// function (e.g. the ledger v8->v9 translation persisting the translated state in
+			// the ledger arena) happens once per run, and a verifying node runs the migrations
+			// twice for the first post-upgrade block (here, then in `execute_block`). Every
+			// migration must therefore be deterministic and idempotent on the host side. This
+			// was already required (competing children of the upgrade block, abandoned
+			// proposals and resyncs re-run them on the same host state), but it is now the
+			// normal path rather than an edge case.
+			let upgraded = frame_system::LastRuntimeUpgrade::<Runtime>::get()
+				.map(|last| last.was_upgraded(&VERSION))
+				.unwrap_or(true);
+			if upgraded {
+				Executive::execute_on_runtime_upgrade();
+			}
+
 			data.check_extrinsics(&block)
 		}
 	}
@@ -1533,6 +1545,15 @@ impl_runtime_apis! {
 		}
 
 		fn authorities() -> Vec<AuraId> {
+			// At the fork block's parent, report the fork's mock set so the
+			// fork block's seal verifies. Every other height reads state.
+			#[cfg(feature = "fork-transition")]
+			if let Some(authorities) =
+				crate::fork_transition::aura_authorities_at(System::block_number())
+			{
+				return authorities;
+			}
+
 			pallet_aura::Authorities::<Runtime>::get().into_inner()
 		}
 	}
@@ -1697,7 +1718,7 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl pallet_beefy_mmr::BeefyMmrApi<Block, Hash> for RuntimeApi {
+	impl pallet_beefy_mmr::BeefyMmrApi<Block, Hash> for Runtime {
 		fn authority_set_proof() -> sp_consensus_beefy::mmr::BeefyAuthoritySet<Hash> {
 			BeefyMmrLeaf::authority_set_proof()
 		}
@@ -1769,6 +1790,7 @@ impl_runtime_apis! {
 			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
@@ -1787,6 +1809,7 @@ impl_runtime_apis! {
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}
@@ -1844,10 +1867,6 @@ impl_runtime_apis! {
 	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()
-		}
-
-		fn should_emit_babe_preruntime_digest() -> bool {
-			ConsensusEngine::should_emit_babe_preruntime_digest()
 		}
 	}
 
@@ -1967,716 +1986,4 @@ impl_runtime_apis! {
 }
 
 #[cfg(test)]
-mod tests {
-	use crate::mock::*;
-	use crate::{SystemParameters, select_authorities_optionally_overriding};
-	use authority_selection_inherents::{AuthoritySelectionInputs, RegisterValidatorSignedMessage};
-	use frame_support::{
-		assert_ok,
-		dispatch::PostDispatchInfo,
-		inherent::ProvideInherent,
-		traits::{UnfilteredDispatchable, WhitelistedStorageKeys},
-	};
-	use frame_system::RawOrigin;
-	use sidechain_domain::{
-		CandidateRegistrations, CrossChainPublicKey, CrossChainSignature, DParameter, EpochNonce,
-		MainchainSignature, PermissionedCandidateData, RegistrationData, ScEpochNumber,
-		SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
-	};
-	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
-	use sp_inherents::InherentData;
-	use sp_runtime::traits::Zero;
-	use std::collections::HashSet;
-
-	#[test]
-	fn check_whitelist() {
-		let whitelist: HashSet<String> = super::AllPalletsWithSystem::whitelisted_storage_keys()
-			.iter()
-			.map(|e| HexDisplay::from(&e.key).to_string())
-			.collect();
-
-		// Block Number
-		assert!(
-			whitelist.contains("26aa394eea5630e07c48ae0c9558cef702a5c1b19ab7a04f536c519aca4983ac")
-		);
-		// Execution Phase
-		assert!(
-			whitelist.contains("26aa394eea5630e07c48ae0c9558cef7ff553b5a9862a516939d82b3d3d8661a")
-		);
-		// Event Count
-		assert!(
-			whitelist.contains("26aa394eea5630e07c48ae0c9558cef70a98fdbe9ce6c55837576c60c7af3850")
-		);
-		// System Events
-		assert!(
-			whitelist.contains("26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7")
-		);
-	}
-
-	// The set committee takes effect next session. Committee can be set for 1 session in advance.
-	#[test]
-	fn check_grandpa_authorities_rotation() {
-		new_test_ext().execute_with(|| {
-			// Needs to be run to initialize first slot and epoch numbers;
-			advance_block();
-
-			// Scheduled committee goes into effect after a 2-epoch delay
-			set_committee_through_inherent_data(&[alice()]);
-			until_epoch_after_finalizing(1, &|| {
-				assert_current_epoch!(0);
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice(), bob()]);
-			});
-
-			set_committee_through_inherent_data(&[bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(1);
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice(), bob()]);
-			});
-			set_committee_through_inherent_data(&[alice()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(2);
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice()]);
-			});
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(3);
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([bob()]);
-			});
-			set_committee_through_inherent_data(&[bob(), alice()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(4);
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice()]);
-			});
-			set_committee_through_inherent_data(&[alice()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(5);
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice(), bob()]);
-			});
-
-			// When there's no new committees being scheduled, the last committee stays in power
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
-				assert_grandpa_weights();
-				assert_grandpa_authorities!([bob(), alice()]);
-			});
-		});
-
-		fn assert_grandpa_weights() {
-			Grandpa::grandpa_authorities()
-				.into_iter()
-				.for_each(|(_, weight)| assert_eq!(weight, 1))
-		}
-	}
-
-	// The set committee takes effect next session. Committee can be set for 1 session in advance.
-	#[test]
-	fn check_aura_authorities_rotation() {
-		new_test_ext().execute_with(|| {
-			// Needs to be run to initialize first slot and epoch numbers;
-			advance_block();
-			// Scheduled committee goes into effect after a 2-epoch delay
-			set_committee_through_inherent_data(&[alice()]);
-			until_epoch_after_finalizing(1, &|| {
-				assert_current_epoch!(0);
-				assert_aura_authorities!([alice(), bob()]);
-			});
-
-			set_committee_through_inherent_data(&[bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(1);
-				assert_aura_authorities!([alice(), bob()]);
-			});
-			set_committee_through_inherent_data(&[alice()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(2);
-				assert_aura_authorities!([alice()]);
-			});
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(3);
-				assert_aura_authorities!([bob()]);
-			});
-			set_committee_through_inherent_data(&[bob(), alice()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(4);
-				assert_aura_authorities!([alice()]);
-			});
-			set_committee_through_inherent_data(&[alice()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(5);
-				assert_aura_authorities!([alice(), bob()]);
-			});
-
-			// When there's no new committees being scheduled, the last committee stays in power
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
-				assert_aura_authorities!([bob(), alice()]);
-			});
-		});
-	}
-
-	// The set committee takes effect at next session. Committee can be set for 1 session in advance.
-	#[test]
-	fn check_cross_chain_committee_rotation() {
-		new_test_ext().execute_with(|| {
-			advance_block();
-			set_committee_through_inherent_data(&[alice()]);
-			until_epoch(1, &|| {
-				assert_current_epoch!(0);
-				assert_next_committee!([alice()]);
-			});
-
-			set_committee_through_inherent_data(&[bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(1);
-				assert_next_committee!([bob()]);
-			});
-
-			set_committee_through_inherent_data(&[]);
-			for_next_n_blocks(SLOTS_PER_EPOCH, &|| {
-				assert_current_epoch!(2);
-				assert_next_committee!([bob()]);
-			});
-		});
-	}
-
-	#[test]
-	// The effects of setting the d parameter are already well-tested, so we will not check that. We will check the selection to ensure that it simply respects d-parameter overriding
-	fn check_overridden_d_param_committee_rotation() {
-		new_test_ext().execute_with(|| {
-			let permissioned_validators = vec![alice_mock_validator(), bob_mock_validator()];
-			let registered_validators = vec![charlie_mock_validator()];
-
-			let d_parameter =
-				DParameter { num_permissioned_candidates: 1, num_registered_candidates: 0 };
-
-			// Set initial D-parameter in SystemParameters pallet
-			assert_ok!(SystemParameters::update_d_parameter(RawOrigin::Root.into(), 1, 0));
-
-			let authority_selection_inputs = create_authority_selection_inputs(
-				&permissioned_validators,
-				&registered_validators,
-				d_parameter,
-			);
-
-			let initially_selected_authorities = select_authorities_optionally_overriding(
-				authority_selection_inputs.clone(),
-				ScEpochNumber::zero(),
-			);
-
-			assert_eq!(initially_selected_authorities.unwrap().len(), 1);
-
-			// Override the D-parameter via SystemParameters pallet
-			assert_ok!(SystemParameters::update_d_parameter(RawOrigin::Root.into(), 20, 2));
-
-			let selected_authorities_override = select_authorities_optionally_overriding(
-				authority_selection_inputs,
-				ScEpochNumber::zero(),
-			);
-
-			assert_eq!(selected_authorities_override.unwrap().len(), 22);
-		})
-	}
-
-	pub fn set_committee_through_inherent_data(
-		expected_authorities: &[TestKeys],
-	) -> PostDispatchInfo {
-		let epoch = Sidechain::current_epoch_number();
-		let slot = *pallet_aura::CurrentSlot::<Test>::get();
-		println!(
-			"(slot {slot}, epoch {epoch}) Setting {} authorities for next epoch",
-			expected_authorities.len()
-		);
-		let inherent_data_struct = create_inherent_data_struct(expected_authorities);
-		let mut inherent_data = InherentData::new();
-		inherent_data
-			.put_data(
-				SessionCommitteeManagement::INHERENT_IDENTIFIER,
-				&inherent_data_struct.data.unwrap(),
-			)
-			.expect("Setting inherent data should not fail");
-		let call = <SessionCommitteeManagement as ProvideInherent>::create_inherent(&inherent_data)
-			.expect("Creating test inherent should not fail");
-		println!("    inherent: {call:?}");
-		call.dispatch_bypass_filter(RuntimeOrigin::none())
-			.expect("dispatching test call should work")
-	}
-
-	pub fn create_authority_selection_inputs(
-		permissioned_candidates: &[MockValidator],
-		validators: &[MockValidator],
-		d_parameter: DParameter,
-	) -> AuthoritySelectionInputs {
-		let epoch_candidates = create_epoch_candidates_idp(validators);
-
-		let permissioned_candidates_data: Vec<PermissionedCandidateData> = permissioned_candidates
-			.iter()
-			.map(|c| PermissionedCandidateData {
-				sidechain_public_key: c.sidechain_pub_key(),
-				keys: c.session_keys(),
-			})
-			.collect();
-		AuthoritySelectionInputs {
-			d_parameter,
-			permissioned_candidates: permissioned_candidates_data,
-			registered_candidates: epoch_candidates,
-			epoch_nonce: EpochNonce(DUMMY_EPOCH_NONCE.to_vec()),
-		}
-	}
-
-	fn create_epoch_candidates_idp(validators: &[MockValidator]) -> Vec<CandidateRegistrations> {
-		let mainchain_key_pair: ed25519::Pair = ed25519::Pair::from_seed_slice(&[7u8; 32]).unwrap();
-
-		let candidates: Vec<CandidateRegistrations> = validators
-			.iter()
-			.map(|validator| {
-				let signed_message = RegisterValidatorSignedMessage {
-					genesis_utxo: UtxoId::default(),
-					sidechain_pub_key: validator.sidechain_pub_key().0,
-					registration_utxo: UtxoId::default(),
-				};
-
-				let mock_mainchain_signature = mainchain_key_pair.sign(&[]);
-
-				let sidechain_signature_bytes_no_recovery =
-					mock_mainchain_signature.0[..64].to_vec();
-
-				let registration_data = RegistrationData {
-					registration_utxo: signed_message.registration_utxo,
-					sidechain_signature: SidechainSignature(
-						sidechain_signature_bytes_no_recovery.clone(),
-					),
-					mainchain_signature: MainchainSignature(mock_mainchain_signature.0),
-					cross_chain_signature: CrossChainSignature(
-						sidechain_signature_bytes_no_recovery,
-					),
-					sidechain_pub_key: validator.sidechain_pub_key(),
-					keys: validator.session_keys(),
-					cross_chain_pub_key: CrossChainPublicKey(validator.sidechain_pub_key().0),
-					utxo_info: UtxoInfo::default(),
-					tx_inputs: vec![signed_message.registration_utxo],
-				};
-
-				CandidateRegistrations {
-					registrations: vec![registration_data],
-					stake_delegation: Some(StakeDelegation(validator.stake)),
-					stake_pool_public_key: StakePoolPublicKey(mainchain_key_pair.public().0),
-				}
-			})
-			.collect();
-
-		candidates
-	}
-
-	mod sidechain_slot_number {
-		use crate::Runtime;
-		use frame_support::traits::Hooks;
-		use pallet_consensus_engine::{EngineState, State};
-		use parity_scale_codec::Encode;
-		use sidechain_domain::ScSlotNumber;
-		use sp_consensus_babe::BABE_ENGINE_ID;
-		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
-		use sp_consensus_slots::Slot;
-		use sp_runtime::{Digest, DigestItem};
-
-		fn babe_pre_digest(slot: u64) -> DigestItem {
-			DigestItem::PreRuntime(
-				BABE_ENGINE_ID,
-				PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-					authority_index: 0,
-					slot: Slot::from(slot),
-				})
-				.encode(),
-			)
-		}
-
-		fn initialize_block_with_logs(logs: Vec<DigestItem>) {
-			frame_system::Pallet::<Runtime>::initialize(&1, &Default::default(), &Digest { logs });
-		}
-
-		fn current_slot_number() -> ScSlotNumber {
-			<Runtime as pallet_sidechain::Config>::current_slot_number()
-		}
-
-		#[test]
-		fn is_read_from_aura_storage_pre_flip() {
-			sp_io::TestExternalities::default().execute_with(|| {
-				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(7u64));
-				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(99u64));
-				assert_eq!(current_slot_number(), ScSlotNumber(7));
-			});
-		}
-
-		#[test]
-		fn is_read_from_babe_storage_post_flip() {
-			sp_io::TestExternalities::default().execute_with(|| {
-				EngineState::<Runtime>::put(State::Babe);
-				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(7u64));
-				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(42u64));
-				assert_eq!(current_slot_number(), ScSlotNumber(42));
-			});
-		}
-
-		/// Regression: with Babe before Sidechain, Babe's `on_initialize` copies the
-		/// pre-digest into `CurrentSlot` before Sidechain reads it — so a stale
-		/// storage value is overwritten for this block.
-		#[test]
-		fn babe_hook_refreshes_storage_before_sidechain_reads() {
-			sp_io::TestExternalities::default().execute_with(|| {
-				EngineState::<Runtime>::put(State::Babe);
-				// Suppress premature genesis init so Babe only updates CurrentSlot.
-				pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(1u64));
-				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(41u64));
-				initialize_block_with_logs(vec![babe_pre_digest(42)]);
-
-				pallet_babe::Pallet::<Runtime>::on_initialize(1);
-
-				assert_eq!(current_slot_number(), ScSlotNumber(42));
-			});
-		}
-	}
-
-	/// Tests for the slot reported by the `GetSidechainStatus` runtime API across the
-	/// AURA to BABE consensus flip.
-	mod sidechain_status {
-		use crate::Runtime;
-		use pallet_consensus_engine::{EngineState, State};
-		use sidechain_domain::{ScEpochNumber, ScSlotNumber};
-		use sp_consensus_slots::Slot;
-		use sp_sidechain::SidechainStatus;
-
-		/// Slot the AURA storage is left frozen at, standing in for the value
-		/// `pallet_aura::CurrentSlot` keeps forever once BABE takes over.
-		const STALE_AURA_SLOT: u64 = 41;
-		const BABE_SLOT: u64 = 4242;
-
-		fn get_sidechain_status() -> SidechainStatus {
-			<Runtime as sp_sidechain::runtime_decl_for_get_sidechain_status::GetSidechainStatus<
-				crate::Block,
-			>>::get_sidechain_status()
-		}
-
-		fn slots_per_epoch() -> u64 {
-			u64::from(crate::Sidechain::slots_per_epoch().0)
-		}
-
-		#[test]
-		fn slot_is_read_from_aura_storage_pre_flip() {
-			sp_io::TestExternalities::default().execute_with(|| {
-				// Default engine state is Aura.
-				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
-				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
-
-				let status = get_sidechain_status();
-
-				assert_eq!(status.slot, ScSlotNumber(STALE_AURA_SLOT));
-				assert_eq!(status.epoch, ScEpochNumber(STALE_AURA_SLOT / slots_per_epoch()));
-			});
-		}
-
-		// Regression test: this API used to read `pallet_aura::CurrentSlot`
-		// unconditionally, which stops advancing once BABE produces blocks, so the
-		// reported slot (and the epoch derived from it) froze at the flip.
-		#[test]
-		fn slot_is_read_from_babe_storage_post_flip() {
-			sp_io::TestExternalities::default().execute_with(|| {
-				EngineState::<Runtime>::put(State::Babe);
-				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
-				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
-
-				let status = get_sidechain_status();
-
-				assert_eq!(status.slot, ScSlotNumber(BABE_SLOT));
-				assert_eq!(status.epoch, ScEpochNumber(BABE_SLOT / slots_per_epoch()));
-			});
-		}
-
-		// The armed and scheduled states still produce AURA blocks, so the slot must
-		// keep coming from AURA until the flip actually completes.
-		#[test]
-		fn slot_is_read_from_aura_storage_while_the_flip_is_pending() {
-			for state in [State::ArmedBabe, State::ScheduledFlip] {
-				sp_io::TestExternalities::default().execute_with(|| {
-					EngineState::<Runtime>::put(state);
-					pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
-					pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
-
-					assert_eq!(
-						get_sidechain_status().slot,
-						ScSlotNumber(STALE_AURA_SLOT),
-						"unexpected slot in state {state:?}"
-					);
-				});
-			}
-		}
-	}
-
-	/// The slot duration reported by `SlotApi` comes from AURA's config, so it must not
-	/// diverge from BABE's once BABE produces the blocks.
-	mod slot_config {
-		use crate::{Block, Runtime};
-
-		fn slot_config() -> sidechain_slots::ScSlotConfig {
-			<Runtime as sidechain_slots::runtime_decl_for_slot_api::SlotApi<Block>>::slot_config()
-		}
-
-		#[test]
-		fn slot_duration_is_the_same_for_both_engines() {
-			sp_io::TestExternalities::default().execute_with(|| {
-				// Both are config constants — AURA's `SlotDuration` and BABE's
-				// `MinimumPeriod * 2` — so `slot_config` needs no engine dispatch as
-				// long as they agree. This test fails if a future config change makes
-				// them diverge.
-				assert_eq!(
-					crate::Aura::slot_duration(),
-					crate::Babe::slot_duration(),
-					"AURA and BABE slot durations diverged; SlotApi::slot_config must \
-					 dispatch on the active engine"
-				);
-				assert_eq!(slot_config().slot_duration.as_millis(), crate::SLOT_DURATION);
-			});
-		}
-	}
-
-	mod failed_mbm_recovery {
-		use crate::{AccountId, BlockNumber, Executive, Runtime, RuntimeCall, VERSION};
-		use frame_support::{
-			assert_ok, dispatch::GetDispatchInfo, migrations::MultiStepMigrator, traits::Contains,
-		};
-		use parity_scale_codec::Encode;
-		use sp_runtime::{
-			BuildStorage, ExtrinsicInclusionMode,
-			traits::{Dispatchable, Hash as _, Header as _},
-		};
-
-		fn ongoing() -> bool {
-			<Runtime as frame_system::Config>::MultiBlockMigrator::ongoing()
-		}
-
-		fn can_set_code() -> frame_system::CanSetCodeResult<Runtime> {
-			frame_system::Pallet::<Runtime>::can_set_code(&[], false)
-		}
-
-		/// Fail migration 0 (cnight v1 `MigrateV0ToV1`) by planting an active cursor whose
-		/// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size cursor
-		/// type -> `InvalidCursor` -> `FailedMigrationHandler`, then step the MBMs the way
-		/// Executive does after inherent application. Leaves the chain in safe mode with
-		/// the cursor unstuck.
-		fn fail_mbm_and_enter_safe_mode() {
-			// Mark the runtime as already upgraded so a later `initialize_block` doesn't
-			// onboard the MBMs again.
-			frame_system::LastRuntimeUpgrade::<Runtime>::put(
-				frame_system::LastRuntimeUpgradeInfo::from(VERSION),
-			);
-			frame_system::Pallet::<Runtime>::set_block_number(1);
-			assert!(can_set_code().into_result().is_ok());
-
-			assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
-				crate::RuntimeOrigin::root(),
-				0,
-				Some(vec![0u8].try_into().unwrap()),
-				Some(1),
-			));
-			assert!(ongoing());
-			assert!(matches!(
-				can_set_code(),
-				frame_system::CanSetCodeResult::MultiBlockMigrationsOngoing
-			));
-
-			Executive::inherents_applied();
-
-			// Safe mode entered indefinitely, cursor unstuck, upgrades unblocked.
-			assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), Some(BlockNumber::MAX));
-			assert!(!ongoing());
-			assert!(can_set_code().into_result().is_ok());
-		}
-
-		/// A failed multi-block migration must enter safe mode and unstuck the cursor
-		/// instead of freezing the chain (`can_set_code` blocked forever with no on-chain
-		/// recovery on a standalone chain).
-		#[test]
-		fn failed_mbm_enters_safe_mode_and_unstucks() {
-			let t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
-			sp_io::TestExternalities::from(t).execute_with(|| {
-				fail_mbm_and_enter_safe_mode();
-
-				// `BaseCallFilter` now blocks user calls...
-				type Filter = <Runtime as frame_system::Config>::BaseCallFilter;
-				assert!(!Filter::contains(&RuntimeCall::Midnight(
-					pallet_midnight::Call::send_mn_transaction { midnight_tx: vec![] }
-				)));
-				// ...but keeps the inherents, governance, and safe-mode recovery calls.
-				assert!(Filter::contains(&RuntimeCall::Timestamp(pallet_timestamp::Call::set {
-					now: 0
-				})));
-				assert!(Filter::contains(&RuntimeCall::Council(pallet_collective::Call::vote {
-					proposal: crate::Hash::default(),
-					index: 0,
-					approve: true,
-				})));
-				assert!(Filter::contains(&RuntimeCall::SafeMode(
-					pallet_safe_mode::Call::force_exit {}
-				)));
-
-				// The next block admits normal (non-inherent) extrinsics again.
-				let header = crate::Header::new(
-					2,
-					Default::default(),
-					Default::default(),
-					frame_system::Pallet::<Runtime>::parent_hash(),
-					Default::default(),
-				);
-				assert_eq!(
-					Executive::initialize_block(&header),
-					ExtrinsicInclusionMode::AllExtrinsics
-				);
-			});
-		}
-
-		fn account(b: u8) -> AccountId {
-			AccountId::from([b; 32])
-		}
-
-		/// Dispatch `call` the way an applied extrinsic would: through the signed origin,
-		/// which carries `BaseCallFilter`. This is what makes the test end-to-end — a call
-		/// filtered in safe mode fails here with `CallFiltered`.
-		fn dispatch_signed(call: RuntimeCall, who: AccountId) {
-			assert_ok!(call.dispatch(crate::RuntimeOrigin::signed(who)));
-		}
-
-		/// Governance must be able to execute the full set-code recovery flow while the
-		/// chain sits in post-failure safe mode: both collectives approve a
-		/// `FederatedAuthority` motion, and closing the motion dispatches
-		/// `System::authorize_upgrade` as Root (the fixed runtime is then applied via the
-		/// whitelisted `System::apply_authorized_upgrade`). The collectives dispatch
-		/// `motion_approve` internally with their (non-Root) `Members` origin, which goes
-		/// through `BaseCallFilter` — the safe-mode whitelist must let it through or
-		/// recovery dead-ends.
-		#[test]
-		fn governance_can_authorize_set_code_in_safe_mode() {
-			let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
-			// Seed both governance bodies (membership genesis forwards to the collectives).
-			pallet_membership::GenesisConfig::<Runtime, pallet_membership::Instance1> {
-				members: vec![account(1), account(2)].try_into().unwrap(),
-				..Default::default()
-			}
-			.assimilate_storage(&mut t)
-			.unwrap();
-			pallet_membership::GenesisConfig::<Runtime, pallet_membership::Instance2> {
-				members: vec![account(1), account(2)].try_into().unwrap(),
-				..Default::default()
-			}
-			.assimilate_storage(&mut t)
-			.unwrap();
-
-			sp_io::TestExternalities::from(t).execute_with(|| {
-				fail_mbm_and_enter_safe_mode();
-
-				// The motion governance wants dispatched as Root: authorize the fixed
-				// runtime's code hash.
-				let motion = RuntimeCall::System(frame_system::Call::authorize_upgrade {
-					code_hash: crate::Hash::repeat_byte(7),
-				});
-				let motion_hash = <Runtime as frame_system::Config>::Hashing::hash_of(&motion);
-				assert!(frame_system::Pallet::<Runtime>::authorized_upgrade().is_none());
-
-				// Council: propose motion_approve, both members vote aye, close dispatches
-				// it with the Council's `Members` origin.
-				let proposal = RuntimeCall::FederatedAuthority(
-					pallet_federated_authority::Call::motion_approve {
-						call: alloc::boxed::Box::new(motion.clone()),
-					},
-				);
-				let len = proposal.encoded_size() as u32;
-				let weight = proposal.get_dispatch_info().call_weight;
-				let hash = <Runtime as frame_system::Config>::Hashing::hash_of(&proposal);
-
-				dispatch_signed(
-					RuntimeCall::Council(pallet_collective::Call::propose {
-						threshold: 2,
-						proposal: alloc::boxed::Box::new(proposal.clone()),
-						length_bound: len,
-					}),
-					account(1),
-				);
-				for who in [account(1), account(2)] {
-					dispatch_signed(
-						RuntimeCall::Council(pallet_collective::Call::vote {
-							proposal: hash,
-							index: 0,
-							approve: true,
-						}),
-						who,
-					);
-				}
-				dispatch_signed(
-					RuntimeCall::Council(pallet_collective::Call::close {
-						proposal_hash: hash,
-						index: 0,
-						proposal_weight_bound: weight,
-						length_bound: len,
-					}),
-					account(1),
-				);
-				// The inner motion_approve must have landed (do_approve_proposal swallows a
-				// filtered dispatch into an event, so check the motion actually exists).
-				assert!(
-					pallet_federated_authority::Motions::<Runtime>::get(motion_hash).is_some(),
-					"Council's motion_approve was not executed — blocked by BaseCallFilter?"
-				);
-
-				// Technical Committee: same flow.
-				dispatch_signed(
-					RuntimeCall::TechnicalCommittee(pallet_collective::Call::propose {
-						threshold: 2,
-						proposal: alloc::boxed::Box::new(proposal.clone()),
-						length_bound: len,
-					}),
-					account(1),
-				);
-				for who in [account(1), account(2)] {
-					dispatch_signed(
-						RuntimeCall::TechnicalCommittee(pallet_collective::Call::vote {
-							proposal: hash,
-							index: 0,
-							approve: true,
-						}),
-						who,
-					);
-				}
-				dispatch_signed(
-					RuntimeCall::TechnicalCommittee(pallet_collective::Call::close {
-						proposal_hash: hash,
-						index: 0,
-						proposal_weight_bound: weight,
-						length_bound: len,
-					}),
-					account(1),
-				);
-
-				// Both bodies approved: closing the motion dispatches it as Root.
-				dispatch_signed(
-					RuntimeCall::FederatedAuthority(
-						pallet_federated_authority::Call::motion_close {
-							motion_hash,
-							proposal_weight_bound: motion.get_dispatch_info().call_weight,
-						},
-					),
-					account(1),
-				);
-				assert!(
-					frame_system::Pallet::<Runtime>::authorized_upgrade().is_some(),
-					"authorize_upgrade did not execute — motion dispatch failed"
-				);
-
-				// And governance can lift safe mode once the fixed runtime is applied.
-				assert_ok!(crate::SafeMode::force_exit(crate::RuntimeOrigin::root()));
-				assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), None);
-			});
-		}
-	}
-}
+mod tests;

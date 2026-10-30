@@ -188,22 +188,16 @@ Use `--allow-same-version` only for local rehearsals where the candidate wasm
 does not bump `spec_version`. It deliberately bypasses the runtime-side version
 check and should not be used for production-shaped validation.
 
-### Consensus engine (AURA → BABE) transitions
+### Consensus engine (AURA → BABE) transition
 
-`pallet-consensus-engine`'s `arm_babe` and `schedule_flip` calls are gated by
-governance motion filter, like runtime upgrades.
+`pallet-consensus-engine`'s `schedule_flip` call is gated by the governance
+motion filter, like runtime upgrades. The runtime upgrade that adds the pallet
+activates it, and migration-aware nodes attach the BABE pre-runtime digest to
+every AURA block they author.
 
-`consensus-upgrade-arm-babe` moves the engine from `Aura` to `ArmedBabe`.
-
-```bash
-npm run consensus-upgrade-arm-babe:local-env -- \
-  --technical-uris //One //Two //Three \
-  --council-uris //Four //Five //Six \
-  --executor-uri //One
-```
-
-`consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
-Run it only after the finalized blocks have BABE pre-runtime digests.
+`consensus-upgrade-schedule-flip` moves the engine from `Aura` to `ScheduledFlip`.
+Run it only after the block that activated the pallet (the runtime-upgrade
+block, first with both AURA and BABE pre-runtime digests) is finalized.
 
 ```bash
 npm run consensus-upgrade-schedule-flip:local-env -- \
@@ -212,7 +206,7 @@ npm run consensus-upgrade-schedule-flip:local-env -- \
   --executor-uri //One
 ```
 
-Both commands will error if the pallet is not a state expected for given call.
+The command errors if the engine is not in the state expected for the call.
 
 ### Stopping networks
 

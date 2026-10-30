@@ -17,7 +17,7 @@
 //!
 //! The shared [`RecoveryGate`] is the single source of truth for "is the warp-recovered ledger
 //! arena ready yet". It gates two things until recovery is verified:
-//! - **block authoring**, via [`MidnightSyncOracle`] passed to AURA, and
+//! - **block authoring**, via [`MidnightSyncOracle`] passed to the AURA and BABE slot workers, and
 //! - **block import**, via [`super::block_import::GatedBlockImport`] in the import queue — so the
 //!   node does not execute post-warp blocks against an empty arena (which would hit
 //!   `NoLedgerState`) or race the recovery writer.
