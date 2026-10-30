@@ -61,6 +61,19 @@ pub struct RunMidnight {
 	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
+
+	/// Number of finalized blocks whose ledger state the ledger storage keeps.
+	///
+	/// Enables the ledger storage GC on nodes that keep Substrate state for every block
+	/// (`--state-pruning archive` / `archive-canonical`): the ledger state of a block below
+	/// `finalized - N` is released and cannot be loaded again on this node, so any runtime API
+	/// or warp ledger-sync request for such a block fails. An indexer served by this node must
+	/// validate against `pallet_midnight::StateKey` (midnight-indexer 1724 or later). On a node
+	/// with a bounded `--state-pruning` window the value must be at least that window; the
+	/// default there is the state window itself. The ledger storage must have been created by a
+	/// node with ledger GC (resync otherwise).
+	#[arg(long, value_name = "N")]
+	pub ledger_state_pruning: Option<u32>,
 }
 
 #[derive(Debug, clap::Parser)]
