@@ -108,7 +108,10 @@ use crate::boundary::types::{
 };
 
 #[cfg(feature = "std")]
-use {lazy_static::lazy_static, moka::ops::compute::Op as CacheOp, moka::sync::Cache};
+use {
+	lazy_static::lazy_static,
+	moka::{ops::compute::Op as CacheOp, policy::EvictionPolicy, sync::Cache},
+};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
@@ -246,6 +249,8 @@ lazy_static! {
 		Cache::builder()
 			.max_capacity(ANCHORED_STATE_CACHE_CAPACITY)
 			.time_to_idle(ANCHORED_STATE_CACHE_TTI)
+			// Never read, so TinyLFU would score every tip 0 and reject each new one once full.
+			.eviction_policy(EvictionPolicy::lru())
 			.build();
 }
 
@@ -1904,6 +1909,20 @@ mod tests {
 		assert_eq!(over_one, max_weight);
 		assert!(half >= zero);
 		assert!(one >= half);
+	}
+
+	#[test]
+	fn anchored_cache_admits_the_newest_tip() {
+		struct Probe;
+		let key = |i: u64| StateCacheKey {
+			db: TypeId::of::<Probe>(),
+			state_key: i.to_le_bytes().to_vec(),
+		};
+		for i in 0..=ANCHORED_STATE_CACHE_CAPACITY {
+			ANCHORED_LEDGER_STATES.insert(key(i), Arc::new(()));
+			ANCHORED_LEDGER_STATES.run_pending_tasks();
+		}
+		assert!(ANCHORED_LEDGER_STATES.contains_key(&key(ANCHORED_STATE_CACHE_CAPACITY)));
 	}
 
 	/// The unfiltered `apply_system_transaction` must retain its result without rooting it,
