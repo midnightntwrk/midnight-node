@@ -34,12 +34,9 @@ use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
 
 pub mod builder_context;
-#[cfg(feature = "indexer-client")]
 pub mod indexer_context;
-#[cfg(feature = "indexer-client")]
 pub use crate::indexer_client::{IndexerClient, IndexerClientError};
 pub use builder_context::BuilderContext;
-#[cfg(feature = "indexer-client")]
 pub use indexer_context::IndexerContext;
 
 #[derive(Debug, Error)]

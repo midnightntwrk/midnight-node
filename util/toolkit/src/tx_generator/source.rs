@@ -168,7 +168,6 @@ pub struct Source {
 	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
 	/// for a large seed set against an indexer that can take the load; lower it if the indexer
 	/// starts dropping connections.
-	#[cfg(feature = "indexer-client")]
 	#[arg(
 		long,
 		env = "MN_INDEXER_CONCURRENCY",

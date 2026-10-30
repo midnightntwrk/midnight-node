@@ -30,9 +30,7 @@ pub mod extract_tx_with_context;
 /// Version-independent (hex blobs, not ledger types), so `ledger_8` and `ledger_9` share it, as
 /// with `CoinSelectionStrategy` below. Only decoding the blobs into wallet updates is
 /// per-generation, in each `ledger_N::context::indexer_context`.
-#[cfg(feature = "indexer-client")]
 pub mod indexer_client;
-#[cfg(feature = "indexer-client")]
 pub use indexer_client::{IndexerClient, IndexerClientError, WalletSyncState};
 
 /// Process-wide counters of replayed transactions that did not fully apply,
@@ -59,9 +57,6 @@ pub enum CoinSelectionStrategy {
 }
 
 /// An untagged-serialized zswap `WalletState`.
-///
-/// This and the other `*Raw` sync-state types sit at the crate root, outside the
-/// `indexer-client` feature, because the toolkit's wallet cache stores them either way.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZswapWalletStateRaw(pub Vec<u8>);
 

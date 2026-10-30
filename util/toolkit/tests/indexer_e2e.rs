@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "indexer-client")]
-
 //! End-to-end tests for the indexer backend (`--indexer-url`, issue #1186).
 //!
 //! Each test spawns a dev `midnight-node` and an `indexer-standalone` on a shared Docker network
