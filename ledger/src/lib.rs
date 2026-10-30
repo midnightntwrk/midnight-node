@@ -29,6 +29,9 @@ pub mod json;
 #[cfg(feature = "std")]
 mod utils;
 
+#[cfg(feature = "std")]
+pub mod ephemeral;
+
 pub mod host_api;
 
 pub mod ledger_8;

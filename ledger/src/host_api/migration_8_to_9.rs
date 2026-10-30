@@ -38,6 +38,7 @@ use v8_to_v9_state_translation::StateTranslationTable;
 use base_crypto::cost_model::CostDuration;
 use ledger_storage_ledger_8 as storage;
 use midnight_serialize::{tagged_deserialize, tagged_serialize};
+use sp_externalities::Externalities;
 use storage::{
 	arena::{Sp, TypedArenaKey},
 	db::DB,
@@ -73,6 +74,7 @@ const MAX_STEPS: usize = 100_000;
 /// If `state_key_v8` already references a ledger-9 state this is a no-op: it
 /// returns the key unchanged with zero cost (see the idempotency guard below).
 pub fn migrate_state_v8_to_v9<D: DB>(
+	ext: &mut dyn Externalities,
 	state_key_v8: &[u8],
 ) -> Result<(Vec<u8>, u64), LedgerApiError> {
 	let t_total = std::time::Instant::now();
@@ -161,8 +163,13 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 	let t_persist = std::time::Instant::now();
 	let ledger9 = Ledger9::new((*state9).clone());
 	let mut sp9: Sp<Ledger9<D>, D> = default_storage::<D>().arena.alloc(ledger9);
+	// The root is serialized after `persist`, which can change its key form, so the ephemeral
+	// path persists too (into the ephemeral storage only) and drops the root again below.
 	sp9.persist();
-	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+	let onchain = crate::ephemeral::is_onchain(ext);
+	if onchain {
+		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+	}
 	log::debug!(
 		target: LOG_TARGET,
 		"[perf] migrate_state_v8_to_v9 persist+flush took {:?}",
@@ -175,6 +182,10 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 		log::error!(target: LOG_TARGET, "failed to serialize v9 state key: {e:?}");
 		LedgerApiError::Serialization(SerializationError::TypedArenaKey)
 	})?;
+	if !onchain {
+		sp9.unpersist();
+		crate::ephemeral::retain(ext, &bytes, sp9);
+	}
 
 	log::debug!(target: LOG_TARGET, "[perf] migrate_state_v8_to_v9 took {:?}", t_total.elapsed());
 	Ok((bytes, consumed_cost_ps))

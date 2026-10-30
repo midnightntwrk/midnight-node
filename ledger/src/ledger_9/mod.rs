@@ -148,6 +148,9 @@ pub struct StrictTxValidationKey {
 	/// block's first transaction differently, and both can run in one process; keying on what
 	/// `well_formed` was actually given keeps them from reusing each other's entries.
 	well_formed_tblock: u64,
+	/// The storage the cached `VerifiedTransaction` lives in. Entries are downcast to the
+	/// caller's `VerifiedTransaction<D>`, so storages must not share or replace each other's.
+	storage: core::any::TypeId,
 }
 #[derive(PartialEq, Eq, Hash)]
 pub struct SoftTxValidationKey {
@@ -277,6 +280,9 @@ where
 	}
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
+		if !crate::ephemeral::is_onchain(externalities) {
+			return;
+		}
 		let now = std::time::Instant::now();
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 		let elapsed = now.elapsed().as_secs_f64();
@@ -288,7 +294,7 @@ where
 	}
 
 	pub fn post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
@@ -311,7 +317,7 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
+		let ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
@@ -331,7 +337,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &state_root, ledger);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -346,15 +352,15 @@ where
 	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
 	/// remain fallible — those represent genuine bugs rather than block-content conditions.
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
-		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &state_root, ledger);
 		Ok(state_root)
 	}
 
@@ -426,7 +432,7 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let (mut new_ledger, applied_stage) =
+		let (new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -558,7 +564,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		new_ledger.persist();
+		crate::ephemeral::retain(externalities, &event.state_root, new_ledger);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -603,7 +609,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -613,7 +619,7 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &event.state_root, ledger);
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -657,7 +663,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -667,7 +673,7 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &event.state_root, ledger);
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -1632,6 +1638,7 @@ where
 		state_hash: ledger.state.state_hash().0.into(),
 		tx_hash: tx_hash.0,
 		well_formed_tblock: well_formed_tblock(ledger, block_context, skew_tblock).to_secs(),
+		storage: core::any::TypeId::of::<D>(),
 	}
 }
 
