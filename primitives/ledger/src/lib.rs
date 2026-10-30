@@ -46,9 +46,9 @@ pub struct LedgerMetrics {
 	pub tx_validation_cache_misses: CounterVec<U64>,
 	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_size: GaugeVec<U64>,
-	/// Live ledger states held by the keep-alive caches (labeled by cache_type:
-	/// "transient" or "anchored", "_ledger_8"-suffixed for ledger 8). Sampled at the
-	/// post-block flush, where "transient" must read 0; non-zero is a leaked state.
+	/// Live ledger states held by the keep-alive cache (labeled by cache_type:
+	/// "transient", or "transient_ledger_8" for ledger 8). Sampled at the post-block
+	/// flush, where it must read 0; non-zero is a leaked state.
 	pub ledger_state_cache_size: GaugeVec<U64>,
 }
 

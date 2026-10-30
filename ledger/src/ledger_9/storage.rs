@@ -141,8 +141,6 @@ where
 	let mut bytes = vec![];
 	crate::ledger_9::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
 		.unwrap();
-	// Keep it live so block 1's first apply doesn't re-materialise it.
-	super::retain_anchored(&bytes, &state);
 	bytes
 }
 
