@@ -53,6 +53,7 @@ use crate::tagged_root::{TaggedRoot, classify_batch, root_snapshot as arena_root
 use ledger_storage_ledger_8::{
 	DefaultDB,
 	arena::{Arena, ArenaHash, ArenaKey, TypedArenaKey},
+	backend::GcLimits,
 	db::{DB, ParityDb, paritydb::OwnedDb},
 	storage::{default_storage, try_get_default_storage},
 };
@@ -317,20 +318,29 @@ pub fn pin_roots(wrappers: &[Vec<u8>]) -> Vec<(Vec<u8>, PinnedRoot)> {
 	dispatch!(pin(wrappers)).unwrap_or_default()
 }
 
-/// Run incremental arena GC for roughly `budget`. ONE arena hold. Sweeps only
-/// when the write cache is empty (reachability is DB based, staged state is
-/// invisible to it); otherwise returns `Ok((0, hold))`. Returns
-/// `(culled nodes, hold)`; `Err` only when no storage is initialised.
-pub fn collect_garbage(budget: Duration) -> Result<(usize, Duration), String> {
-	fn gc<D: DB + 'static>(budget: Duration) -> (usize, Duration) {
+/// Run incremental arena GC for roughly `budget`, deleting at most `max_deletes`
+/// nodes (`None` = no cap). ONE arena hold. Sweeps only when the write cache is
+/// empty (reachability is DB based, staged state is invisible to it); otherwise
+/// returns `Ok((0, hold))`. Returns `(culled nodes, hold)`; `Err` only when no
+/// storage is initialised.
+pub fn collect_garbage(
+	budget: Duration,
+	max_deletes: Option<usize>,
+) -> Result<(usize, Duration), String> {
+	fn gc<D: DB + 'static>(budget: Duration, max_deletes: Option<usize>) -> (usize, Duration) {
 		let storage = default_storage::<D>();
 		let start = Instant::now();
 		let culled = storage.with_backend(|backend| {
-			if backend.get_write_cache_len() > 0 { 0 } else { backend.gc(budget) }
+			if backend.get_write_cache_len() > 0 {
+				0
+			} else {
+				backend.gc_with_limits(budget, GcLimits { max_deletes })
+			}
 		});
 		(culled, start.elapsed())
 	}
-	dispatch!(gc(budget)).ok_or_else(|| "ledger storage is not initialized".to_string())
+	dispatch!(gc(budget, max_deletes))
+		.ok_or_else(|| "ledger storage is not initialized".to_string())
 }
 
 /// Diagnostic: current write-cache length (one short hold). `None` when no
@@ -550,7 +560,7 @@ mod tests {
 		let run_slices = |until_gone: bool| {
 			for _ in 0..200 {
 				flush();
-				collect_garbage(Duration::from_secs(1)).expect("storage initialised");
+				collect_garbage(Duration::from_secs(1), None).expect("storage initialised");
 				if until_gone && !inner_present() {
 					return;
 				}
@@ -604,7 +614,7 @@ mod tests {
 		'outer: for _ in 0..12 {
 			for _ in 0..200 {
 				flush();
-				let (culled, _) = collect_garbage(budget).expect("storage initialised");
+				let (culled, _) = collect_garbage(budget, None).expect("storage initialised");
 				if culled > 0 {
 					started = true;
 					break 'outer;
@@ -630,7 +640,7 @@ mod tests {
 		// Finish this cycle and run a few more full slices.
 		for _ in 0..2_000 {
 			flush();
-			collect_garbage(budget).expect("storage initialised");
+			collect_garbage(budget, None).expect("storage initialised");
 			if remaining() == 0 {
 				break;
 			}
@@ -638,7 +648,7 @@ mod tests {
 		assert_eq!(remaining(), 0, "the garbage must be fully swept");
 		for _ in 0..3 {
 			flush();
-			collect_garbage(Duration::from_secs(1)).expect("storage initialised");
+			collect_garbage(Duration::from_secs(1), None).expect("storage initialised");
 		}
 		assert!(present(&w), "wrapper flushed mid-sweep must not be culled");
 		assert!(present(&inner_hash), "its inner state must not be culled");
@@ -655,10 +665,10 @@ mod tests {
 		let inner = inner("gc-dirty");
 		let _w = persist_tagged(&arena(), tag(1004), &inner);
 		assert!(write_cache_len().unwrap() > 0);
-		assert_eq!(collect_garbage(Duration::from_millis(50)).unwrap().0, 0);
+		assert_eq!(collect_garbage(Duration::from_millis(50), None).unwrap().0, 0);
 		flush();
 		// With a clean cache the slice runs (it may legitimately cull nothing).
-		assert!(collect_garbage(Duration::from_millis(50)).is_ok());
+		assert!(collect_garbage(Duration::from_millis(50), None).is_ok());
 	}
 
 	#[test]

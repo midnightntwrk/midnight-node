@@ -74,6 +74,9 @@ the pruning window.
 - `MIDNIGHT_LEDGER_GC_ARENA_SWEEP`: `0` releases tips but never sweeps; escape hatch if the
   sweep's mark set uses too much memory on a very large arena.
 - `--ledger-state-pruning <N>`: explicit ledger window (see *Archive modes*).
+- `MIDNIGHT_LEDGER_GC_MAX_DELETES`: cap on nodes deleted per sweep slice (default unbounded).
+  Experiment knob for the deletion bursts seen while a backlog drains; a slice that hits the
+  cap resumes where it stopped.
 - Per-slice work grows with the `--state-pruning` window (one read and one header lookup per
   root).
 

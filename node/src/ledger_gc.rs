@@ -123,6 +123,10 @@ const HOLD_WARN: Duration = Duration::from_millis(50);
 
 const ENV_SLICE_MS: &str = "MIDNIGHT_LEDGER_GC_SLICE_MS";
 const ENV_ARENA_SWEEP: &str = "MIDNIGHT_LEDGER_GC_ARENA_SWEEP";
+/// Maximum nodes one sweep slice may delete; `0` or unset = no cap. Experiment knob:
+/// bounds the burst of deletions parity-db enacts after a backlog (perfnet saw the disk
+/// 100% busy for 6–30 s while a backlog drained at ~3,000 writes/s).
+const ENV_MAX_DELETES: &str = "MIDNIGHT_LEDGER_GC_MAX_DELETES";
 
 /// Which gates decide that a tagged root's block position is dead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +153,8 @@ pub struct GcConfig {
 	pub slice: Duration,
 	/// Run the arena mark/sweep (escape hatch: `false` = tip release only).
 	pub arena_sweep: bool,
+	/// Cap on nodes deleted per sweep slice (`None` = unbounded).
+	pub max_deletes: Option<usize>,
 	/// Release lag (the `--state-pruning` window, or the explicit
 	/// `--ledger-state-pruning` window); `None` = no worker.
 	pub lag: Option<u32>,
@@ -238,6 +244,10 @@ impl GcConfig {
 		Ok(Self {
 			slice: Duration::from_millis(env_parse(ENV_SLICE_MS, DEFAULT_SLICE_MS)),
 			arena_sweep: env_bool(ENV_ARENA_SWEEP, true),
+			max_deletes: match env_parse::<usize>(ENV_MAX_DELETES, 0) {
+				0 => None,
+				n => Some(n),
+			},
 			lag: window.map(|w| w.lag),
 			liveness: window.map(|w| w.liveness).unwrap_or(Liveness::PrunedState),
 			tagged_from_genesis,
@@ -502,7 +512,7 @@ fn reclaim_slice(
 		let hashes: Vec<Vec<u8>> = wrappers.iter().map(|r| r.wrapper.clone()).collect();
 		let pins = gc::pin_roots(&hashes);
 		with_metrics(metrics, |m| m.set_gc_tagged_roots("pinned", pins.len() as u64));
-		match guarded_sweep(config.slice) {
+		match guarded_sweep(config.slice, config.max_deletes) {
 			Some(Ok((culled, hold))) => {
 				if hold > config.slice * 2 {
 					warn!(target: LOG_TARGET, "⏱️  Arena gc held the arena for {hold:?}");
@@ -556,9 +566,15 @@ fn reclaim_slice(
 /// The node's panic hook (`sp_panic_handler`) exits the process from inside the hook
 /// unless the panicking thread holds an [`sp_panic_handler::AbortGuard`] that forces
 /// unwinding, so every `catch_unwind` here holds one; without it the catch never runs.
-fn guarded_sweep(slice: Duration) -> Option<Result<(usize, Duration), String>> {
+fn guarded_sweep(
+	slice: Duration,
+	max_deletes: Option<usize>,
+) -> Option<Result<(usize, Duration), String>> {
 	let _unwind = sp_panic_handler::AbortGuard::force_unwind();
-	std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| gc::collect_garbage(slice))).ok()
+	std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+		gc::collect_garbage(slice, max_deletes)
+	}))
+	.ok()
 }
 
 async fn run(
@@ -661,14 +677,15 @@ pub fn try_spawn(
 	};
 	info!(
 		target: LOG_TARGET,
-		"♻️  Ledger GC enabled: release lag {lag} blocks ({}), slice {:?}, arena sweep {}, {} \
-		 tagged root(s) at startup",
+		"♻️  Ledger GC enabled: release lag {lag} blocks ({}), slice {:?}, arena sweep {}, max \
+		 deletes per slice {}, {} tagged root(s) at startup",
 		match config.liveness {
 			Liveness::PrunedState => "state pruning decides",
 			Liveness::HeightOnly => "height only, explicit ledger window",
 		},
 		config.slice,
 		config.arena_sweep,
+		config.max_deletes.map_or("unbounded".to_string(), |n| n.to_string()),
 		wrappers.len()
 	);
 	spawn.spawn("ledger-gc", Some("ledger"), run(client, backend, metrics, config, lag));
@@ -748,22 +765,27 @@ mod tests {
 	#[test]
 	fn env_overrides_and_bad_values_fall_back() {
 		let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-		let keys = [ENV_SLICE_MS, ENV_ARENA_SWEEP];
+		let keys = [ENV_SLICE_MS, ENV_ARENA_SWEEP, ENV_MAX_DELETES];
 		for k in keys {
 			unsafe { std::env::remove_var(k) };
 		}
 		let d = GcConfig::from_env(&None, false, None, true).unwrap();
 		assert_eq!(d.slice, Duration::from_millis(200));
 		assert!(d.arena_sweep);
+		assert_eq!(d.max_deletes, None);
 		assert_eq!(d.lag, Some(256));
 
 		unsafe {
 			std::env::set_var(ENV_SLICE_MS, "40");
 			std::env::set_var(ENV_ARENA_SWEEP, "0");
+			std::env::set_var(ENV_MAX_DELETES, "5000");
 		}
 		let c = GcConfig::from_env(&None, false, None, true).unwrap();
 		assert_eq!(c.slice, Duration::from_millis(40));
 		assert!(!c.arena_sweep);
+		assert_eq!(c.max_deletes, Some(5000));
+		unsafe { std::env::set_var(ENV_MAX_DELETES, "0") };
+		assert_eq!(GcConfig::from_env(&None, false, None, true).unwrap().max_deletes, None);
 
 		unsafe { std::env::set_var(ENV_SLICE_MS, "banana") };
 		assert_eq!(
@@ -996,6 +1018,7 @@ mod tests {
 		let cfg = GcConfig {
 			slice: Duration::from_millis(25),
 			arena_sweep: true,
+			max_deletes: None,
 			lag: Some(256),
 			liveness: Liveness::PrunedState,
 			tagged_from_genesis: true,
