@@ -1,6 +1,6 @@
-# GraphQL operations for the indexer-backed `BuilderContext` (feature `indexer-client`), typed at
-# compile time against the indexer's committed schema
-# (`indexer/indexer-api/graphql/schema-v4.graphql`) via `graphql_client` (issue #1186).
+# GraphQL operations for the indexer-backed `BuilderContext` (feature `indexer-client`). Indexers
+# reject the whole document if any operation in it is invalid, so everything here must validate
+# against every schema in `schema/`.
 
 query LatestBlock {
   block {
@@ -9,10 +9,6 @@ query LatestBlock {
     timestamp
     zswapEndIndex
     ledgerParameters
-    parent {
-      hash
-      timestamp
-    }
   }
 }
 
@@ -95,13 +91,5 @@ subscription DustLedgerEvents($id: Int) {
 query BlockAtHeight($height: Int!) {
   block(offset: { height: $height }) {
     hash
-  }
-}
-
-# No offset selects the contract's latest action, i.e. its current state.
-query ContractActionState($address: HexEncoded!) {
-  contractAction(address: $address) {
-    __typename
-    state
   }
 }
