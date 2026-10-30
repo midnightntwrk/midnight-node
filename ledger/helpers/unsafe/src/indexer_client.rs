@@ -13,10 +13,9 @@
 
 //! A GraphQL client for the Midnight indexer's `api/v4` interface.
 //!
-//! Operations are typed against the indexer's committed schema
-//! (`indexer/indexer-api/graphql/schema-v4.graphql`) at compile time via [`graphql_client`], so a
-//! schema change in the indexer submodule (renamed/removed field, changed type) breaks this build
-//! instead of failing at runtime. The query documents live in `ledger/helpers/unsafe/graphql/`.
+//! Operations are typed at compile time via [`graphql_client`] against the newest vendored indexer
+//! schema (`graphql/schema/`). A test checks every query document against every vendored schema,
+//! since an indexer rejects a whole document if any one of its operations is invalid.
 //!
 //! It speaks GraphQL over HTTP (queries/mutations) and over the `graphql-transport-ws` WebSocket
 //! sub-protocol (subscriptions) — the WS framing mirrors the indexer's own reference client in
@@ -60,7 +59,7 @@ type DustAddress = String;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -68,7 +67,7 @@ pub struct LatestBlock;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -76,7 +75,7 @@ pub struct BlockAtHeight;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -84,7 +83,7 @@ pub struct Connect;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -92,7 +91,7 @@ pub struct Disconnect;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -100,7 +99,7 @@ pub struct ShieldedTransactions;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -108,7 +107,7 @@ pub struct UnshieldedTransactions;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -116,7 +115,7 @@ pub struct DustLedgerEvents;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -124,7 +123,7 @@ pub struct ContractActionState;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -132,7 +131,7 @@ pub struct ZswapCollapsedUpdate;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_fast_sync.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -140,7 +139,7 @@ pub struct DustSnapshotBlock;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_generations.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -148,7 +147,7 @@ pub struct DustGenerations;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_fast_sync.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -156,7 +155,7 @@ pub struct DustCommitmentCollapsedUpdate;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_fast_sync.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -352,10 +351,10 @@ pub struct WalletSyncState {
 /// the same `DustGenerationsEvent`s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DustGenerationsForm {
-	/// `dustGenerations(dustAddress, blockHash, dtimeCutoffHeight)`, indexer ≥ 4.3.4: a snapshot
-	/// pinned to one block.
+	/// `dustGenerations(dustAddress, blockHash, dtimeCutoffHeight)`, indexer 4.4 (and 4.3.4–4.3.5):
+	/// a snapshot pinned to one block.
 	ByBlockHash,
-	/// `dustGenerations(dustAddress, startIndex, endIndex)`, indexer 4.1–4.3.3: built from the
+	/// `dustGenerations(dustAddress, startIndex, endIndex)`, other 4.3 releases: built from the
 	/// indexer's latest state, so its leaves can move past the requested block.
 	ByIndexRange,
 }
@@ -1222,10 +1221,7 @@ mod tests {
 	/// checked out). This makes the requirement explicit rather than only a derive-macro error.
 	#[test]
 	fn schema_path_exists() {
-		let path = concat!(
-			env!("CARGO_MANIFEST_DIR"),
-			"/../../../indexer/indexer-api/graphql/schema-v4.graphql"
-		);
+		let path = concat!(env!("CARGO_MANIFEST_DIR"), "/graphql/schema/indexer-4.4.graphql");
 		assert!(
 			std::path::Path::new(path).exists(),
 			"indexer schema not found at {path} — is the `indexer` submodule checked out?"
@@ -1350,15 +1346,6 @@ mod tests {
 		assert_eq!(dust_generations_form(&json!({})), None);
 	}
 
-	/// A reformatted `indexer.graphql` must not silently send the block-hash form to an index-range
-	/// indexer.
-	#[test]
-	fn index_range_query_replaces_the_block_hash_args() {
-		let query = index_range_dust_generations_query(dust_generations::QUERY);
-		assert!(!query.contains("blockHash") && !query.contains("dtimeCutoffHeight"), "{query}");
-		assert!(query.contains("startIndex: $startIndex") && query.contains("$endIndex: Int!"));
-	}
-
 	#[test]
 	fn map_dust_generations_from_json() {
 		let v = json!({
@@ -1452,6 +1439,61 @@ mod tests {
 				assert!(spent.is_empty());
 			},
 			_ => panic!("expected transaction"),
+		}
+	}
+
+	use apollo_compiler::ExecutableDocument;
+	use std::{fs, path::Path};
+
+	/// Vendored indexer schemas (`graphql/schema/`), i.e. the indexer versions this client supports.
+	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
+	/// Documents that only newer indexers accept, with the oldest schema each needs. All others must
+	/// validate against every schema.
+	const NEWER_ONLY: &[(&str, &str)] = &[("dust_generations.graphql", "indexer-4.4.graphql")];
+
+	fn vendored_schema(name: &str) -> apollo_compiler::validation::Valid<apollo_compiler::Schema> {
+		let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql/schema").join(name);
+		apollo_compiler::Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
+			.unwrap_or_else(|e| panic!("{name}: {}", e.errors))
+	}
+
+	#[test]
+	fn documents_validate_against_every_vendored_schema() {
+		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
+		for (i, name) in SCHEMAS.iter().enumerate() {
+			let schema = vendored_schema(name);
+			for doc in fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()) {
+				if doc.extension().is_none_or(|ext| ext != "graphql") {
+					continue;
+				}
+				let oldest = NEWER_ONLY
+					.iter()
+					.find(|(file, _)| doc.ends_with(file))
+					.map_or(0, |(_, schema)| SCHEMAS.iter().position(|s| s == schema).unwrap());
+				if i < oldest {
+					continue;
+				}
+				if let Err(e) = ExecutableDocument::parse_and_validate(
+					&schema,
+					fs::read_to_string(&doc).unwrap(),
+					&doc,
+				) {
+					panic!("{} is invalid against {name}:\n{}", doc.display(), e.errors);
+				}
+			}
+		}
+	}
+
+	/// `DustGenerationsForm::ByIndexRange` sends this rewrite to 4.3 indexers.
+	#[test]
+	fn index_range_dust_generations_query_validates_on_indexer_4_3() {
+		let query = index_range_dust_generations_query(dust_generations::QUERY);
+		if let Err(e) = ExecutableDocument::parse_and_validate(
+			&vendored_schema("indexer-4.3.graphql"),
+			query,
+			"dust_generations.graphql",
+		) {
+			panic!("{}", e.errors);
 		}
 	}
 }

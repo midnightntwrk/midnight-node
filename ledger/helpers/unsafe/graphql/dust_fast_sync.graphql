@@ -1,6 +1,6 @@
-# DUST fast-sync operations (`IndexerClient::dust_*`). Indexers validate every operation in the
-# document they are sent, not just the selected one, so these live apart from `indexer.graphql`:
-# an indexer without them (< 4.1.0) must still accept the rest.
+# DUST fast-sync operations (`IndexerClient::dust_*`). Mostly `@beta`, so they live apart from
+# `indexer.graphql`: indexers reject a whole document if any operation in it is invalid, and an
+# indexer that changes or drops one of these must still accept the rest.
 
 # The snapshot block a fast sync is pinned to.
 query DustSnapshotBlock($height: Int!) {
