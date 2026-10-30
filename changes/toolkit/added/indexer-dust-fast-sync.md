@@ -17,8 +17,9 @@ commitment mismatch, a stalled subscription) logs a warning and falls back to th
 that wallet. `--no-fast-sync` (env `MN_INDEXER_NO_FAST_SYNC`) forces the replay.
 
 The toolkit probes which `dustGenerations` signature the indexer serves: the block-pinned snapshot
-(indexer 4.3.4 and later) or the older index range. Indexers before 4.3.4 report the tip's dust
-roots for every block, so their snapshots rarely verify and those wallets fall back to the replay.
+(indexer 4.4, and 4.3.4–4.3.5) or the index range (other 4.3 releases). Index-range indexers report
+the tip's dust roots for every block, so their snapshots rarely verify and those wallets fall back
+to the replay.
 
 The spend-chain walk takes one `dustNullifierTransactions` round per spend in the longest chain, so
 the wallet cache keeps its frontier: the snapshot block, every unspent DUST output there, and a

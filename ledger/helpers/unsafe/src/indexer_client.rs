@@ -351,10 +351,10 @@ pub struct WalletSyncState {
 /// the same `DustGenerationsEvent`s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DustGenerationsForm {
-	/// `dustGenerations(dustAddress, blockHash, dtimeCutoffHeight)`, indexer ≥ 4.3.4: a snapshot
-	/// pinned to one block.
+	/// `dustGenerations(dustAddress, blockHash, dtimeCutoffHeight)`, indexer 4.4 (and 4.3.4–4.3.5):
+	/// a snapshot pinned to one block.
 	ByBlockHash,
-	/// `dustGenerations(dustAddress, startIndex, endIndex)`, indexer 4.1–4.3.3: built from the
+	/// `dustGenerations(dustAddress, startIndex, endIndex)`, other 4.3 releases: built from the
 	/// indexer's latest state, so its leaves can move past the requested block.
 	ByIndexRange,
 }
@@ -1342,15 +1342,6 @@ mod tests {
 		assert_eq!(dust_generations_form(&json!({})), None);
 	}
 
-	/// A reformatted `indexer.graphql` must not silently send the block-hash form to an index-range
-	/// indexer.
-	#[test]
-	fn index_range_query_replaces_the_block_hash_args() {
-		let query = index_range_dust_generations_query(dust_generations::QUERY);
-		assert!(!query.contains("blockHash") && !query.contains("dtimeCutoffHeight"), "{query}");
-		assert!(query.contains("startIndex: $startIndex") && query.contains("$endIndex: Int!"));
-	}
-
 	#[test]
 	fn map_dust_generations_from_json() {
 		let v = json!({
@@ -1447,21 +1438,35 @@ mod tests {
 		}
 	}
 
+	use apollo_compiler::ExecutableDocument;
+	use std::{fs, path::Path};
+
 	/// Vendored indexer schemas (`graphql/schema/`), i.e. the indexer versions this client supports.
 	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
+	/// Documents that only newer indexers accept, with the oldest schema each needs. All others must
+	/// validate against every schema.
+	const NEWER_ONLY: &[(&str, &str)] = &[("dust_generations.graphql", "indexer-4.4.graphql")];
+
+	fn vendored_schema(name: &str) -> apollo_compiler::validation::Valid<apollo_compiler::Schema> {
+		let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql/schema").join(name);
+		apollo_compiler::Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
+			.unwrap_or_else(|e| panic!("{name}: {}", e.errors))
+	}
 
 	#[test]
 	fn documents_validate_against_every_vendored_schema() {
-		use apollo_compiler::{ExecutableDocument, Schema};
-		use std::{fs, path::Path};
-
 		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
-		for name in SCHEMAS {
-			let path = dir.join("schema").join(name);
-			let schema = Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
-				.unwrap_or_else(|e| panic!("{name}: {}", e.errors));
+		for (i, name) in SCHEMAS.iter().enumerate() {
+			let schema = vendored_schema(name);
 			for doc in fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()) {
 				if doc.extension().is_none_or(|ext| ext != "graphql") {
+					continue;
+				}
+				let oldest = NEWER_ONLY
+					.iter()
+					.find(|(file, _)| doc.ends_with(file))
+					.map_or(0, |(_, schema)| SCHEMAS.iter().position(|s| s == schema).unwrap());
+				if i < oldest {
 					continue;
 				}
 				if let Err(e) = ExecutableDocument::parse_and_validate(
@@ -1472,6 +1477,19 @@ mod tests {
 					panic!("{} is invalid against {name}:\n{}", doc.display(), e.errors);
 				}
 			}
+		}
+	}
+
+	/// `DustGenerationsForm::ByIndexRange` sends this rewrite to 4.3 indexers.
+	#[test]
+	fn index_range_dust_generations_query_validates_on_indexer_4_3() {
+		let query = index_range_dust_generations_query(dust_generations::QUERY);
+		if let Err(e) = ExecutableDocument::parse_and_validate(
+			&vendored_schema("indexer-4.3.graphql"),
+			query,
+			"dust_generations.graphql",
+		) {
+			panic!("{}", e.errors);
 		}
 	}
 }
