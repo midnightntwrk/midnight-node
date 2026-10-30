@@ -22,6 +22,8 @@
 //! indexer state and its transfer must show up in the destination's `show-wallet`, and
 //! `generate-txs batches` must land txs that spend outputs of txs built earlier in the same run.
 //!
+//! Each flow runs against both supported indexer lines: 4.4, and 4.3 on a ledger-8 chain.
+//!
 //! An uncached run is also the oracle for the incremental wallet cache: a cache-resumed sync must
 //! reproduce it exactly, and an entry filed under another chain must never be served.
 //!
@@ -75,15 +77,33 @@ struct Env {
 	indexer_url: String,
 }
 
+/// An indexer release line and a node build it supports, as `test-images.docker-compose.yml`
+/// services.
+#[derive(Clone, Copy)]
+struct IndexerLine {
+	name: &'static str,
+	node: &'static str,
+	indexer: &'static str,
+}
+
+const INDEXER_4_4: IndexerLine =
+	IndexerLine { name: "4-4", node: "midnight-node-indexer-e2e", indexer: "indexer-standalone" };
+/// A ledger-8 chain.
+const INDEXER_4_3: IndexerLine = IndexerLine {
+	name: "4-3",
+	node: "midnight-node-indexer-e2e-4-3",
+	indexer: "indexer-standalone-4-3",
+};
+
 /// `tag` keeps container names distinct between tests of this process run in parallel.
-async fn start_env(tag: &str) -> Env {
+async fn start_env(tag: &str, line: IndexerLine) -> Env {
 	// Unique names so concurrent runs don't collide on the shared network / container names.
-	let suffix = format!("{}-{tag}", std::process::id());
+	let suffix = format!("{}-{tag}-{}", std::process::id(), line.name);
 	let network = format!("mn-indexer-e2e-{suffix}");
 	let node_name = format!("mn-node-{suffix}");
 
 	// --- node ---------------------------------------------------------------------------------
-	let (node_image, node_tag) = test_image("midnight-node-indexer-e2e");
+	let (node_image, node_tag) = test_image(line.node);
 	let node = GenericImage::new(node_image, node_tag)
 		.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 		.with_exposed_port(ContainerPort::Tcp(9944))
@@ -102,7 +122,7 @@ async fn start_env(tag: &str) -> Env {
 	// --- indexer ------------------------------------------------------------------------------
 	// The indexer reaches the node over the shared network by its container name.
 	let node_url = format!("ws://{node_name}:9944");
-	let (indexer_image, indexer_tag) = test_image("indexer-standalone");
+	let (indexer_image, indexer_tag) = test_image(line.indexer);
 	let indexer = GenericImage::new(indexer_image, indexer_tag)
 		.with_exposed_port(ContainerPort::Tcp(8088))
 		.with_network(&network)
@@ -127,10 +147,18 @@ async fn start_env(tag: &str) -> Env {
 
 #[tokio::test]
 async fn indexer_show_wallet_reports_genesis_balances() {
-	let env = start_env("show").await;
-	let (node_ws, indexer_url) = (env.node_ws.as_str(), env.indexer_url.as_str());
+	let env = start_env("show", INDEXER_4_4).await;
+	assert_context_reads_match_node(&env.indexer_url, &env.node_ws).await;
+	show_wallet_reports_genesis_balances(&env).await;
+}
 
-	assert_context_reads_match_node(indexer_url, node_ws).await;
+#[tokio::test]
+async fn indexer_4_3_show_wallet_reports_genesis_balances() {
+	show_wallet_reports_genesis_balances(&start_env("show", INDEXER_4_3).await).await;
+}
+
+async fn show_wallet_reports_genesis_balances(env: &Env) {
+	let indexer_url = env.indexer_url.as_str();
 
 	// --- run show-wallet against the indexer --------------------------------------------------
 	// Baseline: caching disabled, so every stream drains from the origin.
@@ -180,8 +208,16 @@ async fn indexer_show_wallet_reports_genesis_balances() {
 
 #[tokio::test]
 async fn indexer_generate_txs_single_tx_reaches_destination() {
+	single_tx_reaches_destination(&start_env("gen", INDEXER_4_4).await).await;
+}
+
+#[tokio::test]
+async fn indexer_4_3_generate_txs_single_tx_reaches_destination() {
+	single_tx_reaches_destination(&start_env("gen", INDEXER_4_3).await).await;
+}
+
+async fn single_tx_reaches_destination(env: &Env) {
 	const AMOUNT: u64 = 1_000_000;
-	let env = start_env("gen").await;
 
 	assert!(
 		unshielded_values(show_wallet(&env.indexer_url, UNFUNDED_SEED, None)).is_empty(),
@@ -270,10 +306,19 @@ async fn transfer(env: &Env, destination: &str, amount: u64, count: usize) {
 	}
 }
 
-/// `batches` chains txs within one run: batch 1 spends UTXOs that the run's own initial tx created,
-/// so it only balances if the indexer context tracks the txs it has built.
 #[tokio::test]
 async fn indexer_generate_txs_batches_chain_within_a_run() {
+	batches_chain_within_a_run(&start_env("batches", INDEXER_4_4).await).await;
+}
+
+#[tokio::test]
+async fn indexer_4_3_generate_txs_batches_chain_within_a_run() {
+	batches_chain_within_a_run(&start_env("batches", INDEXER_4_3).await).await;
+}
+
+/// `batches` chains txs within one run: batch 1 spends UTXOs that the run's own initial tx created,
+/// so it only balances if the indexer context tracks the txs it has built.
+async fn batches_chain_within_a_run(env: &Env) {
 	const TOTAL: u64 = 10_000;
 	// Batch 0 pays the first two wallets, batch 1 moves their funds on to the last two.
 	// `batches` counts its seeds up from `…10` in *binary* (`Wallet::increment_seed`).
@@ -283,7 +328,6 @@ async fn indexer_generate_txs_batches_chain_within_a_run() {
 		"0000000000000000000000000000000000000000000000000000000000000100",
 		"0000000000000000000000000000000000000000000000000000000000000101",
 	];
-	let env = start_env("batches").await;
 
 	let total = TOTAL.to_string();
 	run_toolkit(&[
