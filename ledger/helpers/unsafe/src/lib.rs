@@ -57,9 +57,6 @@ pub enum CoinSelectionStrategy {
 }
 
 /// An untagged-serialized zswap `WalletState`.
-///
-/// This and the other `*Raw` sync-state types sit at the crate root, outside the
-/// `indexer-client` feature, because the toolkit's wallet cache stores them either way.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZswapWalletStateRaw(pub Vec<u8>);
 
