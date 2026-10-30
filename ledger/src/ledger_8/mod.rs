@@ -110,7 +110,7 @@ use crate::boundary::types::{
 #[cfg(feature = "std")]
 use {
 	lazy_static::lazy_static,
-	moka::{ops::compute::Op as CacheOp, sync::Cache},
+	moka::{ops::compute::Op as CacheOp, policy::EvictionPolicy, sync::Cache},
 };
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
@@ -185,7 +185,7 @@ lazy_static! {
 			.build();
 }
 
-// Mirrors `ledger_9`'s keep-alive cache; a separate copy because the cached `Sp`s are typed by
+// Mirrors `ledger_9`'s keep-alive caches; a separate copy because the cached `Sp`s are typed by
 // this module's `Ledger`.
 /// ~1000x the resident set of one, so moka's TinyLFU admission filter never engages: at
 /// capacity it can reject an insert, which here is a fatal mid-block miss.
@@ -197,6 +197,14 @@ const TRANSIENT_STATE_CACHE_CAPACITY: u64 = 1024;
 /// a failed import); entries are normally released by the successor call.
 #[cfg(feature = "std")]
 const TRANSIENT_STATE_CACHE_TTI: Duration = Duration::from_secs(60);
+
+/// Room for the current tip, fork siblings (more under BABE than AURA), and the finalized
+/// tip an RPC may target. Siblings share most of their nodes, so extra entries are cheap.
+#[cfg(feature = "std")]
+const ANCHORED_STATE_CACHE_CAPACITY: u64 = 16;
+
+#[cfg(feature = "std")]
+const ANCHORED_STATE_CACHE_TTI: Duration = Duration::from_secs(300);
 
 /// `db` is required: `DbSeparate` and `DbUnified` are distinct arenas with identical content
 /// hashes, so without it a release on one would drop the other's keep-alive.
@@ -236,6 +244,19 @@ static TRANSIENT_LEDGER_STATES: LazyLock<Cache<StateCacheKey, RetainedState>> =
 		Cache::builder()
 			.max_capacity(TRANSIENT_STATE_CACHE_CAPACITY)
 			.time_to_idle(TRANSIENT_STATE_CACHE_TTI)
+			.build()
+	});
+
+/// Post-block tips. These ARE persisted, so eviction is always safe: a miss costs one
+/// re-materialisation from the arena.
+#[cfg(feature = "std")]
+static ANCHORED_LEDGER_STATES: LazyLock<Cache<StateCacheKey, Arc<dyn Any + Send + Sync>>> =
+	LazyLock::new(|| {
+		Cache::builder()
+			.max_capacity(ANCHORED_STATE_CACHE_CAPACITY)
+			.time_to_idle(ANCHORED_STATE_CACHE_TTI)
+			// Never read, so TinyLFU would score every tip 0 and reject each new one once full.
+			.eviction_policy(EvictionPolicy::lru())
 			.build()
 	});
 
@@ -285,6 +306,14 @@ fn release_transient<D: DB>(state_key: &[u8]) {
 	TRANSIENT_LEDGER_STATES.run_pending_tasks();
 }
 
+/// Keep a post-block tip materialised so the next block's first read doesn't re-deserialize
+/// it. Pure optimisation (the tip is `persist()`ed), hence no refcount and no release.
+#[cfg(feature = "std")]
+fn retain_anchored<D: DB>(state_key: &[u8], sp: &Sp<Ledger<D>, D>) {
+	let sp: Arc<dyn Any + Send + Sync> = Arc::new(sp.clone());
+	ANCHORED_LEDGER_STATES.insert(StateCacheKey::new::<D>(state_key), sp);
+}
+
 /// Release every retained ledger state.
 ///
 /// Each retained `Sp` holds `Arc`s into `Storage<D>`, and so the parity-db handle and its
@@ -296,7 +325,11 @@ pub(crate) fn clear_ledger_state_caches() {
 	for (key, _) in TRANSIENT_LEDGER_STATES.iter() {
 		TRANSIENT_LEDGER_STATES.invalidate(&*key);
 	}
+	for (key, _) in ANCHORED_LEDGER_STATES.iter() {
+		ANCHORED_LEDGER_STATES.invalidate(&*key);
+	}
 	TRANSIENT_LEDGER_STATES.run_pending_tasks();
+	ANCHORED_LEDGER_STATES.run_pending_tasks();
 }
 
 #[cfg(feature = "std")]
@@ -353,6 +386,7 @@ where
 		// to disk. Also makes the eventually-consistent `entry_count` below accurate; a
 		// stale zero would hide the leak the gauge exists to catch.
 		TRANSIENT_LEDGER_STATES.run_pending_tasks();
+		ANCHORED_LEDGER_STATES.run_pending_tasks();
 
 		let now = std::time::Instant::now();
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
@@ -367,6 +401,10 @@ where
 				"transient_ledger_8",
 				TRANSIENT_LEDGER_STATES.entry_count(),
 			);
+			metrics.set_ledger_state_cache_size(
+				"anchored_ledger_8",
+				ANCHORED_LEDGER_STATES.entry_count(),
+			);
 		}
 	}
 
@@ -377,7 +415,7 @@ where
 	///
 	/// The post-block tip is the one state per block that is `persist()`ed: a GC root kept
 	/// for RPC and history. Nothing unpersists it, so sibling forks persisting the same tip
-	/// each hold their own count.
+	/// each hold their own count. It is also kept in the anchored cache.
 	///
 	/// The input is released from the transient cache (a no-op for a post-block tip or
 	/// genesis input). On error, nothing is retained or released.
@@ -426,6 +464,7 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 		ledger.persist();
+		retain_anchored(&state_root, &ledger);
 		release_transient::<D>(state_key);
 		log::trace!(
 			target: LOG_TARGET,
@@ -454,6 +493,7 @@ where
 		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 		ledger.persist();
+		retain_anchored(&state_root, &ledger);
 		release_transient::<D>(state_key);
 		Ok(state_root)
 	}
@@ -2057,6 +2097,20 @@ mod tests {
 		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	#[test]
+	fn anchored_cache_admits_the_newest_tip() {
+		struct Probe;
+		let key = |i: u64| StateCacheKey {
+			db: TypeId::of::<Probe>(),
+			state_key: i.to_le_bytes().to_vec(),
+		};
+		for i in 0..=ANCHORED_STATE_CACHE_CAPACITY {
+			ANCHORED_LEDGER_STATES.insert(key(i), Arc::new(()));
+			ANCHORED_LEDGER_STATES.run_pending_tasks();
+		}
+		assert!(ANCHORED_LEDGER_STATES.contains_key(&key(ANCHORED_STATE_CACHE_CAPACITY)));
 	}
 
 	/// Ledger-8 counterpart of `pallet-midnight`'s `persist_refcount` (ledger 9) test.
