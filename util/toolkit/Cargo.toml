@@ -13,8 +13,7 @@ path = "src/main.rs"
 [features]
 default = ["indexer-client"]
 erase-proof = ["midnight-ledger-unsafe-helpers/erase-proof"]
-# Indexer backend (`--indexer-url`). Off, the toolkit builds without the indexer submodule's
-# GraphQL schema.
+# Indexer backend (`--indexer-url`).
 indexer-client = ["midnight-ledger-unsafe-helpers/indexer-client"]
 compact-contract-tests = []
 

@@ -893,11 +893,6 @@ prep:
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-    # Indexer GraphQL schema, read at compile time by the toolkit's `indexer-client`. `--if-exists`
-    # so prep builds without the `indexer` submodule: only targets that compile the toolkit (build*,
-    # check*, *-toolkit, *-fixtures) need it, and they fail clearly at the macro. `+test` excludes
-    # the toolkit.
-    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -1110,9 +1105,6 @@ check-rust:
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-    # `cargo clippy --workspace` compiles the toolkit, whose indexer-client reads the indexer's
-    # GraphQL schema at compile time. Copy just that schema file.
-    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     RUN cargo fmt --all -- --check
 
@@ -1141,8 +1133,6 @@ check-feature-unification:
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-    # `cargo hack check` compiles the toolkit, whose indexer-client reads the schema.
-    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
     COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
     COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
@@ -1429,9 +1419,6 @@ build:
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
-    # `cargo build --workspace` compiles the toolkit (indexer-client default on), whose typed
-    # indexer client reads the indexer's GraphQL schema at compile time. Copy just that file.
-    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     ARG NATIVEARCH
 
@@ -1471,8 +1458,6 @@ build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata relay res runtime util tests partner-chains .
-    # `cargo build --workspace` compiles the toolkit, whose indexer-client reads the schema.
-    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     ARG NATIVEARCH
 
