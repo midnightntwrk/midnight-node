@@ -30,15 +30,14 @@ services:
       guard:
         condition: service_completed_successfully
 
-  # The 4.3 line, on a ledger-8 node. Same pairing rule as above. Not 4.3.800: its only 1.0.x node,
-  # 1.0.400, has a runtime the toolkit doesn't map.
+  # The 4.3 line, on a ledger-8 node. Same pairing rule as above.
   indexer-standalone-4-3:
-    image: ${INDEXER_4_3_IMAGE:-midnightntwrk/indexer-standalone:4.3.7}
+    image: ${INDEXER_4_3_IMAGE:-midnightntwrk/indexer-standalone:4.3.800}
     depends_on:
       guard:
         condition: service_completed_successfully
   midnight-node-indexer-e2e-4-3:
-    image: ${INDEXER_4_3_NODE_IMAGE:-midnightntwrk/midnight-node:1.0.0}
+    image: ${INDEXER_4_3_NODE_IMAGE:-midnightntwrk/midnight-node:1.0.400}
     depends_on:
       guard:
         condition: service_completed_successfully
