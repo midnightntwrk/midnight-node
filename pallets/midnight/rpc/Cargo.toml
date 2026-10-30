@@ -20,6 +20,7 @@ pallet-midnight.workspace = true
 midnight-primitives.workspace = true
 midnight-node-ledger = { workspace = true, default-features = true }
 governor.workspace = true
+moka.workspace = true
 
 [features]
 default = ["std"]

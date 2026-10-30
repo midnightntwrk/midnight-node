@@ -21,7 +21,12 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
-use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
+use governor::{
+	Quota, RateLimiter,
+	clock::DefaultClock,
+	state::{InMemoryState, NotKeyed},
+};
+use moka::sync::Cache;
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use sc_client_api::{BlockBackend, BlockchainEvents};
 use sp_api::{ApiExt, ProvideRuntimeApi};
@@ -250,25 +255,13 @@ pub struct ValidateRateLimitConfig {
 	pub per_tx_cooldown_secs: u64,
 }
 
-type KeyedRateLimiter = RateLimiter<[u8; 32], DefaultKeyedStateStore<[u8; 32]>, DefaultClock>;
-
-/// Memory cap on the keyed `per_tx` store, set well above any legitimate working set so normal
-/// traffic never triggers a sweep.
-const PER_TX_GC_THRESHOLD: usize = 50_000;
+/// Memory cap on `per_tx`, well above any legitimate working set. Past it, a flood of unique txs
+/// evicts older keys early, which only shortens their cooldown; the global limit still applies.
+const PER_TX_CAPACITY: u64 = 50_000;
 
 struct ValidationRateLimiter {
-	global: governor::RateLimiter<
-		governor::state::NotKeyed,
-		governor::state::InMemoryState,
-		DefaultClock,
-	>,
-	per_tx: KeyedRateLimiter,
-	/// governor never evicts from the keyed store, and inserts aren't throttled by the global
-	/// quota (see [`Self::check`]), so every distinct tx hash adds a key until swept. A sweep only
-	/// reclaims expired keys: a sustained flood of unique hashes still settles at
-	/// ~`request_rate * cooldown` keys.
-	gc_threshold: usize,
-	gc_lock: std::sync::Mutex<()>,
+	global: RateLimiter<NotKeyed, InMemoryState, DefaultClock>,
+	per_tx: Cache<[u8; 32], ()>,
 }
 
 /// Why a `validate_transaction` request was rejected by the rate limiter.
@@ -285,36 +278,20 @@ impl ValidationRateLimiter {
 		let cooldown_secs = config.per_tx_cooldown_secs.max(1);
 		let global_quota =
 			Quota::per_second(NonZeroU32::new(config.global_rate_limit.max(1)).unwrap());
-		let per_tx_quota = Quota::with_period(std::time::Duration::from_secs(cooldown_secs))
-			.expect("per_tx_cooldown_secs > 0");
 
 		Self {
-			global: governor::RateLimiter::direct(global_quota),
-			per_tx: governor::RateLimiter::keyed(per_tx_quota),
-			gc_threshold: PER_TX_GC_THRESHOLD,
-			gc_lock: std::sync::Mutex::new(()),
-		}
-	}
-
-	fn maybe_gc(&self) {
-		if self.per_tx.len() < self.gc_threshold {
-			return;
-		}
-		let Ok(_guard) = self.gc_lock.try_lock() else {
-			return;
-		};
-		// Re-check under the lock: a concurrent sweep may have just drained the store.
-		if self.per_tx.len() >= self.gc_threshold {
-			self.per_tx.retain_recent();
-			self.per_tx.shrink_to_fit();
+			global: RateLimiter::direct(global_quota),
+			per_tx: Cache::builder()
+				.max_capacity(PER_TX_CAPACITY)
+				.time_to_live(std::time::Duration::from_secs(cooldown_secs))
+				.build(),
 		}
 	}
 
 	/// Per-tx cooldown before the global limit, so a replayed tx is rejected without spending a
 	/// global token and can't starve other callers.
 	fn check(&self, tx_key: &[u8; 32]) -> Result<(), RateLimitRejection> {
-		self.maybe_gc();
-		if self.per_tx.check_key(tx_key).is_err() {
+		if !self.per_tx.entry(*tx_key).or_insert(()).is_fresh() {
 			return Err(RateLimitRejection::PerTx);
 		}
 		if self.global.check().is_err() {
