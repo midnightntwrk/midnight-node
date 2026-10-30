@@ -40,10 +40,6 @@ pub struct ContractStateArgs {
 }
 
 pub async fn execute(args: ContractStateArgs) -> Result<(), BoxError> {
-	#[cfg(not(feature = "indexer-client"))]
-	args.source
-		.reject_indexer("contract-state", crate::tx_generator::source::NO_INDEXER_CLIENT)?;
-
 	if args.dry_run {
 		TxGenerator::source(args.source, true).await?;
 		log::info!("Dry-run: fetch contract state for address: {:?}", args.contract_address);
@@ -66,7 +62,6 @@ pub async fn execute(args: ContractStateArgs) -> Result<(), BoxError> {
 }
 
 async fn contract_state(source: Source, address: ContractAddress) -> Result<Vec<u8>, BoxError> {
-	#[cfg(feature = "indexer-client")]
 	if let Some(indexer_url) = source.indexer_url.as_deref() {
 		use crate::tx_generator::indexer::{IndexerLedgerContext, connect_indexer};
 		return match connect_indexer(&source, indexer_url).await?.0 {
@@ -128,7 +123,6 @@ mod test {
 			replay_checkpoint_interval: 0,
 			indexer_url: None,
 			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 		}

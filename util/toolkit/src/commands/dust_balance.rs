@@ -109,9 +109,6 @@ pub async fn execute_many(
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
-	#[cfg(not(feature = "indexer-client"))]
-	args.source
-		.reject_indexer("dust-balance", crate::tx_generator::source::NO_INDEXER_CLIENT)?;
 	let src = TxGenerator::source(args.source.clone(), args.dry_run).await?;
 
 	if args.dry_run {
@@ -123,7 +120,6 @@ pub async fn execute_many(
 			.collect());
 	}
 
-	#[cfg(feature = "indexer-client")]
 	if let Some(indexer_url) = args.source.indexer_url.as_deref() {
 		return execute_many_indexer(&args.source, indexer_url, args.seeds).await;
 	}
@@ -180,7 +176,6 @@ pub async fn execute_many(
 
 /// Every field comes from the wallet's own `DustLocalState`, which the indexer path syncs, so the
 /// output matches the replay path's.
-#[cfg(feature = "indexer-client")]
 async fn execute_many_indexer(
 	source: &Source,
 	indexer_url: &str,

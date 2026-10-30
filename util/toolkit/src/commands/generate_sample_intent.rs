@@ -45,10 +45,6 @@ pub async fn execute(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	log::info!("Generate a contract and save to file");
 
-	#[cfg(not(feature = "indexer-client"))]
-	args.source
-		.reject_indexer("generate-sample-intent", crate::tx_generator::source::NO_INDEXER_CLIENT)?;
-	#[cfg(feature = "indexer-client")]
 	let indexer_source = args.source.clone();
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
@@ -78,7 +74,6 @@ pub async fn execute(
 		panic!("remote prover is not supported for intent generation");
 	}
 
-	#[cfg(feature = "indexer-client")]
 	if let Some(indexer_url) = indexer_source.indexer_url.as_deref() {
 		use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
 

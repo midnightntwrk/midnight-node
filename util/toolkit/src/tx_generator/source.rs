@@ -216,11 +216,6 @@ impl Source {
 	}
 }
 
-/// [`Source::reject_indexer`] reason for commands that honour `--indexer-url` only when the
-/// `indexer-client` feature is built in.
-pub const NO_INDEXER_CLIENT: &str =
-	"this toolkit was built without the `indexer-client` feature; rebuild with it enabled";
-
 #[async_trait]
 pub trait GetTxs: Send + Sync {
 	async fn get_txs(&self)

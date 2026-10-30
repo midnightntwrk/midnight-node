@@ -110,12 +110,6 @@ pub async fn fetch_zswap_state(
 	let ledger_state_db = source.ledger_state_db.clone();
 	let fetch_cache = source.fetch_cache.clone();
 	let replay_checkpoint_interval = source.replay_checkpoint_interval;
-	#[cfg(not(feature = "indexer-client"))]
-	source.reject_indexer(
-		"generate-intent circuit",
-		crate::tx_generator::source::NO_INDEXER_CLIENT,
-	)?;
-	#[cfg(feature = "indexer-client")]
 	let indexer_source = source.clone();
 	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
@@ -127,7 +121,6 @@ pub async fn fetch_zswap_state(
 		));
 	}
 
-	#[cfg(feature = "indexer-client")]
 	if let Some(indexer_url) = indexer_source.indexer_url.as_deref() {
 		use crate::tx_generator::builder::WalletSchemes;
 		use crate::tx_generator::builder::builders::ledger_8::type_convert::{
@@ -202,7 +195,6 @@ pub async fn fetch_zswap_state(
 async fn fetch_ledger_parameters(
 	source: &Source,
 ) -> Result<LedgerParameters, Box<dyn std::error::Error + Send + Sync>> {
-	#[cfg(feature = "indexer-client")]
 	if let Some(indexer_url) = source.indexer_url.as_deref() {
 		let block = midnight_ledger_unsafe_helpers::IndexerClient::new(indexer_url)?
 			.latest_block()
@@ -210,11 +202,6 @@ async fn fetch_ledger_parameters(
 		return LedgerParameters::try_from(&block)
 			.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()).into());
 	}
-	#[cfg(not(feature = "indexer-client"))]
-	source.reject_indexer(
-		"generate-intent circuit",
-		crate::tx_generator::source::NO_INDEXER_CLIENT,
-	)?;
 
 	let Some(rpc_url) = &source.src_url else {
 		eprintln!("missing required --src-url argument");
