@@ -131,6 +131,50 @@ pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStat
 /// Returns `false` for an unsupported/undecodable `StateKey` (recovery will then verify against it
 /// and fail loudly rather than silently skipping).
 #[cfg(feature = "std")]
+#[derive(Debug)]
+pub enum QueryContractStateError {
+	ContractNotPresent,
+	Ledger(String),
+}
+
+/// Resolves each path against the contract's state tree, keys interpreted as by the VM's `idx`:
+/// per path, the leaf cell, `None` for a `Null` leaf, or a navigation error. Dispatches on the
+/// `StateKey`'s ledger version and DB layout, as [`ledger_stats`] does.
+#[cfg(feature = "std")]
+pub fn query_contract_state(
+	unified: bool,
+	state_key: &[u8],
+	contract_address: &[u8],
+	paths: &[alloc::vec::Vec<base_crypto::fab::AlignedValue>],
+) -> Result<
+	alloc::vec::Vec<Result<Option<base_crypto::fab::AlignedValue>, String>>,
+	QueryContractStateError,
+> {
+	macro_rules! call {
+		($ver:ident) => {
+			bridge_arena_call!(
+				$ver,
+				unified,
+				query_contract_state(state_key, contract_address, paths)
+			)
+			.map_err(|e| match e {
+				$ver::types::LedgerApiError::ContractNotPresent => {
+					QueryContractStateError::ContractNotPresent
+				},
+				e => QueryContractStateError::Ledger(format!("{e:?}")),
+			})
+		};
+	}
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => call!(ledger_9),
+		Some(13) => call!(ledger_8),
+		other => Err(QueryContractStateError::Ledger(format!(
+			"unsupported ledger-state version {other:?} in StateKey"
+		))),
+	}
+}
+
+#[cfg(feature = "std")]
 pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 	match ledger_state_tag_version(state_key) {
 		Some(16..=18) => {
@@ -285,30 +329,6 @@ pub mod types {
 
 	pub use super::host_api::ledger_9::ledger_9_bridge as active_ledger_bridge;
 	pub use super::latest::types as active_version;
-}
-
-/// Direct bridge calls for use by the RPC layer.
-/// These bypass the host function / WASM boundary and call the bridge natively.
-#[cfg(feature = "std")]
-pub mod rpc {
-	use super::*;
-
-	/// Query specific fields in a contract's state tree.
-	///
-	/// Navigates the state tree lazily in ParityDB — O(log n) per query.
-	pub fn query_contract_state(
-		state_key: &[u8],
-		contract_address: &[u8],
-		paths: &[Vec<base_crypto::fab::AlignedValue>],
-	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
-		use latest::{Bridge, TransactionSignature, ledger_storage_local};
-		type Database = ledger_storage_local::db::ParityDb;
-		Bridge::<TransactionSignature, Database>::query_contract_state(
-			state_key,
-			contract_address,
-			paths,
-		)
-	}
 }
 
 #[cfg(test)]

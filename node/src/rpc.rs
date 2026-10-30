@@ -44,6 +44,7 @@ use pallet_sidechain_rpc::*;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use time_source::TimeSource;
 
+use crate::contract_state_query_rpc::ContractStateQueryApiServer;
 use crate::ledger_stats_rpc::LedgerStatsApiServer;
 use pallet_midnight::MidnightRuntimeApi;
 use pallet_midnight_rpc::{Midnight, MidnightApiServer};
@@ -252,6 +253,13 @@ where
 	module.merge(
 		crate::ledger_stats_rpc::LedgerStatsRpc::<_, Block, B>::new(client.clone(), ledger_unified)
 			.into_rpc(),
+	)?;
+	module.merge(
+		crate::contract_state_query_rpc::ContractStateQueryRpc::<_, Block, B>::new(
+			client.clone(),
+			ledger_unified,
+		)
+		.into_rpc(),
 	)?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;

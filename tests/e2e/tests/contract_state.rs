@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_e2e::api::midnight::{AlignedValue, MidnightClient, PathKey, RpcStateQuery};
+use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 use tokio::time::{Duration, sleep, timeout};
@@ -148,159 +148,74 @@ async fn contract_state_distinguishes_historical_and_current_blocks() {
 }
 
 // ============================================================================
-// midnight_queryContractState RPC: lazy path-based contract state access
+// midnight_queryContractState
 // ============================================================================
 
-/// Query path [0][1] on the deployed test contract — the counter Cell
-/// initialised to `0u64` — and assert the deserialised value matches.
-#[e2e_test]
-async fn query_contract_state_returns_expected_value() {
-    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize_untagged};
-    use midnight_node_res::undeployed::transactions::{CONTRACT_ADDR, DEPLOY_TX};
-
-    let _deploy_guard = wait_before_deploying().await;
-
-    let settings = Settings::default();
-    let client = MidnightClient::new(settings.node_client).await;
-
-    // Deploy the test contract and wait for in-block inclusion before querying.
-    // If a prior run already deployed it, the resubmit will surface a rejection;
-    // log and proceed because the on-chain state we need is already there.
-    if let Err(e) = client.submit_expecting_success(DEPLOY_TX.to_vec()).await {
-        tracing::info!("DEPLOY_TX did not confirm (likely already deployed): {e}");
-    }
-    let contract_address =
-        String::from_utf8(CONTRACT_ADDR.to_vec()).expect("CONTRACT_ADDR should be valid UTF-8");
-
-    // The test contract's state after deployment is:
-    //   Array(1) [ Array(3) [ MerkleTree(10), Cell(0u64), Map{...} ] ]
-    //
-    // Query path [0][1] to reach the counter Cell initialized to 0.
-    let key_0 = PathKey(AlignedValue::from(0u8));
-    let key_1 = PathKey(AlignedValue::from(1u8));
-
-    let results = client
-        .query_contract_state(
-            &contract_address,
-            vec![RpcStateQuery {
-                path: vec![key_0, key_1],
-            }],
-        )
-        .await
-        .expect("RPC failed");
-
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].error, None);
-
-    let value_hex = results[0]
-        .value
-        .as_ref()
-        .expect("field [0][1] should exist");
-    let value_bytes = hex::decode(value_hex).expect("invalid hex in value");
-    let state_value: StateValue<DefaultDB> =
-        deserialize_untagged(&mut &value_bytes[..]).expect("failed to deserialize StateValue");
-
-    let expected = StateValue::<DefaultDB>::from(0u64);
-    assert_eq!(state_value, expected);
+/// Tagged-serialized hex: the wire form of path keys and returned cells.
+fn hex_aligned(value: impl Into<midnight_node_ledger_helpers::AlignedValue>) -> String {
+    format!(
+        "0x{}",
+        hex::encode(midnight_node_ledger_helpers::serialize(&value.into()).unwrap())
+    )
 }
 
-/// Three queries in one RPC call covering the three result kinds: a leaf
-/// `Cell` ([0][1]), a map hit returning `Null` ([0][2][key]), and an
-/// out-of-bounds error ([0][99]).
+/// The toolkit's `contract-simple` deploys `[[MT(10), 0u64, {<blank MT(10) root> => null}]]`;
+/// one batch covers a cell, a Null map entry, and an out-of-bounds index.
 #[e2e_test]
-async fn query_contract_state_batch_processes_all_queries() {
-    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize_untagged};
-    use midnight_node_res::undeployed::transactions::{CONTRACT_ADDR, DEPLOY_TX};
-
-    let _deploy_guard = wait_before_deploying().await;
-
-    let settings = Settings::default();
-    let client = MidnightClient::new(settings.node_client).await;
-
-    // See sibling test for rationale on tolerating an "already deployed" error.
-    if let Err(e) = client.submit_expecting_success(DEPLOY_TX.to_vec()).await {
-        tracing::info!("DEPLOY_TX did not confirm (likely already deployed): {e}");
-    }
-    let contract_address =
-        String::from_utf8(CONTRACT_ADDR.to_vec()).expect("CONTRACT_ADDR should be valid UTF-8");
-
-    let key = |v: u8| PathKey(AlignedValue::from(v));
-
-    // The test contract's map at [0][2] has one entry with key "820140c20141"
-    // (a compound AlignedValue: boolean(true) + field(0)) and value Null.
-    // Reconstruct the AlignedValue from the hand-crafted untagged bytes; the
-    // PathKey wrapper handles the tagged-hex wire encoding on serialize.
-    let map_key = {
-        use midnight_node_ledger_helpers::midnight_serialize::Deserializable;
-        let bytes = hex::decode("820140c20141").unwrap();
-        let mut reader: &[u8] = &bytes;
-        PathKey(AlignedValue::deserialize(&mut reader, 0).expect("compound AlignedValue"))
+async fn query_contract_state_resolves_cells_nulls_and_errors() {
+    use midnight_node_ledger_helpers::{
+        AlignedValue, deserialize, transient_crypto::merkle_tree::MerkleTree,
     };
 
+    crate::ensure_dev_wallet_funded().await;
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let _deploy_guard = wait_before_deploying().await;
+    let (_deploy_tx, addr) =
+        crate::deploy_and_confirm(&client, &settings.node_client.base_url).await;
+
+    let root = MerkleTree::<()>::blank(10).root();
     let results = client
         .query_contract_state(
-            &contract_address,
-            vec![
-                RpcStateQuery {
-                    path: vec![key(0), key(1)],
-                },
-                RpcStateQuery {
-                    path: vec![key(0), key(2), map_key],
-                },
-                RpcStateQuery {
-                    path: vec![key(0), key(99)],
-                },
+            &addr,
+            &[
+                vec![hex_aligned(0u8), hex_aligned(1u8)],
+                vec![hex_aligned(0u8), hex_aligned(2u8), hex_aligned(root)],
+                vec![hex_aligned(0u8), hex_aligned(99u8)],
             ],
         )
         .await
         .expect("RPC failed");
 
-    assert_eq!(results.len(), 3);
+    let counter = results[0]["value"]
+        .as_str()
+        .expect("[0][1] should be a cell");
+    let counter: AlignedValue =
+        deserialize(&hex::decode(counter.strip_prefix("0x").unwrap()).unwrap()[..]).unwrap();
+    assert_eq!(counter, AlignedValue::from(0u64));
 
-    // [0][1]: counter Cell initialized to 0
-    assert_eq!(results[0].error, None);
-    let value_bytes = hex::decode(results[0].value.as_ref().unwrap()).unwrap();
-    let cell: StateValue<DefaultDB> = deserialize_untagged(&mut &value_bytes[..]).unwrap();
-    assert_eq!(cell, StateValue::from(0u64));
+    assert_eq!(results[1], serde_json::json!({ "value": null }));
 
-    // [0][2][map_key]: map hit → Null
-    assert_eq!(results[1].error, None);
-    let value_bytes = hex::decode(results[1].value.as_ref().unwrap()).unwrap();
-    let map_value: StateValue<DefaultDB> = deserialize_untagged(&mut &value_bytes[..]).unwrap();
-    assert_eq!(map_value, StateValue::Null);
-
-    // [0][99]: array out of bounds → error
-    assert_eq!(results[2].value, None);
-    assert!(
-        results[2].error.as_ref().unwrap().contains("out of bounds"),
-        "expected out-of-bounds error, got: {:?}",
-        results[2].error
-    );
+    let err = results[2]["error"]
+        .as_str()
+        .expect("[0][99] should be an error");
+    assert!(err.contains("out of bounds"), "unexpected error: {err}");
 }
 
-/// Queries a well-formed but never-deployed contract address (`"00" * 35`,
-/// distinct from `CONTRACT_ADDR`) — the RPC must surface a descriptive
-/// "Unable to query contract state" error rather than returning an empty
-/// result. Independent of deploy ordering, so no guard is held.
+/// A well-formed address with no contract behind it fails the whole request.
 #[e2e_test]
 async fn query_contract_state_nonexistent_contract() {
     let settings = Settings::default();
     let client = MidnightClient::new(settings.node_client).await;
 
-    // 32-byte (64-hex-char) zero address: well-formed but no contract deployed.
-    let fake_address = "00".repeat(32);
     let err = client
-        .query_contract_state(
-            &fake_address,
-            vec![RpcStateQuery {
-                path: vec![PathKey(AlignedValue::from(0u8))],
-            }],
-        )
+        .query_contract_state(&"00".repeat(32), &[vec![hex_aligned(0u8)]])
         .await
         .expect_err("should fail for a non-existent contract");
 
     assert!(
-        err.to_string().contains("Contract not present"),
+        err.to_string().contains("contract not present"),
         "unexpected error: {err}"
     );
 }
