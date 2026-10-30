@@ -26,7 +26,8 @@ use crate::{
 		runtimes::{
 			MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
 			MidnightMetadata1_0_0, MidnightMetadata1_0_3, MidnightMetadata2_0_0,
-			MidnightMetadata2_1_0, RuntimeVersion, RuntimeVersionError,
+			MidnightMetadata2_1_0, MidnightMetadata3_0_0, MidnightMetadata4_0_0, RuntimeVersion,
+			RuntimeVersionError,
 		},
 	},
 };
@@ -127,7 +128,7 @@ impl ComputeTask {
 	}
 
 	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
-		let header = block.block.block_header().await?;
+		let header = &block.header;
 		let spec_version = header
 			.digest
 			.logs
@@ -190,6 +191,22 @@ impl ComputeTask {
 				)
 				.await
 			},
+			RuntimeVersion::V3_0_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata3_0_0>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
+			},
+			RuntimeVersion::V4_0_0 => {
+				Self::process_block_with_protocol::<MidnightMetadata4_0_0>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
+			},
 		}
 	}
 
@@ -213,12 +230,7 @@ impl ComputeTask {
 		// automatically resolves the correct schema for this block's spec version.
 		let extrinsics = block.block.extrinsics().from_bytes(block.raw_body.clone()).await;
 
-		let events = block
-			.block
-			.events()
-			.fetch()
-			.await
-			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
+		let events = block.block.events().from_bytes(block.events.clone());
 
 		for ext in extrinsics.iter().filter_map(Result::ok) {
 			let Ok(call) = ext.decode_call_data_as::<M::Call>() else {

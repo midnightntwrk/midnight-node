@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "2.1.0"
+version = "4.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -41,6 +41,8 @@ sc-transaction-pool.workspace = true
 sc-transaction-pool-api.workspace = true
 sc-consensus.workspace = true
 sc-consensus-aura.workspace = true
+sc-consensus-babe.workspace = true
+sc-consensus-epochs.workspace = true
 sc-consensus-beefy.workspace = true
 sc-consensus-beefy-rpc.workspace = true
 sc-consensus-grandpa.workspace = true
@@ -120,7 +122,6 @@ pallet-cnight-observation-mock = { workspace = true, default-features = true}
 thiserror = "1.0.50"
 log.workspace = true
 authority-selection-inherents.workspace = true
-#sp-block-rewards = { workspace = true, optional = true }
 sp-crypto-hashing.workspace = true
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
@@ -190,6 +191,4 @@ try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
 ]
-experimental = [
-    #"sp-block-rewards",
-]
+experimental = []

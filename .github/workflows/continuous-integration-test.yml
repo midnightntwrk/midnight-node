@@ -8,6 +8,14 @@ on:
       - "changes/**"
   push:
     branches: ["main"]
+env:
+  # Registry the images this workflow touches live in. Derived from the repo owner so a fork
+  # or private clone never reads from or writes to midnightntwrk's registries. Upstream's
+  # private GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the
+  # canonical branch has to name the repo explicitly rather than derive it.
+  # The cache tag lives in the public mirror namespace upstream; a fork keeps it in its own.
+  GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+
 # no top level default permissions for security reasons
 permissions: {}
 concurrency:
@@ -35,10 +43,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -93,23 +101,23 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P \
+          . ./.envrc && earth -P \
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test \
+            --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test" \
             +test --CACHE_KEY="$CACHE_KEY"
 
       - name: Upload test report artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.guard.outputs.hit != 'true'
         with:
           name: Test Report
           path: test-artifacts/html
 
       - name: Upload lcov test report artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.guard.outputs.hit != 'true'
         with:
           name: Lcov Coverage Report

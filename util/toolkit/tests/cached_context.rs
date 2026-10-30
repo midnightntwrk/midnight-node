@@ -14,17 +14,22 @@
 //! Integration tests verifying `build_fork_aware_context_cached` produces the
 //! same result as `build_fork_aware_context_raw` across all cache scenarios.
 
-use midnight_node_ledger_helpers::{
-	DefaultDB, LedgerContext, UnshieldedSignatureScheme, WalletSeed, serialize_untagged,
+use midnight_ledger_unsafe_helpers::{
+	DefaultDB, LedgerContext, UnshieldedSignatureScheme, WalletSeed, ledger_8, serialize_untagged,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use midnight_node_toolkit::fetcher::wallet_state_cache::{
-	serialize_ledger_state_fast, wallet_cache_key,
+	serialize_ledger_state_fast, serialize_ledger_state_fast_8, wallet_cache_key,
 };
 use midnight_node_toolkit::{
 	fetcher::fetch_storage::{WalletStateCaching, file_backend::FileBackend},
 	serde_def::SourceTransactions,
 	tx_generator::{
-		builder::{build_fork_aware_context_cached, build_fork_aware_context_raw},
+		builder::{
+			WalletSchemes, build_fork_aware_context_cached,
+			build_fork_aware_context_cached_with_schemes, build_fork_aware_context_raw,
+			build_fork_aware_context_raw_with_schemes,
+		},
 		source::GetTxsFromFile,
 	},
 };
@@ -198,4 +203,235 @@ async fn file_cached_context() {
 	let tmp2 = tempfile::TempDir::new().expect("failed to create temp dir");
 	let backend2 = FileBackend::new(tmp2.path());
 	test_split_cached(&backend2, &source).await;
+}
+
+/// `l8` empty ledger-8 blocks from genesis followed by `l9` empty ledger-9 blocks.
+fn synthetic_source(l8: u64, l9: u64) -> SourceTransactions {
+	let block = |number: u64, version: LedgerVersion| RawBlockData {
+		hash: [0; 32],
+		parent_hash: [0; 32],
+		number,
+		ledger_version: version,
+		transactions: vec![],
+		tblock_secs: 1_700_000_000 + number * 6,
+		tblock_err: 30,
+		parent_block_hash: [0; 32],
+		last_block_time_secs: 1_700_000_000 + number.saturating_sub(1) * 6,
+		state_root: None,
+		state: None,
+	};
+	let blocks = (0..l8)
+		.map(|n| block(n, LedgerVersion::Ledger8))
+		.chain((l8..l8 + l9).map(|n| block(n, LedgerVersion::Ledger9)))
+		.collect();
+	let mut source = SourceTransactions::new(blocks, "undeployed");
+	assign_block_numbers(&mut source);
+	assert!(source.chain_id().is_some());
+	source
+}
+
+fn assert_contexts_equal_8(
+	label: &str,
+	cached: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
+	raw: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
+	seeds: &[WalletSeed],
+) {
+	let cached_bytes = serialize_ledger_state_fast_8(&cached.ledger_state.lock().unwrap()).unwrap();
+	let raw_bytes = serialize_ledger_state_fast_8(&raw.ledger_state.lock().unwrap()).unwrap();
+	assert!(!cached_bytes.is_empty(), "{label}: cached ledger state serialized to empty");
+	assert_eq!(cached_bytes, raw_bytes, "{label}: ledger state diverged");
+
+	let cached_wallets = cached.wallets.lock().unwrap();
+	let raw_wallets = raw.wallets.lock().unwrap();
+	assert_eq!(cached_wallets.len(), raw_wallets.len(), "{label}: wallet count mismatch");
+	for seed in seeds {
+		let seed_8 = ledger_8::WalletSeed::try_from(seed.as_bytes()).unwrap();
+		let cw = cached_wallets
+			.get(&seed_8)
+			.unwrap_or_else(|| panic!("{label}: cached wallet missing"));
+		let rw = raw_wallets
+			.get(&seed_8)
+			.unwrap_or_else(|| panic!("{label}: raw wallet missing"));
+		let cs = ledger_8::serialize_untagged(&cw.shielded.state).unwrap();
+		let rs = ledger_8::serialize_untagged(&rw.shielded.state).unwrap();
+		assert_eq!(cs, rs, "{label}: shielded state diverged for seed {seed:?}");
+	}
+}
+
+#[tokio::test]
+async fn ledger8_chain_cache_and_restore() {
+	let source = synthetic_source(6, 0);
+	let seeds = vec![wallet_seed(0x01), wallet_seed(0x02)];
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+	let chain_id = source.chain_id().unwrap();
+
+	let raw = build_fork_aware_context_raw(&source, &seeds)
+		.into_ledger8()
+		.expect("raw: ledger 8");
+
+	let cold = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0)
+		.await
+		.into_ledger8()
+		.expect("cold: ledger 8");
+	verify_cache_state(&backend, chain_id, source.blocks.len(), seeds.clone()).await;
+	assert_contexts_equal_8("ledger-8 cold", &cold, &raw, &seeds);
+
+	let warm = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0)
+		.await
+		.into_ledger8()
+		.expect("warm: ledger 8");
+	verify_cache_state(&backend, chain_id, source.blocks.len(), seeds.clone()).await;
+	assert_contexts_equal_8("ledger-8 warm restore", &warm, &raw, &seeds);
+
+	let tmp2 = tempfile::TempDir::new().unwrap();
+	let backend2 = FileBackend::new(tmp2.path());
+	let chunked = build_fork_aware_context_cached(&seeds, &source, Some(&backend2), 2)
+		.await
+		.into_ledger8()
+		.expect("chunked: ledger 8");
+	assert_contexts_equal_8("ledger-8 chunked", &chunked, &raw, &seeds);
+}
+
+/// A ledger-8 cache is discarded once the chain has crossed to ledger 9.
+#[tokio::test]
+async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	let l8_source = synthetic_source(6, 0);
+	let _ = build_fork_aware_context_cached(&[wallet_seed(0x01)], &l8_source, Some(&backend), 0)
+		.await
+		.into_ledger8()
+		.expect("ledger 8");
+
+	let crossed = synthetic_source(6, 4);
+	let chain_id = crossed.chain_id().unwrap();
+	for seeds in [vec![wallet_seed(0x01), wallet_seed(0x02)], vec![wallet_seed(0x01)]] {
+		let raw = build_fork_aware_context_raw(&crossed, &seeds)
+			.into_ledger9()
+			.expect("raw: ledger 9");
+		let cached = build_fork_aware_context_cached(&seeds, &crossed, Some(&backend), 0)
+			.await
+			.into_ledger9()
+			.expect("cached: ledger 9");
+		assert_contexts_equal("crossed chain", &cached, &raw, &seeds);
+		verify_cache_state(&backend, chain_id, crossed.blocks.len(), seeds).await;
+	}
+}
+
+/// GH #2180: every cached path agrees with the raw replay for an ECDSA wallet across the fork.
+#[tokio::test]
+async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
+	let source = synthetic_source(6, 4);
+	let (schnorr, ecdsa) = (wallet_seed(0x01), wallet_seed(0x02));
+	let seeds = vec![schnorr.clone(), ecdsa.clone()];
+	let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
+	let chain_id = source.chain_id().unwrap();
+
+	let raw = build_fork_aware_context_raw_with_schemes(&source, &seeds, &schemes)
+		.into_ledger9()
+		.expect("raw: ledger 9");
+
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+	let cold =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend), &schemes, 0)
+			.await
+			.into_ledger9()
+			.expect("cold: ledger 9");
+	assert_contexts_equal("ecdsa cold", &cold, &raw, &seeds);
+	let cached_keys: Vec<H256> = seeds
+		.iter()
+		.map(|s| wallet_cache_key(s, schemes.get(s).copied().unwrap_or_default()))
+		.collect();
+	let cached_states = backend.get_wallet_states(chain_id, &cached_keys).await;
+	assert!(cached_states.iter().all(Option::is_some), "both wallets must be cached at the tip");
+
+	let warm =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend), &schemes, 0)
+			.await
+			.into_ledger9()
+			.expect("warm: ledger 9");
+	assert_contexts_equal("ecdsa warm restore", &warm, &raw, &seeds);
+
+	// Only the Schnorr wallet cached: the ECDSA seed forces a cold replay from ledger-8 genesis
+	// with the Schnorr wallet injected mid-replay.
+	let tmp2 = tempfile::TempDir::new().unwrap();
+	let backend2 = FileBackend::new(tmp2.path());
+	let _ = build_fork_aware_context_cached(&[schnorr.clone()], &source, Some(&backend2), 0).await;
+	let mixed =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend2), &schemes, 0)
+			.await
+			.into_ledger9()
+			.expect("mixed: ledger 9");
+	assert_contexts_equal("ecdsa mixed cache", &mixed, &raw, &seeds);
+
+	// Checkpoints every 2 blocks: the first ones are saved while still on ledger 8.
+	let tmp3 = tempfile::TempDir::new().unwrap();
+	let backend3 = FileBackend::new(tmp3.path());
+	let chunked =
+		build_fork_aware_context_cached_with_schemes(&seeds, &source, Some(&backend3), &schemes, 2)
+			.await
+			.into_ledger9()
+			.expect("chunked: ledger 9");
+	assert_contexts_equal("ecdsa chunked", &chunked, &raw, &seeds);
+}
+
+/// A checkpointing run on a ledger-8 chain caches the seed before the guard fires; the retry must
+/// still be refused, so the guard cannot depend on which seeds are cached.
+#[tokio::test]
+#[should_panic(expected = "only supported from ledger 9")]
+async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
+	let source = synthetic_source(6, 0);
+	let ecdsa = wallet_seed(0x02);
+	let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
+	let chain_id = source.chain_id().unwrap();
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	// Plant the entry such a run leaves behind, keyed under the ECDSA identity.
+	let _ = build_fork_aware_context_cached(&[ecdsa.clone()], &source, Some(&backend), 0).await;
+	let mut planted = backend
+		.get_wallet_states(
+			chain_id,
+			&[wallet_cache_key(&ecdsa, UnshieldedSignatureScheme::Schnorr)],
+		)
+		.await
+		.pop()
+		.flatten()
+		.expect("the Schnorr replay must have cached the seed");
+	planted.seed_hash = wallet_cache_key(&ecdsa, UnshieldedSignatureScheme::Ecdsa);
+	backend.set_wallet_states(chain_id, &[planted]).await;
+
+	let _ = build_fork_aware_context_cached_with_schemes(
+		&[ecdsa],
+		&source,
+		Some(&backend),
+		&schemes,
+		2,
+	)
+	.await;
+}
+
+#[tokio::test]
+async fn ledger8_cache_with_mixed_heights_replays_from_genesis() {
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	let short = synthetic_source(4, 0);
+	let _ = build_fork_aware_context_cached(&[wallet_seed(0x01)], &short, Some(&backend), 0).await;
+	let long = synthetic_source(6, 0);
+	let _ = build_fork_aware_context_cached(&[wallet_seed(0x02)], &long, Some(&backend), 0).await;
+
+	let seeds = vec![wallet_seed(0x01), wallet_seed(0x02)];
+	let raw = build_fork_aware_context_raw(&long, &seeds)
+		.into_ledger8()
+		.expect("raw: ledger 8");
+	let cached = build_fork_aware_context_cached(&seeds, &long, Some(&backend), 0)
+		.await
+		.into_ledger8()
+		.expect("cached: ledger 8");
+	assert_contexts_equal_8("mixed heights", &cached, &raw, &seeds);
+	verify_cache_state(&backend, long.chain_id().unwrap(), long.blocks.len(), seeds).await;
 }

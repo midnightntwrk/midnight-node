@@ -45,7 +45,24 @@ pub trait LedgerBlockContextProvider {
 	fn get_block_context() -> BlockContext;
 }
 
-pub trait MidnightSystemTransactionExecutor {
+/// Allows `pallet-cnight-observation` to execute only the system transaction
+/// variants it is permitted to construct (`CNightGeneratesDustUpdate`).
+pub trait MidnightSystemTransactionCNightExecutor {
+	/// Execute a Midnight System Transaction and return a SCALE-compatible result
+	fn execute_system_transaction(
+		serialized_system_transaction: Vec<u8>,
+	) -> Result<Hash, DispatchError>;
+
+	/// True when `err` from [`Self::execute_system_transaction`] is the ledger refusing
+	/// the transaction because the block is already full, rather than rejecting the
+	/// transaction itself.
+	fn is_block_limit_exceeded(err: &DispatchError) -> bool;
+}
+
+/// Allows `pallet-c2m-bridge` to execute only the system transaction variants it
+/// is permitted to construct (`UnlockToTreasury`, `DistributeReserve`,
+/// `DistributeNight(ClaimKind::CardanoBridge, _)`).
+pub trait MidnightSystemTransactionBridgeExecutor {
 	/// Execute a Midnight System Transaction and return a SCALE-compatible result
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
@@ -79,14 +96,14 @@ pub mod bridge {
 	use sp_core::{Get, H256, bounded::BoundedVec, crypto::UncheckedFrom};
 
 	/// Maximum length (bytes) of a Midnight recipient encoded in the bridge datum.
-	pub const BRIDGE_RECIPIENT_MAX_BYTES: u32 = 32;
+	pub const BRIDGE_RECIPIENT_BYTES: u32 = 32;
 
 	/// Type-level constant used to bound bridge recipient length.
 	pub struct BridgeRecipientMaxLen;
 
 	impl Get<u32> for BridgeRecipientMaxLen {
 		fn get() -> u32 {
-			BRIDGE_RECIPIENT_MAX_BYTES
+			BRIDGE_RECIPIENT_BYTES
 		}
 	}
 
@@ -95,6 +112,8 @@ pub mod bridge {
 	pub enum BridgeRecipientError {
 		/// The encoded recipient exceeds the configured byte limit.
 		TooLong,
+		/// The encoded recipient is shorter than a full Midnight address.
+		TooShort,
 	}
 
 	/// Recipient type used by the bridge pallet and inherent data provider.
@@ -123,6 +142,14 @@ pub mod bridge {
 		pub fn into_inner(self) -> BoundedVec<u8, BridgeRecipientMaxLen> {
 			self.0
 		}
+
+		/// Builds a recipient from bytes, requiring exactly [`BRIDGE_RECIPIENT_BYTES`] of them.
+		fn from_exact_bytes(bytes: Vec<u8>) -> Result<Self, BridgeRecipientError> {
+			if bytes.len() < BoundedVec::<u8, BridgeRecipientMaxLen>::bound() {
+				return Err(BridgeRecipientError::TooShort);
+			}
+			BoundedVec::try_from(bytes).map(Self).map_err(|_| BridgeRecipientError::TooLong)
+		}
 	}
 
 	impl Deref for BridgeRecipient {
@@ -143,9 +170,7 @@ pub mod bridge {
 		type Error = BridgeRecipientError;
 
 		fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-			BoundedVec::<u8, BridgeRecipientMaxLen>::try_from(value.to_vec())
-				.map(BridgeRecipient)
-				.map_err(|_| BridgeRecipientError::TooLong)
+			Self::from_exact_bytes(value.to_vec())
 		}
 	}
 
@@ -153,9 +178,7 @@ pub mod bridge {
 		type Error = BridgeRecipientError;
 
 		fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-			BoundedVec::<u8, BridgeRecipientMaxLen>::try_from(value)
-				.map(BridgeRecipient)
-				.map_err(|_| BridgeRecipientError::TooLong)
+			Self::from_exact_bytes(value)
 		}
 	}
 

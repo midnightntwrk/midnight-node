@@ -28,6 +28,8 @@ pub enum RuntimeVersion {
 	V1_0_3,
 	V2_0_0,
 	V2_1_0,
+	V3_0_0,
+	V4_0_0,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -36,9 +38,15 @@ impl TryFrom<u32> for RuntimeVersion {
 			000_021_000 => Ok(Self::V0_21_0),
 			000_022_000 => Ok(Self::V0_22_0),
 			001_000_000 => Ok(Self::V1_0_0),
-			001_000_003 => Ok(Self::V1_0_3),
+			// devnet ran spec 001_000_300 ("1.0.300") on the 1.0.x line, alongside the
+			// 001_000_003 ("1.0.3") releases. Both are ledger-8 era: `LedgerVersion::
+			// from_spec_version` classifies the whole 000_022_000..=001_999_999 range as
+			// Ledger8, so they share a decoder and mapping them to one variant is exact.
+			001_000_003 | 001_000_300 => Ok(Self::V1_0_3),
 			002_000_000 => Ok(Self::V2_0_0),
 			002_001_000 => Ok(Self::V2_1_0),
+			003_000_000 => Ok(Self::V3_0_0),
+			004_000_000 => Ok(Self::V4_0_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -54,6 +62,8 @@ impl RuntimeVersion {
 			Self::V1_0_3 => 001_000_003,
 			Self::V2_0_0 => 002_000_000,
 			Self::V2_1_0 => 002_001_000,
+			Self::V3_0_0 => 003_000_000,
+			Self::V4_0_0 => 004_000_000,
 		}
 	}
 
@@ -174,4 +184,16 @@ impl_midnight_metadata!(
 	MidnightMetadata2_1_0,
 	mn_meta_2_1_0,
 	midnight_node_metadata::midnight_metadata_2_1_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata3_0_0,
+	mn_meta_3_0_0,
+	midnight_node_metadata::midnight_metadata_3_0_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata4_0_0,
+	mn_meta_4_0_0,
+	midnight_node_metadata::midnight_metadata_4_0_0
 );
