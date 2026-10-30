@@ -16,7 +16,7 @@
 //! Ledger storage garbage collection primitives (single-scan release shape).
 //!
 //! Every function here operates on whichever default ledger storage is
-//! initialised (`DbSeparate`, then `DbUnified`, then the in-memory `DefaultDB`
+//! initialised (the node's parity-db `Db`, then the in-memory `DefaultDB`
 //! used by tests). Each takes the arena mutex (`Arena::with_backend`) **at most
 //! once**, and returns how long it held it so the caller (the node worker) can
 //! decide about logging and metrics. This module never logs above `debug!`.
@@ -70,11 +70,10 @@ const PIN_BATCH: usize = 500;
 
 const LOG_TARGET: &str = "midnight::ledger_gc";
 
-type DbSeparate = ParityDb;
-type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+type Db = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 /// Run `$f::<D>($args)` against the first initialised default storage, probing
-/// `DbSeparate`, `DbUnified`, `DefaultDB` in that order. Evaluates to `None`
+/// `Db`, `DefaultDB` in that order. Evaluates to `None`
 /// when no storage is initialised.
 ///
 /// Under `cfg(test)` the in-memory `DefaultDB` is probed first: other tests in this
@@ -87,10 +86,8 @@ macro_rules! dispatch {
 		let in_memory_first = false;
 		if in_memory_first {
 			Some($f::<DefaultDB>($($arg),*))
-		} else if try_get_default_storage::<DbSeparate>().is_some() {
-			Some($f::<DbSeparate>($($arg),*))
-		} else if try_get_default_storage::<DbUnified>().is_some() {
-			Some($f::<DbUnified>($($arg),*))
+		} else if try_get_default_storage::<Db>().is_some() {
+			Some($f::<Db>($($arg),*))
 		} else if try_get_default_storage::<DefaultDB>().is_some() {
 			Some($f::<DefaultDB>($($arg),*))
 		} else {

@@ -40,7 +40,7 @@ const NO_LEDGER_STATE: u8 = 151;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
+	let state_key = midnight_node_ledger::init_ledger_storage_standalone(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -189,11 +189,11 @@ fn keep_alive_invariants() {
 		// `on_finalize` flushed storage. A released intermediate must be gone from the arena,
 		// not merely unrooted, or that flush wrote it to disk as garbage.
 		assert!(
-			!midnight_node_ledger::has_ledger_state(false, &post_deploy_key),
+			!midnight_node_ledger::has_ledger_state(&post_deploy_key),
 			"a released intermediate must not survive the block's storage flush"
 		);
 		assert!(
-			midnight_node_ledger::has_ledger_state(false, &post_block_1_key),
+			midnight_node_ledger::has_ledger_state(&post_block_1_key),
 			"the persisted post-block tip must survive it"
 		);
 
@@ -301,17 +301,17 @@ fn keep_alive_invariants() {
 			midnight_node_ledger::latest::storage::flush_default_storage_for_test();
 			midnight_node_ledger::gc::collect_garbage(std::time::Duration::from_millis(250))
 				.expect("storage initialised");
-			if !midnight_node_ledger::has_ledger_state(false, &post_block_1_key) {
+			if !midnight_node_ledger::has_ledger_state(&post_block_1_key) {
 				reclaimed = true;
 				break;
 			}
 		}
 		assert!(reclaimed, "the released tip must be swept from the arena");
 		assert!(
-			midnight_node_ledger::has_ledger_state(false, &tip3),
+			midnight_node_ledger::has_ledger_state(&tip3),
 			"a still-pinned tip survives the sweep"
 		);
-		assert!(midnight_node_ledger::has_ledger_state(false, &genesis_key));
+		assert!(midnight_node_ledger::has_ledger_state(&genesis_key));
 
 		// --- The refcount check ---
 		//

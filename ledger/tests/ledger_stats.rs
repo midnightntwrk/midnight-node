@@ -28,7 +28,7 @@ use mn_ledger_9::structure::LedgerState;
 fn seed_arena() -> Vec<u8> {
 	let dir = std::env::temp_dir().join(format!("mn-ledger-stats-{}", std::process::id()));
 	let _ = std::fs::remove_dir_all(&dir);
-	midnight_node_ledger::init_ledger_storage_separate(&dir, UndeployedNetwork.genesis_state(), 0)
+	midnight_node_ledger::init_ledger_storage_standalone(&dir, UndeployedNetwork.genesis_state(), 0)
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn stats_match_the_state_they_were_read_from() {
 	let state_key = seed_arena();
 
 	// Read the stats through the arena, the way the RPC will.
-	let stats = midnight_node_ledger::ledger_stats(false, &state_key)
+	let stats = midnight_node_ledger::ledger_stats(&state_key)
 		.unwrap_or_else(|e| panic!("ledger_stats failed: {e}"));
 
 	// Independently deserialize the same genesis and read the same fields
@@ -85,14 +85,14 @@ fn stats_match_the_state_they_were_read_from() {
 #[test]
 fn unknown_state_key_version_is_rejected_not_panicked() {
 	// No `ledger-state[vNN]` tag at all.
-	let err = midnight_node_ledger::ledger_stats(false, b"not-a-state-key")
+	let err = midnight_node_ledger::ledger_stats(b"not-a-state-key")
 		.expect_err("untagged key must not resolve");
 	assert!(err.contains("unsupported ledger-state version"), "unexpected error: {err}");
 
 	// A tag this build has no reader for — the guard is the version range, not the
 	// bytes that follow it.
 	let future = b"midnight:storage-key(ledger-state[v99]):xxxx";
-	let err = midnight_node_ledger::ledger_stats(false, future)
+	let err = midnight_node_ledger::ledger_stats(future)
 		.expect_err("future ledger version must not resolve");
 	assert!(err.contains("unsupported ledger-state version"), "unexpected error: {err}");
 }

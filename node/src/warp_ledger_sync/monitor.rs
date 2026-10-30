@@ -45,7 +45,6 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 	network: Arc<Network>,
 	gate: Arc<RecoveryGate>,
 	protocol_name: ProtocolName,
-	unified: bool,
 ) where
 	B: BlockT,
 	BE: Backend<B> + 'static,
@@ -63,7 +62,7 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 	if let Some((finalized_hash, finalized_number)) = client.info().finalized_state {
 		match super::read_state_key::<B, Client, BE>(&client, finalized_hash) {
 			Ok(Some(state_key)) => {
-				if midnight_node_ledger::has_ledger_state(unified, &state_key) {
+				if midnight_node_ledger::has_ledger_state(&state_key) {
 					log::debug!(
 						target: LOG_TARGET,
 						"Ledger arena already holds the state at finalized #{finalized_number}; no warp recovery needed"
@@ -82,7 +81,6 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 					network,
 					gate,
 					protocol_name,
-					unified,
 					finalized_hash,
 					finalized_number,
 				)
@@ -154,7 +152,6 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 		network,
 		gate,
 		protocol_name,
-		unified,
 		target_hash,
 		target_number,
 	)
@@ -171,7 +168,6 @@ async fn recover_and_release<B, Client, BE, Network>(
 	network: Arc<Network>,
 	gate: Arc<RecoveryGate>,
 	protocol_name: ProtocolName,
-	unified: bool,
 	target_hash: B::Hash,
 	target_number: NumberFor<B>,
 ) where
@@ -186,7 +182,7 @@ async fn recover_and_release<B, Client, BE, Network>(
 	);
 
 	// Recover + verify + import, retrying across the current peer set until one succeeds.
-	let driver = LedgerSyncClient::new(client, network.clone(), protocol_name, unified);
+	let driver = LedgerSyncClient::new(client, network.clone(), protocol_name);
 	loop {
 		let peers = recovery_candidate_peers(&*network, &sync_service).await;
 		match driver.recover(target_hash, &peers).await {

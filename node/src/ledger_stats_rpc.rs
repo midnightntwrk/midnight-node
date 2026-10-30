@@ -246,9 +246,6 @@ impl<K: Hash + Eq + Clone, V: Clone> SingleFlightMemo<K, V> {
 
 pub struct LedgerStatsRpc<C, Block: BlockT, BE> {
 	client: Arc<C>,
-	/// Whether the ledger arena uses the unified ParityDb layout — selects the DB
-	/// instantiation, as in the warp ledger-sync server.
-	unified: bool,
 	/// Memo of the last answer, keyed by block hash. Repeated polling of the tip
 	/// (the overwhelmingly common case) then never touches the arena.
 	memo: SingleFlightMemo<Block::Hash, LedgerStats>,
@@ -256,8 +253,8 @@ pub struct LedgerStatsRpc<C, Block: BlockT, BE> {
 }
 
 impl<C, Block: BlockT, BE> LedgerStatsRpc<C, Block, BE> {
-	pub fn new(client: Arc<C>, unified: bool) -> Self {
-		Self { client, unified, memo: SingleFlightMemo::new(), _phantom: PhantomData }
+	pub fn new(client: Arc<C>) -> Self {
+		Self { client, memo: SingleFlightMemo::new(), _phantom: PhantomData }
 	}
 }
 
@@ -270,11 +267,7 @@ where
 	/// Resolve the stats for `at` from the arena. Blocking: the header and trie
 	/// reads hit the backend and the arena resolve loads root nodes from disk, so
 	/// this is run on the blocking pool, never inline on an async worker.
-	fn read_stats(
-		client: &C,
-		unified: bool,
-		at: Block::Hash,
-	) -> Result<LedgerStats, LedgerStatsError> {
+	fn read_stats(client: &C, at: Block::Hash) -> Result<LedgerStats, LedgerStatsError> {
 		if client
 			.header(at)
 			.map_err(|e| LedgerStatsError::StateKeyUnavailable(e.to_string()))?
@@ -287,7 +280,7 @@ where
 			.map_err(|e| LedgerStatsError::StateKeyUnavailable(e.to_string()))?
 			.ok_or(LedgerStatsError::NoStateKey)?;
 
-		Ok(midnight_node_ledger::ledger_stats(unified, &state_key)
+		Ok(midnight_node_ledger::ledger_stats(&state_key)
 			.map_err(LedgerStatsError::LedgerUnavailable)?
 			.into())
 	}
@@ -311,11 +304,10 @@ where
 		// freshly produced block still reads the arena once; misses for *different*
 		// hashes proceed in parallel, each costing what one arena read costs.
 		let client = self.client.clone();
-		let unified = self.unified;
 		let stats = self
 			.memo
 			.get_or_fill(at, || async move {
-				tokio::task::spawn_blocking(move || Self::read_stats(&client, unified, at))
+				tokio::task::spawn_blocking(move || Self::read_stats(&client, at))
 					.await
 					.map_err(|e| {
 						LedgerStatsError::LedgerUnavailable(format!(
