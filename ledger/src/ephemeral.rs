@@ -14,10 +14,11 @@
 //! Ledger storage for runtime calls that are neither block authoring nor block import.
 //!
 //! Ledger state is persisted into the process-wide `default_storage::<D>()` only during block
-//! authoring and import. Other runtime calls run their state transitions against
+//! authoring and import. Other runtime calls run all their ledger work, reads included, against
 //! `Storage<EphemeralDb<D>>`, which reads through the shared storage and keeps its own writes in
 //! memory. The states they produce are held in [`LedgerEphemeralExt`] for the rest of the
-//! execution and released with it.
+//! execution and released with it. Reads go there too because they allocate, and a flush of the
+//! shared storage would write those allocations to disk.
 //!
 //! A call counts as block execution when [`LedgerOnchainExt`] is registered, which the node's
 //! executor does for `CallContext::Onchain` only.
@@ -103,13 +104,6 @@ impl<D: DB> DB for EphemeralDb<D> {
 /// Whether this call is block authoring or block import.
 pub fn is_onchain(mut ext: &mut dyn Externalities) -> bool {
 	ext.extension::<LedgerOnchainExt>().is_some()
-}
-
-/// Whether `state_key` is a state produced earlier in this off-chain execution, which only the
-/// ephemeral storage can resolve.
-pub fn holds(mut ext: &mut dyn Externalities, state_key: &[u8]) -> bool {
-	!is_onchain(ext)
-		&& ext.extension::<LedgerEphemeralExt>().is_some_and(|held| held.holds(state_key))
 }
 
 /// Make sure `Storage<EphemeralDb<D>>` exists before a bridge instantiated over it runs.
