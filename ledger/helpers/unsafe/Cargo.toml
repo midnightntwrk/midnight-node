@@ -38,21 +38,16 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 bech32 = "0.11.0"
 
-# Indexer GraphQL client (feature `indexer-client`): typed queries + WS subscriptions.
-reqwest = { workspace = true, optional = true }
-graphql_client = { workspace = true, optional = true }
-tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"], optional = true }
+# Indexer GraphQL client: typed queries + WS subscriptions.
+reqwest.workspace = true
+graphql_client.workspace = true
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
 
 [features]
 default = []
 erase-proof = []
 test-utils = []
 fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
-# Indexer-backed `BuilderContext` (the GraphQL client + `IndexerContext`). Off by default: only
-# the toolkit needs it and its HTTP/WebSocket dependencies.
-# Optional because the indexer trails the node: after e.g. a ledger-version bump there is no
-# compatible indexer for a while, and a toolkit must still be shippable without it.
-indexer-client = ["dep:reqwest", "dep:graphql_client", "dep:tokio-tungstenite"]
 
 [dev-dependencies]
 apollo-compiler.workspace = true

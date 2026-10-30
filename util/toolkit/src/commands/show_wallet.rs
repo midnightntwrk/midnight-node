@@ -72,13 +72,6 @@ pub async fn execute(
 	if let Some(indexer_url) = args.source.indexer_url.clone() {
 		#[cfg(feature = "indexer-client")]
 		return execute_indexer(args, &indexer_url).await;
-		#[cfg(not(feature = "indexer-client"))]
-		{
-			let _ = indexer_url;
-			return Err("this toolkit was built without the `indexer-client` feature; \
-			            rebuild with it enabled to use --indexer-url"
-				.into());
-		}
 	}
 
 	let ledger_state_db = args.source.ledger_state_db.clone();
@@ -403,7 +396,6 @@ mod tests {
 
 	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
 	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
-	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn indexer_concurrency_rejects_zero() {
 		use clap::Parser;
