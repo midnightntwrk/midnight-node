@@ -103,7 +103,10 @@ use crate::service::{FullBackend, FullClient};
 
 const LOG_TARGET: &str = "midnight::ledger_gc";
 
-const DEFAULT_SLICE_MS: u64 = 25;
+/// Arena sweep budget per slice. 25 ms and 100 ms fell behind at ~10 tx/block on the
+/// perfnet A/B of the storage bundle (garbage ~130 stored nodes per block); 200 ms kept
+/// the ledger flat through a 14 h load with no import penalty.
+const DEFAULT_SLICE_MS: u64 = 200;
 /// Hold-time warning threshold for the scan and release holds.
 const HOLD_WARN: Duration = Duration::from_millis(50);
 
@@ -633,7 +636,7 @@ mod tests {
 			unsafe { std::env::remove_var(k) };
 		}
 		let d = GcConfig::from_env(&None, false, true);
-		assert_eq!(d.slice, Duration::from_millis(25));
+		assert_eq!(d.slice, Duration::from_millis(200));
 		assert!(d.arena_sweep);
 		assert_eq!(d.lag, Some(256));
 
@@ -646,7 +649,7 @@ mod tests {
 		assert!(!c.arena_sweep);
 
 		unsafe { std::env::set_var(ENV_SLICE_MS, "banana") };
-		assert_eq!(GcConfig::from_env(&None, false, true).slice, Duration::from_millis(25));
+		assert_eq!(GcConfig::from_env(&None, false, true).slice, Duration::from_millis(200));
 		unsafe { std::env::set_var(ENV_ARENA_SWEEP, "yes") };
 		assert!(GcConfig::from_env(&None, false, true).arena_sweep);
 		for k in keys {

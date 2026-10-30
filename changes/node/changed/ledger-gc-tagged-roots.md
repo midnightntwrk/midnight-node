@@ -58,7 +58,11 @@ the pruning window.
 
 ## Tuning
 
-- `MIDNIGHT_LEDGER_GC_SLICE_MS`: arena sweep budget per slice (default 25).
+- `MIDNIGHT_LEDGER_GC_SLICE_MS`: arena sweep budget per slice (default 200). On the perfnet A/B
+  25 ms and 100 ms fell behind at ~10 transactions per block; 200 ms kept the ledger flat
+  through a 14-hour load with no import penalty, for about 21% more disk writes and 11% more
+  CPU than running no sweep. Sustained load at block capacity is untested; the hold warning
+  fires above twice the budget.
 - `MIDNIGHT_LEDGER_GC_ARENA_SWEEP`: `0` releases tips but never sweeps; escape hatch if the
   sweep's mark set uses too much memory on a very large arena.
 - Per-slice work grows with the `--state-pruning` window (one read and one header lookup per
