@@ -48,7 +48,9 @@ default = []
 erase-proof = []
 test-utils = []
 fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
-# Indexer-backed `BuilderContext` (the GraphQL client + `IndexerContext`). Off by default so
-# consumers build without the indexer submodule (the typed client reads the indexer's committed
-# GraphQL schema at compile time). The toolkit enables it by default.
+# Indexer-backed `BuilderContext` (the GraphQL client + `IndexerContext`). Off by default: only
+# the toolkit needs it and its HTTP/WebSocket dependencies.
 indexer-client = ["dep:reqwest", "dep:graphql_client", "dep:tokio-tungstenite"]
+
+[dev-dependencies]
+apollo-compiler.workspace = true
