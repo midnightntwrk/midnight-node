@@ -121,7 +121,7 @@ pub struct ContractActionState;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
