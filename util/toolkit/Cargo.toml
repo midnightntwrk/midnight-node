@@ -14,8 +14,7 @@ path = "src/main.rs"
 default = ["indexer-client"]
 erase-proof = ["midnight-ledger-unsafe-helpers/erase-proof"]
 # Indexer-backed `show-wallet` (`--indexer-url`). On by default; disable with
-# `--no-default-features` to build the toolkit without the indexer GraphQL client (and without
-# needing the indexer submodule's schema at compile time).
+# `--no-default-features` to build the toolkit without the indexer GraphQL client.
 # Optional because the indexer trails the node: a toolkit for a new ledger version may have to
 # ship before a compatible indexer exists.
 indexer-client = ["midnight-ledger-unsafe-helpers/indexer-client"]
