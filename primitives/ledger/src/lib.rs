@@ -46,6 +46,21 @@ pub struct LedgerMetrics {
 	pub tx_validation_cache_misses: CounterVec<U64>,
 	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_size: GaugeVec<U64>,
+	/// Live ledger states held by the keep-alive cache (labeled by cache_type:
+	/// "transient", or "transient_ledger_8" for ledger 8). Sampled at the post-block
+	/// flush, where it must read 0; non-zero is a leaked state.
+	pub ledger_state_cache_size: GaugeVec<U64>,
+	/// Duration of each ledger GC phase in seconds (label `phase`)
+	pub ledger_gc_phase_time: HistogramVec,
+	/// Tagged GC roots (label `kind`: "total", "candidates" or "pinned")
+	pub ledger_gc_tagged_roots: GaugeVec<U64>,
+	/// Tagged GC roots released (label `reason`: "dead_position")
+	pub ledger_gc_released_total: CounterVec<U64>,
+	/// 1 while ledger GC is suspended (label `reason`: "mbm", "legacy_roots",
+	/// "sweep_panic" or "unindexed_columns")
+	pub ledger_gc_suspended: GaugeVec<U64>,
+	/// Nodes culled by the arena sweep (label `kind`: "arena_sweep")
+	pub ledger_gc_culled_total: CounterVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -190,6 +205,70 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			ledger_state_cache_size: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_state_cache_size",
+						"Current number of live ledger states held by the keep-alive caches",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_phase_time: prometheus::register(
+				HistogramVec::new(
+					HistogramOpts::new(
+						"ledger_gc_phase_time",
+						"Time spent in each ledger GC phase, in seconds",
+					)
+					// GC holds are sub-millisecond to tens of milliseconds (slice budget 25 ms);
+					// the shared 50 ms linear buckets would put every observation in the first
+					// bucket. 100 µs doubling up to ~13 s.
+					.buckets(prometheus::exponential_buckets(0.0001, 2.0, 18)?),
+					&["phase"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_tagged_roots: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_gc_tagged_roots",
+						"Tagged GC roots seen by the last ledger GC slice",
+					),
+					&["kind"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_released_total: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_gc_released_total",
+						"Tagged GC roots released by the ledger GC",
+					),
+					&["reason"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_suspended: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_gc_suspended",
+						"Whether ledger GC is currently suspended (1) or not (0)",
+					),
+					&["reason"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_culled_total: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_gc_culled_total",
+						"Nodes culled by the ledger GC arena sweep",
+					),
+					&["kind"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -272,6 +351,42 @@ impl LedgerMetricsExt {
 	pub fn set_tx_validation_cache_size(&mut self, cache_type: &str, size: u64) {
 		self.observe(|m| {
 			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
+
+	pub fn set_ledger_state_cache_size(&mut self, cache_type: &str, size: u64) {
+		self.observe(|m| {
+			m.ledger_state_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
+
+	pub fn observe_gc_phase(&mut self, phase: &str, secs: f64) {
+		self.observe(|m| {
+			m.ledger_gc_phase_time.with_label_values(&[phase]).observe(secs);
+		});
+	}
+
+	pub fn set_gc_tagged_roots(&mut self, kind: &str, n: u64) {
+		self.observe(|m| {
+			m.ledger_gc_tagged_roots.with_label_values(&[kind]).set(n);
+		});
+	}
+
+	pub fn inc_gc_released(&mut self, n: u64) {
+		self.observe(|m| {
+			m.ledger_gc_released_total.with_label_values(&["dead_position"]).inc_by(n);
+		});
+	}
+
+	pub fn set_gc_suspended(&mut self, reason: &str, suspended: bool) {
+		self.observe(|m| {
+			m.ledger_gc_suspended.with_label_values(&[reason]).set(u64::from(suspended));
+		});
+	}
+
+	pub fn inc_gc_culled(&mut self, n: u64) {
+		self.observe(|m| {
+			m.ledger_gc_culled_total.with_label_values(&["arena_sweep"]).inc_by(n);
 		});
 	}
 }

@@ -38,6 +38,7 @@ use v8_to_v9_state_translation::StateTranslationTable;
 use base_crypto::cost_model::CostDuration;
 use ledger_storage_ledger_8 as storage;
 use midnight_serialize::{tagged_deserialize, tagged_serialize};
+use sp_externalities::Externalities;
 use storage::{
 	arena::{Sp, TypedArenaKey},
 	db::DB,
@@ -63,6 +64,38 @@ const LOG_TARGET: &str = "midnight::ledger::migration_8_to_9";
 const RUN_BUDGET_PS: u64 = 10_000_000_000;
 const MAX_STEPS: usize = 100_000;
 
+/// `System::ParentHash` as currently held in the runtime overlay.
+///
+/// frame-executive runs `on_runtime_upgrade` *before* `System::initialize`, so inside the
+/// migration this is still the previous block's value: the *grandparent* of the block running
+/// the migration, not its parent (the parent hash is not in storage yet at that point).
+///
+/// Used as the tagged-root tag of the migration output. The GC therefore treats the wrapper as
+/// one block older than it is and may release it one block before the migrating block's own
+/// post-block tip. That is safe only because the migration output is an intra-block state of
+/// that block, superseded by its post-block tip, which is pinned by its own (correctly tagged)
+/// wrapper; do not reuse this tag for a state that must outlive its block. On a missing or
+/// malformed entry this logs and falls back to 32 zero bytes, which the GC never resolves to a
+/// block and so never releases (a leak).
+pub fn overlay_parent_hash(ext: &mut dyn Externalities) -> Vec<u8> {
+	use frame_support::{StorageHasher, Twox128};
+
+	let mut key = Twox128::hash(b"System").to_vec();
+	key.extend_from_slice(&Twox128::hash(b"ParentHash"));
+	match ext.storage(&key) {
+		Some(hash) if hash.len() == 32 => hash,
+		other => {
+			log::debug!(
+				target: LOG_TARGET,
+				"System::ParentHash unavailable in the overlay ({:?}); tagging the migrated \
+				 state with the zero hash",
+				other.map(|h| h.len())
+			);
+			vec![0u8; 32]
+		},
+	}
+}
+
 /// Translate the ledger state referenced by a v8 arena root (`state_key_v8`,
 /// the pallet's `StateKey` bytes) into a v9 ledger state, persist it, and
 /// return the new v9 arena root (to store back into `StateKey`) together with
@@ -72,8 +105,14 @@ const MAX_STEPS: usize = 100_000;
 ///
 /// If `state_key_v8` already references a ledger-9 state this is a no-op: it
 /// returns the key unchanged with zero cost (see the idempotency guard below).
+///
+/// The v9 state is persisted under a tagged root (see [`crate::tagged_root`]) tagged with
+/// `parent_hash`, the overlay's `System::ParentHash` (the grandparent of the block running
+/// the migration, see [`overlay_parent_hash`]). Running the translation again on the same v8 key yields the
+/// same v9 key and bumps the wrapper's persist count; the state is never a raw root.
 pub fn migrate_state_v8_to_v9<D: DB>(
 	state_key_v8: &[u8],
+	parent_hash: Vec<u8>,
 ) -> Result<(Vec<u8>, u64), LedgerApiError> {
 	let t_total = std::time::Instant::now();
 
@@ -160,8 +199,8 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 	//    flush the arena so the new root is durable before the pallet stores it.
 	let t_persist = std::time::Instant::now();
 	let ledger9 = Ledger9::new((*state9).clone());
-	let mut sp9: Sp<Ledger9<D>, D> = default_storage::<D>().arena.alloc(ledger9);
-	sp9.persist();
+	let sp9: Sp<Ledger9<D>, D> = default_storage::<D>().arena.alloc(ledger9);
+	crate::tagged_root::persist_tagged(&default_storage::<D>().arena, parent_hash, &sp9);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	log::debug!(
 		target: LOG_TARGET,
@@ -183,6 +222,7 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use frame_support::StorageHasher;
 	use ledger_storage_ledger_8::db::InMemoryDB;
 	use midnight_serialize::Tagged;
 	use std::borrow::Cow;
@@ -282,6 +322,52 @@ mod tests {
 		assert_eq!(*v9.dust, mn_ledger_9::dust::DustState::default());
 	}
 
+	/// The migration output is pinned by a tagged-root wrapper, never rooted raw, and a
+	/// re-run on the same v8 key yields the same v9 key with the wrapper's count bumped.
+	#[test]
+	fn migration_output_is_pinned_by_a_tagged_root() {
+		let arena = default_storage::<InMemoryDB>().arena.clone();
+		// A network id no other test uses, so the v8 root (and the v9 tip) is unique in the
+		// shared default arena.
+		let v8 = Ledger8::<InMemoryDB>::new(LedgerState8::<InMemoryDB>::new("migration-tag-test"));
+		let mut sp8 = arena.alloc(v8);
+		sp8.persist();
+		let mut key8 = Vec::new();
+		tagged_serialize(&sp8.as_typed_key(), &mut key8).expect("serialize v8 key");
+
+		let tag = vec![0x5a; 32];
+		let (key_a, _) = migrate_state_v8_to_v9::<InMemoryDB>(&key8, tag.clone()).expect("run 1");
+		let (key_b, _) = migrate_state_v8_to_v9::<InMemoryDB>(&key8, tag.clone()).expect("run 2");
+		assert_eq!(key_a, key_b, "same v8 key must translate to the same v9 key");
+
+		let typed: TypedArenaKey<Ledger9<InMemoryDB>, _> =
+			tagged_deserialize(&mut &key_a[..]).expect("decode v9 key");
+		let hash = storage::arena::ArenaKey::from(typed).hash().clone();
+		assert_eq!(arena.with_backend(|b| b.get_roots().get(&hash).copied()), None);
+		assert_eq!(crate::tagged_root::tagged_pin_count(&arena, &hash), Some(2));
+		assert!(
+			crate::tagged_root::tagged_roots(&arena)
+				.iter()
+				.any(|(_, t, c)| *t == tag && *c == 2)
+		);
+	}
+
+	#[test]
+	fn overlay_parent_hash_falls_back_to_zero_hash() {
+		let mut ext = sp_io::TestExternalities::default();
+		let mut key = frame_support::Twox128::hash(b"System").to_vec();
+		key.extend_from_slice(&frame_support::Twox128::hash(b"ParentHash"));
+		ext.execute_with(|| {
+			assert_eq!(sp_io::storage::get(&key), None);
+		});
+		ext.ext().storage(&key); // ensure plain Externalities access compiles
+		assert_eq!(overlay_parent_hash(&mut ext.ext()), vec![0u8; 32]);
+		ext.insert(key.clone(), vec![9u8; 32]);
+		assert_eq!(overlay_parent_hash(&mut ext.ext()), vec![9u8; 32]);
+		ext.insert(key, vec![1u8; 5]);
+		assert_eq!(overlay_parent_hash(&mut ext.ext()), vec![0u8; 32]);
+	}
+
 	/// Dev-only: verify that seeding a v8 genesis blob with *this* crate's
 	/// ledger_8 `Ledger` wrapper reproduces the exact arena root a ledger-8 node
 	/// (e.g. release 1.0.1) stored in the chain-spec as `genesisStateKey`. If the
@@ -304,6 +390,7 @@ mod tests {
 				.expect("deserialize v8 state");
 		let ledger = Ledger8::<InMemoryDB>::new(state);
 		let mut sp = default_storage::<InMemoryDB>().arena.alloc(ledger);
+		// Raw persist on purpose: this dev-only test never feeds a GC worker.
 		sp.persist();
 		let mut got = Vec::new();
 		tagged_serialize(&sp.as_typed_key(), &mut got).expect("serialize key");
