@@ -46,6 +46,10 @@ pub struct LedgerMetrics {
 	pub tx_validation_cache_misses: CounterVec<U64>,
 	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_size: GaugeVec<U64>,
+	/// Live ledger states held by the keep-alive cache (labeled by cache_type:
+	/// "transient", or "transient_ledger_8" for ledger 8). Sampled at the post-block
+	/// flush, where it must read 0; non-zero is a leaked state.
+	pub ledger_state_cache_size: GaugeVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -190,6 +194,16 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			ledger_state_cache_size: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_state_cache_size",
+						"Current number of live ledger states held by the keep-alive caches",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -272,6 +286,12 @@ impl LedgerMetricsExt {
 	pub fn set_tx_validation_cache_size(&mut self, cache_type: &str, size: u64) {
 		self.observe(|m| {
 			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
+
+	pub fn set_ledger_state_cache_size(&mut self, cache_type: &str, size: u64) {
+		self.observe(|m| {
+			m.ledger_state_cache_size.with_label_values(&[cache_type]).set(size);
 		});
 	}
 }

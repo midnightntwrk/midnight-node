@@ -30,8 +30,8 @@ pub use midnight_primitives::{
 
 pub use midnight_node_ledger::types::active_version::LedgerApiError;
 
-#[cfg(test)]
-mod mock;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock;
 
 #[cfg(test)]
 mod tests;
