@@ -131,7 +131,7 @@ pub struct ZswapCollapsedUpdate;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_fast_sync.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -139,7 +139,7 @@ pub struct DustSnapshotBlock;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_generations.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -147,7 +147,7 @@ pub struct DustGenerations;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_fast_sync.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -155,7 +155,7 @@ pub struct DustCommitmentCollapsedUpdate;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/dust_fast_sync.graphql",
 	response_derives = "Debug, Clone"
 )]
