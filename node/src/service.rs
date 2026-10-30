@@ -630,7 +630,14 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
 	serve_warp_ledger_sync: bool,
+	ledger_state_pruning: Option<u32>,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
+	// Refuse a ledger window smaller than the state window before anything is spawned,
+	// so the reason reaches the operator (an error from a half-built service is lost in
+	// the shutdown of its essential tasks). `requires_full_sync` only matters without
+	// the flag, which never errs.
+	crate::ledger_gc::window_for(&config.state_pruning, false, ledger_state_pruning)
+		.map_err(ServiceError::Other)?;
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
 	// warp ledger-sync server/importer dispatch to.
@@ -813,8 +820,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		crate::ledger_gc::GcConfig::from_env(
 			&config.state_pruning,
 			backend.requires_full_sync(),
+			ledger_state_pruning,
 			ledger_gc_tagged_from_genesis,
-		),
+		)
+		.map_err(ServiceError::Other)?,
 	);
 
 	if config.offchain_worker.enabled {
