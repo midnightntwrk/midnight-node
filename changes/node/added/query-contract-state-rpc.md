@@ -14,5 +14,5 @@ or `{"error": "…"}` for a path that cannot be followed.
 The RPC is node-side only: it reads the ledger `StateKey` from the trie, like
 `midnight_ledgerStats`, so it needs no runtime upgrade and works on blocks from both ledger 8 and 9.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1078
+PR: https://github.com/midnightntwrk/midnight-node/pull/2348
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1069
