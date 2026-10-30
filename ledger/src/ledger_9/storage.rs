@@ -27,13 +27,9 @@ type DbSeparate = ParityDb;
 type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 pub fn drop_default_storage_if_exists() {
-	// Required, not tidiness: every retained `Sp` holds `Arc`s into `Storage<D>`, so a
-	// surviving keep-alive entry keeps the parity-db handle — and its exclusive file
-	// lock — alive past the drop.
-	//
-	// Unconditional, and deliberately not inside the branches below: ledger 8 and 9
-	// share one storage backend, and `ledger_8::storage::drop_default_storage_if_exists`
-	// may be the call that finds and drops it. Only the ledger-9 caches retain states.
+	// Retained `Sp`s would keep the parity-db handle and its file lock alive past the drop.
+	// Unconditional: ledger 8 and 9 share one backend, and `ledger_8`'s drop may be the
+	// one that finds it. Each ledger clears only its own caches.
 	super::clear_ledger_state_caches();
 
 	if try_get_default_storage::<DbSeparate>().is_some() {
@@ -140,8 +136,6 @@ where
 	let state = Ledger::new(state);
 
 	let mut state = default_storage::<D>().arena.alloc(state);
-	// Genesis is an anchored state: persisted once at rc=1 and never unpersisted, so it
-	// is retained for history.
 	state.persist();
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
@@ -155,9 +149,7 @@ where
 /// Returns the persist refcount for the ledger state addressed by `state_key`,
 /// or `None` if the state is not currently a GC root (refcount zero).
 ///
-/// Test-only inspection helper: lets tests verify that intra-block intermediates are
-/// never rooted and post-block tips always are. Queries `ParityDb`-backed storage to
-/// match what `init_storage_paritydb_separate` sets up.
+/// Test-only. Hard-wired to `ParityDb`, matching `init_storage_paritydb_separate`.
 #[cfg(all(feature = "std", feature = "test-utils"))]
 pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
 	use crate::ledger_9::api::Ledger;
@@ -174,12 +166,8 @@ pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
 		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
 }
 
-/// Whether the ledger state addressed by `state_key` is currently held by the
-/// intra-block keep-alive cache.
-///
-/// Test-only inspection helper: lets tests verify that an intermediate stays addressable
-/// between its `apply_transaction` and its successor call, and is released after. Same
-/// `ParityDb` hard-wiring as [`get_state_root_count`].
+/// Whether the ledger state addressed by `state_key` is held by the transient keep-alive
+/// cache. Test-only; same `ParityDb` hard-wiring as [`get_state_root_count`].
 #[cfg(all(feature = "std", feature = "test-utils"))]
 pub fn transient_state_is_retained(state_key: &[u8]) -> bool {
 	use crate::ledger_9::ledger_storage_local::db::ParityDb;
