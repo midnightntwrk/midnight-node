@@ -122,7 +122,7 @@ pub struct ContractActionState;
 #[derive(GraphQLQuery)]
 #[graphql(
 	schema_path = "graphql/schema/indexer-4.4.graphql",
-	query_path = "graphql/indexer.graphql",
+	query_path = "graphql/contract_zswap_state.graphql",
 	response_derives = "Debug, Clone"
 )]
 pub struct ContractZswapState;
@@ -342,7 +342,7 @@ impl IndexerClient {
 
 	/// `block { contractZswapState(address) }` — the latest block's tagged `ZswapChainState`
 	/// filtered to the contract, or `None` if the contract does not exist there. `address` is the
-	/// untagged `ContractAddress` encoding.
+	/// untagged `ContractAddress` encoding. Indexer 4.4 onwards.
 	pub async fn contract_zswap_state(&self, address: &[u8]) -> IndexerResult<Option<Vec<u8>>> {
 		let variables = contract_zswap_state::Variables { address: hex::encode(address) };
 		let data = self.run_query::<ContractZswapState>(variables).await?;
@@ -1071,8 +1071,12 @@ mod tests {
 		}
 	}
 
-	/// Vendored indexer schemas (`graphql/schema/`), i.e. the indexer versions this client supports.
+	/// Vendored indexer schemas (`graphql/schema/`), oldest first: the indexer versions this client
+	/// supports.
 	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
+	/// Documents that only newer indexers accept, with the oldest schema each needs. All others must
+	/// validate against every schema.
+	const NEWER_ONLY: &[(&str, &str)] = &[("contract_zswap_state.graphql", "indexer-4.4.graphql")];
 
 	#[test]
 	fn documents_validate_against_every_vendored_schema() {
@@ -1080,12 +1084,19 @@ mod tests {
 		use std::{fs, path::Path};
 
 		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
-		for name in SCHEMAS {
+		for (i, name) in SCHEMAS.iter().enumerate() {
 			let path = dir.join("schema").join(name);
 			let schema = Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
 				.unwrap_or_else(|e| panic!("{name}: {}", e.errors));
 			for doc in fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()) {
 				if doc.extension().is_none_or(|ext| ext != "graphql") {
+					continue;
+				}
+				let oldest = NEWER_ONLY
+					.iter()
+					.find(|(file, _)| doc.ends_with(file))
+					.map_or(0, |(_, schema)| SCHEMAS.iter().position(|s| s == schema).unwrap());
+				if i < oldest {
 					continue;
 				}
 				if let Err(e) = ExecutableDocument::parse_and_validate(
