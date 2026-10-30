@@ -2009,6 +2009,7 @@ local-env-ci:
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            ./local-environment/check-indexer-health.sh -u http://localhost:9933 && \
             rm -f /root/.docker/config.json
     END
 
@@ -2075,7 +2076,8 @@ local-env-full-ci-localimg:
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
-            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            ./local-environment/check-indexer-health.sh -u http://localhost:9933
     END
 
 
@@ -2143,7 +2145,8 @@ local-env-oneshot:
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
-            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            ./local-environment/check-indexer-health.sh -u http://localhost:9933
     END
 
 
