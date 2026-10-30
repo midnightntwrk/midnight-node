@@ -13,11 +13,9 @@
 
 //! A GraphQL client for the Midnight indexer's `api/v4` interface.
 //!
-//! Operations are typed against the indexer's committed schema
-//! (`indexer/indexer-api/graphql/schema-v4.graphql`) at compile time via [`graphql_client`], so a
-//! schema change in the indexer submodule (renamed/removed field, changed type) breaks this build
-//! instead of failing at runtime. The query documents live in
-//! `ledger/helpers/unsafe/graphql/indexer.graphql`.
+//! Operations are typed at compile time via [`graphql_client`] against the newest vendored indexer
+//! schema (`graphql/schema/`). A test checks every query document against every vendored schema,
+//! since an indexer rejects a whole document if any one of its operations is invalid.
 //!
 //! It speaks GraphQL over HTTP (queries/mutations) and over the `graphql-transport-ws` WebSocket
 //! sub-protocol (subscriptions) — the WS framing mirrors the indexer's own reference client in
@@ -55,7 +53,7 @@ type Unit = Option<bool>;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -63,7 +61,7 @@ pub struct LatestBlock;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -71,7 +69,7 @@ pub struct Connect;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -79,7 +77,7 @@ pub struct Disconnect;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -87,7 +85,7 @@ pub struct ShieldedTransactions;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -95,7 +93,7 @@ pub struct UnshieldedTransactions;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-	schema_path = "../../../indexer/indexer-api/graphql/schema-v4.graphql",
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -790,10 +788,7 @@ mod tests {
 	/// checked out). This makes the requirement explicit rather than only a derive-macro error.
 	#[test]
 	fn schema_path_exists() {
-		let path = concat!(
-			env!("CARGO_MANIFEST_DIR"),
-			"/../../../indexer/indexer-api/graphql/schema-v4.graphql"
-		);
+		let path = concat!(env!("CARGO_MANIFEST_DIR"), "/graphql/schema/indexer-4.4.graphql");
 		assert!(
 			std::path::Path::new(path).exists(),
 			"indexer schema not found at {path} — is the `indexer` submodule checked out?"
@@ -902,6 +897,34 @@ mod tests {
 				assert!(spent.is_empty());
 			},
 			_ => panic!("expected transaction"),
+		}
+	}
+
+	/// Vendored indexer schemas (`graphql/schema/`), i.e. the indexer versions this client supports.
+	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
+
+	#[test]
+	fn documents_validate_against_every_vendored_schema() {
+		use apollo_compiler::{ExecutableDocument, Schema};
+		use std::{fs, path::Path};
+
+		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
+		for name in SCHEMAS {
+			let path = dir.join("schema").join(name);
+			let schema = Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
+				.unwrap_or_else(|e| panic!("{name}: {}", e.errors));
+			for doc in fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()) {
+				if doc.extension().is_none_or(|ext| ext != "graphql") {
+					continue;
+				}
+				if let Err(e) = ExecutableDocument::parse_and_validate(
+					&schema,
+					fs::read_to_string(&doc).unwrap(),
+					&doc,
+				) {
+					panic!("{} is invalid against {name}:\n{}", doc.display(), e.errors);
+				}
+			}
 		}
 	}
 }
