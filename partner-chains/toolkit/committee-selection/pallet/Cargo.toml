@@ -35,7 +35,6 @@ frame-benchmarking = { workspace = true, optional = true }
 [dev-dependencies]
 sp-io = { workspace = true }
 pallet-balances = { workspace = true }
-sp-application-crypto = { workspace = true, features = ["std"] }
 
 [features]
 default = ["std"]
