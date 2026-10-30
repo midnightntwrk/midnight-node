@@ -11,12 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Integration test for the ledger-state keep-alive contract: intra-block
-// intermediates are kept addressable by the global keep-alive cache and are
-// never made GC roots; only the post-block tip is persisted.
-//
-// Lives in `tests/` rather than `src/tests.rs` so it runs in its own test
-// binary, isolating the global ledger storage backend from other pallet tests.
+// In `tests/` rather than `src/tests.rs` so it gets its own test binary, isolating the
+// global ledger storage backend from other pallet tests.
+
+#![allow(deprecated)]
 
 use frame_support::{assert_ok, traits::OnFinalize};
 use midnight_node_ledger::{
@@ -64,28 +62,11 @@ fn current_state_key() -> Vec<u8> {
 	pallet_midnight::StateKey::<Test>::get()
 }
 
-/// Walks a whole block lifecycle and asserts the keep-alive contract at every
-/// transition:
-///   - intra-block intermediates are NEVER GC roots (`get_state_root_count ==
-///     None`) and stay addressable only because the transient keep-alive cache
-///     holds their `Sp`,
-///   - the successor call releases its predecessor, so the transient cache is
-///     empty once the block is finalized (the unit-test mirror of the
-///     `ledger_state_cache_size{cache_type="transient"}` gauge),
-///   - post-block tips are pinned by a tagged root (never a raw root; the returned state
-///     key is still the tip's own key, so `tagged_pin_count(state_key)` resolves it) and are never
-///     released, so they
-///     survive sibling forks and stay queryable for history,
-///   - the keep-alive is real: reads and validation against an intermediate tip
-///     mid-block succeed,
-///   - the transient keep-alive is refcounted, so two executions applying the
-///     same transaction to the same parent (sibling forks, or authoring
-///     alongside import) don't drop each other's state.
+/// Walks several blocks and a sibling fork, asserting the keep-alive contract at each
+/// transition.
 ///
-/// Single test fn: this integration test binary's tests share the global default
-/// ledger storage; absolute refcount assertions would be polluted by another
-/// test in the same binary alloc'ing the same genesis. Sequencing every scenario
-/// inside one test keeps the assertions precise.
+/// One test fn on purpose: tests in a binary share the global ledger storage, so another
+/// test alloc'ing the same genesis would skew the absolute refcount assertions.
 #[test]
 fn keep_alive_invariants() {
 	let (deploy_tx, deploy_ctx) =
@@ -117,10 +98,9 @@ fn keep_alive_invariants() {
 		);
 		assert!(
 			!transient_state_is_retained(&genesis_key),
-			"genesis is anchored, not a transient intermediate"
+			"genesis is a persisted tip, not a transient intermediate"
 		);
 
-		// Read-only guard: validate_unsigned + pre_dispatch against the genesis tip.
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
 			TransactionSource::External,
 			&deploy_call
@@ -138,8 +118,7 @@ fn keep_alive_invariants() {
 			"validation must not change the tip's pin count"
 		);
 
-		// Block 1: apply DEPLOY. The result is kept alive, not rooted; genesis is
-		// persisted so it must survive untouched.
+		// Block 1: apply DEPLOY.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
 		let post_deploy_key = current_state_key();
 		assert_ne!(post_deploy_key, genesis_key);
@@ -163,15 +142,12 @@ fn keep_alive_invariants() {
 			"the persisted genesis tip must be untouched by apply_transaction"
 		);
 
-		// The assertions that actually catch a broken keep-alive: read *through* the
-		// intermediate tip mid-block. Every one of these paths goes through
-		// `get_ledger` with the raw intermediate key.
+		// These catch a broken keep-alive: each reads through `get_ledger` with the raw
+		// intermediate key, mid-block.
 		assert_ok!(mock::Midnight::get_ledger_state_root());
 		assert_ok!(mock::Midnight::get_transaction_cost(&store_tx));
-		// The mempool paths too. These fixtures' dust spend proofs don't survive the
-		// skew `validate_unsigned` applies to the block context, so the assertion is
-		// that the *ledger state resolved* — the tx may then be rejected on its
-		// merits, but never with `NoLedgerState` (code 151).
+		// These fixtures' dust proofs don't survive `validate_unsigned`'s block-context
+		// skew, so only assert the state resolved: rejection is fine, `NoLedgerState` isn't.
 		for outcome in [
 			<mock::Midnight as ValidateUnsigned>::validate_unsigned(
 				TransactionSource::External,
@@ -187,10 +163,8 @@ fn keep_alive_invariants() {
 			);
 		}
 
-		// Finalize block 1. `apply_post_block_update` is the successor call that
-		// consumes the intermediate: it only resolves because the keep-alive held it,
-		// and it releases it, leaving the transient cache empty — the unit-test mirror
-		// of the gauge reading 0 at block end.
+		// Finalize block 1: `apply_post_block_update` only resolves the intermediate because
+		// the keep-alive held it, and releases it.
 		process_block(1, store_ctx.clone().into());
 		let post_block_1_key = current_state_key();
 		assert_ne!(post_block_1_key, post_deploy_key);
@@ -200,7 +174,7 @@ fn keep_alive_invariants() {
 		);
 		assert!(
 			!transient_state_is_retained(&post_block_1_key),
-			"the post-block tip is anchored, so it is never in the transient cache"
+			"the post-block tip is persisted, so it is never in the transient cache"
 		);
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
@@ -212,9 +186,8 @@ fn keep_alive_invariants() {
 			Some(1),
 			"the post-block tip is the one state per block that is persisted"
 		);
-		// `flush_storage` ran as part of `on_finalize`. A released intermediate must be
-		// gone from the arena entirely — not merely unrooted — or its nodes would have
-		// been written to disk by that flush as unreferenced garbage.
+		// `on_finalize` flushed storage. A released intermediate must be gone from the arena,
+		// not merely unrooted, or that flush wrote it to disk as garbage.
 		assert!(
 			!midnight_node_ledger::has_ledger_state(&post_deploy_key),
 			"a released intermediate must not survive the block's storage flush"
@@ -320,7 +293,7 @@ fn keep_alive_invariants() {
 		assert_eq!(tagged_pin_count(&genesis_key), Some(1), "other wrappers are untouched");
 		assert_eq!(tagged_pin_count(&tip3), Some(1));
 
-		// The anchored cache pins recent wrappers; drop it so only the arena decides,
+		// Drop the keep-alive caches so only the arena decides,
 		// then sweep. A slice is a no-op on a dirty write cache, so flush and retry.
 		midnight_node_ledger::latest::storage::clear_state_caches_for_test();
 		let mut reclaimed = false;
@@ -342,10 +315,8 @@ fn keep_alive_invariants() {
 
 		// --- The refcount check ---
 		//
-		// Two executions can be in flight at once (authoring alongside import), and
-		// two forks off the same parent applying the same transaction produce the
-		// *same* content hash. Without a refcount the first release would drop the
-		// other execution's keep-alive and it would fail with `NoLedgerState`.
+		// Sibling executions applying the same tx to the same parent share one content
+		// hash; each release must drop only its own claim.
 		let fork_parent = current_state_key();
 
 		assert_ok!(mock::Midnight::send_mn_transaction(

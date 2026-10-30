@@ -410,6 +410,8 @@ pub fn new_partial(
 		)?;
 	let client = Arc::new(client);
 
+	BabeKeyProbe::log_babe_public_keys(keystore_container.keystore());
+
 	// Register Prometheus Ledger Metrics
 	let ledger_metrics =
 		config
@@ -666,7 +668,17 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
 	serve_warp_ledger_sync: bool,
+	ledger_state_pruning: Option<u32>,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
+	// Refuse a ledger window smaller than an explicit state window before anything is
+	// spawned, so the reason reaches the operator (an error from a half-built service is
+	// lost in the shutdown of its essential tasks). Without `--state-pruning` the state
+	// window is only known once the database is open (an existing archive database
+	// restarted without the flag is still archive), so that case is decided below.
+	if config.state_pruning.is_some() {
+		crate::ledger_gc::window_for(&config.state_pruning, false, ledger_state_pruning)
+			.map_err(ServiceError::Other)?;
+	}
 	let database_source = config.database.clone();
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
@@ -844,8 +856,15 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		crate::ledger_gc::GcConfig::from_env(
 			&config.state_pruning,
 			backend.requires_full_sync(),
+			ledger_state_pruning,
 			storage_format_current,
-		),
+		)
+		.map_err(|e| {
+			// Logged as well: an error returned this late is lost in the shutdown of the
+			// half-built service's essential tasks.
+			log::error!(target: "midnight::ledger_gc", "🛑 {e}");
+			ServiceError::Other(e)
+		})?,
 	);
 
 	if config.offchain_worker.enabled {

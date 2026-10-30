@@ -96,7 +96,7 @@ use {
 	},
 	std::{
 		any::{Any, TypeId},
-		sync::Arc,
+		sync::{Arc, LazyLock},
 		time::{Duration, Instant},
 	},
 };
@@ -108,7 +108,10 @@ use crate::boundary::types::{
 };
 
 #[cfg(feature = "std")]
-use {lazy_static::lazy_static, moka::ops::compute::Op as CacheOp, moka::sync::Cache};
+use {
+	lazy_static::lazy_static,
+	moka::{ops::compute::Op as CacheOp, sync::Cache},
+};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
@@ -182,32 +185,20 @@ lazy_static! {
 			.build();
 }
 
-// Ledger 8 keeps its own copy of the keep-alive caches (see `ledger_9`): the cached `Sp`s are
-// typed by this module's `Ledger`, and `ledger_8::storage::drop_default_storage_if_exists`
-// clears them alongside ledger 9's.
-/// Capacity of the intra-block keep-alive cache.
-///
-/// Deliberately ~1000x the resident set of one: moka's TinyLFU *admission* filter can
-/// reject a just-inserted entry when the cache is at capacity, and for this cache a
-/// rejected insert is a fatal mid-block miss. At 1024 against a resident set of one the
-/// filter can never engage. [`TRANSIENT_STATE_CACHE_TTI`] is the real bound.
+// Mirrors `ledger_9`'s keep-alive cache; a separate copy because the cached `Sp`s are typed by
+// this module's `Ledger`.
+/// ~1000x the resident set of one, so moka's TinyLFU admission filter never engages: at
+/// capacity it can reject an insert, which here is a fatal mid-block miss.
+/// [`TRANSIENT_STATE_CACHE_TTI`] is the real bound.
 #[cfg(feature = "std")]
 const TRANSIENT_STATE_CACHE_CAPACITY: u64 = 1024;
 
-/// Leak bound for the intra-block keep-alive cache (~10 blocks). Entries are normally
-/// released explicitly by the successor call; this only catches an execution that
-/// abandoned its tail (a proposal that was never sealed, a failed import).
+/// Leak bound (~10 blocks) for an execution that abandoned its tail (an unsealed proposal,
+/// a failed import); entries are normally released by the successor call.
 #[cfg(feature = "std")]
 const TRANSIENT_STATE_CACHE_TTI: Duration = Duration::from_secs(60);
 
-/// Room for the current tip, a fork sibling, and the finalized tip an RPC may target.
-#[cfg(feature = "std")]
-const ANCHORED_STATE_CACHE_CAPACITY: u64 = 4;
-
-#[cfg(feature = "std")]
-const ANCHORED_STATE_CACHE_TTI: Duration = Duration::from_secs(300);
-
-/// Key for the ledger-state keep-alive caches.
+/// Key for the ledger-state keep-alive cache.
 ///
 /// The `db` discriminator matters: the arena type parameter (the node's parity-db `Db` vs the
 /// in-memory `DefaultDB` used by tests) distinguishes arenas with identical content hashes, so a
@@ -226,17 +217,9 @@ impl StateCacheKey {
 	}
 }
 
-/// A retained intra-block ledger state.
-///
-/// Refcounted because two block executions can be in flight at once (authoring
-/// alongside import) and two forks off the same parent applying the same transaction
-/// produce the *same* content hash. Without a count the first release would kill the
-/// second execution's keep-alive and it would fail with `NoLedgerState`. This is the
-/// node-side home for what the arena's root counter used to do for the persisted
-/// intermediates.
-///
-/// The `Sp` itself is never read back — holding it is the entire point (see
-/// [`retain_transient`]).
+/// Refcounted because two executions can be in flight at once (authoring alongside import),
+/// and forks off the same parent applying the same transaction produce the *same* content
+/// hash. Without a count the first release would fail the other with `NoLedgerState`.
 #[cfg(feature = "std")]
 #[derive(Clone)]
 struct RetainedState {
@@ -244,42 +227,26 @@ struct RetainedState {
 	refs: usize,
 }
 
+/// Intra-block intermediate ledger states. NOT persisted: this cache is the only thing
+/// keeping them addressable in the arena.
+///
+/// Values are type-erased `Arc<Sp<Ledger<D>, D>>` (a static can't be generic over `D`).
+/// It must be the whole `Sp`: that holds the arena refcount above zero so `uncache`
+/// never fires, and keeps the inner `Arc` alive for the arena's `sp_cache` to upgrade.
 #[cfg(feature = "std")]
-lazy_static! {
-	/// Intra-block intermediate ledger states. These are NOT persisted — this cache is
-	/// the only thing keeping them addressable in the arena, so entries are released
-	/// explicitly by the successor call.
-	///
-	/// The stored value is an `Arc<Sp<Ledger<D>, D>>` upcast to `Arc<dyn Any + Send +
-	/// Sync>`, the same type erasure the tx-validation caches use because `Bridge<S, D>`
-	/// is generic. Here the erasure only has to *store*: nothing reads the value back,
-	/// so there is no downcast on any hot path. It must be the whole `Sp` — that is what
-	/// holds the arena metadata refcount above zero (keeping `uncache` from firing) and
-	/// keeps the inner `Arc` alive for the arena's `sp_cache` to upgrade.
-	static ref TRANSIENT_LEDGER_STATES: Cache<StateCacheKey, RetainedState> =
+static TRANSIENT_LEDGER_STATES: LazyLock<Cache<StateCacheKey, RetainedState>> =
+	LazyLock::new(|| {
 		Cache::builder()
 			.max_capacity(TRANSIENT_STATE_CACHE_CAPACITY)
 			.time_to_idle(TRANSIENT_STATE_CACHE_TTI)
-			.build();
-
-	/// Post-block tips. These ARE persisted, so a miss just falls back to the arena and
-	/// costs one re-materialisation — no explicit release, no refcount, and eviction is
-	/// always safe.
-	static ref ANCHORED_LEDGER_STATES: Cache<StateCacheKey, Arc<dyn Any + Send + Sync>> =
-		Cache::builder()
-			.max_capacity(ANCHORED_STATE_CACHE_CAPACITY)
-			.time_to_idle(ANCHORED_STATE_CACHE_TTI)
-			.build();
-}
+			.build()
+	});
 
 /// Keep an intra-block intermediate state materialised past the end of this host call.
 ///
-/// Without this the `Sp` is dropped when the Bridge method returns, and `Sp::drop` ->
-/// `decrement_ref` -> `backend.uncache` removes a non-persisted `CacheValue::Create`
-/// from the arena entirely, leaving the state unaddressable for the successor call.
-/// Holding the `Sp` instead of rooting it also means the successor (and the mempool /
-/// weight paths that read the same tip) find the already-deserialized `Arc` in the
-/// arena's `sp_cache` rather than rebuilding the working set from binary.
+/// Otherwise `Sp::drop` -> `uncache` removes the non-persisted state from the arena when
+/// the Bridge method returns. Holding the `Sp` also lets the successor (and mempool /
+/// weight reads of the same tip) hit the already-deserialized `Arc` in `sp_cache`.
 #[cfg(feature = "std")]
 fn retain_transient<D: DB>(state_key: &[u8], sp: &Sp<Ledger<D>, D>) {
 	let sp: Arc<dyn Any + Send + Sync> = Arc::new(sp.clone());
@@ -298,12 +265,8 @@ fn retain_transient<D: DB>(state_key: &[u8], sp: &Sp<Ledger<D>, D>) {
 
 /// Drop this execution's claim on an intra-block intermediate state.
 ///
-/// Unconditional by design: an anchored input (a post-block tip, or genesis) is never in
-/// the transient cache, so the release is a no-op for it. An absent key is likewise a
-/// no-op — either an anchored input, or an entry the TTI already reclaimed.
-///
-/// Note this is a keep-alive release, not an un-root: it cannot disturb a `persist()`ed
-/// state even on a (practically impossible) content-hash collision.
+/// A no-op for an absent key: a persisted input (post-block tip, genesis) or an entry the
+/// TTI already reclaimed. Unlike an unpersist, it can never disturb a `persist()`ed state.
 #[cfg(feature = "std")]
 fn release_transient<D: DB>(state_key: &[u8]) {
 	TRANSIENT_LEDGER_STATES
@@ -319,63 +282,31 @@ fn release_transient<D: DB>(state_key: &[u8]) {
 			},
 			None => CacheOp::Nop,
 		});
-	// moka's removal only takes the entry out of the map synchronously; dropping the
-	// value is queued. Drain it here, because that drop is what runs `Sp::drop` ->
-	// `uncache` and takes the released state's `Create` nodes back out of the backend's
-	// write cache. Left until some arbitrary later cache operation, they would still be
-	// there at the block's `flush_all_changes_to_db` and be written to disk as
-	// unreferenced nodes.
+	// moka defers dropping removed values. Drain now: that drop is what `uncache`s the
+	// state's `Create` nodes, which the block's `flush_all_changes_to_db` would otherwise
+	// write to disk as unreferenced garbage.
 	TRANSIENT_LEDGER_STATES.run_pending_tasks();
 }
 
-/// Keep a post-block tip materialised so the next block's first read doesn't have to
-/// re-deserialize it.
-///
-/// Pure optimisation, unlike [`retain_transient`]: anchored states are persisted (under a
-/// tagged root), so an eviction costs one re-materialisation from the arena and nothing
-/// more. Hence no refcount and no release.
-///
-/// The retained value is the tagged-root *wrapper* `Sp`, not the ledger: that keeps the
-/// wrapper in the backend's `live_inserts` while cached, and the wrapper holds the inner
-/// ledger alive. Nothing reads the cached value back; the key is the inner state key.
-#[cfg(feature = "std")]
-fn retain_anchored<T: ledger_storage_local::Storable<D> + Send + Sync + 'static, D: DB>(
-	state_key: &[u8],
-	sp: &Sp<T, D>,
-) {
-	let sp: Arc<dyn Any + Send + Sync> = Arc::new(sp.clone());
-	ANCHORED_LEDGER_STATES.insert(StateCacheKey::new::<D>(state_key), sp);
-}
-
-/// Whether either keep-alive cache currently holds the state `state_key` addresses, i.e.
-/// the state is known to be addressable in the arena without probing it.
+/// Whether the transient keep-alive cache currently holds the state `state_key` addresses,
+/// i.e. the state is known to be addressable in the arena without probing it.
 #[cfg(feature = "std")]
 fn is_retained<D: DB>(state_key: &[u8]) -> bool {
-	let key = StateCacheKey::new::<D>(state_key);
-	TRANSIENT_LEDGER_STATES.contains_key(&key) || ANCHORED_LEDGER_STATES.contains_key(&key)
+	TRANSIENT_LEDGER_STATES.contains_key(&StateCacheKey::new::<D>(state_key))
 }
 
 /// Release every retained ledger state.
 ///
-/// Each retained `Sp` holds an `Arena<D>`, i.e. `Arc`s into `Storage<D>` and therefore
-/// the parity-db handle and its exclusive file lock. Storage teardown must go through
-/// here or dropping the default storage doesn't actually close the database.
-/// `run_pending_tasks` is what performs the deferred drops.
+/// Each retained `Sp` holds `Arc`s into `Storage<D>`, and so the parity-db handle and its
+/// exclusive file lock: storage teardown must call this or the database stays open.
 #[cfg(feature = "std")]
 pub(crate) fn clear_ledger_state_caches() {
-	// Per-key `invalidate`, not `invalidate_all`: the latter only stamps a
-	// `valid_after` marker and leaves the values in place until an eviction sweep
-	// reaches them, which is not good enough when the point is to release the
-	// database handle right now. `run_pending_tasks` then drains the write queue that
-	// still holds the removed entries.
+	// Per-key `invalidate`, not `invalidate_all`: the latter only marks entries stale,
+	// leaving the values (and the DB handle) alive until an eviction sweep.
 	for (key, _) in TRANSIENT_LEDGER_STATES.iter() {
 		TRANSIENT_LEDGER_STATES.invalidate(&*key);
 	}
-	for (key, _) in ANCHORED_LEDGER_STATES.iter() {
-		ANCHORED_LEDGER_STATES.invalidate(&*key);
-	}
 	TRANSIENT_LEDGER_STATES.run_pending_tasks();
-	ANCHORED_LEDGER_STATES.run_pending_tasks();
 }
 
 #[cfg(feature = "std")]
@@ -413,13 +344,10 @@ where
 	}
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
-		// Before the flush, not after: this settles any queued release or eviction, so
-		// the states it drops are uncached out of the write cache instead of being
-		// written to disk. It also makes `entry_count` below accurate — it is eventually
-		// consistent, and a stale zero would hide exactly the leak the gauge exists to
-		// catch.
+		// Before the flush: settled releases uncache their states instead of writing them
+		// to disk. Also makes the eventually-consistent `entry_count` below accurate; a
+		// stale zero would hide the leak the gauge exists to catch.
 		TRANSIENT_LEDGER_STATES.run_pending_tasks();
-		ANCHORED_LEDGER_STATES.run_pending_tasks();
 
 		let now = std::time::Instant::now();
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
@@ -434,10 +362,6 @@ where
 				"transient_ledger_8",
 				TRANSIENT_LEDGER_STATES.entry_count(),
 			);
-			metrics.set_ledger_state_cache_size(
-				"anchored_ledger_8",
-				ANCHORED_LEDGER_STATES.entry_count(),
-			);
 		}
 	}
 
@@ -446,18 +370,12 @@ where
 	///
 	/// # Persist / keep-alive contract
 	///
-	/// The post-block tip is the one state per block that is `persist()`ed, so it is a
-	/// GC root at rc=1 — retained for RPC and history, and safe across sibling forks
-	/// (the root count is a count, so two forks persisting the same tip each hold one
-	/// reference and nothing here ever unpersists). It is additionally kept in the
-	/// anchored keep-alive cache, which is pure optimisation: an eviction costs one
-	/// re-materialisation from the arena.
+	/// The post-block tip is the one state per block that is `persist()`ed: a GC root kept
+	/// for RPC and history. Nothing unpersists it, so sibling forks persisting the same tip
+	/// each hold their own count.
 	///
-	/// The input is released from the transient keep-alive cache unconditionally. A
-	/// post-block tip or genesis input was never in that cache, so the release is a
-	/// no-op for it.
-	///
-	/// On error, nothing is retained or released.
+	/// The input is released from the transient cache (a no-op for a post-block tip or
+	/// genesis input). On error, nothing is retained or released.
 	pub fn post_block_update(
 		mut _externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -505,12 +423,11 @@ where
 		);
 		// Persist the tip under a tagged root (tag = parent block hash): the wrapper is the
 		// GC root, the tip is pinned through it. The returned state key stays the tip's.
-		let wrapper = crate::tagged_root::persist_tagged(
+		crate::tagged_root::persist_tagged(
 			&default_storage::<D>().arena,
 			parent_block_hash,
 			&ledger,
 		);
-		retain_anchored(&state_root, &wrapper);
 		release_transient::<D>(state_key);
 		log::trace!(
 			target: LOG_TARGET,
@@ -541,12 +458,11 @@ where
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 		// Persist the tip under a tagged root (tag = parent block hash): the wrapper is the
 		// GC root, the tip is pinned through it. The returned state key stays the tip's.
-		let wrapper = crate::tagged_root::persist_tagged(
+		crate::tagged_root::persist_tagged(
 			&default_storage::<D>().arena,
 			parent_block_hash,
 			&ledger,
 		);
-		retain_anchored(&state_root, &wrapper);
 		release_transient::<D>(state_key);
 		Ok(state_root)
 	}
@@ -559,17 +475,12 @@ where
 	///
 	/// # Persist / keep-alive contract
 	///
-	/// The resulting intra-block state is *not* persisted. It is held live in the
-	/// transient keep-alive cache instead, which is what keeps it addressable: nothing
-	/// roots it, so it never becomes GC-visible and never reaches the DB. The successor
-	/// call releases it.
+	/// The resulting intra-block state is *not* persisted, so it never reaches the DB; the
+	/// transient cache is the only thing keeping it addressable until the successor call
+	/// releases it.
 	///
-	/// The input is released unconditionally. If it was the prior intra-block
-	/// intermediate, that drops this execution's claim on it (and the last claim drops
-	/// the state); if it was a post-block tip or genesis, it was never in the cache and
-	/// the release is a no-op.
-	///
-	/// On error, nothing is retained or released.
+	/// The input is released (a no-op for a post-block tip or genesis input). On error,
+	/// nothing is retained or released.
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -1378,28 +1289,20 @@ where
 
 	/// Load the ledger state `state_key` addresses.
 	///
-	/// Every read and write path funnels through here, including the raw-`&[u8]` callers
-	/// that run mid-block against an intermediate tip (`pre_dispatch` and the weight
-	/// macro). A state retained by the keep-alive caches costs nothing to "load": the
-	/// lazy `Sp` this returns resolves its first deref through the arena's `sp_cache`
-	/// straight to the retained `Arc`, skipping deserialization of the whole working
-	/// set. The temporary handle is refcount-balanced (`Sp::lazy` increments,
-	/// `Sp::drop` decrements), so it cannot uncache a state we are still retaining.
+	/// Every read and write path funnels through here, including mid-block reads of an
+	/// intermediate tip (`pre_dispatch`, the weight macro). For a retained state the first
+	/// deref resolves via the arena's `sp_cache` to the live `Arc`, skipping
+	/// deserialization. The handle is refcount-balanced, so dropping it can't uncache a
+	/// retained state.
 	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
 		let storage = default_storage::<D>();
-		// `get_lazy` returns `Ok` even for a key that isn't in the arena at all; the
-		// failure only surfaces later, as a panic in `force_as_arc` ("root should be in
-		// the arena"). Probe the root node first — one node lookup, no DAG traversal —
-		// so an unresolvable state key is a clean `NoLedgerState`. `has_ledger_state`
-		// relies on this. Valid for never-persisted states too: the backend's `get`
-		// consults the in-memory write cache, `Create` entries included.
-		//
-		// Only for a `Ref` key. A `Direct` one carries the node inline (small roots are
-		// embedded rather than stored), so it is never in the arena by hash and there is
-		// nothing to probe. Skipped for a state the keep-alive caches hold (the hot path:
-		// the current intermediate or a recent tip), which is addressable by construction,
-		// so those calls take the arena mutex once rather than twice.
+		// `get_lazy` returns `Ok` for a key absent from the arena and panics on first deref
+		// (`force_as_arc`). Probe the root node so an unresolvable key is a clean
+		// `NoLedgerState`; `has_ledger_state` relies on this. The backend's `get` also sees
+		// unflushed `Create`s, so never-persisted states pass. A `Direct` key embeds its node
+		// inline, so there is nothing to probe. Skipped for a state the transient keep-alive
+		// cache holds (the current intermediate), which is addressable by construction.
 		if let ArenaKey::Ref(hash) = &key.key
 			&& !is_retained::<D>(state_key)
 			&& !storage.with_backend(|backend| backend.get(hash).is_some())

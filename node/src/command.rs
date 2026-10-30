@@ -348,6 +348,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
 			run_midnight.serve_warp_ledger_sync,
+			run_midnight.ledger_state_pruning,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;

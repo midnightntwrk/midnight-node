@@ -78,8 +78,19 @@
 //! A panic inside the storage crate's sweep (for example a DB row it cannot decode)
 //! disables the sweep for the rest of the process; release continues.
 //!
-//! Modes with unbounded wrapper history (`lag == None`: archive pruning, unbounded
-//! retention) do not run the worker at all.
+//! # Liveness rule per pruning mode
+//!
+//! On a pruned node Substrate's own state pruning decides: a wrapper is dead once
+//! its block is below the pruning window *and* no child of its parent block still
+//! has state ([`Liveness::PrunedState`]). Modes with unbounded wrapper history
+//! (archive pruning, unbounded retention) run no worker by default, because every
+//! canonical block keeps its state forever and that gate would keep every root.
+//! `--ledger-state-pruning <N>` opts such a node in with an explicit ledger window:
+//! release is then by height only ([`Liveness::HeightOnly`], dead iff the block is
+//! below `finalized - N`), stale forks included. Anything that loads the ledger
+//! state of a block below that window (runtime APIs, warp ledger-sync requests)
+//! fails on that node; the indexer no longer needs such states (it validates
+//! against `pallet_midnight::StateKey`).
 
 use std::{
 	collections::HashSet,
@@ -103,12 +114,33 @@ use crate::service::{FullBackend, FullClient};
 
 const LOG_TARGET: &str = "midnight::ledger_gc";
 
-const DEFAULT_SLICE_MS: u64 = 25;
+/// Arena sweep budget per slice. 25 ms and 100 ms fell behind at ~10 tx/block on the
+/// perfnet A/B of the storage bundle (garbage ~130 stored nodes per block); 200 ms kept
+/// the ledger flat through a 14 h load with no import penalty.
+const DEFAULT_SLICE_MS: u64 = 200;
 /// Hold-time warning threshold for the scan and release holds.
 const HOLD_WARN: Duration = Duration::from_millis(50);
 
 const ENV_SLICE_MS: &str = "MIDNIGHT_LEDGER_GC_SLICE_MS";
 const ENV_ARENA_SWEEP: &str = "MIDNIGHT_LEDGER_GC_ARENA_SWEEP";
+
+/// Which gates decide that a tagged root's block position is dead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Liveness {
+	/// Height gate plus child-state gate: Substrate's state pruning is the authority
+	/// (pruned nodes).
+	PrunedState,
+	/// Height gate only, against an explicit ledger window (`--ledger-state-pruning`
+	/// on a node that keeps Substrate state for every block).
+	HeightOnly,
+}
+
+/// The release window of one worker: lag in blocks and the liveness rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Window {
+	pub lag: u32,
+	pub liveness: Liveness,
+}
 
 /// Worker configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,8 +149,11 @@ pub struct GcConfig {
 	pub slice: Duration,
 	/// Run the arena mark/sweep (escape hatch: `false` = tip release only).
 	pub arena_sweep: bool,
-	/// Release lag (the effective `--state-pruning` window); `None` = no worker.
+	/// Release lag (the `--state-pruning` window, or the explicit
+	/// `--ledger-state-pruning` window); `None` = no worker.
 	pub lag: Option<u32>,
+	/// Which gates decide that a wrapper is dead.
+	pub liveness: Liveness,
 	/// The database was created at the current storage format, so every ledger root is
 	/// tagged; `false` = legacy roots, no worker.
 	pub storage_format_current: bool,
@@ -148,39 +183,65 @@ fn env_bool(name: &str, default: bool) -> bool {
 	}
 }
 
-/// Release lag for the configured pruning mode.
+/// Release window for the configured pruning mode and the optional explicit
+/// ledger window (`--ledger-state-pruning`). `Err` is a configuration the node
+/// must refuse; check it before any service task is spawned, otherwise the
+/// reason is lost in the shutdown of the half-built service.
 ///
 /// A `None` flag does not mean archive: sc-client-db then prunes at
 /// `PruningMode::default()` (constrained, 256) on a fresh DB, but reuses the
 /// stored mode on an existing one, which `requires_full_sync()` reveals as
-/// archive. `Constrained(None)` (unbounded retention) and both archive modes
-/// run no worker (`ArchiveCanonical` leaks stale forks; documented).
-fn lag_for(state_pruning: &Option<PruningMode>, backend_requires_full_sync: bool) -> Option<u32> {
+/// archive. Without the explicit window, `Constrained(None)` (unbounded
+/// retention) and both archive modes run no worker. With it, those modes release
+/// by height only; a constrained node keeps the child-state gate and must not set
+/// a ledger window smaller than its state window (Substrate would then hold state
+/// for blocks whose ledger root is gone, and every host call there would fail).
+pub fn window_for(
+	state_pruning: &Option<PruningMode>,
+	backend_requires_full_sync: bool,
+	ledger_window: Option<u32>,
+) -> Result<Option<Window>, String> {
 	let mode = match state_pruning {
-		Some(mode) => mode.clone(),
-		None if backend_requires_full_sync => return None,
-		None => PruningMode::default(),
+		Some(mode) => Some(mode.clone()),
+		None if backend_requires_full_sync => None,
+		None => Some(PruningMode::default()),
 	};
-	match mode {
-		PruningMode::Constrained(c) => c.max_blocks,
-		PruningMode::ArchiveCanonical | PruningMode::ArchiveAll => None,
-	}
+	let state_window = match mode {
+		Some(PruningMode::Constrained(c)) => c.max_blocks,
+		Some(PruningMode::ArchiveCanonical | PruningMode::ArchiveAll) | None => None,
+	};
+	Ok(match (state_window, ledger_window) {
+		(Some(state), Some(ledger)) if ledger < state => {
+			return Err(format!(
+				"--ledger-state-pruning {ledger} is smaller than the state pruning window \
+				 {state}; the ledger window must be at least the state window"
+			));
+		},
+		(Some(_), Some(ledger)) => Some(Window { lag: ledger, liveness: Liveness::PrunedState }),
+		(Some(state), None) => Some(Window { lag: state, liveness: Liveness::PrunedState }),
+		(None, Some(ledger)) => Some(Window { lag: ledger, liveness: Liveness::HeightOnly }),
+		(None, None) => None,
+	})
 }
 
 impl GcConfig {
-	/// Build the config from the pruning flag and the `MIDNIGHT_LEDGER_GC_*`
-	/// environment overrides.
+	/// Build the config from the pruning flags and the `MIDNIGHT_LEDGER_GC_*`
+	/// environment overrides. `Err` is a configuration the node must refuse to
+	/// start with (see [`window_for`]).
 	pub fn from_env(
 		state_pruning: &Option<PruningMode>,
 		backend_requires_full_sync: bool,
+		ledger_window: Option<u32>,
 		storage_format_current: bool,
-	) -> Self {
-		Self {
+	) -> Result<Self, String> {
+		let window = window_for(state_pruning, backend_requires_full_sync, ledger_window)?;
+		Ok(Self {
 			slice: Duration::from_millis(env_parse(ENV_SLICE_MS, DEFAULT_SLICE_MS)),
 			arena_sweep: env_bool(ENV_ARENA_SWEEP, true),
-			lag: lag_for(state_pruning, backend_requires_full_sync),
+			lag: window.map(|w| w.lag),
+			liveness: window.map(|w| w.liveness).unwrap_or(Liveness::PrunedState),
 			storage_format_current,
-		}
+		})
 	}
 }
 
@@ -267,7 +328,7 @@ pub struct Classified {
 /// worker needs two fresh slices before its first release.
 pub fn classify(
 	finalized: u32,
-	lag: u32,
+	window: Window,
 	roots: &[TaggedRootInfo],
 	state: &mut WorkerState,
 	view: &impl ChainView,
@@ -312,22 +373,27 @@ pub fn classify(
 		// The tip belongs to height n = parent + 1. Dead iff n < finalized - lag,
 		// i.e. n + lag < finalized (computed in u64, no overflow).
 		let n = u64::from(parent_number) + 1;
-		if n + u64::from(lag) >= u64::from(finalized) {
+		if n + u64::from(window.lag) >= u64::from(finalized) {
 			continue;
 		}
-		let children = match view.children(&parent_hash) {
-			Ok(c) => c,
-			Err(e) => {
-				debug!(target: LOG_TARGET, "children({parent_hash:?}) failed ({e}); keeping");
-				out.kept_unknown += 1;
+		// Child-state gate: on a pruned node Substrate's pruning is the authority.
+		// With an explicit ledger window on a node that keeps every state the gate
+		// would keep every canonical root forever, so the height gate alone decides.
+		if window.liveness == Liveness::PrunedState {
+			let children = match view.children(&parent_hash) {
+				Ok(c) => c,
+				Err(e) => {
+					debug!(target: LOG_TARGET, "children({parent_hash:?}) failed ({e}); keeping");
+					out.kept_unknown += 1;
+					continue;
+				},
+			};
+			if children
+				.iter()
+				.any(|c| view.have_state_at(c, u32::try_from(n).unwrap_or(u32::MAX)))
+			{
 				continue;
-			},
-		};
-		if children
-			.iter()
-			.any(|c| view.have_state_at(c, u32::try_from(n).unwrap_or(u32::MAX)))
-		{
-			continue;
+			}
 		}
 		out.candidates += 1;
 		if state.previous_candidates.contains(&root.wrapper) {
@@ -425,7 +491,8 @@ fn reclaim_slice(
 
 	// Step 2: liveness, no lock held.
 	let view = ClientView { client, backend };
-	let verdict = classify(finalized, lag, &wrappers, state, &view);
+	let window = Window { lag, liveness: config.liveness };
+	let verdict = classify(finalized, window, &wrappers, state, &view);
 	with_metrics(metrics, |m| m.set_gc_tagged_roots("candidates", verdict.candidates as u64));
 
 	// Step 3: pin, then arena gc. The sweep runs BEFORE the release: a staged
@@ -555,8 +622,8 @@ pub fn try_spawn(
 	let Some(lag) = config.lag else {
 		info!(
 			target: LOG_TARGET,
-			"ℹ️  ledger GC disabled: archive or unbounded state pruning; tip reclaim and arena \
-			 sweep need a bounded pruning window"
+			"ℹ️  ledger GC disabled: archive or unbounded state pruning; set \
+			 --ledger-state-pruning <N> to release ledger states below finalized - N"
 		);
 		return;
 	};
@@ -595,8 +662,12 @@ pub fn try_spawn(
 	};
 	info!(
 		target: LOG_TARGET,
-		"♻️  Ledger GC enabled: release lag {lag} blocks, slice {:?}, arena sweep {}, {} tagged \
-		 root(s) at startup",
+		"♻️  Ledger GC enabled: release lag {lag} blocks ({}), slice {:?}, arena sweep {}, {} \
+		 tagged root(s) at startup",
+		match config.liveness {
+			Liveness::PrunedState => "state pruning decides",
+			Liveness::HeightOnly => "height only, explicit ledger window",
+		},
 		config.slice,
 		config.arena_sweep,
 		wrappers.len()
@@ -611,19 +682,68 @@ mod tests {
 
 	static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+	const PRUNED: Window = Window { lag: 256, liveness: Liveness::PrunedState };
+	const HEIGHT_ONLY: Window = Window { lag: 256, liveness: Liveness::HeightOnly };
+
 	#[test]
-	fn lag_table() {
+	fn window_table() {
 		let c = |n| PruningMode::blocks_pruning(n);
-		assert_eq!(lag_for(&None, true), None);
-		assert_eq!(lag_for(&None, false), Some(256));
-		assert_eq!(lag_for(&Some(c(1024)), false), Some(1024));
-		assert_eq!(lag_for(&Some(PruningMode::ArchiveAll), false), None);
-		assert_eq!(lag_for(&Some(PruningMode::ArchiveCanonical), false), None);
+		let pruned = |lag| Some(Window { lag, liveness: Liveness::PrunedState });
+		let height = |lag| Some(Window { lag, liveness: Liveness::HeightOnly });
 		let mut unbounded = PruningMode::default();
 		if let PruningMode::Constrained(c) = &mut unbounded {
 			c.max_blocks = None;
 		}
-		assert_eq!(lag_for(&Some(unbounded), false), None);
+		// No explicit ledger window: as before.
+		assert_eq!(window_for(&None, true, None), Ok(None));
+		assert_eq!(window_for(&None, false, None), Ok(pruned(256)));
+		assert_eq!(window_for(&Some(c(1024)), false, None), Ok(pruned(1024)));
+		assert_eq!(window_for(&Some(PruningMode::ArchiveAll), false, None), Ok(None));
+		assert_eq!(window_for(&Some(PruningMode::ArchiveCanonical), false, None), Ok(None));
+		assert_eq!(window_for(&Some(unbounded.clone()), false, None), Ok(None));
+		// Explicit ledger window on modes with unbounded state: height only.
+		assert_eq!(window_for(&None, true, Some(512)), Ok(height(512)));
+		assert_eq!(window_for(&Some(PruningMode::ArchiveAll), false, Some(512)), Ok(height(512)));
+		assert_eq!(
+			window_for(&Some(PruningMode::ArchiveCanonical), false, Some(512)),
+			Ok(height(512))
+		);
+		assert_eq!(window_for(&Some(unbounded), false, Some(512)), Ok(height(512)));
+		// Explicit ledger window on a pruned node: keeps the child-state gate, must
+		// not be smaller than the state window.
+		assert_eq!(window_for(&Some(c(256)), false, Some(1024)), Ok(pruned(1024)));
+		assert_eq!(window_for(&Some(c(256)), false, Some(256)), Ok(pruned(256)));
+		assert!(window_for(&Some(c(256)), false, Some(255)).is_err());
+		assert!(window_for(&None, false, Some(100)).is_err());
+	}
+
+	#[test]
+	fn height_only_releases_roots_whose_children_keep_state() {
+		// Archive node: every child has state. The pruned rule keeps the root
+		// forever; the height-only rule releases it after the debounce.
+		let mut f = Fake::default();
+		f.numbers.insert(h(1), 500);
+		f.children.insert(h(1), Ok(vec![h(101)]));
+		f.with_state.insert(h(101));
+		let roots = [root(1, h(1), 1)];
+		let mut st = WorkerState::new();
+		for _ in 0..3 {
+			assert!(classify(1000, PRUNED, &roots, &mut st, &f).release.is_empty());
+		}
+		let mut st = WorkerState::new();
+		let first = classify(1000, HEIGHT_ONLY, &roots, &mut st, &f);
+		assert_eq!(first.candidates, 1);
+		assert!(first.release.is_empty());
+		let second = classify(1000, HEIGHT_ONLY, &roots, &mut st, &f);
+		assert_eq!(second.release, vec![(w(1), 1)]);
+		// Still inside the window: kept under either rule.
+		f.numbers.insert(h(1), 800);
+		let mut st = WorkerState::new();
+		for _ in 0..3 {
+			let out = classify(1000, HEIGHT_ONLY, &roots, &mut st, &f);
+			assert!(out.release.is_empty());
+			assert_eq!(out.candidates, 0);
+		}
 	}
 
 	#[test]
@@ -633,8 +753,8 @@ mod tests {
 		for k in keys {
 			unsafe { std::env::remove_var(k) };
 		}
-		let d = GcConfig::from_env(&None, false, true);
-		assert_eq!(d.slice, Duration::from_millis(25));
+		let d = GcConfig::from_env(&None, false, None, true).unwrap();
+		assert_eq!(d.slice, Duration::from_millis(200));
 		assert!(d.arena_sweep);
 		assert_eq!(d.lag, Some(256));
 
@@ -642,14 +762,17 @@ mod tests {
 			std::env::set_var(ENV_SLICE_MS, "40");
 			std::env::set_var(ENV_ARENA_SWEEP, "0");
 		}
-		let c = GcConfig::from_env(&None, false, true);
+		let c = GcConfig::from_env(&None, false, None, true).unwrap();
 		assert_eq!(c.slice, Duration::from_millis(40));
 		assert!(!c.arena_sweep);
 
 		unsafe { std::env::set_var(ENV_SLICE_MS, "banana") };
-		assert_eq!(GcConfig::from_env(&None, false, true).slice, Duration::from_millis(25));
+		assert_eq!(
+			GcConfig::from_env(&None, false, None, true).unwrap().slice,
+			Duration::from_millis(200)
+		);
 		unsafe { std::env::set_var(ENV_ARENA_SWEEP, "yes") };
-		assert!(GcConfig::from_env(&None, false, true).arena_sweep);
+		assert!(GcConfig::from_env(&None, false, None, true).unwrap().arena_sweep);
 		for k in keys {
 			unsafe { std::env::remove_var(k) };
 		}
@@ -711,7 +834,7 @@ mod tests {
 		let mut st = WorkerState::new();
 		let roots = [root(1, h(1), 1)];
 		for _ in 0..3 {
-			let out = classify(1000, 256, &roots, &mut st, &f);
+			let out = classify(1000, PRUNED, &roots, &mut st, &f);
 			assert!(out.release.is_empty());
 			assert_eq!(out.candidates, 0);
 		}
@@ -725,7 +848,7 @@ mod tests {
 		let mut st = WorkerState::new();
 		let roots = [root(1, h(1), 1)];
 		for _ in 0..3 {
-			let out = classify(1000, 256, &roots, &mut st, &f);
+			let out = classify(1000, PRUNED, &roots, &mut st, &f);
 			assert!(out.release.is_empty());
 			assert_eq!(out.candidates, 0);
 		}
@@ -736,18 +859,18 @@ mod tests {
 		let mut f = Fake::default();
 		dead_parent(&mut f, 1, 100);
 		let mut st = WorkerState::new();
-		let out = classify(1000, 256, &[root(1, h(1), 2)], &mut st, &f);
+		let out = classify(1000, PRUNED, &[root(1, h(1), 2)], &mut st, &f);
 		assert!(out.release.is_empty());
 		assert_eq!(out.candidates, 1);
 		// The count grew between the two slices (a concurrent persist): the newer
 		// scan's count is what gets released.
-		let out = classify(1000, 256, &[root(1, h(1), 3)], &mut st, &f);
+		let out = classify(1000, PRUNED, &[root(1, h(1), 3)], &mut st, &f);
 		assert_eq!(out.release, vec![(w(1), 3)]);
 		// A wrapper that drops out of the candidate set restarts the debounce.
 		f.with_state.insert(h(101));
-		classify(1000, 256, &[root(1, h(1), 3)], &mut st, &f);
+		classify(1000, PRUNED, &[root(1, h(1), 3)], &mut st, &f);
 		f.with_state.clear();
-		let out = classify(1000, 256, &[root(1, h(1), 3)], &mut st, &f);
+		let out = classify(1000, PRUNED, &[root(1, h(1), 3)], &mut st, &f);
 		assert!(out.release.is_empty());
 	}
 
@@ -757,7 +880,7 @@ mod tests {
 		let mut st = WorkerState::new();
 		let roots = [TaggedRootInfo { wrapper: w(9), tag: vec![1, 2, 3], count: 1 }];
 		for _ in 0..3 {
-			let out = classify(1000, 256, &roots, &mut st, &f);
+			let out = classify(1000, PRUNED, &roots, &mut st, &f);
 			assert!(out.release.is_empty());
 			assert_eq!(out.kept_unknown, 1);
 		}
@@ -771,7 +894,7 @@ mod tests {
 		let mut st = WorkerState::new();
 		let roots = [root(1, h(1), 1)];
 		for _ in 0..3 {
-			let out = classify(1000, 256, &roots, &mut st, &f);
+			let out = classify(1000, PRUNED, &roots, &mut st, &f);
 			assert!(out.release.is_empty());
 			assert_eq!(out.kept_unknown, 1);
 			assert_eq!(st.logged_unknown, HashSet::from([w(1)]));
@@ -779,15 +902,15 @@ mod tests {
 		assert_eq!(f.number_lookups.get(), 3, "looked up every slice");
 		// The parent shows up: resolved on the next slice, no longer "unknown".
 		dead_parent(&mut f, 1, 100);
-		let out = classify(1000, 256, &roots, &mut st, &f);
+		let out = classify(1000, PRUNED, &roots, &mut st, &f);
 		assert_eq!(out.kept_unknown, 0);
 		assert_eq!(out.candidates, 1);
 		assert!(st.logged_unknown.is_empty(), "pruned to the roots still unknown");
 		// A root that leaves the scan leaves the logged set too.
 		let f2 = Fake::default();
-		classify(1000, 256, &[root(2, h(2), 1)], &mut st, &f2);
+		classify(1000, PRUNED, &[root(2, h(2), 1)], &mut st, &f2);
 		assert_eq!(st.logged_unknown, HashSet::from([w(2)]));
-		classify(1000, 256, &[], &mut st, &f2);
+		classify(1000, PRUNED, &[], &mut st, &f2);
 		assert!(st.logged_unknown.is_empty());
 	}
 
@@ -800,7 +923,7 @@ mod tests {
 		let mut st = WorkerState::new();
 		let roots = [root(1, h(1), 1), root(2, h(0xfe), 1)];
 		for _ in 0..3 {
-			let out = classify(1000, 256, &roots, &mut st, &f);
+			let out = classify(1000, PRUNED, &roots, &mut st, &f);
 			assert!(out.release.is_empty());
 			assert_eq!(out.kept_unknown, 2);
 		}
@@ -821,7 +944,7 @@ mod tests {
 			root(5, h(55), 1), // unknown parent
 		];
 		st.previous_candidates.insert(w(1));
-		let out = classify(1000, 256, &roots, &mut st, &f);
+		let out = classify(1000, PRUNED, &roots, &mut st, &f);
 		assert_eq!(out.release, vec![(w(1), 1)]);
 		assert_eq!(out.candidates, 2);
 		assert_eq!(out.kept_unknown, 2);
@@ -833,11 +956,11 @@ mod tests {
 		let mut f = Fake::default();
 		dead_parent(&mut f, 1, 100);
 		let mut st = WorkerState::new();
-		classify(1000, 256, &[root(1, h(1), 1)], &mut st, &f);
-		assert_eq!(classify(1000, 256, &[root(1, h(1), 1)], &mut st, &f).release.len(), 1);
+		classify(1000, PRUNED, &[root(1, h(1), 1)], &mut st, &f);
+		assert_eq!(classify(1000, PRUNED, &[root(1, h(1), 1)], &mut st, &f).release.len(), 1);
 		// Released and flushed: the next scan no longer lists it, so nothing is
 		// released again (a replay would over-release and panic at flush).
-		let out = classify(1000, 256, &[], &mut st, &f);
+		let out = classify(1000, PRUNED, &[], &mut st, &f);
 		assert!(out.release.is_empty() && st.previous_candidates.is_empty());
 	}
 
@@ -848,7 +971,7 @@ mod tests {
 		dead_parent(&mut f, 1, 743); // n = 744 == finalized - lag -> keep
 		dead_parent(&mut f, 2, 742); // n = 743 -> candidate
 		let mut st = WorkerState::new();
-		let out = classify(1000, 256, &[root(1, h(1), 1), root(2, h(2), 1)], &mut st, &f);
+		let out = classify(1000, PRUNED, &[root(1, h(1), 1), root(2, h(2), 1)], &mut st, &f);
 		assert_eq!(out.candidates, 1);
 		assert_eq!(st.previous_candidates, HashSet::from([w(2)]));
 	}
@@ -859,14 +982,14 @@ mod tests {
 		dead_parent(&mut f, 1, 100);
 		let mut st = WorkerState::new();
 		let roots = [root(1, h(1), 1)];
-		classify(1000, 256, &roots, &mut st, &f);
+		classify(1000, PRUNED, &roots, &mut st, &f);
 		st.mbm_suspended = true;
-		let out = classify(1000, 256, &roots, &mut st, &f);
+		let out = classify(1000, PRUNED, &roots, &mut st, &f);
 		assert!(out.release.is_empty() && st.previous_candidates.is_empty());
 		// Resuming needs two fresh slices.
 		st.mbm_suspended = false;
-		assert!(classify(1000, 256, &roots, &mut st, &f).release.is_empty());
-		assert_eq!(classify(1000, 256, &roots, &mut st, &f).release.len(), 1);
+		assert!(classify(1000, PRUNED, &roots, &mut st, &f).release.is_empty());
+		assert_eq!(classify(1000, PRUNED, &roots, &mut st, &f).release.len(), 1);
 	}
 
 	#[test]
@@ -875,6 +998,7 @@ mod tests {
 			slice: Duration::from_millis(25),
 			arena_sweep: true,
 			lag: Some(256),
+			liveness: Liveness::PrunedState,
 			storage_format_current: true,
 		};
 		let mut st = WorkerState::new();

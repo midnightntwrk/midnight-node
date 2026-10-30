@@ -131,16 +131,13 @@ where
 	let state = Ledger::new(state);
 
 	let state = default_storage::<D>().arena.alloc(state);
-	// Genesis is an anchored state: persisted once under a tagged root (tag = 32 zero bytes,
-	// there is no parent block) and never released, so it is retained for history.
-	let wrapper =
-		crate::tagged_root::persist_tagged(&default_storage::<D>().arena, vec![0u8; 32], &state);
+	// Genesis is persisted once under a tagged root (tag = 32 zero bytes, there is no parent
+	// block) and never released, so it is retained for history.
+	crate::tagged_root::persist_tagged(&default_storage::<D>().arena, vec![0u8; 32], &state);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	crate::ledger_9::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
 		.unwrap();
-	// Keep it live so block 1's first apply doesn't re-materialise it.
-	super::retain_anchored(&bytes, &wrapper);
 	bytes
 }
 
@@ -203,7 +200,7 @@ pub fn init_storage_paritydb<
 }
 
 /// Test-only: drop every keep-alive cache entry, so nothing but the arena itself keeps a
-/// state alive (the anchored cache otherwise pins recent tip wrappers in `live_inserts`).
+/// state alive.
 #[cfg(all(feature = "std", feature = "test-utils"))]
 pub fn clear_state_caches_for_test() {
 	super::clear_ledger_state_caches();
