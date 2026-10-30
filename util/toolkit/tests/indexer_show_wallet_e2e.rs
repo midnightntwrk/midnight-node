@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "indexer-client")]
-
 //! End-to-end test for indexer-backed `show-wallet` (issue #1186).
 //!
 //! Spawns a dev `midnight-node` and an `indexer-standalone` on a shared Docker network (so the

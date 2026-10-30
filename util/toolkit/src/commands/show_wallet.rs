@@ -24,11 +24,8 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
-#[cfg(feature = "indexer-client")]
 use midnight_ledger_unsafe_helpers::IndexerClient;
-#[cfg(feature = "indexer-client")]
 use midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY;
-#[cfg(feature = "indexer-client")]
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
@@ -85,7 +82,6 @@ pub struct ShowWalletArgs {
 	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
 	/// for a large seed set against an indexer that can take the load; lower it if the indexer
 	/// starts dropping connections.
-	#[cfg(feature = "indexer-client")]
 	#[arg(long, env = "MN_INDEXER_CONCURRENCY", default_value_t = DEFAULT_WALLET_SYNC_CONCURRENCY)]
 	pub indexer_concurrency: std::num::NonZeroUsize,
 }
@@ -94,15 +90,7 @@ pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	if let Some(indexer_url) = args.indexer_url.clone() {
-		#[cfg(feature = "indexer-client")]
 		return execute_indexer(args, &indexer_url).await;
-		#[cfg(not(feature = "indexer-client"))]
-		{
-			let _ = indexer_url;
-			return Err("this toolkit was built without the `indexer-client` feature; \
-			            rebuild with it enabled to use --indexer-url"
-				.into());
-		}
 	}
 
 	let ledger_state_db = args.source.ledger_state_db.clone();
@@ -195,7 +183,6 @@ pub async fn execute(
 ///
 /// The indexer carries both ledger generations and serves each chain in its own encodings, so the
 /// generation is read off the chain rather than assumed.
-#[cfg(feature = "indexer-client")]
 async fn execute_indexer(
 	args: ShowWalletArgs,
 	indexer_url: &str,
@@ -335,7 +322,6 @@ mod tests {
 			dry_run: false,
 			indexer_url: None,
 			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
 			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
@@ -394,7 +380,6 @@ mod tests {
 			dry_run: false,
 			indexer_url: None,
 			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
 			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
@@ -439,7 +424,6 @@ mod tests {
 			dry_run: false,
 			indexer_url: None,
 			network: "undeployed".to_string(),
-			#[cfg(feature = "indexer-client")]
 			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
@@ -455,7 +439,6 @@ mod tests {
 
 	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
 	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
-	#[cfg(feature = "indexer-client")]
 	#[test]
 	fn indexer_concurrency_rejects_zero() {
 		use clap::Parser;

@@ -11,13 +11,8 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["indexer-client"]
+default = []
 erase-proof = ["midnight-ledger-unsafe-helpers/erase-proof"]
-# Indexer-backed `show-wallet` (`--indexer-url`). On by default; disable with
-# `--no-default-features` to build the toolkit without the indexer GraphQL client.
-# Optional because the indexer trails the node: a toolkit for a new ledger version may have to
-# ship before a compatible indexer exists.
-indexer-client = ["midnight-ledger-unsafe-helpers/indexer-client"]
 compact-contract-tests = []
 
 [dependencies]
