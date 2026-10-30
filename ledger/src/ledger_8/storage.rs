@@ -135,8 +135,10 @@ where
 			.expect("failed to deserialize ledger genesis state");
 	let state = Ledger::new(state);
 
-	let mut state = default_storage::<D>().arena.alloc(state);
-	state.persist();
+	let state = default_storage::<D>().arena.alloc(state);
+	// Genesis is persisted once under a tagged root (tag = 32 zero bytes, there is no parent
+	// block) and never released, so it is retained for history.
+	crate::tagged_root::persist_tagged(&default_storage::<D>().arena, vec![0u8; 32], &state);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	crate::ledger_8::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
@@ -231,4 +233,24 @@ pub fn init_storage_paritydb_unified<
 		crate::ledger_8::TransactionSignature,
 		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
 	>(genesis_state)
+}
+
+/// Returns the summed persist count of the tagged-root wrappers pinning the ledger state
+/// addressed by `state_key`, or `None` if no wrapper for it is currently a GC root.
+///
+/// Test-only inspection helper, the tagged-root counterpart of [`get_state_root_count`]:
+/// post-block tips are pinned by wrappers and are no longer raw roots themselves.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn tagged_pin_count(state_key: &[u8]) -> Option<u32> {
+	use crate::ledger_8::api::Ledger;
+	use crate::ledger_8::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		crate::ledger_8::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	crate::tagged_root::tagged_pin_count(&default_storage::<ParityDb>().arena, key.hash())
 }

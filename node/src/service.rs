@@ -264,6 +264,10 @@ type MidnightService = sc_service::PartialComponents<
 		// Raw BABE block import (sharing `BabeLink`'s epoch tree) for the BABE authoring worker.
 		// Boxed because the concrete type embeds an unnameable CIDP closure.
 		sc_consensus::BoxBlockImport<Block>,
+		// Shared ledger metrics handle (also given to the `ExtensionsFactory`), for the ledger GC worker.
+		Arc<Mutex<Option<LedgerMetrics>>>,
+		// Whether the ledger storage was created with tagged roots (ledger GC marker).
+		bool,
 	),
 >;
 
@@ -323,6 +327,9 @@ pub fn new_partial(
 
 	let (parity_db_instance, ledger_storage_db, require_create) =
 		open_paritydb(&db_path, &storage_config)?;
+	let ledger_gc_tagged_from_genesis =
+		crate::backend::custom_parity_db::ledger_gc_tagged_from_genesis(&parity_db_instance.0)
+			.map_err(|e| ServiceError::Other(format!("reading the ledger GC marker: {e}")))?;
 	db_config.source = create_database_source(parity_db_instance, require_create)?;
 	let backend = sc_service::new_db_backend(db_config)?;
 
@@ -390,10 +397,11 @@ pub fn new_partial(
 	let ledger_storage =
 		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
 
+	let ledger_metrics_arc = Arc::new(Mutex::new(ledger_metrics));
 	client
 		.execution_extensions()
 		.set_extensions_factory(ExtensionsFactory::<Block>::new(
-			Arc::new(Mutex::new(ledger_metrics)),
+			ledger_metrics_arc.clone(),
 			ledger_storage,
 		));
 
@@ -601,6 +609,8 @@ pub fn new_partial(
 			recovery_gate,
 			babe_link,
 			babe_authoring_block_import,
+			ledger_metrics_arc,
+			ledger_gc_tagged_from_genesis,
 		),
 	};
 
@@ -649,6 +659,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				warp_ledger_recovery_gate,
 				babe_link,
 				babe_authoring_block_import,
+				ledger_metrics_arc,
+				ledger_gc_tagged_from_genesis,
 			),
 	} = new_partial_components;
 
@@ -791,6 +803,19 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			warp_ledger_recovery_gate.clone(),
 			ledger_sync_protocol_name.clone(),
 			warp_ledger_unified,
+		),
+	);
+
+	// Ledger storage GC (tagged-root release + arena sweep).
+	crate::ledger_gc::try_spawn(
+		&task_manager.spawn_handle(),
+		client.clone(),
+		backend.clone(),
+		ledger_metrics_arc.clone(),
+		crate::ledger_gc::GcConfig::from_env(
+			&config.state_pruning,
+			backend.requires_full_sync(),
+			ledger_gc_tagged_from_genesis,
 		),
 	);
 

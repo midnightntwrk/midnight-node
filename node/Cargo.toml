@@ -55,6 +55,7 @@ sc-network.workspace = true
 sc-network-sync.workspace = true
 sc-utils.workspace = true
 sp-consensus.workspace = true
+sp-panic-handler.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-babe.workspace = true
 sp-consensus-slots.workspace = true
@@ -170,6 +171,7 @@ sp-transaction-pool.workspace = true
 tempfile = "3"
 yamux = "0.13"
 tokio-util = { version = "0.7", features = ["compat"] }
+pallet-migrations = { workspace = true, features = ["std"] }
 # Enable the `std`-gated `testing` module (MemoryKeystore) for unit tests.
 sp-keystore = { workspace = true, features = ["std"] }
 

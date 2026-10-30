@@ -285,6 +285,13 @@ fn release_transient<D: DB>(state_key: &[u8]) {
 	TRANSIENT_LEDGER_STATES.run_pending_tasks();
 }
 
+/// Whether the transient keep-alive cache currently holds the state `state_key` addresses,
+/// i.e. the state is known to be addressable in the arena without probing it.
+#[cfg(feature = "std")]
+fn is_retained<D: DB>(state_key: &[u8]) -> bool {
+	TRANSIENT_LEDGER_STATES.contains_key(&StateCacheKey::new::<D>(state_key))
+}
+
 /// Release every retained ledger state.
 ///
 /// Each retained `Sp` holds `Arc`s into `Storage<D>`, and so the parity-db handle and its
@@ -405,7 +412,8 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
+		let parent_block_hash = block_context.parent_block_hash.clone();
+		let ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
@@ -425,7 +433,13 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		ledger.persist();
+		// Persist the tip under a tagged root (tag = parent block hash): the wrapper is the
+		// GC root, the tip is pinned through it. The returned state key stays the tip's.
+		crate::tagged_root::persist_tagged(
+			&default_storage::<D>().arena,
+			parent_block_hash,
+			&ledger,
+		);
 		release_transient::<D>(state_key);
 		log::trace!(
 			target: LOG_TARGET,
@@ -451,9 +465,16 @@ where
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
-		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let parent_block_hash = block_context.parent_block_hash.clone();
+		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		ledger.persist();
+		// Persist the tip under a tagged root (tag = parent block hash): the wrapper is the
+		// GC root, the tip is pinned through it. The returned state key stays the tip's.
+		crate::tagged_root::persist_tagged(
+			&default_storage::<D>().arena,
+			parent_block_hash,
+			&ledger,
+		);
 		release_transient::<D>(state_key);
 		Ok(state_root)
 	}
@@ -1117,9 +1138,12 @@ where
 	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
 	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
 	/// executes against the arena concurrently — the arena is single-writer.
+	///
+	/// `parent_hash` is the parent block hash of the snapshot's block; it tags the root wrapper.
 	pub fn import_verified_ledger_snapshot(
 		blob: &[u8],
 		expected_state_key: &[u8],
+		parent_hash: [u8; 32],
 	) -> Result<(), crate::SnapshotImportError> {
 		use crate::SnapshotImportError;
 
@@ -1132,7 +1156,7 @@ where
 		// arena; re-allocating the loaded value yields the persistable `Sp`.
 		let ledger: Ledger<D> =
 			helpers_local::deserialize(blob).map_err(SnapshotImportError::Deserialize)?;
-		let mut sp = default_storage::<D>().arena.alloc(ledger);
+		let sp = default_storage::<D>().arena.alloc(ledger);
 
 		// Cryptographic bind to the trie anchor: the reconstructed root must equal the on-chain
 		// `StateKey`. This is the whole security argument — reject anything else.
@@ -1141,7 +1165,14 @@ where
 			return Err(SnapshotImportError::RootMismatch);
 		}
 
-		sp.persist();
+		// Rooted through a tagged wrapper (tag = parent hash of the target block). Always
+		// persists: re-importing the same snapshot bumps the wrapper's count by one, which
+		// only ever leaks, never loses.
+		crate::tagged_root::persist_tagged(
+			&default_storage::<D>().arena,
+			parent_hash.to_vec(),
+			&sp,
+		);
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
 		Ok(())
@@ -1282,8 +1313,10 @@ where
 		// (`force_as_arc`). Probe the root node so an unresolvable key is a clean
 		// `NoLedgerState`; `has_ledger_state` relies on this. The backend's `get` also sees
 		// unflushed `Create`s, so never-persisted states pass. A `Direct` key embeds its node
-		// inline, so there is nothing to probe.
+		// inline, so there is nothing to probe. Skipped for a state the transient keep-alive
+		// cache holds (the current intermediate), which is addressable by construction.
 		if let ArenaKey::Ref(hash) = &key.key
+			&& !is_retained::<D>(state_key)
 			&& !storage.with_backend(|backend| backend.get(hash).is_some())
 		{
 			log::error!(target: LOG_TARGET, "Ledger State {} not in arena", hex::encode(hash.0));
@@ -2059,7 +2092,9 @@ mod tests {
 		}
 	}
 
-	/// Ledger-8 counterpart of `pallet-midnight`'s `persist_refcount` (ledger 9) test.
+	/// Ledger-8 keep-alive contract: intra-block intermediates are retained but never
+	/// rooted, a successor releases its predecessor, and the post-block tip is the one
+	/// state persisted, through a tagged-root wrapper (the tip itself is never a raw root). Mirrors `pallet-midnight`'s `persist_refcount` for ledger 9.
 	#[test]
 	fn intermediate_states_are_retained_not_rooted() {
 		use mn_ledger_local::dust::DustPublicKey;
@@ -2081,6 +2116,12 @@ mod tests {
 			let key: ArenaKey<_> = typed.into();
 			default_storage::<DefaultDB>()
 				.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+		};
+		let pin_count = |state_key: &[u8]| {
+			let typed: TypedArenaKey<Ledger<DefaultDB>, _> =
+				midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).unwrap();
+			let key: ArenaKey<_> = typed.into();
+			crate::tagged_root::tagged_pin_count(&default_storage::<DefaultDB>().arena, key.hash())
 		};
 		let retained = |state_key: &[u8]| {
 			TRANSIENT_LEDGER_STATES.contains_key(&StateCacheKey::new::<DefaultDB>(state_key))
@@ -2120,7 +2161,8 @@ mod tests {
 
 		let tip = TestBridge::apply_post_block_update(&mut ext.ext(), &second, block_context())
 			.expect("post-block update applies");
-		assert_eq!(root_count(&tip), Some(1), "the post-block tip is persisted at rc=1");
+		assert_eq!(root_count(&tip), None, "the post-block tip is pinned by a wrapper, not rooted");
+		assert_eq!(pin_count(&tip), Some(1), "the post-block tip is pinned by one tagged root");
 		assert!(!retained(&second), "the post-block update must release the last intermediate");
 	}
 }

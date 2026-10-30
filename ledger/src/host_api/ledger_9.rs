@@ -732,12 +732,22 @@ pub trait Ledger9Bridge {
 		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.
 		// `set_default_storage` is idempotent — a no-op if the pre-fork ledger-8
 		// blocks already set it (v8 and v9 share the same storage backend).
+		// The migration output is persisted under a tagged root; the tag is the overlay's
+		// `System::ParentHash`, which this early in the block is still the grandparent's hash
+		// (see `overlay_parent_hash`).
+		let parent_hash = crate::host_api::migration_8_to_9::overlay_parent_hash(*self);
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbUnified>(state_key)
+			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbUnified>(
+				state_key,
+				parent_hash,
+			)
 		} else {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbSeparate>(state_key)
+			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbSeparate>(
+				state_key,
+				parent_hash,
+			)
 		}
 	}
 
