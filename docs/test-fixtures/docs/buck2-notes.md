@@ -2,7 +2,7 @@
 
 An alternative build of midnight-node using [Buck2](https://buck2.build) +
 [Reindeer](https://github.com/facebookincubator/reindeer), parallel to the
-existing Cargo and Bazel builds. Uses forks of both tools.
+existing Cargo and Bazel builds. Stock buck2 and reindeer.
 
 ## Status
 
@@ -35,12 +35,11 @@ WASM blob is a separate no_std crate-universe phase (below).
   same one CI installs and checksum-verifies (`buck2/Earthfile`). Stock buck2 is
   the supported path; a local `gilescope/buck2` build also works (it only adds
   unrelated DICE-persistence work).
-* **reindeer** — the `gilescope/reindeer` fork, for local buckify fixes not yet
-  upstreamed (see "Reindeer fixes"). Fixups are vendored in-tree, so its
-  `shared_fixups` feature is unused. Build with `cargo build --release` and use
-  `target/release/reindeer`. CI pins one rev (`Earthfile` `+buck2-reindeer`,
-  `REINDEER_REV`): regenerate with that rev only - another reindeer diffs the
-  graph, and the drift check (below) goes red.
+* **reindeer** — upstream `facebookincubator/reindeer`, pinned to one rev
+  (`Earthfile` `+buck2-reindeer`, `REINDEER_REV`): regenerate with that rev
+  only - another reindeer diffs the graph, and the drift check (below) goes red.
+  Two upstream gaps are patched into its output by `normalize-git-sources.py`
+  (see "Reindeer fixes").
 
 Install buck2 to `~/.cargo/bin/buck2`.
 
@@ -96,8 +95,20 @@ runtime`): their fixups overlay a `WASM_BINARY = None` stub into the manifest di
 and set OUT_DIR there, but the `polkadot-sdk-<hash>` git-fetch cell hash in that
 path moves on every polkadot-sdk bump while the static fixup hash doesn't — so
 re-pinning by hand drifts (it did, twice). The normalizer rewrites the generated
-BUCK so the hash self-heals. Idempotent; a no-op run exits 0. Reindeer must be
-the `gilescope/reindeer` fork (see below), not `~/.cargo/bin/reindeer`.
+BUCK so the hash self-heals. Idempotent; a no-op run exits 0.
+
+### `normalize-git-sources.py`
+
+Runs after each buckify. Upstream reindeer keys `git_fetch` on the repo URL, so
+midnight-ledger's per-crate rc tags (15 commits of one repo, two versions of
+`transient-crypto` among them) collapse onto one fetch and every crate builds
+against whichever commit it pinned; it also sets `CARGO_MANIFEST_DIR` to the
+repo root for a crate in a subdirectory, which breaks `proc-macro-crate`. The
+script renames each git crate's fetch target to `<repo>-<urlhash><commit8>`,
+points `CARGO_MANIFEST_DIR` at the crate's subdirectory and splits each
+`git_fetch` into one per commit, matching rules to packages by name + version
+from `cargo metadata`. Idempotent. Delete it once
+facebookincubator/reindeer PRs 118 and 119 land.
 
 ### `gen-third-party.py`
 
@@ -352,25 +363,21 @@ no install_name) for `cpu:wasm32`. Then the remaining pipeline is mechanical
 
 ## Reindeer fixes
 
-In `gilescope/reindeer`, branch `giles-git-multicommit-fixup` on top of
-`baca1130` (build from that branch's `target/release/reindeer`):
+Three upstream gaps, each worked around in-tree so no fork is needed:
 
-1. **Multi-commit git sources** — `short_name_for_git_repo` hashed only the
-   repo URL, so a workspace depending on one repo at several commits (e.g.
-   midnight-ledger's 12 per-crate tags) collapsed to a single `git_fetch` and
-   every crate resolved against one arbitrary commit's sources. Fixed by
-   folding the commit hash into the name. Without this, e.g.
-   `transient-crypto 2.2.0` compiled against the 3.0.0 checkout.
-2. **`CARGO_MANIFEST_DIR` for git-subdir crates** — was the bare repo
-   short-name; now `<short-name>/<path-within-repo>`, matching `crate_root`, so
-   `proc-macro-crate` finds the right `Cargo.toml`.
-3. **`rustc_link_lib`/`rustc_link_search` default to true** — Cargo always
-   honors a build script's `cargo:rustc-link-lib`/`rustc-link-search`, so a
-   `-sys` crate that compiles a native lib (blst, lz4-sys, zstd-sys,
-   secp256k1-sys, wasmtime's `helpers.c`, …) links with no per-crate fixup.
-   Reindeer defaulted both to false, dropping those directives so the node
-   binary failed to link with undefined symbols / "library not found". Now
-   default true; a fixup can still opt out.
+1. **Multi-commit git sources** — one `git_fetch` per repo URL, so
+   midnight-ledger's per-crate tags collapsed onto one commit's sources
+   (`transient-crypto 2.2.0` compiled against the 3.0.0 checkout). Patched by
+   `normalize-git-sources.py`; upstream facebookincubator/reindeer PR 118.
+2. **`CARGO_MANIFEST_DIR` for git-subdir crates** — the bare repo short-name
+   instead of `<short-name>/<path-within-repo>`, so `proc-macro-crate` read
+   the wrong `Cargo.toml`. Same script; upstream PR 119.
+3. **`rustc_link_lib`/`rustc_link_search` default to false** — a build
+   script's `cargo:rustc-link-*` is dropped unless a fixup says otherwise
+   (deliberate: fbsource links native libs as Buck targets via `extra_deps`),
+   so blst, lz4-sys, zstd-sys and friends compiled but never linked. The 13
+   crates whose build scripts emit link directives set both in their fixup;
+   upstream PR 117 adds a project-wide default.
 
 ## CI
 

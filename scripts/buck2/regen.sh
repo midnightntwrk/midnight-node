@@ -19,10 +19,12 @@ cargo metadata --format-version 1 --locked > "$meta"
 rm -f third-party/Cargo.lock
 scripts/buck2/gen-third-party.py "$meta" third-party/Cargo.toml
 "$REINDEER" --third-party-dir third-party buckify
+scripts/buck2/normalize-git-sources.py third-party
 scripts/buck2/normalize-wasm-stub-outdir.py third-party/BUCK
 
 scripts/buck2/gen-wasm-deps.sh
 "$REINDEER" --third-party-dir wasm-deps buckify
+scripts/buck2/normalize-git-sources.py wasm-deps
 
 scripts/buck2/gen-first-party.py "$meta"
 scripts/buck2/sync-test-fixtures.sh

@@ -2305,12 +2305,12 @@ buck2-ci:
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
 buck2-reindeer:
     FROM rust:1.98.1-trixie
-    # gilescope/reindeer: multi-commit git sources, git-subdir CARGO_MANIFEST_DIR,
-    # rustc-link-lib defaults (docs/buck2-notes.md, "Reindeer fixes"). Facebook's
-    # reindeer is not on crates.io (that name is an unrelated crate), so pin a
-    # rev - and regenerate with this rev only: another reindeer diffs the graph.
-    ARG REINDEER_GIT=https://github.com/gilescope/reindeer
-    ARG REINDEER_REV=8736953caea059266205eedbda37c6aea880d137
+    # Upstream reindeer; what it lacks (facebookincubator/reindeer PRs 118, 119)
+    # is applied to its output by scripts/buck2/normalize-git-sources.py. Not on
+    # crates.io (that name is an unrelated crate), so pin a rev - and regenerate
+    # with this rev only: another reindeer diffs the graph.
+    ARG REINDEER_GIT=https://github.com/facebookincubator/reindeer
+    ARG REINDEER_REV=b15f92a7c0408f689997f1aae23a854fb4693e81
     # python3 >= 3.11 (tomllib) for the generators; trixie ships 3.13.
     RUN apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 && \
         rm -rf /var/lib/apt/lists/*
