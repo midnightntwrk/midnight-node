@@ -1,5 +1,6 @@
 *.json
 !test-data/**/*.json
+!test-fixtures/**/*.json
 .sync_cache
 
 # Test data ends up here

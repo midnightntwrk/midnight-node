@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n    high_tx.tx_id AS \"tx_id!\",\n    high_tx_out.tx_out_id AS \"tx_out_id!\",\n    high_ma_tx_out.ma_tx_out_id AS \"ma_tx_out_id!\",\n    high_tx_in.tx_in_id AS \"tx_in_id!\"\nFROM\n    (SELECT id FROM block WHERE block_no = $1 LIMIT 1) AS block,\n    LATERAL (SELECT COALESCE((SELECT id FROM tx WHERE block_id > block.id ORDER BY block_id ASC LIMIT 1), 9223372036854775807) AS tx_id) AS high_tx,\n    LATERAL (SELECT COALESCE((SELECT id FROM tx_out WHERE tx_id >= high_tx.tx_id ORDER BY tx_id ASC LIMIT 1), 9223372036854775807) AS tx_out_id) AS high_tx_out,\n    LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id >= high_tx_out.tx_out_id ORDER BY tx_out_id ASC LIMIT 1), 9223372036854775807) AS ma_tx_out_id) AS high_ma_tx_out,\n    LATERAL (SELECT COALESCE((SELECT id FROM tx_in WHERE tx_in.tx_in_id >= high_tx.tx_id ORDER BY tx_in_id ASC LIMIT 1), 9223372036854775807) AS tx_in_id) AS high_tx_in;\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tx_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "tx_out_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "ma_tx_out_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "tx_in_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ff6315ab1c9f1ac5f7b5672157310fd75fa29f680ac5f19158267ecea0ece6a9"
+}
