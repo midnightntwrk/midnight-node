@@ -13,6 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Emits rustc-link-*; explicit so no reindeer default is relied on.
+[buildscript.run]
+rustc_link_lib = true
+rustc_link_search = true
+
 # cc-rs build script: OPT_LEVEL is a cargo profile var buck doesn't
 # provide, and cc-rs panics without it. (Env table implies run = true.)
 [buildscript.run.env]

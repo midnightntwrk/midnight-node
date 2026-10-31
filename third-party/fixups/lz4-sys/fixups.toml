@@ -13,4 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-buildscript.run = true
+# Emits rustc-link-*; explicit so no reindeer default is relied on.
+[buildscript.run]
+rustc_link_lib = true
+rustc_link_search = true

@@ -20,6 +20,11 @@
 # openssl-sys isn't built there. Mirrors ../midnight-node (bazel) MODULE.bazel.
 cargo_env = true
 
+# Emits rustc-link-*; explicit so no reindeer default is relied on.
+[buildscript.run]
+rustc_link_lib = true
+rustc_link_search = true
+
 [buildscript.run.env]
 OPT_LEVEL = "3"
 
