@@ -876,6 +876,26 @@ where
 		Self::do_get_contract_state(&api, state_key, contract_address, f)
 	}
 
+	/// Navigation failures are reported per path; the outer error is for the
+	/// whole request (bad address, contract absent, ledger unreadable).
+	#[cfg(feature = "std")]
+	pub fn query_contract_state(
+		state_key: &[u8],
+		contract_address: &[u8],
+		paths: &[Vec<base_crypto_local::fab::AlignedValue>],
+	) -> Result<Vec<Result<Option<base_crypto_local::fab::AlignedValue>, String>>, LedgerApiError>
+	{
+		let api = api::new();
+		let addr = api.deserialize::<ContractAddress>(contract_address)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let contract_state =
+			ledger.get_contract_state(addr).ok_or(LedgerApiError::ContractNotPresent)?;
+
+		let root = contract_state.data.get_ref().clone();
+		Ok(paths.iter().map(|path| resolve_state_path(&root, path)).collect())
+	}
+
 	pub fn get_zswap_chain_state(
 		state_key: &[u8],
 		contract_address: &[u8],
@@ -1628,6 +1648,87 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
 }
 
+const MAX_PATH_DEPTH: usize = 16;
+
+/// Walks a contract's state tree along `path`, interpreting each key the way
+/// the VM's `idx` instruction does, and returns the leaf cell (`None` for
+/// `Null`). Only the nodes along the path are loaded from storage.
+#[cfg(feature = "std")]
+fn resolve_state_path<D: DB>(
+	root: &onchain_runtime_local::state::StateValue<D>,
+	path: &[base_crypto_local::fab::AlignedValue],
+) -> Result<Option<base_crypto_local::fab::AlignedValue>, String> {
+	use base_crypto_local::fab::Value;
+	use onchain_runtime_local::state::StateValue;
+
+	if path.is_empty() {
+		return Err("path cannot be empty; provide at least one step".into());
+	}
+	if path.len() > MAX_PATH_DEPTH {
+		return Err(format!(
+			"path too deep: {} steps exceeds the maximum of {MAX_PATH_DEPTH}",
+			path.len()
+		));
+	}
+
+	let mut current = root.clone();
+	for key in path {
+		current = match &current {
+			StateValue::Array(arr) => {
+				let i: u64 = (&**AsRef::<Value>::as_ref(key))
+					.try_into()
+					.map_err(|e| format!("invalid array index: {e}"))?;
+				let idx: usize =
+					i.try_into().map_err(|_| format!("array index {i} does not fit in usize"))?;
+				arr.get(idx).cloned().ok_or_else(|| format!("array index {i} out of bounds"))?
+			},
+			// As in the VM, a map miss yields Null rather than an error.
+			StateValue::Map(map) => match map.get(key) {
+				Some(sp) => (*sp).clone(),
+				None => StateValue::Null,
+			},
+			StateValue::BoundedMerkleTree(tree) => {
+				let pos: u64 = (&**AsRef::<Value>::as_ref(key))
+					.try_into()
+					.map_err(|e| format!("invalid merkle tree position: {e}"))?;
+				let max_leaves = 1u64.checked_shl(tree.height() as u32).ok_or_else(|| {
+					format!(
+						"merkle tree height {} exceeds the addressable u64 range",
+						tree.height()
+					)
+				})?;
+				if pos >= max_leaves {
+					return Err(format!("tree position {pos} out of range (max {max_leaves})"));
+				}
+				// `index` panics on a collapsed sub-tree; an RPC caller must not be
+				// able to take down the worker thread.
+				let leaf =
+					std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tree.index(pos)))
+						.map_err(|_| {
+							format!(
+								"merkle tree navigation panicked at position {pos} \
+								 (likely a collapsed sub-tree)"
+							)
+						})?;
+				match leaf {
+					Some((hash, ())) => {
+						StateValue::Cell(ledger_storage_local::arena::Sp::new(hash.into()))
+					},
+					None => StateValue::Null,
+				}
+			},
+			_ => return Err("only array, map, and merkle tree can be indexed".into()),
+		};
+	}
+
+	match &current {
+		StateValue::Null => Ok(None),
+		StateValue::Cell(value) => Ok(Some((**value).clone())),
+		// Returning a whole collection would break the per-query O(log n) bound.
+		_ => Err("path resolves to a collection; provide a deeper path".into()),
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -1912,5 +2013,39 @@ mod tests {
 		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+}
+
+#[cfg(test)]
+mod state_query_tests {
+	use super::*;
+	use base_crypto_local::{fab::AlignedValue, hash::HashOutput};
+	use ledger_storage_local::{DefaultDB, arena::Sp, storage::HashMap};
+	use onchain_runtime_local::state::{StateValue, stval};
+	use transient_crypto_local::merkle_tree::MerkleTree;
+
+	#[test]
+	fn resolve_state_path_follows_vm_idx() {
+		let root: StateValue<DefaultDB> =
+			stval!([[{MT(2) {1 => HashOutput([7; 32])}}, (5u64), {7u8 => (9u64)}]]);
+		let resolve = |keys: &[u8]| {
+			let path: Vec<AlignedValue> = keys.iter().map(|&k| k.into()).collect();
+			resolve_state_path(&root, &path)
+		};
+
+		assert_eq!(resolve(&[0, 1]), Ok(Some(5u64.into())));
+		assert_eq!(resolve(&[0, 2, 7]), Ok(Some(9u64.into())));
+		assert_eq!(resolve(&[0, 2, 8]), Ok(None));
+		assert_eq!(resolve(&[0, 0, 1]), Ok(Some(HashOutput([7; 32]).into())));
+		assert_eq!(resolve(&[0, 0, 0]), Ok(None));
+
+		let err = |keys: &[u8]| resolve(keys).unwrap_err();
+		assert!(err(&[0, 9]).contains("out of bounds"));
+		assert!(err(&[0, 0, 4]).contains("out of range"));
+		assert!(err(&[0, 2]).contains("collection"));
+		assert!(err(&[0, 1, 0]).contains("can be indexed"));
+		assert!(err(&[0, 2, 8, 0]).contains("can be indexed"));
+		assert!(err(&[]).contains("empty"));
+		assert!(err(&[0; MAX_PATH_DEPTH + 1]).contains("too deep"));
 	}
 }

@@ -24,6 +24,7 @@ use serde_json::{Value, json};
 /// Expected set of custom RPC method names (from all midnight-node + partner-chains traits).
 pub(crate) const CUSTOM_METHOD_NAMES: &[&str] = &[
 	"midnight_contractState",
+	"midnight_queryContractState",
 	"midnight_zswapStateRoot",
 	"midnight_ledgerStateRoot",
 	"midnight_apiVersions",
@@ -165,6 +166,49 @@ fn build_custom_method(name: &str) -> Option<Value> {
 			],
 			result("state", "Hex-encoded contract state", json!({"type": "string"})),
 			&[error_ref("StateRpcError")],
+		),
+		"midnight_queryContractState" => method_entry(
+			name,
+			"Reads individual fields of a deployed contract's state.",
+			"Each path is a list of keys that walks the contract's state tree, each key interpreted as the VM's `idx` instruction interprets it: an array index, map key, or merkle tree position depending on the node it is applied to. Only the nodes along each path are loaded. Returns one result per path, in input order: the leaf cell, null for a Null leaf (including an absent map key), or an error for a path that cannot be followed. A path must end at a cell or Null, not a collection. At most 100 paths of at most 16 keys each. If `at` is null, the best block is used.",
+			&[
+				param(
+					"contract_address",
+					"Hex-encoded contract address",
+					json!({"type": "string"}),
+				),
+				param(
+					"paths",
+					"State tree paths to resolve",
+					json!({
+						"type": "array",
+						"maxItems": 100,
+						"items": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 16,
+							"items": schema_ref("HexAlignedValue"),
+						},
+					}),
+				),
+				param_optional(
+					"at",
+					"Block hash to query at (defaults to best block)",
+					schema_ref("BlockHash"),
+				),
+			],
+			result(
+				"results",
+				"Per-path results, in input order",
+				json!({
+					"type": "array",
+					"items": schema_ref("StateQueryResult"),
+				}),
+			),
+			&[
+				error_ref("ContractStateQueryInvalidParams"),
+				error_ref("ContractStateQueryInternalError"),
+			],
 		),
 		"midnight_zswapStateRoot" => method_entry(
 			name,
@@ -571,6 +615,33 @@ fn build_component_schemas() -> Value {
 		"Operation": operation_schema,
 		"MidnightRpcTransaction": midnight_tx_schema,
 		"RpcTransaction": rpc_tx_schema,
+		"HexAlignedValue": {
+			"type": "string",
+			"description": "0x-prefixed hex of a tagged-serialized AlignedValue: the ASCII prefix `midnight:fab-aligned-value[v1]:` followed by the value's untagged encoding",
+			"pattern": "^0x([0-9a-fA-F]{2})+$"
+		},
+		"StateQueryResult": {
+			"oneOf": [
+				{
+					"type": "object",
+					"description": "The path resolved to a cell, or to Null (`value` is null)",
+					"properties": {
+						"value": {
+							"oneOf": [schema_ref("HexAlignedValue"), {"type": "null"}]
+						}
+					},
+					"required": ["value"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"description": "The path could not be followed (e.g. an array index out of bounds)",
+					"properties": { "error": { "type": "string" } },
+					"required": ["error"],
+					"additionalProperties": false
+				}
+			]
+		},
 		"LedgerStats": ledger_stats_schema,
 		"PeerReputationInfo": {
 			"type": "object",
@@ -705,6 +776,20 @@ fn build_error_components() -> Value {
 			"message": "Invalid params",
 			"data": {
 				"description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
+			}
+		},
+		"ContractStateQueryInvalidParams": {
+			"code": -32602,
+			"message": "Invalid params",
+			"data": {
+				"description": "Variants: TooManyQueries (more than 100 paths), BadContractAddress (address is not hex), UnknownBlock (the requested block hash is not known to this node), NoStateKey (the pallet holds no StateKey at that block), ContractNotPresent (no contract at that address at that block)"
+			}
+		},
+		"ContractStateQueryInternalError": {
+			"code": -32603,
+			"message": "Internal error",
+			"data": {
+				"description": "Variants: StateKeyUnavailable (reading the ledger StateKey from the trie failed — the expected result for a block outside a pruned node's retained state window), LedgerUnavailable (the arena could not resolve the state the StateKey points at)"
 			}
 		},
 		"LedgerStatsInvalidParams": {
@@ -957,8 +1042,8 @@ mod tests {
 	fn ci_custom_method_count_drift_detection() {
 		assert_eq!(
 			CUSTOM_METHOD_NAMES.len(),
-			17,
-			"CUSTOM_METHOD_NAMES has {} entries but 17 are expected. \
+			18,
+			"CUSTOM_METHOD_NAMES has {} entries but 18 are expected. \
 			 If you added or removed a custom RPC method, update CUSTOM_METHOD_NAMES \
 			 and the OpenRPC metadata in build_custom_method().",
 			CUSTOM_METHOD_NAMES.len()

@@ -146,3 +146,76 @@ async fn contract_state_distinguishes_historical_and_current_blocks() {
 
     tracing::info!("✓ block 1 → ContractNotPresent; current head → deployed state");
 }
+
+// ============================================================================
+// midnight_queryContractState
+// ============================================================================
+
+/// Tagged-serialized hex: the wire form of path keys and returned cells.
+fn hex_aligned(value: impl Into<midnight_node_ledger_helpers::AlignedValue>) -> String {
+    format!(
+        "0x{}",
+        hex::encode(midnight_node_ledger_helpers::serialize(&value.into()).unwrap())
+    )
+}
+
+/// The toolkit's `contract-simple` deploys `[[MT(10), 0u64, {<blank MT(10) root> => null}]]`;
+/// one batch covers a cell, a Null map entry, and an out-of-bounds index.
+#[e2e_test]
+async fn query_contract_state_resolves_cells_nulls_and_errors() {
+    use midnight_node_ledger_helpers::{
+        AlignedValue, deserialize, transient_crypto::merkle_tree::MerkleTree,
+    };
+
+    crate::ensure_dev_wallet_funded().await;
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let _deploy_guard = wait_before_deploying().await;
+    let (_deploy_tx, addr) =
+        crate::deploy_and_confirm(&client, &settings.node_client.base_url).await;
+
+    let root = MerkleTree::<()>::blank(10).root();
+    let results = client
+        .query_contract_state(
+            &addr,
+            &[
+                vec![hex_aligned(0u8), hex_aligned(1u8)],
+                vec![hex_aligned(0u8), hex_aligned(2u8), hex_aligned(root)],
+                vec![hex_aligned(0u8), hex_aligned(99u8)],
+            ],
+        )
+        .await
+        .expect("RPC failed");
+
+    let counter = results[0]["value"]
+        .as_str()
+        .expect("[0][1] should be a cell");
+    let counter: AlignedValue =
+        deserialize(&hex::decode(counter.strip_prefix("0x").unwrap()).unwrap()[..]).unwrap();
+    assert_eq!(counter, AlignedValue::from(0u64));
+
+    assert_eq!(results[1], serde_json::json!({ "value": null }));
+
+    let err = results[2]["error"]
+        .as_str()
+        .expect("[0][99] should be an error");
+    assert!(err.contains("out of bounds"), "unexpected error: {err}");
+}
+
+/// A well-formed address with no contract behind it fails the whole request.
+#[e2e_test]
+async fn query_contract_state_nonexistent_contract() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    let err = client
+        .query_contract_state(&"00".repeat(32), &[vec![hex_aligned(0u8)]])
+        .await
+        .expect_err("should fail for a non-existent contract");
+
+    assert!(
+        err.to_string().contains("contract not present"),
+        "unexpected error: {err}"
+    );
+}

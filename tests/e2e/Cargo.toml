@@ -31,6 +31,7 @@ rand = "0.9.2"
 subxt.workspace = true
 midnight-node-metadata.workspace = true
 midnight-ledger-unsafe-helpers = { workspace = true }
+midnight-node-ledger-helpers = { workspace = true }
 blake2 = "0.10.6"
 tracing = { workspace = true, default-features = true }
 tracing-subscriber = { workspace = true }

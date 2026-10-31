@@ -8069,6 +8069,7 @@ dependencies = [
  "hex",
  "midnight-ledger-unsafe-helpers",
  "midnight-node-e2e-macros",
+ "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "midnight-node-toolkit",
  "ogmios-client",

@@ -26,6 +26,7 @@ pub mod cli;
 pub mod command;
 pub mod committee_membership;
 pub mod consensus_engine_dispatch;
+pub mod contract_state_query_rpc;
 pub mod engine_digests;
 pub mod extensions;
 mod filtering_pool;
