@@ -300,7 +300,7 @@ macro_rules! runtime_version {
 			// The version of the runtime specification. A full node will not attempt to use its native
 			//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 			//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-			spec_version: 003_000_000,
+			spec_version: 004_000_000,
 			impl_version: 0,
 			apis: RUNTIME_API_VERSIONS,
 			transaction_version: 4,
@@ -975,6 +975,8 @@ impl pallet_consensus_engine::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type EpochDuration = SidechainEpochDuration;
 	type EpochConfiguration = BabeEpochConfigurationValue;
+	// The predicate `Session` (30) evaluates later in the same block.
+	type ShouldEndSession = SessionCommitteeManagement;
 	// Unit weights for now. Issue #1863.
 	type WeightInfo = ();
 }

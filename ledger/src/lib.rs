@@ -141,6 +141,32 @@ pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 	}
 }
 
+/// Whether the `Ledger` at `state_key` has zero `block_fullness`. `unified` and the version
+/// dispatch work as in [`ledger_stats`].
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn is_block_start(unified: bool, state_key: &[u8]) -> Result<bool, String> {
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(ledger_9, unified, is_block_start(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, unified, is_block_start(state_key))
+			.map_err(|e| format!("{e:?}")),
+		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
+	}
+}
+
+/// The `StateKey` an external consumer derives for the ledger state at `state_key`: the tagged
+/// arena key of `Ledger { state, block_fullness: 0 }`. Dispatches as in [`ledger_stats`].
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn block_start_state_key(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
+	match ledger_state_tag_version(state_key) {
+		Some(16..=18) => bridge_arena_call!(ledger_9, unified, block_start_state_key(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, unified, block_start_state_key(state_key))
+			.map_err(|e| format!("{e:?}")),
+		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
+	}
+}
+
 /// Failure modes of [`import_verified_ledger_snapshot`]. All are non-fatal to the chain: the caller
 /// discards the data, reports the peer, and retries from another.
 #[cfg(feature = "std")]
@@ -320,6 +346,31 @@ mod tests {
 		// Drop default storage
 		unsafe_drop_default_storage::<ParityDb>();
 		assert!(try_get_default_storage::<ParityDb>().is_none());
+	}
+
+	/// Ledger-state versions whose `StateKey` contract is pinned by tests: zero end-of-block
+	/// `block_fullness` and a golden block-0 `StateKey` shared with midnight-indexer.
+	const STATE_KEY_CONTRACT_VERSIONS: &[u32] = &[13, 18];
+
+	/// midnight-indexer validates every block by recomputing `StateKey`, so a new ledger-state
+	/// version must not become `latest` without that contract pinned for it.
+	#[test]
+	fn latest_ledger_state_version_has_its_state_key_contract_pinned() {
+		use crate::latest::{
+			ledger_storage_local::DefaultDB, mn_ledger_local::structure::LedgerState,
+		};
+		use midnight_serialize::Tagged;
+
+		let tag = <LedgerState<DefaultDB> as Tagged>::tag();
+		let version = super::ledger_state_tag_version(tag.as_bytes())
+			.expect("ledger-state tag carries a version");
+		assert!(
+			STATE_KEY_CONTRACT_VERSIONS.contains(&version),
+			"ledger-state[v{version}] has no pinned StateKey contract: add a golden block-0 StateKey \
+			 test (like `ledger_9::storage::tests`), the end-of-block fullness tests and the \
+			 `is_block_start`/`block_start_state_key` dispatch arms, add the same vector to \
+			 midnight-indexer's `node_state_key_matches_node_at_genesis`, then list v{version} here"
+		);
 	}
 
 	/// `is_ledger_8_state_key` is what the ledger-9 host API dispatches on to read the

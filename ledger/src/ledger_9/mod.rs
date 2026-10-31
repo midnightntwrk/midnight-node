@@ -901,6 +901,24 @@ where
 		api.serialize(&ledger_state.as_typed_key())
 	}
 
+	/// Whether the `Ledger` at `state_key` has accrued no `block_fullness`, as it must at the end
+	/// of every block.
+	#[cfg(feature = "test-utils")]
+	pub fn is_block_start(state_key: &[u8]) -> Result<bool, LedgerApiError> {
+		let api = api::new();
+		Ok(Self::get_ledger(&api, state_key)?.is_block_start())
+	}
+
+	/// Recomputes `state_key` the way external consumers such as the indexer do: as the tagged
+	/// arena key of `Ledger { state, block_fullness: 0 }` for the ledger state it points to.
+	#[cfg(feature = "test-utils")]
+	pub fn block_start_state_key(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let rebuilt = default_storage::<D>().arena.alloc(Ledger::new(ledger.state.clone()));
+		api.tagged_serialize(&rebuilt.as_typed_key())
+	}
+
 	/// Collection sizes held at the `LedgerState` root (`midnight_ledgerStats`).
 	///
 	/// Every value is O(1). The counts are read off annotations maintained at each
