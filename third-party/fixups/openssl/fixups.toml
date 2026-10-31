@@ -27,9 +27,13 @@
 # symbols the ffi omits -> E0425.
 #
 # DEP_OPENSSL_VERSION_NUMBER for OpenSSL 3.6.3: (3<<28)|(6<<20)|(3<<4) = 0x30600030.
+#
+# Unconditional: `vendored` builds the same 3.6.3 on every OS, so the values hold
+# on macOS too. Scoped to linux, macOS fell back to reindeer's baked env and
+# openssl-0.10 took the 1.0.x cfg path (E0432 on EVP_MD_CTX_create).
 cargo_env = true
 
-['cfg(target_os = "linux")'.buildscript.run.env]
+[buildscript.run.env]
 DEP_OPENSSL_VERSION_NUMBER = "30600030"
 # This env block REPLACES reindeer's baked DEP_OPENSSL_* rather than merging, so
 # all NO_* flags that the vendored ./Configure emits must be listed here.

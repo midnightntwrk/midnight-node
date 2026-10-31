@@ -2263,20 +2263,26 @@ images:
 # buck2 build + test under a bazel-remote action cache (see buck2/Earthfile).
 # Replaces the retired rebuck2 distributed workflow: one buck2 run on a
 # self-hosted runner, the cache making it warm after the first lap.
+#buck2-src The buck2 source set, staged once for +buck2-prep and +buck2-reindeer
+buck2-src:
+    FROM scratch
+    # The cargo tree (as +prep) plus every buck2 input - the root BUCK +
+    # .buckconfig, platforms/toolchains, the generated third-party and wasm-deps
+    # graphs, the generators, and tools/wasm-compress. The `prelude` cell is
+    # `bundled` (buck2 ships it), so it is NOT copied.
+    COPY --keep-ts --dir \
+        .buckconfig BUCK Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml \
+        docs ledger LICENSE node pallets primitives README.md res runtime \
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION \
+        platforms toolchains third-party wasm-deps scripts tools /work/
+    SAVE ARTIFACT /work
+
 #buck2-prep Install the buck2 toolchain + stage sources + write .buckconfig.local
 buck2-prep:
     FROM rust:1.98.1-trixie
     DO buck2+INSTALL
     WORKDIR /work
-    # Source set: the cargo tree (as +prep) plus every buck2 input - the root
-    # BUCK + .buckconfig, platforms/toolchains, the generated third-party and
-    # wasm-deps graphs, the generators, and tools/wasm-compress. The `prelude`
-    # cell is `bundled` (buck2 ships it), so it is NOT copied.
-    COPY --keep-ts --dir \
-        .buckconfig BUCK Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml \
-        docs ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION \
-        platforms toolchains third-party wasm-deps scripts tools .
+    COPY --keep-ts --dir +buck2-src/work /
     DO --pass-args buck2+CONFIG
 
 #buck2-ci Build the deliverables then run the tests, both under the action cache
@@ -2295,3 +2301,47 @@ buck2-ci:
     DO --pass-args buck2+BUCK2 --mode=test \
         --targets="root//..." \
         --buck2_args="--target-platforms root//platforms:linux-x86_64 --exclude ci-infra $_wasm"
+
+#buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
+buck2-reindeer:
+    FROM rust:1.98.1-trixie
+    # gilescope/reindeer: multi-commit git sources, git-subdir CARGO_MANIFEST_DIR,
+    # rustc-link-lib defaults (docs/buck2-notes.md, "Reindeer fixes"). Facebook's
+    # reindeer is not on crates.io (that name is an unrelated crate), so pin a
+    # rev - and regenerate with this rev only: another reindeer diffs the graph.
+    ARG REINDEER_GIT=https://github.com/gilescope/reindeer
+    ARG REINDEER_REV=8736953caea059266205eedbda37c6aea880d137
+    # python3 >= 3.11 (tomllib) for the generators; trixie ships 3.13.
+    RUN apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 && \
+        rm -rf /var/lib/apt/lists/*
+    RUN cargo install --git "$REINDEER_GIT" --rev "$REINDEER_REV" --locked reindeer
+    WORKDIR /work
+    COPY --keep-ts --dir +buck2-src/work /
+    # cargo's registry + git for `cargo metadata`, reindeer's own cargo homes for
+    # buckify: cold, that clones polkadot-sdk and fetches 1600 crates.
+    CACHE --sharing locked --id buck2-regen-cargo-registry /usr/local/cargo/registry
+    CACHE --sharing locked --id buck2-regen-cargo-git /usr/local/cargo/git
+    CACHE --sharing locked --id buck2-regen-third-party /work/third-party/.cargo
+    CACHE --sharing locked --id buck2-regen-wasm-deps /work/wasm-deps/.cargo
+    # Snapshot the staged tree (minus the caches) so the regen can be diffed.
+    RUN mkdir /tmp/before && \
+        tar -C /work --exclude=./third-party/.cargo --exclude=./wasm-deps/.cargo -cf - . | \
+        tar -C /tmp/before -xf - && \
+        touch /tmp/regen-stamp
+    RUN scripts/buck2/regen.sh
+
+#buck2-regen Regenerate the buck2 graph from the cargo workspace and write it back into the tree
+buck2-regen:
+    FROM +buck2-reindeer
+    RUN mkdir /out && \
+        find . -type f -newer /tmp/regen-stamp \
+            -not -path './third-party/.cargo/*' -not -path './wasm-deps/.cargo/*' \
+            -exec cp --parents {} /out \;
+    SAVE ARTIFACT /out/* AS LOCAL ./
+
+#buck2-check-regen Fail if any @generated buck2 file is stale against the cargo workspace
+buck2-check-regen:
+    FROM +buck2-reindeer
+    # .cargo also skips the root cargo config dir, which nothing generates.
+    RUN diff -r --exclude=.cargo /tmp/before /work || { \
+        echo "buck2 graph is stale against the cargo workspace: run \`earth +buck2-regen\` and commit" >&2; exit 1; }

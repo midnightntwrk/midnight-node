@@ -15812,7 +15812,6 @@ cargo.rust_library(
         "CARGO_PKG_DESCRIPTION": "Futures based on intrusive data structures - for std and no-std environments.\n",
         "CARGO_PKG_HOMEPAGE": "https://github.com/Matthias247/futures-intrusive",
         "CARGO_PKG_NAME": "futures-intrusive",
-        "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/Matthias247/futures-intrusive",
         "CARGO_PKG_RUST_VERSION": "",
         "CARGO_PKG_VERSION": "0.5.0",
@@ -30987,6 +30986,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "10",
         "CARGO_PKG_VERSION_PATCH": "80",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :openssl-0.10-build-script-run[out_dir])",
     },
     features = [
         "default",
@@ -30995,20 +30995,7 @@ cargo.rust_library(
     named_deps = {
         "ffi": ":openssl-sys-0.9",
     },
-    platform = {
-        "linux-arm64": dict(
-            env = {
-                "OUT_DIR": "$(location :openssl-0.10-build-script-run[out_dir])",
-            },
-            rustc_flags = ["@$(location :openssl-0.10-build-script-run[rustc_flags])"],
-        ),
-        "linux-x86_64": dict(
-            env = {
-                "OUT_DIR": "$(location :openssl-0.10-build-script-run[out_dir])",
-            },
-            rustc_flags = ["@$(location :openssl-0.10-build-script-run[rustc_flags])"],
-        ),
-    },
+    rustc_flags = ["@$(location :openssl-0.10-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":bitflags-2",

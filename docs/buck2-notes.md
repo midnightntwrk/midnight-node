@@ -38,7 +38,9 @@ WASM blob is a separate no_std crate-universe phase (below).
 * **reindeer** — the `gilescope/reindeer` fork, for local buckify fixes not yet
   upstreamed (see "Reindeer fixes"). Fixups are vendored in-tree, so its
   `shared_fixups` feature is unused. Build with `cargo build --release` and use
-  `target/release/reindeer`.
+  `target/release/reindeer`. CI pins one rev (`Earthfile` `+buck2-reindeer`,
+  `REINDEER_REV`): regenerate with that rev only - another reindeer diffs the
+  graph, and the drift check (below) goes red.
 
 Install buck2 to `~/.cargo/bin/buck2`.
 
@@ -69,16 +71,24 @@ crates.io and the polkadot-sdk git tag, which `cargo vendor` rejects.
 ## Regenerating
 
 ```sh
-cargo metadata --format-version 1 > /tmp/meta.json
-scripts/buck2/gen-third-party.py /tmp/meta.json third-party/Cargo.toml
-rm -f third-party/Cargo.lock                             # reseed from workspace lock
-reindeer --third-party-dir third-party buckify
-scripts/buck2/normalize-wasm-stub-outdir.py third-party/BUCK  # see below
-scripts/buck2/gen-wasm-deps.sh                           # no_std wasm universe
-reindeer --third-party-dir wasm-deps buckify
-scripts/buck2/gen-first-party.py /tmp/meta.json          # all members
-buck2 build root//node:midnight-node                     # library
+earth +buck2-regen                                 # pinned reindeer; writes the files back
+REINDEER=target/release/reindeer scripts/buck2/regen.sh   # same steps, a local build of that rev
 ```
+
+`regen.sh` runs, in order: `cargo metadata --locked`; `gen-third-party.py`
+(reseeds `third-party/Cargo.lock` from the workspace lock - `regen.sh` deletes
+it first, the script only seeds a missing one); `reindeer buckify`;
+`normalize-wasm-stub-outdir.py`; `gen-wasm-deps.sh` (seeds its resolve and
+`wasm-deps/Cargo.lock` from the workspace lock); `reindeer buckify` again;
+`gen-first-party.py` for every member; `sync-test-fixtures.sh`. Both locks
+derive from the workspace lock, so a `Cargo.lock` bump reaches both universes.
+
+**Drift check.** CI (`buck2.yml` `regen` job, `earth +buck2-check-regen`) runs
+the same regeneration on a snapshot and fails on any diff, naming the hunks:
+a Cargo bump that skipped `earth +buck2-regen` cannot land a graph that builds
+the old crates. Byte-reproducible by construction - the generators are
+deterministic and the pinned reindeer and both seeded locks remove the inputs
+that were not.
 
 `normalize-wasm-stub-outdir.py` enforces `OUT_DIR == CARGO_MANIFEST_DIR` for the
 two WASM-stub crates (`frame-storage-access-test-runtime`, `substrate-test-
@@ -232,7 +242,10 @@ universe. Infrastructure:
   resolves `midnight-node-runtime` standalone with `default-features=false`
   filtered to `wasm32v1-none` (the exact no_std tree) and emits
   `wasm-deps/Cargo.toml`; a second `reindeer buckify` produces `wasm-deps/BUCK`
-  (`root//wasm-deps:<crate>`), sharing the std universe's fixups.
+  (`root//wasm-deps:<crate>`), sharing the std universe's fixups. The resolve
+  and `wasm-deps/Cargo.lock` are seeded from the workspace lock, so the blob is
+  built from the versions cargo ships: unseeded, 42 crates had drifted to newer
+  releases (`bytes`, `either`, `bitvec`, `generic-array`, ...).
 * **`platforms/BUCK`** — `wasm32v1-none` platform (`os:none` + `cpu:wasm32`).
 * **`toolchains/BUCK`** — the rust toolchain targets `wasm32v1-none` and passes
   `--cfg substrate_runtime` when `cpu:wasm32` is selected.
@@ -384,6 +397,10 @@ and CI overrides it with a **global** `-c wasm.cc=…` (a root-cell `.buckconfig
 doesn't reach the `toolchains` cell). `toolchains/wasm-lld.sh` locates rust-lld via
 `rustc --print sysroot` (portable across OS/arch).
 
+**Drift.** A second job, `regen`, runs `earth +buck2-check-regen` on every PR:
+the pinned reindeer regenerates the whole graph and any diff fails the job (see
+"Regenerating"). Fork PRs run it on a GitHub-hosted runner, never the fleet.
+
 **Infra tests.** The handful of tests needing Docker/devnet/Cardano carry a
 `ci-infra` label (`gen-first-party.py` `CI_INFRA_*` sets); CI runs `buck2 test
 root//... --exclude ci-infra`. Locally that is Pass 1460 / Fail 0.
@@ -412,17 +429,19 @@ reached the blob assembly / final link.
   cell. (`-Qunused-arguments` + absolute clang in `wasm-cc.sh` were
   also needed once the right compiler is found.)
 
-* **`openssl` version skew — static-vs-dynamic.** Reindeer captures openssl-sys's
-  `links` version (`DEP_OPENSSL_VERSION_NUMBER`) once, at buckify time, from the
-  buckify host's openssl. Buckified on macOS (Homebrew 3.5) it baked `3050000f`,
-  so `openssl-0.10` gated in 3.3+ symbols (`EVP_DigestSqueeze`, …). But at build
-  time openssl-sys dynamically detects the real host (3.0.13 on ubuntu), whose
-  ffi lacks them → "not found in `ffi`". Fix: `third-party/fixups/openssl/` pins
-  `DEP_OPENSSL_VERSION_NUMBER` to the 3.0 baseline (`30000000`) so the dependent
-  matches the ubuntu build target. `DEP_OPENSSL_CONF` (`OPENSSL_NO_IDEA`, …) must
-  be restated in the same fixup env block — it replaces rather than merges
-  reindeer's baked env, and without it `openssl-0.10` references `EVP_idea_*`
-  symbols the ffi omits. (Proper fix would be dynamic `DEP_OPENSSL_*` wiring.)
+* **`openssl` version skew.** openssl-0.10's build script reads
+  `DEP_OPENSSL_VERSION_NUMBER` / `DEP_OPENSSL_CONF` from openssl-sys's build
+  script to pick version cfgs and `osslconf=` flags. Reindeer bakes those once,
+  at buckify time, from the buckify host's openssl (Homebrew 3.5 on a Mac), but
+  `vendored` (via str0m-openssl) builds OpenSSL 3.6.3 from source on every OS,
+  so the baked values never match. `third-party/fixups/openssl/` pins both to
+  the vendored 3.6.3 (`30600030`, the `NO_*` set its `./Configure` emits); the
+  env block replaces reindeer's rather than merging, so every `NO_*` flag must
+  be listed or openssl-0.10 references `EVP_idea_*` / `EVP_camellia_*` symbols
+  the ffi omits. Unconditional on purpose: scoped to `cfg(target_os = "linux")`
+  it also scoped the build-script wiring (`OUT_DIR`, `rustc_flags`) to the
+  linux platform dicts, and macOS compiled openssl-0.10 with no cfgs at all -
+  the 1.0.x path, `E0432` on `EVP_MD_CTX_create`.
 
 * **`ittapi-sys` — build script omitted by default.** Without a fixup, reindeer
   omits the build script, so

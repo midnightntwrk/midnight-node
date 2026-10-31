@@ -7,6 +7,10 @@ name: "buck2"
 # that persists across runs on the buildkitd.
 on:
   workflow_dispatch: {}
+  # Every PR: the regen check is a few minutes warm and the generated graph has
+  # inputs all over the tree (every Cargo.toml, the fixture sources), so a
+  # paths filter would only add gaps. The build + test job is push-only.
+  pull_request: {}
   push:
     branches: [giles-buck2-build]
     paths:
@@ -28,8 +32,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The generated graph (third-party + wasm-deps universes, every member's
+  # BUCK, the copied test fixtures) must match the cargo workspace: regenerate
+  # with the pinned reindeer and fail on any diff, so a Cargo.lock bump that
+  # skipped `earth +buck2-regen` cannot build stale crates. Fork PRs are
+  # untrusted code, so they get a GitHub-hosted runner and no fleet config.
+  regen:
+    name: buck2 graph matches Cargo.lock
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted", "tier:large"]') }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        with:
+          version: v0.8.19
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use the fleet's earth config
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        run: echo "EARTH_CONFIG=${{ github.workspace }}/.earth/config.selfhosted.yml" >> "$GITHUB_ENV"
+
+      - name: Regenerate and diff
+        run: earth --ci +buck2-check-regen
+
   buck2:
     name: buck2 build + test
+    if: github.event_name != 'pull_request'
     runs-on: [self-hosted, "tier:large"]
     # A cold buck2 build of the whole tree on one runner is long; the persistent
     # action cache makes later runs warm. Generous cap, but fail rather than hang.

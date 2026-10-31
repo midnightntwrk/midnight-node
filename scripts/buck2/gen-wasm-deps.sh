@@ -36,8 +36,14 @@ for reg, crates in root.get("patch", {}).items():
 PY
 } > "$TMP/Cargo.toml"
 
+# Seed both resolves from the workspace lock so the wasm universe pins the
+# versions cargo ships, not the newest the index offers: cargo keeps every
+# locked version it still needs and prunes the rest. Without this the two
+# builds drifted on 42 crates (bytes, either, bitvec, generic-array, ...).
+cp "$ROOT/Cargo.lock" "$TMP/Cargo.lock"
 ( cd "$TMP" && cargo metadata --format-version 1 \
     --filter-platform wasm32v1-none -q ) > "$TMP/wasm-meta.json"
+cp "$ROOT/Cargo.lock" "$ROOT/wasm-deps/Cargo.lock"
 
 python3 "$ROOT/scripts/buck2/gen-wasm-deps.py" \
     "$TMP/wasm-meta.json" "$ROOT/wasm-deps/Cargo.toml" "$ROOT"
