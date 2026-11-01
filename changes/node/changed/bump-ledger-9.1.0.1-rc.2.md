@@ -20,4 +20,4 @@ back on sha2 0.10 - the arena hasher is named through the `storage-sha2` alias s
 cannot drift from it. The v8->v9 state translation crate is pinned to its storage-3 port,
 whose translation machinery now lives on the v9 storage side.
 
-PR: TBD
+PR: https://github.com/shieldedtech/shadow-midnight-node/pull/85

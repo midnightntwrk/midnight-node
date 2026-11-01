@@ -1290,9 +1290,12 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
+    # inside the container, so the private git dependencies are fetched there: +test-toolkit
+    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
+    # netrc for the duration of the run (never baked into the image).
     COPY scripts/test-toolkit.sh /test-toolkit.sh
-    ENTRYPOINT ["/test-toolkit.sh"]
+    ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
     SAVE IMAGE
 
 test-toolkit:
@@ -1325,7 +1328,7 @@ test-toolkit:
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
-            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1337,13 +1340,14 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1355,6 +1359,7 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json

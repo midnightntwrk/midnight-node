@@ -7949,7 +7949,6 @@ dependencies = [
  "midnight-ledger-v9",
  "midnight-node-ledger-helpers",
  "midnight-serialize",
- "midnight-storage 2.0.3",
  "midnight-storage 3.0.0",
  "midnight-transient-crypto 2.2.0",
  "rand 0.8.5",
