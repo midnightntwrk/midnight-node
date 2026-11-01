@@ -26,9 +26,11 @@
 //! translating it into a v9 `LedgerState`, re-persists it, and returns the new v9
 //! arena root for the pallet to store back into `StateKey`.
 //!
-//! v8 and v9 share one storage crate (`ledger-storage-ledger-8`,
-//! midnight-storage 2.0.1) and hence one arena, so the translation reads and
-//! writes the same parity-db instance the pre-fork ledger-8 blocks populated.
+//! v8 (`ledger-storage-ledger-8`, midnight-storage 2.x) and v9
+//! (`ledger-storage-ledger-9`, midnight-storage 3.x) are distinct storage crates
+//! but share one `midnight-storage-core`, hence one arena: the translation reads
+//! and writes the same parity-db instance the pre-fork ledger-8 blocks populated.
+//! The translation machinery lives on the v9 side.
 
 use crate::ledger_8::api::Ledger as Ledger8;
 use crate::ledger_9::api::Ledger as Ledger9;
@@ -36,7 +38,7 @@ use crate::ledger_9::types::{DeserializationError, LedgerApiError, Serialization
 use v8_to_v9_state_translation::StateTranslationTable;
 
 use base_crypto::cost_model::CostDuration;
-use ledger_storage_ledger_8 as storage;
+use ledger_storage_ledger_9 as storage;
 use midnight_serialize::{tagged_deserialize, tagged_serialize};
 use sp_externalities::Externalities;
 use storage::{
@@ -194,7 +196,7 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use ledger_storage_ledger_8::db::InMemoryDB;
+	use ledger_storage_ledger_9::db::InMemoryDB;
 	use midnight_serialize::Tagged;
 	use std::borrow::Cow;
 	use std::ops::Deref;
@@ -237,7 +239,10 @@ mod tests {
 	/// types and compare.
 	#[test]
 	fn table_tags_match_types() {
-		use storage::merkle_patricia_trie::{MerklePatriciaTrie, Node};
+		use ledger_storage_ledger_8::merkle_patricia_trie::{MerklePatriciaTrie, Node};
+		use storage::merkle_patricia_trie::{
+			MerklePatriciaTrie as MerklePatriciaTrie9, Node as Node9,
+		};
 		use storage::storable::SizeAnn;
 
 		type V8Ann = mn_ledger_8::annotation::NightAnn;
@@ -254,18 +259,18 @@ mod tests {
 			(V8Contract::tag(), V9Contract::tag()),
 			(
 				MerklePatriciaTrie::<V8Contract, InMemoryDB, V8Ann>::tag(),
-				MerklePatriciaTrie::<V9Contract, InMemoryDB, V9Ann>::tag(),
+				MerklePatriciaTrie9::<V9Contract, InMemoryDB, V9Ann>::tag(),
 			),
 			(
 				Node::<V8Contract, InMemoryDB, V8Ann>::tag(),
-				Node::<V9Contract, InMemoryDB, V9Ann>::tag(),
+				Node9::<V9Contract, InMemoryDB, V9Ann>::tag(),
 			),
 			(u128::tag(), u128::tag()),
 			(
 				MerklePatriciaTrie::<u128, InMemoryDB, SizeAnn>::tag(),
-				MerklePatriciaTrie::<u128, InMemoryDB, V9Ann>::tag(),
+				MerklePatriciaTrie9::<u128, InMemoryDB, V9Ann>::tag(),
 			),
-			(Node::<u128, InMemoryDB, SizeAnn>::tag(), Node::<u128, InMemoryDB, V9Ann>::tag()),
+			(Node::<u128, InMemoryDB, SizeAnn>::tag(), Node9::<u128, InMemoryDB, V9Ann>::tag()),
 		];
 
 		let actual: Vec<_> = <StateTranslationTable as TranslationTable<InMemoryDB>>::TABLE

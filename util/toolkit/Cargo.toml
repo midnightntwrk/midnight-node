@@ -25,6 +25,7 @@ subxt.workspace = true
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
 sha2.workspace = true
+storage-sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand = "0.8.4"

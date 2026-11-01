@@ -46,21 +46,21 @@ type Shared = ParityDb;
 
 const RUNTIME_VERSION: u32 = 1;
 
-fn hash_of(state_root: &[u8]) -> ArenaHash<sha2::Sha256> {
-	let key: TypedArenaKey<Ledger<Shared>, sha2::Sha256> =
+fn hash_of(state_root: &[u8]) -> ArenaHash<storage_sha2::Sha256> {
+	let key: TypedArenaKey<Ledger<Shared>, storage_sha2::Sha256> =
 		midnight_serialize::tagged_deserialize(&mut &state_root[..]).unwrap();
 	ArenaKey::from(key).hash().clone()
 }
 
 /// Whether `key` is known to the shared storage (its caches or its database), and its root
 /// count there.
-fn in_shared(key: &ArenaHash<sha2::Sha256>) -> (bool, u32) {
+fn in_shared(key: &ArenaHash<storage_sha2::Sha256>) -> (bool, u32) {
 	default_storage::<Shared>().with_backend(|backend| {
 		(backend.get(key).is_some(), backend.get_roots().get(key).copied().unwrap_or(0))
 	})
 }
 
-fn in_ephemeral(key: &ArenaHash<sha2::Sha256>) -> bool {
+fn in_ephemeral(key: &ArenaHash<storage_sha2::Sha256>) -> bool {
 	try_get_default_storage::<EphemeralDb<Shared>>()
 		.is_some_and(|storage| storage.with_backend(|backend| backend.get(key).is_some()))
 }
