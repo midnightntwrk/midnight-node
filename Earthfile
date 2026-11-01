@@ -1762,7 +1762,9 @@ fix-lock-npm:
     # is what resolves fresh versions.
     COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/.npmrc ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
-    RUN npm install
+    # Lockfile resolution needs no lifecycle scripts, and util/toolkit-js's postinstall
+    # (scripts/vendor-wasm.mjs) is not copied here, so it would fail.
+    RUN npm install --ignore-scripts
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
 
 # fix-lock-js regenerates all npm lockfiles
