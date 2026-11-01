@@ -21,7 +21,7 @@
 #[cfg(feature = "std")]
 pub(crate) use {
 	base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
-	ledger_storage_ledger_8 as ledger_storage_local,
+	ledger_storage_ledger_9 as ledger_storage_local,
 	midnight_node_ledger_helpers::ledger_9 as helpers_local,
 	midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
 	onchain_runtime_ledger_9 as onchain_runtime_local,
@@ -44,7 +44,7 @@ mod system_tx;
 #[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
-use sha2::digest::{OutputSizeUser, consts::U32};
+use storage_sha2::digest::{OutputSizeUser, consts::U32};
 #[cfg(feature = "std")]
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
@@ -228,8 +228,11 @@ where
 			match &storage.db {
 				LedgerStorageDb::UnifiedDb(db) => {
 					let res = set_default_storage(|| {
-						let db =
-                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
+						let db = ParityDb::<
+							storage_sha2::Sha256,
+							_,
+							{ LedgerStorageExt::COLUMN_OFFSET },
+						>::from_existing_db(OwnedDb(db.clone()));
 						Storage::new(storage.cache_size, db)
 					});
 					if res.is_err() {
@@ -241,7 +244,7 @@ where
 				},
 				LedgerStorageDb::SeparateDb(db_path) => {
 					let res = set_default_storage(|| {
-						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
+						let db = ParityDb::<storage_sha2::Sha256>::open(db_path.as_path());
 						Storage::new(storage.0.cache_size, db)
 					});
 					if res.is_err() {

@@ -21,9 +21,13 @@
 use crate::ledger_9::{
 	ledger_storage_local::db::DB,
 	mn_ledger_local::error::{
+		FeeCalculationError, MalformedContractDeploy, MalformedTransaction,
 		SystemTransactionError as LedgerSystemTransactionError, TransactionInvalid,
 	},
-	types::{InvalidError, SystemTransactionError, ZswapInvalidErrorCode},
+	types::{
+		FeeCalculationErrorCode, InvalidError, MalformedContractDeployErrorCode, MalformedError,
+		SystemTransactionError, ZswapInvalidErrorCode,
+	},
 	zswap_local::error::TransactionInvalid as ZswapTransactionInvalid,
 };
 
@@ -34,6 +38,53 @@ pub fn try_convert_extra_invalid<D: DB>(
 		TransactionInvalid::MerkleTreeError(_) => Ok(InvalidError::MerkleTreeError),
 		TransactionInvalid::InitialNonceAlreadyPresent(_) => {
 			Ok(InvalidError::GenerationInfoAlreadyPresent)
+		},
+		TransactionInvalid::BridgeClaimTooSmall { .. } => Ok(InvalidError::BridgeClaimTooSmall),
+		TransactionInvalid::ContractTooManyOperations { .. } => {
+			Ok(InvalidError::ContractTooManyOperations)
+		},
+		other => Err(other),
+	}
+}
+
+/// `MalformedTransaction` variants added in ledger 9.1.0.1.
+pub fn try_convert_extra_malformed<D: DB>(
+	err: MalformedTransaction<D>,
+) -> Result<MalformedError, MalformedTransaction<D>> {
+	match err {
+		MalformedTransaction::TooManyPublicInputs { .. } => Ok(MalformedError::TooManyPublicInputs),
+		MalformedTransaction::TranscriptGasExceedsBlockLimits { .. } => {
+			Ok(MalformedError::TranscriptGasExceedsBlockLimits)
+		},
+		MalformedTransaction::ContractDustTransfer { .. } => {
+			Ok(MalformedError::ContractDustTransfer)
+		},
+		MalformedTransaction::RepeatedCommitteeSignature { .. } => {
+			Ok(MalformedError::RepeatedCommitteeSignature)
+		},
+		MalformedTransaction::RepeatedDustRegistration { .. } => {
+			Ok(MalformedError::RepeatedDustRegistration)
+		},
+		other => Err(other),
+	}
+}
+
+/// `FeeCalculationError` is `#[non_exhaustive]` from ledger 9.1.0.1.
+pub fn try_convert_extra_fee_calculation(
+	err: FeeCalculationError,
+) -> Result<FeeCalculationErrorCode, FeeCalculationError> {
+	match err {
+		FeeCalculationError::RepeatedEntries => Ok(FeeCalculationErrorCode::RepeatedEntries),
+		other => Err(other),
+	}
+}
+
+pub fn try_convert_extra_contract_deploy(
+	err: MalformedContractDeploy,
+) -> Result<MalformedContractDeployErrorCode, MalformedContractDeploy> {
+	match err {
+		MalformedContractDeploy::TooManyOperations { .. } => {
+			Ok(MalformedContractDeployErrorCode::TooManyOperations)
 		},
 		other => Err(other),
 	}
@@ -59,5 +110,91 @@ pub fn try_convert_extra_system_tx(
 			Ok(SystemTransactionError::GenerationInfoAlreadyPresent)
 		},
 		other => Err(other),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::ledger_9::{
+		ledger_storage_local::db::InMemoryDB,
+		mn_ledger_local::error::{
+			FeeCalculationError, MalformedContractDeploy, MalformedTransaction, TransactionInvalid,
+		},
+		onchain_runtime_local::state::EntryPointBuf,
+		types::{
+			FeeCalculationErrorCode, InvalidError, MalformedContractDeployErrorCode, MalformedError,
+		},
+	};
+	use base_crypto::{cost_model::CostDuration, hash::HashOutput};
+	use coin_structure_ledger_9::contract::ContractAddress;
+
+	type Mt = MalformedTransaction<InMemoryDB>;
+	type Ti = TransactionInvalid<InMemoryDB>;
+
+	fn addr() -> ContractAddress {
+		ContractAddress(HashOutput([7; 32]))
+	}
+
+	/// Every `MalformedTransaction` variant this module maps gets its own code, not the
+	/// `UnknownError` catch-all.
+	#[test]
+	fn malformed_variants_are_not_unknown_error() {
+		let ps = CostDuration::from_picoseconds;
+		let cases: Vec<(Mt, MalformedError)> = vec![
+			(
+				Mt::FeeCalculation(FeeCalculationError::RepeatedEntries),
+				MalformedError::FeeCalculation(FeeCalculationErrorCode::RepeatedEntries),
+			),
+			(
+				Mt::MalformedContractDeploy(MalformedContractDeploy::TooManyOperations {
+					operations: 257,
+					limit: 256,
+				}),
+				MalformedError::MalformedContractDeploy(
+					MalformedContractDeployErrorCode::TooManyOperations,
+				),
+			),
+			(
+				Mt::TooManyPublicInputs {
+					address: addr(),
+					operation: EntryPointBuf(b"op".to_vec()),
+					public_inputs: 2,
+					limit: 1,
+				},
+				MalformedError::TooManyPublicInputs,
+			),
+			(
+				Mt::TranscriptGasExceedsBlockLimits {
+					address: addr(),
+					declared_compute_time: ps(2),
+					declared_read_time: ps(2),
+					compute_time_limit: ps(1),
+					read_time_limit: ps(1),
+				},
+				MalformedError::TranscriptGasExceedsBlockLimits,
+			),
+			(Mt::ContractDustTransfer { address: addr() }, MalformedError::ContractDustTransfer),
+		];
+		for (upstream, expected) in cases {
+			assert_eq!(MalformedError::from(upstream), expected);
+		}
+	}
+
+	/// Same for `TransactionInvalid`.
+	#[test]
+	fn invalid_variants_are_not_unknown_error() {
+		let cases: Vec<(Ti, InvalidError)> = vec![
+			(
+				Ti::BridgeClaimTooSmall { claimed: 1, minimum: 2, claimable: 3 },
+				InvalidError::BridgeClaimTooSmall,
+			),
+			(
+				Ti::ContractTooManyOperations { address: addr(), operations: 257, limit: 256 },
+				InvalidError::ContractTooManyOperations,
+			),
+		];
+		for (upstream, expected) in cases {
+			assert_eq!(InvalidError::from(upstream), expected);
+		}
 	}
 }

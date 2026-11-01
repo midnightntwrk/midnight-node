@@ -58,7 +58,7 @@ pub fn drop_all_default_storage() {
 /// (`ledger-state[v13]`) genesis and only upgrades to v9 later via the runtime
 /// migration. Seeding must therefore match the genesis version (the genesis
 /// block runs under the old WASM and expects the old-format arena root), not the
-/// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
+/// latest. v8 and v9 share one `storage-core` arena, so a v8-seeded arena is exactly
 /// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
 /// latest version (`ledger_9`), preserving the prior default behaviour.
 #[cfg(feature = "std")]
@@ -146,7 +146,7 @@ mod tests {
 					panic!("Failed to create dir {}, err {}", db_path.display(), err)
 				});
 
-				let db = ParityDb::<sha2::Sha256>::open(&db_path);
+				let db = ParityDb::<storage_sha2::Sha256>::open(&db_path);
 
 				Storage::new(0, db)
 			});

@@ -33,7 +33,7 @@ type Signature = crate::ledger_9::TransactionSignature;
 type DbSeparate = crate::ledger_9::ledger_storage_local::db::ParityDb;
 #[cfg(feature = "std")]
 type DbUnified = crate::ledger_9::ledger_storage_local::db::ParityDb<
-	sha2::Sha256,
+	storage_sha2::Sha256,
 	crate::ledger_9::ledger_storage_local::db::paritydb::OwnedDb,
 	{ LedgerStorageExt::COLUMN_OFFSET },
 >;
@@ -865,7 +865,7 @@ pub trait Ledger9Bridge {
 		// runs in the Executive migrations tuple, before pallet_midnight's
 		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.
 		// `set_default_storage` is idempotent — a no-op if the pre-fork ledger-8
-		// blocks already set it (v8 and v9 share the same storage backend).
+		// blocks already set it (v8 and v9 share the same parity-db arena).
 		use crate::host_api::migration_8_to_9::migrate_state_v8_to_v9;
 
 		let ephemeral = !is_onchain(*self);
