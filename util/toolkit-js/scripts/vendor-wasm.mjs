@@ -7,15 +7,22 @@
 // tarball's contents. See vendor/README.md for why the tarballs exist and when to
 // delete all of this.
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const vendor = join(root, 'vendor');
-if (!existsSync(vendor)) process.exit(0);
+if (!existsSync(vendor)) {
+  console.error('vendor-wasm: vendor/ is missing; remove this postinstall script together with it');
+  process.exit(1);
+}
 
 const tarballs = readdirSync(vendor).filter((f) => f.endsWith('.tgz')).sort();
+if (tarballs.length === 0) {
+  console.error('vendor-wasm: vendor/ holds no .tgz; remove this postinstall script together with it');
+  process.exit(1);
+}
 const packageName = (tgz) =>
   JSON.parse(execFileSync('tar', ['-xOzf', tgz, 'package/package.json'], { encoding: 'utf8' })).name;
 
@@ -52,9 +59,13 @@ for (const file of tarballs) {
   }
   for (const dir of new Set(installs)) {
     const before = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version;
+    // Extract beside the target and swap, so a failed extraction leaves the install intact.
+    const tmp = `${dir}.vendor-wasm-tmp`;
+    rmSync(tmp, { recursive: true, force: true });
+    mkdirSync(tmp, { recursive: true });
+    execFileSync('tar', ['-xzf', tgz, '--strip-components=1', '-C', tmp]);
     rmSync(dir, { recursive: true, force: true });
-    execFileSync('mkdir', ['-p', dir]);
-    execFileSync('tar', ['-xzf', tgz, '--strip-components=1', '-C', dir]);
+    renameSync(tmp, dir);
     const after = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version;
     console.log(`vendor-wasm: ${name} ${before} -> ${after} at ${dir.replace(root + '/', '')}`);
   }
