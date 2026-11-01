@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "npm run build:variants && tsc && chmod +x dist/bin.js",
+    "postinstall": "node scripts/vendor-wasm.mjs",
     "build:variants": "turbo run build --filter='@midnight-ntwrk/node-toolkit-compact-*'",
     "start": "dist/bin.js",
     "test": "npm run build:variants && npm run build-compact && vitest run",
