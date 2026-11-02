@@ -30,7 +30,7 @@ use rand::{SeedableRng, rngs::StdRng};
 use subxt::utils::H256;
 use tx_generator::*;
 
-use midnight_node_ledger_helpers::*;
+use midnight_ledger_unsafe_helpers::*;
 
 // Conditionally define the type alias `ProofType` and `SignatureType`
 #[cfg(not(feature = "erase-proof"))]

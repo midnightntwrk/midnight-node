@@ -45,9 +45,6 @@
 //!     	.await?
 //!     	.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 //!
-//!     let block_participation =
-//!     	StakeDistributionDataSourceImpl::new(pool.clone(), metrics.clone(), STAKE_CACHE_SIZE);
-//!
 //!     Ok(())
 //! }
 //! ```
@@ -107,6 +104,8 @@ pub use crate::candidates::CandidatesDataSourceImpl;
 pub use crate::mc_hash::McHashDataSourceImpl;
 #[cfg(feature = "sidechain-rpc")]
 pub use crate::sidechain_rpc::SidechainRpcDataSourceImpl;
+#[cfg(feature = "block-source")]
+pub use sidechain_mc_hash::StableBlockByHashResult;
 
 mod data_sources;
 mod db_datum;

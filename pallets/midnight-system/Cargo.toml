@@ -21,6 +21,16 @@ frame-system.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
 
+[dev-dependencies]
+pallet-midnight.workspace = true
+pallet-timestamp.workspace = true
+sp-core.workspace = true
+sp-io.workspace = true
+sp-runtime.workspace = true
+midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
+midnight-node-ledger-helpers.workspace = true
+tempfile.workspace = true
+
 [features]
 default = ["std"]
 std = [
@@ -29,6 +39,12 @@ std = [
 	"scale-info/std",
 	"midnight-node-ledger/std",
     "midnight-primitives/std",
+    "pallet-midnight/std",
+    "pallet-timestamp/std",
+    "sp-core/std",
+    "sp-io/std",
+    "sp-runtime/std",
+    "midnight-node-res/std",
 ]
 experimental = []
 runtime-benchmarks = [

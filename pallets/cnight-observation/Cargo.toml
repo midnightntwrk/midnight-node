@@ -17,7 +17,6 @@ parity-scale-codec.workspace = true
 scale-info.workspace = true
 log.workspace = true
 sp-core.workspace = true
-sp-runtime.workspace = true
 hex.workspace = true
 derive-new.workspace= true
 serde = { workspace = true}
@@ -26,6 +25,7 @@ frame-benchmarking = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io.workspace = true
+sp-runtime.workspace = true
 rand = { version = "^0.8.4", features = ["std_rng"] }
 midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 pallet-midnight-system.workspace = true

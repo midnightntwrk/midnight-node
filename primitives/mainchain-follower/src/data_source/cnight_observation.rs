@@ -24,6 +24,7 @@ use cardano_serialization_lib::{
 };
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+	sort_observed_utxos,
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -110,7 +111,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
-		utxo_overestimate: usize,
+		spec_version: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
@@ -180,16 +181,10 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let end = end.increment();
 		log::debug!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
 
-		// `tx_capacity` is the number of complete cardano transactions to include in the
-		// inherent. Each tx may contribute multiple UTXO rows across the four queries
-		// below (registrations / deregistrations / asset creates / asset spends), so the
-		// per-query row limit (`utxo_overestimate`) must be large enough that the largest
-		// single tx fits within it; otherwise the truncation step would emit a partial tx
-		// and validators with different limits would disagree on the inherent payload.
-		//
-		// The over-fetch quantity is therefore consensus-affecting and is supplied by the
-		// caller (the inherent data provider) from the runtime, so it can only change at
-		// a runtime upgrade boundary.
+		// The "capacity" argument is capacity in terms of TRANSACTIONS,
+		// but the various sql queries below want a capacity in terms of UTXOs.
+		// Use a generous overestimate of how many UTXOs each TX _may_ have.
+		let utxo_capacity = tx_capacity * 64;
 
 		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
@@ -198,7 +193,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let paged = PagedQuery {
 			start: start_position,
 			end: &end,
-			limit: utxo_overestimate,
+			limit: utxo_capacity,
 			offset: 0,
 			low_bound: low_bounds,
 			high_bound: high_bounds,
@@ -268,10 +263,10 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		utxos.extend(asset_create_utxos);
 		utxos.extend(asset_spend_utxos);
 
-		utxos.sort();
+		sort_observed_utxos(&mut utxos, spec_version);
 
 		// Truncate UTXOs but include full transactions
-		let mut truncated_utxos = Vec::with_capacity(utxo_overestimate);
+		let mut truncated_utxos = Vec::with_capacity(utxo_capacity);
 		let mut num_txs = 0;
 		let mut cur_tx: Option<CardanoPosition> = None;
 		for utxo in utxos {
@@ -483,7 +478,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			else {
 				log::debug!(
 					"Cardano address {:?} not valid bech32 cardano address",
-					&row.holder_address
+					row.holder_address
 				);
 				continue;
 			};

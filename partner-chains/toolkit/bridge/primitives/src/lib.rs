@@ -159,6 +159,8 @@ pub struct MainChainScripts {
 	///
 	/// All tokens sent to that address are effectively locked and considered "sent" to the Partner Chain.
 	pub illiquid_circulation_supply_validator_address: MainchainAddress,
+	/// Address of the reserve validator.
+	pub reserve_validator_address: MainchainAddress,
 }
 
 impl MainChainScripts {
@@ -179,24 +181,28 @@ impl MainChainScripts {
 	/// - `BRIDGE_TOKEN_POLICY_ID`
 	/// - `BRIDGE_TOKEN_ASSET_NAME`
 	/// - `ILLIQUID_CIRCULATION_SUPPLY_VALIDATOR_ADDRESS`
+	/// - `RESERVE_VALIDATOR_ADDRESS`
 	pub fn read_from_env() -> Result<Self, envy::Error> {
 		#[derive(serde::Serialize, serde::Deserialize)]
 		pub struct MainChainScriptsEnvConfig {
 			pub bridge_token_policy_id: PolicyId,
 			pub bridge_token_asset_name: AssetName,
 			pub illiquid_circulation_supply_validator_address: MainchainAddress,
+			pub reserve_validator_address: MainchainAddress,
 		}
 
 		let MainChainScriptsEnvConfig {
 			bridge_token_policy_id,
 			bridge_token_asset_name,
 			illiquid_circulation_supply_validator_address,
+			reserve_validator_address,
 		} = envy::from_env::<MainChainScriptsEnvConfig>()?;
 
 		Ok(Self {
 			token_policy_id: bridge_token_policy_id,
 			token_asset_name: bridge_token_asset_name,
 			illiquid_circulation_supply_validator_address,
+			reserve_validator_address,
 		})
 	}
 }
@@ -239,6 +245,25 @@ impl<RecipientAddress> BridgeTransferV1<RecipientAddress> {
 	/// Creates a transfer with Invalid recipient
 	pub fn new_invalid(mc_tx_hash: McTxHash, amount: u64) -> Self {
 		Self { mc_tx_hash, amount, recipient: TransferRecipient::Invalid }
+	}
+
+	/// Checkpoint that is reached once this transfer has been processed
+	///
+	/// If there is a Cardano Tx that carries *reserve transfer* and *ICS transfer* then
+	/// it is important that node presents *reserve transfer* first.
+	///
+	/// For a transaction that has *only* a reserve transfer this returns the looser
+	/// [BridgeDataCheckpoint::TxReserveTransfer] instead of [BridgeDataCheckpoint::Tx]. That is
+	/// safe, because such a transaction is presented again with its reserve transfer left out,
+	/// which leaves nothing of it to process. It only costs reading one Cardano transaction again.
+	/// This is a conscious trade-off in favor of code simplicity over marginal performance gain.
+	pub fn checkpoint(&self) -> BridgeDataCheckpoint {
+		match self.recipient {
+			TransferRecipient::Reserve => BridgeDataCheckpoint::TxReserveTransfer(self.mc_tx_hash),
+			TransferRecipient::Address { .. } | TransferRecipient::Invalid => {
+				BridgeDataCheckpoint::Tx(self.mc_tx_hash)
+			},
+		}
 	}
 }
 
@@ -306,10 +331,11 @@ pub enum TokenBridgeInherentDataProvider<RecipientAddress> {
 
 /// Value specifying the point in time up to which bridge transfers have been processed
 ///
-/// This type is an enum wrapping either a block number or a utxo to handle both a case
-/// where all transfers up to a block have been handled and a case where there were more
-/// transfers than the limit allows and observability needs to pick up after the last
-/// utxo that could be observed
+/// A Cardano transaction yields at most two transfers — a reserve transfer followed by an ICS
+/// transfer, see [BridgeTransferV1::checkpoint] — so processing can stop either between
+/// transactions or between those two transfers of one transaction. The variants of this type
+/// identify the last transfer that has been processed at the granularity needed for each of these
+/// cases, or the last Cardano block whose transfers are all processed.
 #[derive(
 	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
 )]
@@ -318,6 +344,13 @@ pub enum BridgeDataCheckpoint {
 	Tx(McTxHash),
 	/// Cardano block up to which data has been processed
 	Block(McBlockNumber),
+	/// A transaction of which only the reserve transfer has been processed
+	///
+	/// The ICS transfer of that transaction is still to be processed, so the observability layer
+	/// presents the transaction again, with its reserve transfer left out. A transaction that has
+	/// no ICS transfer is then presented with no transfers at all, which is why this checkpoint is
+	/// also a valid, if not the tightest, way to point at a fully processed transaction.
+	TxReserveTransfer(McTxHash),
 }
 
 /// Interface for data sources that can be used by [TokenBridgeInherentDataProvider]
@@ -325,6 +358,13 @@ pub enum BridgeDataCheckpoint {
 #[async_trait::async_trait]
 pub trait TokenBridgeDataSource<RecipientAddress>: Send + Sync {
 	/// Fetches at most `max_transfers` of token bridge transfers after `data_checkpoint` up to `current_mc_block`
+	///
+	/// A [BridgeDataCheckpoint::TxReserveTransfer] checkpoint includes the transaction it points
+	/// at, minus its reserve transfer, which has already been processed.
+	///
+	/// Transfers are returned in the order they were made and can be cut off at any point, also
+	/// between the two transfers of one Cardano transaction, so any `max_transfers` limit of at
+	/// least one allows processing to progress.
 	async fn get_transfers(
 		&self,
 		main_chain_scripts: MainChainScripts,
@@ -390,7 +430,7 @@ sp_api::decl_runtime_apis! {
 	pub trait TokenBridgeIDPRuntimeApi {
 		/// Returns the current version of the pallet, 1-based.
 		fn get_pallet_version() -> u32;
-		/// Returns the currenlty configured main chain scripts
+		/// Returns the currently configured main chain scripts
 		fn get_main_chain_scripts() -> Option<MainChainScripts>;
 		/// Returns the currently configured transfer number limit
 		fn get_max_transfers_per_block() -> u32;
@@ -447,10 +487,16 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 		Api: TokenBridgeIDPRuntimeApi<Block>,
 	{
 		let max_transfers = api.get_max_transfers_per_block(parent_hash)?;
-		let (Some(last_checkpoint), Some(main_chain_scripts)) =
-			(api.get_last_data_checkpoint(parent_hash)?, api.get_main_chain_scripts(parent_hash)?)
-		else {
-			log::info!("💤 Skipping token bridge transfer observation. Pallet not configured.");
+		let Some(last_checkpoint) = api.get_last_data_checkpoint(parent_hash)? else {
+			log::info!(
+				"💤 Skipping token bridge transfer observation. Pallet last data checkpoint not configured."
+			);
+			return Ok(Self::Inert);
+		};
+		let Some(main_chain_scripts) = api.get_main_chain_scripts(parent_hash)? else {
+			log::info!(
+				"💤 Skipping token bridge transfer observation. Pallet main chain addresses are not configured."
+			);
 			return Ok(Self::Inert);
 		};
 

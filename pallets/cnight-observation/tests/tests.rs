@@ -26,9 +26,9 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNightAddresses, CardanoPosition, CardanoRewardAddressBytes,
-	DustPublicKeyBytes, INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement,
-	TimestampUnixMillis,
+	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -199,7 +199,7 @@ fn asset_create_should_emit_valid_event_if_registered() {
 			) = &record.event
 			{
 				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
+				println!("looking for owner: {:?}", dust_public_key);
 				let dust_public_key_deser: DustPublicKey =
 					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
@@ -267,7 +267,7 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 			) = &record.event
 			{
 				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
+				println!("looking for owner: {:?}", dust_public_key);
 				let dust_public_key_deser: DustPublicKey =
 					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
@@ -467,7 +467,7 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 			) = &record.event
 			{
 				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
+				println!("looking for owner: {:?}", dust_public_key);
 				let dust_public_key_deser: DustPublicKey =
 					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
 				let events = extract_events(&e.serialized_system_transaction);
@@ -1541,18 +1541,20 @@ fn position_guard_works_with_utxos_present() {
 	});
 }
 
-/// While the v0 -> v1 MBM is still draining, `process_tokens` must short-circuit:
-/// reading only v1 mid-migration would silently corrupt registration state for any
-/// reward address whose v0 row hasn't been moved yet (e.g. a deregistration would
-/// no-op here and then re-appear as live once the migration completes).
+/// While any MBM of this pallet's storage is still draining, `process_tokens`
+/// must short-circuit: mid v0 -> v1 it would read only v1 and silently corrupt
+/// registration state for any reward address whose v0 row hasn't been moved yet
+/// (e.g. a deregistration would no-op here and then re-appear as live once the
+/// migration completes); mid v1 -> v2 it would race the dust generation replay.
 ///
-/// This test forces `on_chain_storage_version` back to 0 to simulate a block where
-/// the MBM is mid-flight, then asserts that an inherent carrying real UTXOs:
+/// This test forces `on_chain_storage_version` back to 0, then to 1, to simulate
+/// blocks where either MBM is mid-flight, and asserts that an inherent carrying
+/// real UTXOs:
 /// - leaves `NextCardanoPosition` unchanged,
 /// - writes nothing to `Mapping`,
 /// - emits no pallet events.
-/// After flipping the version to 1 (migration complete), the same call processes
-/// normally and updates state.
+/// After flipping the version to 2 (both migrations complete), the same call
+/// processes normally and updates state.
 #[test]
 fn process_tokens_skips_during_mbm_then_resumes() {
 	new_test_ext().execute_with(|| {
@@ -1587,11 +1589,24 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 			"no Mapping rows must be written during MBM",
 		);
 		assert!(
+			any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(crate::Event::ObservationsSkippedForMigration),
+			)),
+			"the skip must be visible on-chain, not just in the node log",
+		);
+		assert!(
 			!any_event(|e| matches!(
 				e,
-				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+				RuntimeEvent::CNightObservation(
+					crate::Event::Registration(_)
+						| crate::Event::Deregistration(_)
+						| crate::Event::MappingAdded(_)
+						| crate::Event::MappingRemoved(_)
+						| crate::Event::SystemTransactionApplied(_)
+				) | RuntimeEvent::MidnightSystem(_),
 			)),
-			"no pallet events must be emitted during MBM",
+			"no observation-derived events must be emitted during MBM",
 		);
 
 		// Duplicate-inherent guard still holds during MBM: the gate runs after the
@@ -1608,9 +1623,30 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 
 		advance_block_and_reset_events();
 
-		// Migration completes: storage version flips to 1; the next inherent
-		// processes the same UTXOs normally.
+		// Same at version 1, where the v1 -> v2 dust generation replay is the
+		// migration in flight.
 		StorageVersion::new(1).put::<CNightObservation>();
+
+		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance during the v1 -> v2 MBM",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no Mapping rows must be written during the v1 -> v2 MBM",
+		);
+
+		advance_block_and_reset_events();
+
+		// Migrations complete: storage version flips to 2; the next inherent
+		// processes the same UTXOs normally.
+		StorageVersion::new(2).put::<CNightObservation>();
 
 		let inherent = create_inherent(utxos, test_position(10, 1));
 		let call = CNightObservation::create_inherent(&inherent).unwrap();
@@ -1739,4 +1775,216 @@ fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_lon
 		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
 		"panic must name the destination bound; got: {msg}"
 	);
+}
+
+type BoundedAssetName = BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>;
+
+fn bounded_asset_name(bytes: &[u8]) -> BoundedAssetName {
+	BoundedAssetName::try_from(bytes.to_vec()).expect("asset name fits the bound")
+}
+
+// Oversized policy ids and asset names are unrepresentable in the call
+// arguments (`[u8; CNIGHT_POLICY_ID_LENGTH]` and a `BoundedVec`), so they are
+// rejected at decode time and need no dispatch-level tests.
+
+#[test]
+fn set_cnight_identifier_works() {
+	new_test_ext().execute_with(|| {
+		let policy_id = [0xAB; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"staging-cnight");
+
+		assert_ok!(CNightObservation::set_cnight_identifier(
+			RawOrigin::Root.into(),
+			policy_id,
+			asset_name.clone(),
+		));
+
+		let (got_pid, got_name) = pallet_cnight_observation::CNightIdentifier::<Test>::get();
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_requires_root() {
+	new_test_ext().execute_with(|| {
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"x");
+
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Signed(1).into(),
+				policy_id,
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(RawOrigin::None.into(), policy_id, asset_name,),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_rejects_non_ascii_asset_name() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates asset names as ASCII-only strings and block authors
+		// convert them to `String` when building the inherent, so non-ASCII (and
+		// in particular non-UTF-8) bytes must be rejected.
+		let valid_policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let non_utf8_asset_name = bounded_asset_name(&[0xFF, 0xFE]);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				valid_policy_id,
+				non_utf8_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_works() {
+	new_test_ext().execute_with(|| {
+		let asset_name = bounded_asset_name(b"staging-auth-token");
+
+		assert_ok!(CNightObservation::set_auth_token_asset_name(
+			RawOrigin::Root.into(),
+			asset_name.clone(),
+		));
+
+		assert_eq!(
+			pallet_cnight_observation::MainChainAuthTokenAssetName::<Test>::get(),
+			asset_name,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_requires_root() {
+	new_test_ext().execute_with(|| {
+		let asset_name = bounded_asset_name(b"x");
+
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(
+				RawOrigin::Signed(1).into(),
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::None.into(), asset_name),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_rejects_non_ascii_input() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates this field as an ASCII-only string and block authors
+		// convert it to `String` when building the inherent, so non-ASCII (and in
+		// particular non-UTF-8) bytes must be rejected.
+		let non_utf8 = bounded_asset_name(&[0xFF, 0xFE]);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), non_utf8),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
+		);
+	});
+}
+
+fn dispatch_observations(utxos: Vec<ObservedUtxo>, position: CardanoPosition) {
+	let inherent_data = create_inherent(utxos, position);
+	let call = CNightObservation::create_inherent(&inherent_data)
+		.expect("Expected to create inherent call");
+	assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+}
+
+#[test]
+fn deregistering_out_of_range_key_restores_valid_registration() {
+	new_test_ext().execute_with(|| {
+		let (cardano_reward_address, valid_key) = test_wallet_pairing();
+		let invalid_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+
+		dispatch_observations(
+			vec![
+				ObservedUtxo {
+					header: test_header(1, 0, 0, None),
+					data: ObservedUtxoData::Registration(RegistrationData {
+						cardano_reward_address,
+						dust_public_key: valid_key.clone(),
+					}),
+				},
+				ObservedUtxo {
+					header: test_header(1, 1, 0, None),
+					data: ObservedUtxoData::Registration(RegistrationData {
+						cardano_reward_address,
+						dust_public_key: invalid_key.clone(),
+					}),
+				},
+			],
+			test_position(2, 0),
+		);
+		assert!(!CNightObservation::is_registered(&cardano_reward_address));
+
+		advance_block_and_reset_events();
+
+		let invalid_utxo_tx = tx_hash(1, 1);
+		dispatch_observations(
+			vec![ObservedUtxo {
+				header: test_header(3, 0, 0, Some(invalid_utxo_tx)),
+				data: ObservedUtxoData::Deregistration(DeregistrationData {
+					cardano_reward_address,
+					dust_public_key: invalid_key,
+				}),
+			}],
+			test_position(4, 0),
+		);
+
+		assert!(!Mapping::<Test>::contains_key(
+			cardano_reward_address,
+			UtxoId::new(invalid_utxo_tx.0, 0)
+		));
+		assert_eq!(
+			CNightObservation::get_registration(&cardano_reward_address),
+			Some(valid_key.clone())
+		);
+		let expected = RuntimeEvent::CNightObservation(crate::Event::Registration(
+			Registration::new(cardano_reward_address, valid_key),
+		));
+		assert!(System::events().iter().any(|r| r.event == expected));
+	});
+}
+
+#[test]
+fn third_registration_emits_no_registration_status_change() {
+	new_test_ext().execute_with(|| {
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		dispatch_observations(
+			(0..3)
+				.map(|tx| ObservedUtxo {
+					header: test_header(1, tx, 0, None),
+					data: ObservedUtxoData::Registration(RegistrationData {
+						cardano_reward_address,
+						dust_public_key: dust_public_key.clone(),
+					}),
+				})
+				.collect(),
+			test_position(2, 0),
+		);
+
+		let count = |f: fn(&crate::Event<Test>) -> bool| {
+			System::events()
+				.iter()
+				.filter(|r| matches!(&r.event, RuntimeEvent::CNightObservation(e) if f(e)))
+				.count()
+		};
+		assert_eq!(count(|e| matches!(e, crate::Event::Registration(_))), 1);
+		assert_eq!(count(|e| matches!(e, crate::Event::Deregistration(_))), 1);
+		assert_eq!(count(|e| matches!(e, crate::Event::MappingAdded(_))), 3);
+		assert!(!CNightObservation::is_registered(&cardano_reward_address));
+	});
 }

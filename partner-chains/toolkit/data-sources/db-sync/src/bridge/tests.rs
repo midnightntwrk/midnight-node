@@ -28,6 +28,10 @@ fn illiquid_circulation_supply_validator_address() -> MainchainAddress {
 	MainchainAddress::from_str("ics address").unwrap()
 }
 
+fn reserve_validator_address() -> MainchainAddress {
+	MainchainAddress::from_str("reserve address").unwrap()
+}
+
 fn block_2_hash() -> McBlockHash {
 	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000002"))
 }
@@ -93,6 +97,30 @@ fn invalid_transfer_2() -> BridgeTransferV1<ByteString> {
 	}
 }
 
+fn complex_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 50,
+		mc_tx_hash: complex_transfer_tx(),
+		recipient: TransferRecipient::Reserve,
+	}
+}
+
+fn reserve_and_user_tx_reserve_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 100,
+		mc_tx_hash: reserve_and_user_transfer_tx(),
+		recipient: TransferRecipient::Reserve,
+	}
+}
+
+fn reserve_and_user_tx_user_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 65,
+		mc_tx_hash: reserve_and_user_transfer_tx(),
+		recipient: TransferRecipient::Address { recipient: ByteString(hex!("9999").to_vec()) },
+	}
+}
+
 fn reserve_transfer_tx() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000002"))
 }
@@ -113,12 +141,21 @@ fn invalid_transfer_2_tx() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000006"))
 }
 
+fn complex_transfer_tx() -> McTxHash {
+	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000007"))
+}
+
+fn reserve_and_user_transfer_tx() -> McTxHash {
+	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000008"))
+}
+
 fn main_chain_scripts() -> MainChainScripts {
 	MainChainScripts {
 		token_policy_id: token_policy_id(),
 		token_asset_name: token_asset_name(),
 		illiquid_circulation_supply_validator_address:
 			illiquid_circulation_supply_validator_address(),
+		reserve_validator_address: reserve_validator_address(),
 	}
 }
 
@@ -213,7 +250,8 @@ with_migration_versions_and_caching! {
 		// There's two transfers done in block 2
 		assert_eq!(transfers, vec![reserve_transfer(), user_transfer_1()]);
 
-		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(user_transfer_1_tx()))
+		// All transactions up to block 2 have been read, so the checkpoint advances to the block
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(2)))
 	}
 
 	async fn gets_transfers_from_init_to_block_4(data_source: &dyn TokenBridgeDataSource<ByteString>) {
@@ -232,7 +270,7 @@ with_migration_versions_and_caching! {
 			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2()]
 		);
 
-		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(invalid_transfer_2_tx()))
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(4)))
 	}
 
 	async fn accepts_block_checkpoint(data_source: &dyn TokenBridgeDataSource<ByteString>) {
@@ -251,7 +289,7 @@ with_migration_versions_and_caching! {
 			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2()]
 		);
 
-		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(invalid_transfer_2_tx()))
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(4)))
 	}
 
 	async fn returns_block_checkpoint_when_no_transfers_are_found(data_source: &dyn TokenBridgeDataSource<ByteString>) {
@@ -281,7 +319,7 @@ with_migration_versions_and_caching! {
 
 		assert_eq!(
 			transfers,
-			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2()]
+			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2(), complex_transfer(), reserve_and_user_tx_reserve_transfer(), reserve_and_user_tx_user_transfer()]
 		);
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
@@ -300,7 +338,108 @@ with_migration_versions_and_caching! {
 		// There's two transfers done in block 2
 		assert_eq!(transfers, vec![reserve_transfer()]);
 
-		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(reserve_transfer_tx()))
+		// `reserve_transfer_tx` makes no ICS transfer, so this is the looser of the two ways to
+		// point at it. It will be presented again, with nothing left to handle.
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::TxReserveTransfer(reserve_transfer_tx()))
+	}
+
+	async fn cuts_between_the_two_transfers_of_a_tx_when_the_limit_is_reached(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(0));
+		let current_mc_block = block_8_hash();
+		// Only the first of the two transfers of reserve_and_user_tx fits
+		let max_transfers = 7;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transfers,
+			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2(), complex_transfer(), reserve_and_user_tx_reserve_transfer()]
+		);
+
+		assert_eq!(
+			new_checkpoint,
+			BridgeDataCheckpoint::TxReserveTransfer(reserve_and_user_transfer_tx())
+		)
+	}
+
+	async fn returns_a_single_transfer_of_a_two_transfer_tx_when_the_limit_is_one(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// The two transfers of `reserve_and_user_tx` do not have to be returned together, so a
+		// limit of a single transfer still makes progress.
+		let data_checkpoint = BridgeDataCheckpoint::Tx(complex_transfer_tx());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 1;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![reserve_and_user_tx_reserve_transfer()]);
+
+		assert_eq!(
+			new_checkpoint,
+			BridgeDataCheckpoint::TxReserveTransfer(reserve_and_user_transfer_tx())
+		)
+	}
+
+	async fn reserve_transfer_checkpoint_skips_the_reserve_transfer_already_processed(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// `reserve_and_user_tx` makes two transfers, of which the runtime handled the reserve one
+		// before it stopped. Only the ICS transfer is left to handle.
+		let data_checkpoint =
+			BridgeDataCheckpoint::TxReserveTransfer(reserve_and_user_transfer_tx());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![reserve_and_user_tx_user_transfer()]);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
+	}
+
+	async fn reserve_transfer_checkpoint_of_a_tx_without_ics_transfer_leaves_nothing_of_it(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// `complex_transfer_tx` makes only a reserve transfer, which has been handled, so only the
+		// transfers of the transactions following it are returned.
+		let data_checkpoint = BridgeDataCheckpoint::TxReserveTransfer(complex_transfer_tx());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transfers,
+			vec![reserve_and_user_tx_reserve_transfer(), reserve_and_user_tx_user_transfer()]
+		);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
+	}
+
+	async fn tx_checkpoint_returns_both_transfers_of_the_following_tx(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// Nothing of `reserve_and_user_tx` has been handled, so both of its transfers are returned.
+		let data_checkpoint = BridgeDataCheckpoint::Tx(complex_transfer_tx());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transfers,
+			vec![reserve_and_user_tx_reserve_transfer(), reserve_and_user_tx_user_transfer()]
+		);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
 	}
 
 	async fn utxos_from_checkpoint_block_are_not_included_in_result(data_source: &dyn TokenBridgeDataSource<ByteString>) {

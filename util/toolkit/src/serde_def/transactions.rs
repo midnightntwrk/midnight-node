@@ -11,10 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_ledger_unsafe_helpers::*;
 use midnight_node_ledger_helpers::fork::raw_block_data::{
 	LedgerVersion, RawBlockData, RawTransaction, SerializedTx, SerializedTxBatches,
 };
-use midnight_node_ledger_helpers::*;
 use std::{
 	fmt::Debug,
 	time::{SystemTime, UNIX_EPOCH},
@@ -50,7 +50,7 @@ impl SourceTransactions {
 				.as_secs();
 			blocks.push(RawBlockData::new_from_timestamp(
 				now_secs,
-				blocks.get(0).map(|b| b.ledger_version).unwrap_or_default(),
+				blocks.last().map(|b| b.ledger_version).unwrap_or_default(),
 				Default::default(),
 			));
 		}
@@ -166,10 +166,101 @@ impl SourceTransactions {
 			.map(|b| subxt::utils::H256::from(b.hash))
 	}
 
+	/// Ledger version of the first block, which the replay context is built at.
 	pub fn ledger_version(&self) -> LedgerVersion {
-		self.blocks
-			.first()
-			.map(|b| b.ledger_version())
-			.unwrap_or(LedgerVersion::default())
+		Self::version_of(self.blocks.first())
+	}
+
+	/// Ledger version of the last block, which the chain runs now.
+	pub fn tip_ledger_version(&self) -> LedgerVersion {
+		Self::version_of(self.blocks.last())
+	}
+
+	fn version_of(block: Option<&RawBlockData>) -> LedgerVersion {
+		block.map(|b| b.ledger_version()).unwrap_or_default()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Construct a minimal `RawBlockData` at a given height for tests.
+	fn block_at(number: u64) -> RawBlockData {
+		RawBlockData {
+			hash: [0u8; 32],
+			parent_hash: [0u8; 32],
+			number,
+			ledger_version: LedgerVersion::default(),
+			transactions: Vec::new(),
+			tblock_secs: number, // deterministic, non-zero past block 0
+			tblock_err: 30,
+			parent_block_hash: [0u8; 32],
+			last_block_time_secs: number.saturating_sub(1),
+			state_root: None,
+			state: None,
+		}
+	}
+
+	/// `from_blocks(_, dust_warp = true, _)` appends a synthetic
+	/// timestamp-only block with `number = 0` to the end of `blocks`. This
+	/// is the invariant that the cache-save logic in
+	/// `tx_generator::builder::build_fork_aware_context_cached` relies on:
+	/// it must compute the save height via `max_by_key(|b| b.number)`
+	/// rather than `blocks.last()`, otherwise the cache is tagged with
+	/// `block_height = 0` and subsequent runs panic on non-linear dust-tree
+	/// insertion when they reload the snapshot.
+	#[test]
+	fn from_blocks_with_dust_warp_appends_synthetic_block_at_number_zero() {
+		let real_blocks = vec![block_at(1), block_at(2), block_at(3)];
+		let src = SourceTransactions::from_blocks(
+			real_blocks.clone(),
+			/* dust_warp = */ true,
+			Some("test".to_string()),
+		);
+
+		assert_eq!(src.blocks.len(), real_blocks.len() + 1, "synthetic block appended");
+		assert_eq!(src.blocks.last().unwrap().number, 0, "synthetic block is at number = 0");
+
+		let max_by_number = src.blocks.iter().max_by_key(|b| b.number).expect("non-empty");
+		assert_eq!(
+			max_by_number.number, 3,
+			"max_by_number must pick the highest real block, not the synthetic"
+		);
+
+		// And without dust_warp, last() and max_by_number agree.
+		let src_no_warp = SourceTransactions::from_blocks(
+			real_blocks,
+			/* dust_warp = */ false,
+			Some("test".to_string()),
+		);
+		assert_eq!(src_no_warp.blocks.last().unwrap().number, 3);
+		assert_eq!(src_no_warp.blocks.iter().max_by_key(|b| b.number).unwrap().number, 3,);
+	}
+
+	fn block_at_version(number: u64, version: LedgerVersion) -> RawBlockData {
+		RawBlockData { ledger_version: version, ..block_at(number) }
+	}
+
+	/// On a forked chain the tip is ledger 9 and the dust-warp block follows the tip, not genesis.
+	#[test]
+	fn tip_ledger_version_follows_the_last_block_across_a_fork() {
+		let forked = vec![
+			block_at_version(1, LedgerVersion::Ledger8),
+			block_at_version(2, LedgerVersion::Ledger8),
+			block_at_version(3, LedgerVersion::Ledger9),
+		];
+
+		let src = SourceTransactions::from_blocks(forked.clone(), false, Some("test".into()));
+		assert_eq!(src.ledger_version(), LedgerVersion::Ledger8);
+		assert_eq!(src.tip_ledger_version(), LedgerVersion::Ledger9);
+
+		let warped = SourceTransactions::from_blocks(forked, true, Some("test".into()));
+		assert_eq!(warped.blocks.last().unwrap().ledger_version(), LedgerVersion::Ledger9);
+		assert_eq!(warped.tip_ledger_version(), LedgerVersion::Ledger9);
+
+		let unforked = vec![block_at_version(1, LedgerVersion::Ledger8)];
+		let src = SourceTransactions::from_blocks(unforked, false, Some("test".into()));
+		assert_eq!(src.tip_ledger_version(), LedgerVersion::Ledger8);
 	}
 }

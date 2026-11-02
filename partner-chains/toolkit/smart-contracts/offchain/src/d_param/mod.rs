@@ -99,7 +99,7 @@ fn get_current_d_parameter(
 ) -> Result<Option<(OgmiosUtxo, DParameter)>, anyhow::Error> {
 	let utxos_with_d_param_token: Vec<OgmiosUtxo> = validator_utxos
 		.into_iter()
-		.filter(|utxo| utxo.value.native_tokens.get(&scripts.policy_id().0).is_some())
+		.filter(|utxo| utxo.value.native_tokens.contains_key(&scripts.policy_id().0))
 		.collect();
 
 	if utxos_with_d_param_token.len() > 1 {

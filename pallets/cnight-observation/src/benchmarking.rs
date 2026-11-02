@@ -24,6 +24,7 @@ use alloc::vec::Vec;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
+	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
 	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
 	UtxoIndexInTx,
 };
@@ -103,6 +104,44 @@ mod benchmarks {
 		process_tokens(RawOrigin::None, utxos, next_position);
 
 		assert_eq!(NextCardanoPosition::<T>::get().block_number, 2);
+	}
+
+	/// Benchmark `set_mapping_validator_contract_address` with a maximum-length address.
+	#[benchmark]
+	fn set_mapping_validator_contract_address() {
+		let address: Vec<u8> = alloc::vec![0u8; CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize];
+
+		#[extrinsic_call]
+		set_mapping_validator_contract_address(RawOrigin::Root, address.clone());
+
+		assert_eq!(MainChainMappingValidatorAddress::<T>::get().to_vec(), address);
+	}
+
+	/// Benchmark `set_cnight_identifier` with maximum-sized inputs.
+	#[benchmark]
+	fn set_cnight_identifier() {
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+			BoundedVec::truncate_from(alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize]);
+
+		#[extrinsic_call]
+		set_cnight_identifier(RawOrigin::Root, policy_id, asset_name.clone());
+
+		let (got_pid, got_name) = CNightIdentifier::<T>::get();
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
+	}
+
+	/// Benchmark `set_auth_token_asset_name` with a maximum-sized asset name.
+	#[benchmark]
+	fn set_auth_token_asset_name() {
+		let asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+			BoundedVec::truncate_from(alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize]);
+
+		#[extrinsic_call]
+		set_auth_token_asset_name(RawOrigin::Root, asset_name.clone());
+
+		assert_eq!(MainChainAuthTokenAssetName::<T>::get(), asset_name);
 	}
 
 	// Benchmark smoke tests run via the runtime crate (not the pallet crate),
