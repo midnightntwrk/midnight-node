@@ -112,7 +112,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
+    "http(s):// URL or local archive path of the snapshot to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
   )
   .option(
     "--num-validators <count>",
@@ -165,7 +165,7 @@ program
   )
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to fork the network from before rolling the image",
+    "http(s):// URL or local archive path of the snapshot to fork the network from before rolling the image",
   )
   .option(
     "--num-validators <count>",
@@ -292,7 +292,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+    "Restore a snapshot (http(s):// URL or local archive path) before launching services. Omit it to reuse existing local fork state.",
   )
   .option(
     "--num-validators <count>",
@@ -401,7 +401,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to restore before phase 1. Required for the first bring-up of a well-known network.",
+    "http(s):// URL or local archive path of the snapshot to restore before phase 1. Required for the first bring-up of a well-known network.",
   )
   .option(
     "--num-validators <count>",
@@ -538,7 +538,7 @@ function registerConsensusUpgradeCommand(
     .option("--env-file <path...>", "specify one or more env files")
     .option(
       "--from-snapshot <uri>",
-      "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+      "Restore a snapshot (http(s):// URL or local archive path) before launching services. Omit it to reuse existing local fork state.",
     )
     .option(
       "--num-validators <count>",
