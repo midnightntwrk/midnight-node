@@ -18,6 +18,9 @@ env:
   # FORK_IMAGE_REGISTRY (see .github/actions/save-fork-images and load-fork-images).
   # Internal PRs and merge_group never take the fork path.
   IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+  # 172.17.0.1 is Docker's default bridge (docker0) gateway, the one address both the
+  # host daemon and earthly's buildkitd container can reach; :5000 is the throwaway
+  # registry load-fork-images starts. load-fork-images fails if the gateway differs.
   FORK_IMAGE_REGISTRY: 172.17.0.1:5000
 
 on:
