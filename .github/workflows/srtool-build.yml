@@ -59,6 +59,8 @@ jobs:
           use-cache: false
 
       - name: Run srtool build
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earth +srtool-build
 
