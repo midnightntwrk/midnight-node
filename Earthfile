@@ -809,9 +809,9 @@ node-ci-image-single-platform:
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
 
     # Portability + compiler-version check (runs for both source and fetched builds;
-    # also the first run of a source bundle outside nix): compactc --version reports
-    # the bare semver with no tree-hash suffix, so compare against the version prefix.
-    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+    # also the first run of a source bundle outside nix): compactc --version leads with
+    # the bare semver (0.35.0+ appends a commit and date), so compare its first word.
+    RUN got="$(/compact-home/compactc --version | cut -d" " -f1)" && want="${COMPACTC_VERSION%%-*}" && \
         test "$got" = "$want" || \
         { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 
