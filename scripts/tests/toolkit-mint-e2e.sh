@@ -63,6 +63,8 @@ if [[ "${1-}" != "" && "${2-}" != "" ]]; then
         "$NODE_IMAGE"
 
     wait_for_unfinalized_block http://localhost:9944 1
+    # The toolkit refuses to connect until a block past genesis is finalized.
+    wait_for_finalized_block http://localhost:9944 1
 
     tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
 

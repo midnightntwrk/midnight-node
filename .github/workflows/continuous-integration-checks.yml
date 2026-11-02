@@ -35,8 +35,9 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
+      # Fork PRs get no secrets; +check only pulls public docker.io images.
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true'
+        if: steps.guard.outputs.hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
