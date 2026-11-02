@@ -51,6 +51,12 @@ jobs:
           submodules: true
           ref: ${{ inputs.ref }}
 
+      # The srtool image does a cold full release build of the runtime and its
+      # dependency tree inside the build container; on ubuntu-latest that ran the
+      # disk out (rustc "No space left on device") on the 2.1.100 release runs.
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
