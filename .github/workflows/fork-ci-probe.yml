@@ -24,13 +24,13 @@ jobs:
         run: |
           echo "IS_FORK_PR=$IS_FORK_PR"
           echo "secrets visible: $SECRETS_VISIBLE"
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
       - name: Build without --push
-        run: . ./.envrc && earthly ./tests/fork-ci-probe+image --REF="$REF"
+        run: . ./.envrc && earth ./tests/fork-ci-probe+image --REF="$REF"
       - name: Image landed in the host daemon
         run: docker image inspect "$REF" --format '{{.Id}}'
       - uses: ./.github/actions/save-fork-images
@@ -60,9 +60,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
       - uses: ./.github/actions/load-fork-images
@@ -75,6 +75,6 @@ jobs:
           echo "    tls_enabled: false" >> .earthly/config.yml
           cat .earthly/config.yml
       - name: earthly FROM the fork image
-        run: . ./.envrc && earthly ./tests/fork-ci-probe+consume --REF="$REF"
+        run: . ./.envrc && earth ./tests/fork-ci-probe+consume --REF="$REF"
       - name: earthly WITH DOCKER --pull the fork image
-        run: . ./.envrc && earthly -P ./tests/fork-ci-probe+pull --REF="$REF"
+        run: . ./.envrc && earth -P ./tests/fork-ci-probe+pull --REF="$REF"
