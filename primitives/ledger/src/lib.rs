@@ -337,9 +337,4 @@ impl LedgerEphemeralExt {
 	pub fn hold(&mut self, state_root: Vec<u8>, state: Box<dyn std::any::Any + Send>) {
 		self.0.push((state_root, state));
 	}
-
-	/// Whether `state_root` was produced by this execution.
-	pub fn holds(&self, state_root: &[u8]) -> bool {
-		self.0.iter().any(|(root, _)| root == state_root)
-	}
 }

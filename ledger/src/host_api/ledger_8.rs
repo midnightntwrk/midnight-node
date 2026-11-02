@@ -16,7 +16,7 @@ use sp_runtime_interface::runtime_interface;
 
 #[cfg(feature = "std")]
 use {
-	crate::ephemeral::{EphemeralDb, ensure_storage, holds, is_onchain},
+	crate::ephemeral::{EphemeralDb, ensure_storage, is_onchain},
 	midnight_primitives_ledger::{LedgerStorageDb, LedgerStorageExt},
 	sp_externalities::{Externalities, ExternalitiesExt},
 };
@@ -392,7 +392,7 @@ pub trait Ledger8Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_contract_state(state_key, contract_address)
 		)
 	}
@@ -429,7 +429,7 @@ pub trait Ledger8Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_zswap_chain_state(state_key, contract_address)
 		)
 	}
@@ -446,7 +446,7 @@ pub trait Ledger8Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_unclaimed_amount(state_key, beneficiary)
 		)
 	}
@@ -463,7 +463,7 @@ pub trait Ledger8Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_bridge_receiving_amount(state_key, beneficiary)
 		)
 	}
@@ -476,12 +476,7 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		with_bridge!(
-			Bridge<Signature>,
-			*self,
-			holds(*self, state_key),
-			get_ledger_parameters(state_key)
-		)
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_parameters(state_key))
 	}
 
 	/*
@@ -495,7 +490,7 @@ pub trait Ledger8Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_c_to_m_bridge_min_amount(state_key)
 		)
 	}
@@ -529,12 +524,7 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		with_bridge!(
-			Bridge<Signature>,
-			*self,
-			holds(*self, state_key),
-			get_zswap_state_root(state_key)
-		)
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_zswap_state_root(state_key))
 	}
 
 	fn is_governance_allowed_system_tx(&mut self, system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
@@ -552,12 +542,7 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		with_bridge!(
-			Bridge<Signature>,
-			*self,
-			holds(*self, state_key),
-			get_ledger_state_root(state_key)
-		)
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_state_root(state_key))
 	}
 
 	fn construct_cnight_generates_dust_event(
@@ -653,7 +638,7 @@ pub trait Ledger8Bridge {
 		// anywhere in the block.
 		use crate::host_api::dust_generation::dust_generation_values;
 
-		let ephemeral = holds(*self, state_key);
+		let ephemeral = !is_onchain(*self);
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
 			if ephemeral {

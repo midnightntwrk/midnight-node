@@ -15,7 +15,7 @@ use sp_runtime_interface::runtime_interface;
 
 #[cfg(feature = "std")]
 use {
-	crate::ephemeral::{EphemeralDb, ensure_storage, holds, is_onchain},
+	crate::ephemeral::{EphemeralDb, ensure_storage, is_onchain},
 	midnight_primitives_ledger::{LedgerStorageDb, LedgerStorageExt},
 	sp_externalities::{Externalities, ExternalitiesExt},
 };
@@ -182,22 +182,11 @@ fn as_ledger_9_error(error: crate::ledger_8::types::LedgerApiError) -> LedgerApi
 ///
 /// `$call` names the `Bridge` method and takes its arguments verbatim; only the
 /// storage-mode dispatch and the error translation are supplied here.
-///
-/// Reads use the ephemeral storage only for a state held by this call; pass `ephemeral = ...`
-/// to override that, as `get_decoded_transaction` does for a caller-supplied transaction.
 #[cfg(feature = "std")]
 macro_rules! serve_pre_migration_v8_read {
 	($ext:expr, $state_key:expr, $call:ident($($arg:expr),* $(,)?)) => {
-		serve_pre_migration_v8_read!(
-			$ext,
-			$state_key,
-			ephemeral = holds($ext, $state_key),
-			$call($($arg),*)
-		)
-	};
-	($ext:expr, $state_key:expr, ephemeral = $ephemeral:expr, $call:ident($($arg:expr),* $(,)?)) => {
 		if crate::is_ledger_8_state_key($state_key) {
-			let result = with_bridge!(Bridge8<Signature8>, $ext, $ephemeral, $call($($arg),*));
+			let result = with_bridge!(Bridge8<Signature8>, $ext, !is_onchain($ext), $call($($arg),*));
 			return result.map_err(as_ledger_9_error);
 		}
 	};
@@ -499,7 +488,7 @@ pub trait Ledger9Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_contract_state(state_key, contract_address)
 		)
 	}
@@ -540,7 +529,6 @@ pub trait Ledger9Bridge {
 		serve_pre_migration_v8_read!(
 			*self,
 			state_key,
-			ephemeral = !is_onchain(*self),
 			get_decoded_transaction(state_key, transaction_bytes, max_items)
 		);
 
@@ -570,7 +558,7 @@ pub trait Ledger9Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_zswap_chain_state(state_key, contract_address)
 		)
 	}
@@ -593,7 +581,7 @@ pub trait Ledger9Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_unclaimed_amount(state_key, beneficiary)
 		)
 	}
@@ -610,7 +598,7 @@ pub trait Ledger9Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_bridge_receiving_amount(state_key, beneficiary)
 		)
 	}
@@ -625,12 +613,7 @@ pub trait Ledger9Bridge {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		serve_pre_migration_v8_read!(*self, state_key, get_ledger_parameters(state_key));
 
-		with_bridge!(
-			Bridge<Signature>,
-			*self,
-			holds(*self, state_key),
-			get_ledger_parameters(state_key)
-		)
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_parameters(state_key))
 	}
 
 	/*
@@ -646,7 +629,7 @@ pub trait Ledger9Bridge {
 		with_bridge!(
 			Bridge<Signature>,
 			*self,
-			holds(*self, state_key),
+			!is_onchain(*self),
 			get_c_to_m_bridge_min_amount(state_key)
 		)
 	}
@@ -714,12 +697,7 @@ pub trait Ledger9Bridge {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		serve_pre_migration_v8_read!(*self, state_key, get_zswap_state_root(state_key));
 
-		with_bridge!(
-			Bridge<Signature>,
-			*self,
-			holds(*self, state_key),
-			get_zswap_state_root(state_key)
-		)
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_zswap_state_root(state_key))
 	}
 
 	fn is_governance_allowed_system_tx(&mut self, system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
@@ -739,12 +717,7 @@ pub trait Ledger9Bridge {
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		serve_pre_migration_v8_read!(*self, state_key, get_ledger_state_root(state_key));
 
-		with_bridge!(
-			Bridge<Signature>,
-			*self,
-			holds(*self, state_key),
-			get_ledger_state_root(state_key)
-		)
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_state_root(state_key))
 	}
 
 	fn construct_cnight_generates_dust_event(
