@@ -43,19 +43,19 @@ const TBLOCK: u64 = 1_800_000_000;
 
 /// The stored nodes a state root refers to: the root itself, or the children of an inline
 /// (`Direct`) root.
-fn nodes_of(state_root: &[u8]) -> Vec<ArenaHash<sha2::Sha256>> {
-	let key: TypedArenaKey<Ledger<Shared>, sha2::Sha256> =
+fn nodes_of(state_root: &[u8]) -> Vec<ArenaHash<storage_sha2::Sha256>> {
+	let key: TypedArenaKey<Ledger<Shared>, storage_sha2::Sha256> =
 		midnight_serialize::tagged_deserialize(&mut &state_root[..]).unwrap();
 	ArenaKey::from(key).refs().into_iter().cloned().collect()
 }
 
-fn in_shared(key: &ArenaHash<sha2::Sha256>) -> (bool, u32) {
+fn in_shared(key: &ArenaHash<storage_sha2::Sha256>) -> (bool, u32) {
 	default_storage::<Shared>().with_backend(|backend| {
 		(backend.get(key).is_some(), backend.get_roots().get(key).copied().unwrap_or(0))
 	})
 }
 
-fn in_ephemeral(key: &ArenaHash<sha2::Sha256>) -> bool {
+fn in_ephemeral(key: &ArenaHash<storage_sha2::Sha256>) -> bool {
 	try_get_default_storage::<EphemeralDb<Shared>>()
 		.is_some_and(|storage| storage.with_backend(|backend| backend.get(key).is_some()))
 }
@@ -128,7 +128,9 @@ fn run_block(genesis: &[u8], system_tx: &[u8], ctx: &BlockContext) -> Outputs {
 #[test]
 fn ledger_8_offchain_calls_match_block_execution_without_touching_shared_storage() {
 	let dir = tempfile::tempdir().unwrap();
-	let _ = set_default_storage(|| Storage::new(1024, ParityDb::<sha2::Sha256>::open(dir.path())));
+	let _ = set_default_storage(|| {
+		Storage::new(1024, ParityDb::<storage_sha2::Sha256>::open(dir.path()))
+	});
 
 	let genesis = {
 		let ledger = Ledger::<Shared>::new(mn_ledger_8::structure::LedgerState::new("undeployed"));

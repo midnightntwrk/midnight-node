@@ -172,6 +172,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true,
           # so /tmp is in a per-service mount namespace that dockerd (and therefore
@@ -330,6 +331,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
@@ -455,6 +457,8 @@ jobs:
 
       - name: Check Deps
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earthly +check-deps
 
@@ -510,6 +514,7 @@ jobs:
       - name: Check Genesis Rebuild
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
@@ -532,7 +537,10 @@ jobs:
       contents: read
       actions: write
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest
+    # The fixture tests compile midnight-node-ledger with both ledger generations (and both
+    # storage lines) in one crate; rustc is SIGKILLed on the 16 GB ubuntu-latest runner.
+    # Same routing as Test Toolkit: self-hosted large for in-repo branches, GitHub-hosted for forks.
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -558,6 +566,7 @@ jobs:
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
           # under actions/checkout; reach for the actual head/ref name instead.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
@@ -650,6 +659,7 @@ jobs:
       - name: Run toolkit tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
           # pulls (empty on fork PRs → anonymous, rate-limited).
@@ -861,6 +871,7 @@ jobs:
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -1141,6 +1152,7 @@ jobs:
       - name: just test
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
           . ./.envrc
@@ -1189,6 +1201,7 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         uses: ./.github/actions/local-environment-tests
         with:
+          node-git-token: ${{ secrets.NODE_GIT_TOKEN }}
           tag: CI
           image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}

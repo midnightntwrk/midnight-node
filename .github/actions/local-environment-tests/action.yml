@@ -1,6 +1,10 @@
 name: "Deploy and Test Against Local Environment"
 description: "Deploys a local environment and runs end-to-end tests."
 inputs:
+  node-git-token:
+    description: "Token for fetching private cargo git dependencies (NODE_GIT_TOKEN)"
+    required: false
+    default: ""
   sha:
     description: "SHA to checkout"
     required: true
@@ -98,6 +102,7 @@ runs:
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
         DOCKERHUB_USER: ${{ inputs.dockerhub-username }}
         DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
+        NODE_GIT_TOKEN: ${{ inputs.node-git-token }}
       run: |
         . ./.envrc
         earthly -P \

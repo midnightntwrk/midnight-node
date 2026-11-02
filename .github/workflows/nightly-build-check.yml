@@ -37,5 +37,7 @@ jobs:
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run check
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earthly --platform=linux/amd64 +node-image

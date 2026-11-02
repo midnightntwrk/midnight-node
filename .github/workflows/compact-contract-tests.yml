@@ -69,6 +69,7 @@ jobs:
 
       - name: Run compact contract tests
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           # Self-hosted-runner-specific overrides - see continuous-integration.yml
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
