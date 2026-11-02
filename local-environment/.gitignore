@@ -3,7 +3,13 @@
 runtime-values/
 
 # generated fork-mode state for well-known network rehearsals
+artifacts/*.manifest.env
 src/networks/well-known/**/*.mock.override.yaml
 src/networks/well-known/**/mocked-config/
 src/networks/well-known/**/res/mock-bridge-data/*-mock.json
 src/networks/well-known/**/data/
+
+# generated genesis-mode state (genesis-config holds raw seed phrases)
+src/networks/well-known/**/*.genesis.override.yaml
+src/networks/well-known/**/genesis-config/
+src/networks/well-known/**/*.mock-follower.override.yaml

@@ -16,37 +16,54 @@ import path from "path";
 import { spawnSync } from "child_process";
 
 export interface MockAuthoritiesConvertOptions {
-  /** Host path to the restored snapshot data dir (must contain chains/<chainId>/...). */
-  dataDir: string;
+  /** Host path to one extracted snapshot node dir (must contain chains/<chainId>/...). */
+  nodeDir: string;
   /** Host path where mock-registrations.json + seeds/ will be written. */
   outputDir: string;
-  /** Substrate chain id; must match chains/<chainId> inside dataDir. */
+  /** Substrate chain id; must match chains/<chainId> inside nodeDir. */
   chainId: string;
   /** Number of validators to materialize. */
   numValidators: number;
-  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:0f347c5). */
+  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:f6cbf91). */
   image: string;
 }
 
-const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:0f347c5";
+// Must be a build that carries the GRANDPA client-side aux-storage rewrite
+// (mock-authorities PR #77 "grandpa-finality-storage-fix", merged as 4d8d772).
+// Older images (e.g. 0f347c5, 368fd98) only rewrite the runtime Grandpa state
+// and rotate the client voter via a ForcedChange digest, which deadlocks the
+// substrate GRANDPA voter on >=2.0.0 runtimes: the client set-id freezes below
+// the runtime's CurrentSetId, no prevotes are ever counted (not even a node's
+// own), and finality stalls forever while AURA keeps producing blocks. 4d8d772
+// plants the post-rotation voter set directly in aux storage with the client
+// set-id == runtime CurrentSetId, so finality resumes immediately after restart.
+//
+// Must also carry mock-authorities de2122f (merged as f6cbf91): the fork block
+// references a mock-follower main-chain hash instead of the snapshot's real
+// Cardano hash. On >=2.x nodes the real hash decodes to a far-future mock block
+// number, so peers reject every new block as regressing (midnight-node#2307).
+// It is also the first build with `convert --node-dir`, used below.
+const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:f6cbf91";
 
 export function defaultMockAuthoritiesImage(): string {
   return process.env.MOCK_AUTHORITIES_IMAGE ?? DEFAULT_IMAGE;
 }
 
 /**
- * Runs `mock-authorities convert` against an extracted snapshot data dir,
+ * Runs `mock-authorities convert --node-dir` once against an extracted snapshot,
  * writing mock-registrations.json + seeds/validator-N/{aura,grandpa,cross_chain}.seed
- * into outputDir. Mirrors fork-network.yml's `Run mock-authorities convert` step.
+ * into outputDir. The converted dir is then replicated to every node, so
+ * validators and non-validators (e.g. boot-node) start from the same fork block.
+ * Validator keys come from the seed files; no keystore is written.
  */
 export function runMockAuthoritiesConvert(
   opts: MockAuthoritiesConvertOptions,
 ): void {
-  const dataDir = path.resolve(opts.dataDir);
+  const nodeDir = path.resolve(opts.nodeDir);
   const outputDir = path.resolve(opts.outputDir);
 
-  if (!fs.existsSync(dataDir)) {
-    throw new Error(`mock-authorities: dataDir does not exist: ${dataDir}`);
+  if (!fs.existsSync(nodeDir)) {
+    throw new Error(`mock-authorities: nodeDir does not exist: ${nodeDir}`);
   }
 
   // The mock-authorities container runs as a non-root appuser and needs to
@@ -64,12 +81,12 @@ export function runMockAuthoritiesConvert(
       "run",
       "--rm",
       "-v",
-      `${dataDir}:/data`,
+      `${nodeDir}:/data`,
       "-v",
       `${outputDir}:/out`,
       opts.image,
       "convert",
-      "--data-dir",
+      "--node-dir",
       "/data",
       "--chain-id",
       opts.chainId,

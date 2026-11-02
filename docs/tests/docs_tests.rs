@@ -98,6 +98,22 @@ fn check_spec_version_matches_node_version() {
 }
 
 #[test]
+fn check_runtime_package_version_matches_spec_version() {
+	let runtime_manifest_str = std::fs::read_to_string("../runtime/Cargo.toml").unwrap();
+	let runtime_manifest: Manifest =
+		toml::from_str(&runtime_manifest_str).expect("Failed to parse runtime Cargo.toml");
+
+	let runtime_spec_version = get_runtime_spec_version();
+	let v: Vec<u32> = runtime_spec_version.split('_').map(|s| s.parse().unwrap()).collect();
+	let spec_version = format!("{}.{}.{}", v[0], v[1], v[2]);
+
+	assert_eq!(
+		runtime_manifest.package.version, spec_version,
+		"runtime/Cargo.toml version must match runtime/src/lib.rs spec_version"
+	);
+}
+
+#[test]
 fn check_toolkit_supports_new_node_version() {
 	let toolkit_runtimes_src =
 		std::fs::read_to_string("../util/toolkit/src/fetcher/runtimes.rs").unwrap();

@@ -25,7 +25,7 @@ mod runtime_api;
 pub use runtime_api::*;
 
 pub use midnight_primitives::{
-	LedgerMutFn, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
+	LedgerMutFn, LedgerStateProvider, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
 };
 
 pub use midnight_node_ledger::types::active_version::LedgerApiError;
@@ -38,8 +38,6 @@ mod tests;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
-
-pub mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -60,11 +58,13 @@ pub mod pallet {
 	};
 	use sp_runtime::Weight;
 
-	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
+	impl<T: Config> super::LedgerStateProvider for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
 			StateKey::<T>::get()
 		}
+	}
 
+	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
 		fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 		where
@@ -99,7 +99,7 @@ pub mod pallet {
 		}
 	}
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	// Manually add ~1% of block weight
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
@@ -148,6 +148,9 @@ pub mod pallet {
 	/// Theoretical maximum: 40 + 1 + 1024 = 1065 bytes
 	pub type StateKeyLength = ConstU32<1065>;
 	type MaxNetworkIdLength = ConstU32<64>;
+	// Tagged arena key of the ledger's `Ledger` wrapper, whose `block_fullness` is zero at the end
+	// of every block; external consumers such as the indexer reproduce it from the ledger state.
+	// A plain comment keeps this note out of the runtime metadata.
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
 	/// It is safe to keep the state key unbounded as its size can not be influenced by external users.

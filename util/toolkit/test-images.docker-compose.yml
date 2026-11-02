@@ -15,8 +15,14 @@ services:
     depends_on:
       guard:
         condition: service_completed_successfully
+  # Previous release: the hardfork_e2e test forks from this (runtime 2.1.0,
+  # AURA + GRANDPA session keys, delayed runtime upgrades via `:pending_code`)
+  # up to the current runtime, exercising the 3.0.0 upgrade path: the
+  # committee/session-key migration (BABE and BEEFY keys) and the BEEFY genesis
+  # reset. The runtime's migration list no longer carries anything older
+  # (ledger 8->9, cNIGHT dust replay), so a ledger-8 image cannot be used here.
   midnight-node-fork-from:
-    image: ${FORK_FROM_NODE_IMAGE:-midnightntwrk/midnight-node:0.21.0}
+    image: ${FORK_FROM_NODE_IMAGE:-midnightntwrk/midnight-node:2.1.0-rc.4}
     depends_on:
       guard:
         condition: service_completed_successfully

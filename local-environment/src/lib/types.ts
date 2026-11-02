@@ -16,12 +16,30 @@ export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
   /**
+   * Number of mock validators to generate for a well-known network fork.
+   * This can only be changed while restoring a fresh snapshot.
+   */
+  numValidators?: number;
+  /**
    * Snapshot URI (http:// or https://) to fork the well-known network from.
    * Required on the first bring-up of a well-known network; later runs can
    * omit it to reuse existing restored data plus generated mock-authorities
    * output.
    */
   fromSnapshot?: string;
+  /**
+   * Bring the well-known network's base compose up from block 0 instead of
+   * forking a snapshot. Nothing is mocked in this mode: validator seed
+   * phrases and a main-chain data source must be supplied via env/--env-file.
+   * Mutually exclusive with fromSnapshot.
+   */
+  fromGenesis?: boolean;
+  /**
+   * Extra docker-compose override file(s) applied after the generated genesis
+   * override (from-genesis mode only) — e.g. to enable the node's mock
+   * main-chain follower for fully local runs.
+   */
+  composeOverride?: string[];
 }
 
 export interface ImageUpgradeOptions extends RunOptions {
@@ -44,22 +62,51 @@ export interface ImageUpgradeOptions extends RunOptions {
 }
 
 export interface RuntimeUpgradeBaseOptions extends RunOptions {
-  /** absolute or relative path to the runtime wasm artifact */
-  wasmPath: string;
+  /**
+   * Path to the runtime wasm artifact, relative to `local-environment/artifacts/`.
+   * Omit it to take the runtime from a node image instead (`wasmFromImage`, or the
+   * NEW_NODE_IMAGE / MIDNIGHT_NODE_IMAGE default); exactly one source must resolve.
+   */
+  wasmPath?: string;
+  /**
+   * Node image to extract the runtime wasm from. Node images ship the runtime they
+   * were built with under `/artifacts-<arch>/`, so this keeps the candidate runtime
+   * and the client binary in lockstep without a pre-populated artifacts directory.
+   */
+  wasmFromImage?: string;
   /** skip bringing up docker-compose before submitting the upgrade */
   skipRun?: boolean;
   /** websocket endpoint for the node under upgrade (default ws://localhost:9944) */
   rpcUrl?: string;
 }
 
-export interface FederatedRuntimeUpgradeOptions
-  extends RuntimeUpgradeBaseOptions {
+/** Signer URIs required to drive a federated-authority motion to execution. */
+export interface FederatedGovernanceOptions {
   /** URIs for council members who will propose/vote to approve the motion */
   councilUris: string[];
   /** URIs for technical committee members who will propose/vote to approve the motion */
   techCommitteeUris: string[];
-  /** URI used to close the federated motion and apply the authorized upgrade */
+  /** URI used to close the federated motion and dispatch the approved call as root */
   motionExecutorUri: string;
+}
+
+/**
+ * Options for governance actions that dispatch a fixed runtime call as root via
+ * a federated-authority motion (no wasm artifact involved), e.g. the
+ * consensus-engine transitions.
+ */
+export interface GovernanceCallOptions
+  extends RunOptions,
+    FederatedGovernanceOptions {
+  /** skip bringing up docker-compose before submitting the motion */
+  skipRun?: boolean;
+  /** websocket endpoint for the target node (default ws://localhost:9944) */
+  rpcUrl?: string;
+}
+
+export interface FederatedRuntimeUpgradeOptions
+  extends RuntimeUpgradeBaseOptions,
+    FederatedGovernanceOptions {
   /**
    * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
    * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for

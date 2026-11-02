@@ -1,0 +1,55 @@
+[extend]
+useDefault = true
+
+# All entries below were manually reviewed (2026-08-07): public/well-known
+# validator keys, doc-comment examples, CLI help text, and test fixtures --
+# no live secrets. See PR #2007 for the review.
+
+[[allowlists]]
+description = "public chain-spec/genesis artifacts (published network data)"
+paths = [
+  '''^res/[^/]+/chain-spec(-abridged)?\.json$''',
+]
+
+[[allowlists]]
+description = "local-environment dev/test fixture configs"
+paths = [
+  '''^local-environment/src/networks/local-env/configurations/''',
+]
+
+[[allowlists]]
+description = "partner-chains docs -- illustrative example keys in prose"
+paths = [
+  '''^partner-chains/docs/''',
+]
+
+# File-level, not directory-level: keeps new code in these same source
+# directories subject to scanning.
+[[allowlists]]
+description = "partner-chains-cli test fixtures / example keys"
+paths = [
+  '''^partner-chains/toolkit/partner-chains-cli/src/register/register1\.rs$''',
+  '''^partner-chains/toolkit/partner-chains-cli/src/register/register2\.rs$''',
+  '''^partner-chains/toolkit/partner-chains-cli/src/create_chain_spec/mod\.rs$''',
+  '''^partner-chains/toolkit/partner-chains-cli/src/create_chain_spec/tests\.rs$''',
+  '''^partner-chains/toolkit/partner-chains-cli/src/generate_keys/tests\.rs$''',
+  '''^partner-chains/toolkit/partner-chains-cli/src/setup_main_chain_state/tests\.rs$''',
+  '''^partner-chains/toolkit/partner-chains-cli/src/prepare_configuration/prepare_main_chain_config\.rs$''',
+]
+
+[[allowlists]]
+description = "partner-chains offchain test fixtures"
+paths = [
+  '''^partner-chains/toolkit/smart-contracts/offchain/src/init_governance/tests\.rs$''',
+  '''^partner-chains/toolkit/smart-contracts/offchain/src/update_governance/test_values\.rs$''',
+  '''^partner-chains/toolkit/smart-contracts/offchain/tests/docker/config/genesis/shelley\.base\.json$''',
+]
+
+[[allowlists]]
+description = "example public keys in non-test source / docs / CI"
+paths = [
+  '''^partner-chains/toolkit/bridge/pallet/src/lib\.rs$''',
+  '''^util/aiken-contracts-lib/src/lib\.rs$''',
+  '''^relay/README\.md$''',
+  '''^\.github/workflows/nightly-run-cnight-e2e-devnet\.yml$''',
+]

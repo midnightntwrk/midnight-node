@@ -206,7 +206,13 @@ where
 	where
 		Self: 'a,
 	{
-		postcard::from_bytes(data).unwrap()
+		postcard::from_bytes(data).unwrap_or_else(|e| {
+			panic!(
+				"failed to decode cached `{}` ({e}); this cache was written by a toolkit with a \
+				 different wire format - delete the cache database and re-fetch",
+				type_name::<T>()
+			)
+		})
 	}
 
 	fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>

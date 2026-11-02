@@ -166,6 +166,10 @@ The cache directory is structured as:
 
 Ledger snapshots are shared across wallets; only one snapshot per block height is stored regardless of how many wallets are tracked. Unused snapshots are garbage-collected automatically after a grace period.
 
+Wallet state reconstructed during block replay is cached per seed in `--ledger-state-db` (`MN_LEDGER_CACHE_DB`), so repeat queries only replay new blocks. This works on ledger-8 and ledger-9 chains; a cache written under ledger 8 is discarded (with a warning, falling back to a full replay) once the chain has moved on to ledger 9. During a long replay, `--replay-checkpoint-interval <BLOCKS>` (`MN_REPLAY_CHECKPOINT_INTERVAL`) saves intermediate checkpoints so an interrupted run resumes from the last one instead of genesis.
+
+Replay verifies finalized history in proof-erased form (no zero-knowledge proof, signature or balancing re-verification) and instead compares the locally computed ledger state root with the on-chain `Midnight.StateKey` after every block; a mismatch aborts the replay. The toolkit is a testing tool that trusts the node it talks to, so there is no strict-verification mode.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console
@@ -532,6 +536,9 @@ midnight-node-toolkit \
 ```
 
 If this isn't done, the transaction will succeed, but no coins will be visible in the destination wallet. This is because the encryption key is not visible to the contract execution layer.
+
+For a circuit that calls `receiveShielded`, `send-intent --funding-seed` selects shielded coins
+to cover the call and returns any change to the funding wallet.
 
 ### Register DUST Address
 
