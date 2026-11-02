@@ -66,11 +66,6 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 				ZswapTransactionInvalid::MerkleTreeError(..) => {
 					ZswapInvalidErrorCode::MerkleTreeError
 				},
-				#[allow(unreachable_patterns)]
-				other => {
-					log::warn!("Unmapped zswap TransactionInvalid variant: {other:?}");
-					ZswapInvalidErrorCode::Unknown
-				},
 			}),
 			Ti::Transcript(..) => Ie::Transcript,
 			Ti::InsufficientClaimable { .. } => Ie::InsufficientClaimable,
@@ -111,11 +106,6 @@ impl From<LedgerSystemTransactionError> for SystemTransactionError {
 			Lste::TreasuryDisabled => Ste::TreasuryDisabled,
 			Lste::MerkleTreeError(..) => Ste::MerkleTreeError,
 			Lste::GenerationInfoAlreadyPresent(..) => Ste::GenerationInfoAlreadyPresent,
-			#[allow(unreachable_patterns)]
-			other => {
-				log::warn!("Unmapped SystemTransactionError variant: {other:?}");
-				Ste::UnknownError
-			},
 		}
 	}
 }
@@ -151,11 +141,6 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 					MalformedZswapErrorCode::NonDisjointCoinMerge
 				},
 				MalformedOffer::NotNormalized => MalformedZswapErrorCode::NotNormalized,
-				#[allow(unreachable_patterns)]
-				other => {
-					log::warn!("Unmapped zswap MalformedOffer variant: {other:?}");
-					MalformedZswapErrorCode::Unknown
-				},
 			}),
 			Mt::BuiltinDecode(..) => Me::BuiltinDecode,
 			Mt::CantMergeTypes => Me::CantMergeTypes,
