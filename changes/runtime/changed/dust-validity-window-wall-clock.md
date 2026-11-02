@@ -14,7 +14,8 @@ pool validation and never for block execution/consensus (which stays on the dete
 on-chain timestamp via `pre_dispatch`).
 
 The now-unused `MaxSkippedSlots` storage item (and its default) was removed. This is a
-metadata change; rebuild runtime metadata.
+metadata change; rebuild runtime metadata. The pallet never wrote it, but a single-block
+`RemoveStorage` migration clears the key in case governance set it with `system.set_storage`.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1877
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1856

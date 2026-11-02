@@ -411,6 +411,7 @@ impl frame_system::Config for Runtime {
 		// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
 		// re-enabled (see `migrations::beefy_genesis`).
 		migrations::beefy_genesis::ResetBeefyGenesis,
+		migrations::max_skipped_slots::RemoveMaxSkippedSlots,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();

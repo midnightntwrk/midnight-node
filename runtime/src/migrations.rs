@@ -760,3 +760,39 @@ pub mod beefy_genesis {
 		}
 	}
 }
+
+pub mod max_skipped_slots {
+	//! Clears `pallet_midnight`'s retired `MaxSkippedSlots` value. The pallet only ever read its
+	//! default, but governance could have set the key with `system.set_storage`. Remove from
+	//! `SingleBlockMigrations` once it has run on all live networks: it re-runs on every upgrade
+	//! until then.
+	use frame_support::{migrations::RemoveStorage, parameter_types, traits::PalletInfoAccess};
+
+	parameter_types! {
+		pub MidnightPalletName: &'static str = <crate::Midnight as PalletInfoAccess>::name();
+		pub const MaxSkippedSlotsName: &'static str = "MaxSkippedSlots";
+	}
+
+	pub type RemoveMaxSkippedSlots = RemoveStorage<
+		MidnightPalletName,
+		MaxSkippedSlotsName,
+		<crate::Runtime as frame_system::Config>::DbWeight,
+	>;
+
+	#[cfg(test)]
+	mod tests {
+		use super::RemoveMaxSkippedSlots;
+		use frame_support::traits::OnRuntimeUpgrade;
+		use sp_io::hashing::twox_128;
+
+		#[test]
+		fn removes_a_set_value() {
+			let key = [twox_128(b"Midnight"), twox_128(b"MaxSkippedSlots")].concat();
+			sp_io::TestExternalities::default().execute_with(|| {
+				sp_io::storage::set(&key, &[3u8]);
+				RemoveMaxSkippedSlots::on_runtime_upgrade();
+				assert_eq!(sp_io::storage::get(&key), None);
+			});
+		}
+	}
+}
