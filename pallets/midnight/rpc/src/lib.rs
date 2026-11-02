@@ -73,7 +73,7 @@ pub trait MidnightApi<BlockHash> {
 	#[method(name = "midnight_ledgerVersion")]
 	fn get_ledger_version(&self, at: Option<BlockHash>) -> Result<String, BlockRpcError>;
 
-	#[method(name = "midnight_validateTransaction")]
+	#[method(name = "midnight_validateTransaction", blocking)]
 	fn validate_transaction(&self, tx_hex: String, at: Option<BlockHash>) -> RpcResult<String>;
 }
 
