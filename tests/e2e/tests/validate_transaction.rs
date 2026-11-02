@@ -11,23 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `midnight_validateTransaction`: takes hex tx bytes and returns either the tx_hash or one of
-//! three JSON-RPC errors: -32602 bad hex, -32001 validation failure with structured
-//! `data.{error_code, reason, details}`, or -32005 rate-limited (per-tx cooldown or global).
+//! `midnight_validateTransaction`: takes hex tx bytes and returns either the tx_hash or a JSON-RPC
+//! error: -32602 bad hex, or -32001 validation failure with structured
+//! `data.{error_code, reason, details}`.
 
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 
-/// Random bytes: valid hex, so they pass the hex-decode gate, but never a valid tx. Fresh per
-/// test so the per-tx cooldown key (blake2_256 of the bytes) can't collide across tests.
+/// Random bytes: valid hex, so they pass the hex-decode gate, but never a valid tx.
 fn junk_tx_hex() -> String {
     let junk: [u8; 100] = rand::random();
     hex::encode(junk)
 }
 
-/// Bad hex is rejected before the rate limiter is touched, so this can't pollute the per-tx
-/// cooldown for any other test.
 #[e2e_test]
 async fn validate_transaction_rejects_invalid_hex() {
     let settings = Settings::default();
@@ -75,36 +72,4 @@ async fn validate_transaction_failure_carries_structured_details() {
             "missing `{field}` in error data: {data}"
         );
     }
-}
-
-#[e2e_test]
-async fn validate_transaction_per_tx_rate_limit_blocks_replay() {
-    let settings = Settings::default();
-    let client = MidnightClient::new(settings.node_client).await;
-    let tx_hex = junk_tx_hex();
-
-    let first_msg = client
-        .validate_transaction(&tx_hex)
-        .await
-        .expect_err("random bytes must not validate")
-        .to_string();
-    assert!(
-        !first_msg.contains("-32005"),
-        "first call should fail on validation, not rate limit: {first_msg}"
-    );
-
-    let second_msg = client
-        .validate_transaction(&tx_hex)
-        .await
-        .expect_err("second call with same hex must be rate-limited")
-        .to_string();
-    assert!(
-        second_msg.contains("-32005") || second_msg.to_lowercase().contains("rate limit"),
-        "expected -32005 per-tx rate limit, got: {second_msg}"
-    );
-    assert!(
-        second_msg.to_lowercase().contains("per-transaction")
-            || second_msg.to_lowercase().contains("cooldown"),
-        "expected per-transaction cooldown message, got: {second_msg}"
-    );
 }

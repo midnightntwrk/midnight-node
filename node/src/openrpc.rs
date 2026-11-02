@@ -238,7 +238,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 		"midnight_validateTransaction" => method_entry(
 			name,
 			"Validates a transaction without submitting it to the transaction pool.",
-			"Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool. Rate limited per-call and per-transaction.",
+			"Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool.",
 			&[
 				param("tx_hex", "Hex-encoded serialized transaction", json!({"type": "string"})),
 				param_optional(
@@ -252,11 +252,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				"0x-prefixed hex-encoded transaction hash",
 				json!({"type": "string", "pattern": "^0x[0-9a-fA-F]+$"}),
 			),
-			&[
-				error_ref("ValidateTransactionFailed"),
-				error_ref("ValidateTransactionRateLimited"),
-				error_ref("ValidateTransactionUnsupported"),
-			],
+			&[error_ref("ValidateTransactionFailed"), error_ref("ValidateTransactionUnsupported")],
 		),
 
 		// -- SystemParametersRpcApi --
@@ -770,13 +766,6 @@ fn build_error_components() -> Value {
 					"reason": { "type": "string", "description": "Short failure reason" },
 					"details": { "type": "string", "description": "Detailed failure description" }
 				}
-			}
-		},
-		"ValidateTransactionRateLimited": {
-			"code": -32005,
-			"message": "Rate limit exceeded",
-			"data": {
-				"description": "Rejected by the global call-rate quota or the per-transaction cooldown"
 			}
 		},
 		"ValidateTransactionUnsupported": {

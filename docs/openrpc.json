@@ -151,7 +151,7 @@
     {
       "name": "midnight_validateTransaction",
       "summary": "Validates a transaction without submitting it to the transaction pool.",
-      "description": "Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool. Rate limited per-call and per-transaction.",
+      "description": "Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool.",
       "params": [
         {
           "name": "tx_hex",
@@ -181,9 +181,6 @@
       "errors": [
         {
           "$ref": "#/components/errors/ValidateTransactionFailed"
-        },
-        {
-          "$ref": "#/components/errors/ValidateTransactionRateLimited"
         },
         {
           "$ref": "#/components/errors/ValidateTransactionUnsupported"
@@ -1897,13 +1894,6 @@
               "description": "Detailed failure description"
             }
           }
-        }
-      },
-      "ValidateTransactionRateLimited": {
-        "code": -32005,
-        "message": "Rate limit exceeded",
-        "data": {
-          "description": "Rejected by the global call-rate quota or the per-transaction cooldown"
         }
       },
       "ValidateTransactionUnsupported": {
