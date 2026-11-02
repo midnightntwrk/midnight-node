@@ -16,10 +16,9 @@
 
 #![allow(deprecated)]
 
-use frame_support::{assert_ok, traits::OnFinalize};
+use frame_support::{assert_ok, storage::with_storage_layer, traits::OnFinalize};
 use midnight_node_ledger::{
-	latest::storage::{get_state_root_count, transient_state_is_retained},
-	types::active_version::BlockContext,
+	has_ledger_state, latest::storage::get_state_root_count, types::active_version::BlockContext,
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -30,6 +29,7 @@ use pallet_midnight::{
 	mock::{self, RuntimeOrigin, Test},
 };
 use sp_runtime::{
+	DispatchError,
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
 };
@@ -62,7 +62,7 @@ fn current_state_key() -> Vec<u8> {
 	pallet_midnight::StateKey::<Test>::get()
 }
 
-/// Walks several blocks and a sibling fork, asserting the keep-alive contract at each
+/// Walks several blocks and a storage rollback, asserting the keep-alive contract at each
 /// transition.
 ///
 /// One test fn on purpose: tests in a binary share the global ledger storage, so another
@@ -90,10 +90,6 @@ fn keep_alive_invariants() {
 			Some(1),
 			"genesis is persisted at rc=1 by alloc_with_initial_state"
 		);
-		assert!(
-			!transient_state_is_retained(&genesis_key),
-			"genesis is anchored, not a transient intermediate"
-		);
 
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
 			TransactionSource::External,
@@ -117,8 +113,8 @@ fn keep_alive_invariants() {
 			"an intra-block intermediate must never be a GC root"
 		);
 		assert!(
-			transient_state_is_retained(&post_deploy_key),
-			"the intermediate must be retained between its apply and its successor"
+			has_ledger_state(false, &post_deploy_key),
+			"the intermediate must stay addressable until the post-block update"
 		);
 		assert_eq!(
 			get_state_root_count(&genesis_key),
@@ -148,18 +144,10 @@ fn keep_alive_invariants() {
 		}
 
 		// Finalize block 1: `apply_post_block_update` only resolves the intermediate because
-		// the keep-alive held it, and releases it.
+		// `LedgerStatesExt` held it, and then drops it.
 		process_block(1, store_ctx.clone().into());
 		let post_block_1_key = current_state_key();
 		assert_ne!(post_block_1_key, post_deploy_key);
-		assert!(
-			!transient_state_is_retained(&post_deploy_key),
-			"the block's last intermediate must be released by apply_post_block_update"
-		);
-		assert!(
-			!transient_state_is_retained(&post_block_1_key),
-			"the post-block tip is anchored, so it is never in the transient cache"
-		);
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
 			Some(1),
@@ -180,20 +168,20 @@ fn keep_alive_invariants() {
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), store_tx));
 		let post_store_key = current_state_key();
 		assert_eq!(get_state_root_count(&post_store_key), None, "intermediate, so not rooted");
-		assert!(transient_state_is_retained(&post_store_key));
+		assert!(has_ledger_state(false, &post_store_key));
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
 			Some(1),
 			"the previous block's persisted tip must not be unpersisted by the next apply"
 		);
 		process_block(2, check_ctx.clone().into());
-		assert!(!transient_state_is_retained(&post_store_key));
+		assert!(!has_ledger_state(false, &post_store_key));
 
 		// Block 3: apply CHECK, then finalize into the parent of the fork below.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), check_tx));
 		let post_check_key = current_state_key();
 		assert_eq!(get_state_root_count(&post_check_key), None);
-		assert!(transient_state_is_retained(&post_check_key));
+		assert!(has_ledger_state(false, &post_check_key));
 		assert_eq!(get_state_root_count(&genesis_key), Some(1), "genesis still rooted");
 		assert_eq!(
 			get_state_root_count(&post_block_1_key),
@@ -201,49 +189,34 @@ fn keep_alive_invariants() {
 			"older post-block tips stay rooted for history"
 		);
 		process_block(3, maintenance_ctx.clone().into());
-		assert!(!transient_state_is_retained(&post_check_key));
+		assert!(!has_ledger_state(false, &post_check_key));
 
-		// --- The refcount check ---
+		// --- Storage rollback ---
 		//
-		// Sibling executions applying the same tx to the same parent share one content
-		// hash; each release must drop only its own claim.
+		// A layer that fails after a successful apply reverts `StateKey`, but not the ledger.
 		let fork_parent = current_state_key();
+		let rolled_back = with_storage_layer(|| {
+			mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), maintenance_tx.clone())?;
+			Err::<(), _>(DispatchError::Other("roll back after a successful apply"))
+		});
+		assert!(rolled_back.is_err());
+		assert_eq!(current_state_key(), fork_parent, "the rollback reverts StateKey");
 
-		assert_ok!(mock::Midnight::send_mn_transaction(
-			RuntimeOrigin::none(),
-			maintenance_tx.clone()
-		));
-		let forked_key = current_state_key();
-		assert!(transient_state_is_retained(&forked_key));
-
-		// Rewind to the shared parent and replay: the sibling fork's execution.
-		pallet_midnight::StateKey::<Test>::put(fork_parent.clone());
+		// Re-applying on the reverted key reproduces the rolled-back state, now held twice.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), maintenance_tx));
-		assert_eq!(
-			current_state_key(),
-			forked_key,
-			"the same transaction on the same parent must produce the same state key"
-		);
-		assert_eq!(get_state_root_count(&forked_key), None, "still never rooted");
+		let replayed_key = current_state_key();
+		assert_ne!(replayed_key, fork_parent);
+		assert_eq!(get_state_root_count(&replayed_key), None, "still never rooted");
 
-		// One fork finalizes: that releases the shared intermediate once.
 		mock::Midnight::on_finalize(4);
 		assert!(
-			transient_state_is_retained(&forked_key),
-			"the other execution's claim must keep the state alive"
-		);
-
-		// ...and now the other.
-		pallet_midnight::StateKey::<Test>::put(forked_key.clone());
-		mock::Midnight::on_finalize(4);
-		assert!(
-			!transient_state_is_retained(&forked_key),
-			"the last release must drop the keep-alive"
+			!has_ledger_state(false, &replayed_key),
+			"both holds must be dropped before the block's storage flush"
 		);
 		assert_eq!(
 			get_state_root_count(&fork_parent),
 			Some(1),
-			"the shared parent is persisted and must survive both forks"
+			"the persisted parent must survive the rollback"
 		);
 	});
 }

@@ -85,7 +85,9 @@ use {
 		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
+	midnight_primitives_ledger::{
+		LedgerMetricsExt, LedgerStatesExt, LedgerStorageDb, LedgerStorageExt,
+	},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -95,8 +97,8 @@ use {
 		},
 	},
 	std::{
-		any::{Any, TypeId},
-		sync::{Arc, LazyLock},
+		any::Any,
+		sync::Arc,
 		time::{Duration, Instant},
 	},
 };
@@ -108,10 +110,7 @@ use crate::boundary::types::{
 };
 
 #[cfg(feature = "std")]
-use {
-	lazy_static::lazy_static,
-	moka::{ops::compute::Op as CacheOp, sync::Cache},
-};
+use {lazy_static::lazy_static, moka::sync::Cache};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
@@ -185,118 +184,18 @@ lazy_static! {
 			.build();
 }
 
-// Mirrors `ledger_9`'s keep-alive cache; a separate copy because the cached `Sp`s are typed by
-// this module's `Ledger`.
-/// ~1000x the resident set of one, so moka's TinyLFU admission filter never engages: at
-/// capacity it can reject an insert, which here is a fatal mid-block miss.
-/// [`TRANSIENT_STATE_CACHE_TTI`] is the real bound.
+/// Keep an intra-block state addressable past this host call: it is not persisted, so
+/// dropping the `Sp` would `uncache` it. Holding the live `Arc` also lets later reads of
+/// the same tip skip deserialization via the arena's `sp_cache`.
 #[cfg(feature = "std")]
-const TRANSIENT_STATE_CACHE_CAPACITY: u64 = 1024;
-
-/// Leak bound (~10 blocks) for an execution that abandoned its tail (an unsealed proposal,
-/// a failed import); entries are normally released by the successor call.
-#[cfg(feature = "std")]
-const TRANSIENT_STATE_CACHE_TTI: Duration = Duration::from_secs(60);
-
-/// `db` is required: `DbSeparate` and `DbUnified` are distinct arenas with identical content
-/// hashes, so without it a release on one would drop the other's keep-alive.
-#[cfg(feature = "std")]
-#[derive(PartialEq, Eq, Hash, Clone)]
-struct StateCacheKey {
-	db: TypeId,
-	state_key: Vec<u8>,
-}
-
-#[cfg(feature = "std")]
-impl StateCacheKey {
-	fn new<D: DB>(state_key: &[u8]) -> Self {
-		Self { db: TypeId::of::<D>(), state_key: state_key.to_vec() }
-	}
-}
-
-/// Refcounted because two executions can be in flight at once (authoring alongside import),
-/// and forks off the same parent applying the same transaction produce the *same* content
-/// hash. Without a count the first release would fail the other with `NoLedgerState`.
-#[cfg(feature = "std")]
-#[derive(Clone)]
-struct RetainedState {
-	_sp: Arc<dyn Any + Send + Sync>,
-	refs: usize,
-}
-
-/// Intra-block intermediate ledger states. NOT persisted: this cache is the only thing
-/// keeping them addressable in the arena.
-///
-/// Values are type-erased `Arc<Sp<Ledger<D>, D>>` (a static can't be generic over `D`).
-/// It must be the whole `Sp`: that holds the arena refcount above zero so `uncache`
-/// never fires, and keeps the inner `Arc` alive for the arena's `sp_cache` to upgrade.
-#[cfg(feature = "std")]
-static TRANSIENT_LEDGER_STATES: LazyLock<Cache<StateCacheKey, RetainedState>> =
-	LazyLock::new(|| {
-		Cache::builder()
-			.max_capacity(TRANSIENT_STATE_CACHE_CAPACITY)
-			.time_to_idle(TRANSIENT_STATE_CACHE_TTI)
-			.build()
-	});
-
-/// Keep an intra-block intermediate state materialised past the end of this host call.
-///
-/// Otherwise `Sp::drop` -> `uncache` removes the non-persisted state from the arena when
-/// the Bridge method returns. Holding the `Sp` also lets the successor (and mempool /
-/// weight reads of the same tip) hit the already-deserialized `Arc` in `sp_cache`.
-#[cfg(feature = "std")]
-fn retain_transient<D: DB>(state_key: &[u8], sp: &Sp<Ledger<D>, D>) {
-	let sp: Arc<dyn Any + Send + Sync> = Arc::new(sp.clone());
-	// `and_compute_with` is the read-modify-write under moka's per-key lock, so the
-	// refcount needs no `Mutex` of its own.
-	TRANSIENT_LEDGER_STATES
-		.entry(StateCacheKey::new::<D>(state_key))
-		.and_compute_with(|entry| match entry {
-			Some(entry) => {
-				let prev = entry.into_value();
-				CacheOp::Put(RetainedState { refs: prev.refs + 1, ..prev })
-			},
-			None => CacheOp::Put(RetainedState { _sp: sp, refs: 1 }),
-		});
-}
-
-/// Drop this execution's claim on an intra-block intermediate state.
-///
-/// A no-op for an absent key: a persisted input (post-block tip, genesis) or an entry the
-/// TTI already reclaimed. Unlike an unpersist, it can never disturb a `persist()`ed state.
-#[cfg(feature = "std")]
-fn release_transient<D: DB>(state_key: &[u8]) {
-	TRANSIENT_LEDGER_STATES
-		.entry(StateCacheKey::new::<D>(state_key))
-		.and_compute_with(|entry| match entry {
-			Some(entry) => {
-				let prev = entry.into_value();
-				if prev.refs > 1 {
-					CacheOp::Put(RetainedState { refs: prev.refs - 1, ..prev })
-				} else {
-					CacheOp::Remove
-				}
-			},
-			None => CacheOp::Nop,
-		});
-	// moka defers dropping removed values. Drain now: that drop is what `uncache`s the
-	// state's `Create` nodes, which the block's `flush_all_changes_to_db` would otherwise
-	// write to disk as unreferenced garbage.
-	TRANSIENT_LEDGER_STATES.run_pending_tasks();
-}
-
-/// Release every retained ledger state.
-///
-/// Each retained `Sp` holds `Arc`s into `Storage<D>`, and so the parity-db handle and its
-/// exclusive file lock: storage teardown must call this or the database stays open.
-#[cfg(feature = "std")]
-pub(crate) fn clear_ledger_state_caches() {
-	// Per-key `invalidate`, not `invalidate_all`: the latter only marks entries stale,
-	// leaving the values (and the DB handle) alive until an eviction sweep.
-	for (key, _) in TRANSIENT_LEDGER_STATES.iter() {
-		TRANSIENT_LEDGER_STATES.invalidate(&*key);
-	}
-	TRANSIENT_LEDGER_STATES.run_pending_tasks();
+fn hold_intermediate<D: DB>(
+	externalities: &mut dyn Externalities,
+	sp: Sp<Ledger<D>, D>,
+) -> Result<(), LedgerApiError> {
+	LedgerStatesExt::hold(externalities, Box::new(sp)).map_err(|e| {
+		log::error!(target: LOG_TARGET, "Failed to hold intermediate ledger state: {e:?}");
+		LedgerApiError::HostApiError
+	})
 }
 
 #[cfg(feature = "std")]
@@ -349,11 +248,6 @@ where
 	}
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
-		// Before the flush: settled releases uncache their states instead of writing them
-		// to disk. Also makes the eventually-consistent `entry_count` below accurate; a
-		// stale zero would hide the leak the gauge exists to catch.
-		TRANSIENT_LEDGER_STATES.run_pending_tasks();
-
 		let now = std::time::Instant::now();
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 		let elapsed = now.elapsed().as_secs_f64();
@@ -361,12 +255,6 @@ where
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
 		if let Some(metrics) = maybe_metrics {
 			metrics.observe_storage_flush_time(elapsed, "ledger_state");
-			// Sampled here, after `apply_post_block_update` released the block's last
-			// intermediate, so a non-zero "transient_ledger_8" reading is unambiguously a leak.
-			metrics.set_ledger_state_cache_size(
-				"transient_ledger_8",
-				TRANSIENT_LEDGER_STATES.entry_count(),
-			);
 		}
 	}
 
@@ -379,10 +267,10 @@ where
 	/// for RPC and history. Nothing unpersists it, so sibling forks persisting the same tip
 	/// each hold their own count.
 	///
-	/// The input is released from the transient cache (a no-op for a post-block tip or
-	/// genesis input). On error, nothing is retained or released.
+	/// Then drops every held intermediate, the input included, so the following storage
+	/// flush `uncache`s them instead of writing them to disk.
 	pub fn post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
@@ -426,7 +314,7 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 		ledger.persist();
-		release_transient::<D>(state_key);
+		LedgerStatesExt::release_all(externalities);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -445,7 +333,7 @@ where
 	///
 	/// Same contract as [`Self::post_block_update`].
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
@@ -454,7 +342,7 @@ where
 		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 		ledger.persist();
-		release_transient::<D>(state_key);
+		LedgerStatesExt::release_all(externalities);
 		Ok(state_root)
 	}
 
@@ -466,12 +354,11 @@ where
 	///
 	/// # Persist / keep-alive contract
 	///
-	/// The resulting intra-block state is *not* persisted, so it never reaches the DB; the
-	/// transient cache is the only thing keeping it addressable until the successor call
-	/// releases it.
+	/// The resulting state is *not* persisted; [`LedgerStatesExt`] keeps it addressable
+	/// until the post-block update.
 	///
-	/// The input is released (a no-op for a post-block tip or genesis input). On error,
-	/// nothing is retained or released.
+	/// The input is not released, so a FRAME storage rollback after this returns can
+	/// still resolve the `StateKey` it reverts to.
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -661,8 +548,7 @@ where
 			"⏱️  Retaining ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		retain_transient(&event.state_root, &new_ledger);
-		release_transient::<D>(state_key);
+		hold_intermediate(externalities, new_ledger)?;
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger retained (elapsed_ms={})",
@@ -722,8 +608,7 @@ where
 		};
 
 		// Only update state after no errors
-		retain_transient(&event.state_root, &ledger);
-		release_transient::<D>(state_key);
+		hold_intermediate(externalities, ledger)?;
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -777,8 +662,7 @@ where
 		};
 
 		// Only update state after no errors
-		retain_transient(&event.state_root, &ledger);
-		release_transient::<D>(state_key);
+		hold_intermediate(externalities, ledger)?;
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -2059,9 +1943,10 @@ mod tests {
 		}
 	}
 
-	/// Ledger-8 counterpart of `pallet-midnight`'s `persist_refcount` (ledger 9) test.
+	/// A FRAME storage rollback after a successful apply reverts `StateKey` to the apply's
+	/// input. That input must still resolve, so no apply may release it.
 	#[test]
-	fn intermediate_states_are_retained_not_rooted() {
+	fn intermediate_states_survive_rollback_until_post_block_update() {
 		use mn_ledger_local::dust::DustPublicKey;
 		use transient_crypto_local::curve::Fr;
 
@@ -2082,9 +1967,7 @@ mod tests {
 			default_storage::<DefaultDB>()
 				.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
 		};
-		let retained = |state_key: &[u8]| {
-			TRANSIENT_LEDGER_STATES.contains_key(&StateCacheKey::new::<DefaultDB>(state_key))
-		};
+		let resolves = |state_key: &[u8]| TestBridge::get_ledger(&api, state_key).is_ok();
 		let tx = |nonce: u8| {
 			api.tagged_serialize(&SystemTransaction::CNightGeneratesDustUpdate {
 				events: vec![CNightGeneratesDustEvent {
@@ -2097,30 +1980,33 @@ mod tests {
 			})
 			.expect("serialize system tx")
 		};
+		let apply = |ext: &mut sp_io::TestExternalities, state_key: &[u8], nonce: u8| {
+			TestBridge::apply_system_transaction(
+				&mut ext.ext(),
+				state_key,
+				&tx(nonce),
+				block_context(),
+			)
+			.expect("system tx applies")
+			.state_root
+		};
 
 		let mut ext = sp_io::TestExternalities::default();
-		let first = TestBridge::apply_system_transaction(
-			&mut ext.ext(),
-			&genesis_key,
-			&tx(1),
-			block_context(),
-		)
-		.expect("first system tx applies")
-		.state_root;
-		assert_eq!(root_count(&first), None, "an intermediate must never be a GC root");
-		assert!(retained(&first), "the intermediate must be retained for its successor");
+		ext.register_extension(LedgerStatesExt::default());
 
-		let second =
-			TestBridge::apply_system_transaction(&mut ext.ext(), &first, &tx(2), block_context())
-				.expect("second system tx applies")
-				.state_root;
-		assert!(retained(&second));
-		assert!(!retained(&first), "the successor must release its predecessor");
+		let first = apply(&mut ext, &genesis_key, 1);
+		assert_eq!(root_count(&first), None, "an intermediate must never be a GC root");
+		apply(&mut ext, &first, 2);
+		assert!(resolves(&first), "a rollback to the input must find it still held");
+		let third = apply(&mut ext, &first, 3);
 		assert_eq!(root_count(&genesis_key), Some(1), "the persisted genesis is untouched");
 
-		let tip = TestBridge::apply_post_block_update(&mut ext.ext(), &second, block_context())
+		let tip = TestBridge::apply_post_block_update(&mut ext.ext(), &third, block_context())
 			.expect("post-block update applies");
 		assert_eq!(root_count(&tip), Some(1), "the post-block tip is persisted at rc=1");
-		assert!(!retained(&second), "the post-block update must release the last intermediate");
+		// Only `first` is checked: on this near-empty ledger the later states get `Direct`
+		// keys, which embed their node and so always resolve.
+		assert!(!resolves(&first), "the post-block update must drop every intermediate");
+		assert!(resolves(&tip));
 	}
 }

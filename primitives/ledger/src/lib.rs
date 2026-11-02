@@ -15,7 +15,9 @@ use prometheus_endpoint::{
 	self as prometheus, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, PrometheusError,
 	Registry, U64,
 };
+use sp_externalities::{Externalities, ExternalitiesExt};
 use std::{
+	any::Any,
 	path::PathBuf,
 	sync::{Arc, Mutex},
 };
@@ -46,10 +48,6 @@ pub struct LedgerMetrics {
 	pub tx_validation_cache_misses: CounterVec<U64>,
 	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_size: GaugeVec<U64>,
-	/// Live ledger states held by the keep-alive cache (labeled by cache_type:
-	/// "transient", or "transient_ledger_8" for ledger 8). Sampled at the post-block
-	/// flush, where it must read 0; non-zero is a leaked state.
-	pub ledger_state_cache_size: GaugeVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -194,16 +192,6 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
-			ledger_state_cache_size: prometheus::register(
-				GaugeVec::new(
-					Opts::new(
-						"ledger_state_cache_size",
-						"Current number of live ledger states held by the keep-alive caches",
-					),
-					&["cache_type"],
-				)?,
-				registry,
-			)?,
 		})
 	}
 }
@@ -288,12 +276,6 @@ impl LedgerMetricsExt {
 			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
 		});
 	}
-
-	pub fn set_ledger_state_cache_size(&mut self, cache_type: &str, size: u64) {
-		self.observe(|m| {
-			m.ledger_state_cache_size.with_label_values(&[cache_type]).set(size);
-		});
-	}
 }
 
 #[derive(Clone)]
@@ -328,5 +310,40 @@ impl LedgerStorageExt {
 
 	pub fn new(storage: LedgerStorage) -> Self {
 		LedgerStorageExt(storage)
+	}
+}
+
+sp_externalities::decl_extension! {
+	/// Keeps a block's intra-block ledger states, which are never persisted, addressable.
+	///
+	/// The node registers one per runtime-API instance, so they live as long as the block's
+	/// execution. Not transactional on purpose: a FRAME storage rollback reverts `StateKey`
+	/// to a state still held here.
+	#[derive(Default)]
+	pub struct LedgerStatesExt(Vec<Box<dyn Any + Send>>);
+}
+
+impl LedgerStatesExt {
+	/// Hold `state` until [`Self::release_all`] or until the extension is dropped.
+	///
+	/// Where the node didn't register one (tests, benchmarks) it is registered here, and
+	/// then lives only as long as the current externalities.
+	pub fn hold(
+		mut ext: &mut dyn Externalities,
+		state: Box<dyn Any + Send>,
+	) -> Result<(), sp_externalities::Error> {
+		match ext.extension::<Self>() {
+			Some(held) => held.0.push(state),
+			None => ext.register_extension(Self(vec![state]))?,
+		}
+		Ok(())
+	}
+
+	/// Drop every held state. Call before the storage flush, or it writes them to disk
+	/// as garbage.
+	pub fn release_all(mut ext: &mut dyn Externalities) {
+		if let Some(held) = ext.extension::<Self>() {
+			held.0.clear();
+		}
 	}
 }

@@ -27,11 +27,6 @@ type DbSeparate = ParityDb;
 type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 pub fn drop_default_storage_if_exists() {
-	// Retained `Sp`s would keep the parity-db handle and its file lock alive past the drop.
-	// Unconditional: ledger 8 and 9 share one backend, and `ledger_8`'s drop may be the
-	// one that finds it. Each ledger clears only its own caches.
-	super::clear_ledger_state_caches();
-
 	if try_get_default_storage::<DbSeparate>().is_some() {
 		unsafe_drop_default_storage::<DbSeparate>();
 		log::info!(
@@ -162,15 +157,6 @@ pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
 	let key: ArenaKey<_> = typed_key.into();
 	default_storage::<ParityDb>()
 		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
-}
-
-/// Whether the ledger state addressed by `state_key` is held by the transient keep-alive
-/// cache. Test-only; same `ParityDb` hard-wiring as [`get_state_root_count`].
-#[cfg(all(feature = "std", feature = "test-utils"))]
-pub fn transient_state_is_retained(state_key: &[u8]) -> bool {
-	use crate::ledger_9::ledger_storage_local::db::ParityDb;
-
-	super::TRANSIENT_LEDGER_STATES.contains_key(&super::StateCacheKey::new::<ParityDb>(state_key))
 }
 
 #[cfg(feature = "std")]
