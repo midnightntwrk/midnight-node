@@ -31,7 +31,6 @@ use mn_ledger_local::error::{
 };
 use zswap_local::error::{MalformedOffer, TransactionInvalid as ZswapTransactionInvalid};
 
-
 impl From<TransactionApplicationError> for TransactionApplicationErrorCode {
 	fn from(error: TransactionApplicationError) -> Self {
 		match error {
