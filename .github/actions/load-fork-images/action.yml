@@ -9,15 +9,12 @@ inputs:
     description: Artifact name, or glob matching several artifacts
     required: true
   registry:
-    description: Also push the images to a local registry and let earthly pull from it
-    required: false
-    default: "false"
-  registry-host:
     description: >-
-      Host:port fork image refs are named under. Must be reachable from inside earthly's
-      buildkitd container, so it is the Docker bridge gateway rather than localhost.
+      Also push the images to a throwaway registry at this host:port and let earthly pull from
+      it. Pass FORK_IMAGE_REGISTRY; it must be the Docker bridge gateway, reachable from inside
+      earthly's buildkitd container. Empty = load only.
     required: false
-    default: "172.17.0.1:5000"
+    default: ""
 
 runs:
   using: composite
