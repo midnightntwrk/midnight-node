@@ -1,0 +1,22 @@
+VERSION 0.8
+# TEMPORARY: exercises the fork-PR image hand-off for the test PR only. Not for merge.
+
+image:
+    FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+    ARG REF
+    RUN echo fork-ci-probe-ok > /probe.txt
+    SAVE IMAGE --push $REF
+
+# FROM a fork image: the path +rebuild-genesis takes.
+consume:
+    ARG REF
+    FROM $REF
+    RUN grep -q fork-ci-probe-ok /probe.txt && echo "FROM pull OK"
+
+# WITH DOCKER --pull a fork image: the path +check-metadata, +test-toolkit and +local-env-ci take.
+pull:
+    FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+    ARG REF
+    WITH DOCKER --pull $REF
+        RUN docker run --rm $REF cat /probe.txt | grep -q fork-ci-probe-ok && echo "WITH DOCKER pull OK"
+    END
