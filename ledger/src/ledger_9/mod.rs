@@ -36,7 +36,6 @@ pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
 mod block_context;
 pub use block_context::*;
 
-mod error_ext;
 mod guaranteed_validation;
 mod post_block_update;
 mod system_tx;
