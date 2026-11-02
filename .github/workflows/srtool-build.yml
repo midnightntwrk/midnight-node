@@ -32,6 +32,10 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      NODE_GIT_TOKEN:
+        description: "Token for private git dependencies in Cargo.toml; a reusable workflow sees no caller secrets unless they are passed"
+        required: false
 
 jobs:
   srtool-build:

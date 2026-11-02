@@ -749,6 +749,8 @@ jobs:
       ref: ${{ inputs.ref }}
       release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
       runtime-tag-release: ${{ needs.prepare-release.outputs.runtime-tag-release }}
+    secrets:
+      NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
 
   finalize-checksums:
     permissions:
