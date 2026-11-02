@@ -255,10 +255,6 @@ pub struct ValidateRateLimitConfig {
 	pub per_tx_cooldown_secs: u64,
 }
 
-/// Memory cap on `per_tx`, well above any legitimate working set. Past it, a flood of unique txs
-/// evicts older keys early, which only shortens their cooldown; the global limit still applies.
-const PER_TX_CAPACITY: u64 = 50_000;
-
 struct ValidationRateLimiter {
 	global: RateLimiter<NotKeyed, InMemoryState, DefaultClock>,
 	per_tx: Cache<[u8; 32], ()>,
@@ -276,13 +272,17 @@ enum RateLimitRejection {
 impl ValidationRateLimiter {
 	fn new(config: &ValidateRateLimitConfig) -> Self {
 		let cooldown_secs = config.per_tx_cooldown_secs.max(1);
-		let global_quota =
-			Quota::per_second(NonZeroU32::new(config.global_rate_limit.max(1)).unwrap());
+		let global_rate = config.global_rate_limit.max(1);
+		let global_quota = Quota::per_second(NonZeroU32::new(global_rate).unwrap());
 
 		Self {
 			global: RateLimiter::direct(global_quota),
 			per_tx: Cache::builder()
-				.max_capacity(PER_TX_CAPACITY)
+				// Only txs that won a global token are inserted, so at most `rate * (cooldown + 1)`
+				// (the +1 is the quota's burst) are live at once and nothing is evicted early.
+				.max_capacity(
+					u64::from(global_rate).saturating_mul(cooldown_secs.saturating_add(1)),
+				)
 				.time_to_live(std::time::Duration::from_secs(cooldown_secs))
 				.build(),
 		}
@@ -291,12 +291,13 @@ impl ValidationRateLimiter {
 	/// Per-tx cooldown before the global limit, so a replayed tx is rejected without spending a
 	/// global token and can't starve other callers.
 	fn check(&self, tx_key: &[u8; 32]) -> Result<(), RateLimitRejection> {
-		if !self.per_tx.entry(*tx_key).or_insert(()).is_fresh() {
+		if self.per_tx.contains_key(tx_key) {
 			return Err(RateLimitRejection::PerTx);
 		}
 		if self.global.check().is_err() {
 			return Err(RateLimitRejection::Global);
 		}
+		self.per_tx.insert(*tx_key, ());
 		Ok(())
 	}
 }
@@ -566,6 +567,8 @@ mod tests {
 			);
 		}
 
+		assert_eq!(rl.check(&key(11)), Err(RateLimitRejection::Global));
+		// A globally rejected tx must not enter cooldown, or its retry would be refused as a replay.
 		assert_eq!(rl.check(&key(11)), Err(RateLimitRejection::Global));
 	}
 }
