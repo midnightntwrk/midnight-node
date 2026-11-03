@@ -47,10 +47,10 @@
 //!
 //! # Cost
 //!
-//! Before a flip is scheduled a vote costs one storage read at the target. While a hold is active
-//! the anchor found for each target is cached, so the next vote walks back only to the previous
-//! target. Once the finalized block is BABE-authored the rule switches itself off for the rest of
-//! the process.
+//! Before a flip is scheduled a vote costs two storage reads, at the best block and at the target.
+//! While a hold is active the anchor found for each block is cached, so the next vote walks back
+//! only to a block it already resolved. Once the finalized block is BABE-authored the rule switches
+//! itself off for the rest of the process.
 
 use crate::engine_digests::authoring_engine;
 use midnight_node_runtime::opaque::Block;
@@ -335,8 +335,8 @@ struct Shared {
 
 struct HoldState {
 	anchors: AnchorCache,
-	/// Last hold point reported, to log transitions only.
-	last_hold: Option<Hash>,
+	/// Hold point last reported for the best chain, to log arming and lifting once each.
+	armed_at: Option<Hash>,
 }
 
 /// GRANDPA [`VotingRule`] that holds finality below a pending AURA→BABE flip. See the module docs.
@@ -371,7 +371,7 @@ impl<BE> FlipFinalityHold<BE> {
 				released: AtomicBool::new(false),
 				state: Mutex::new(HoldState {
 					anchors: AnchorCache::new(ANCHOR_CACHE_CAPACITY),
-					last_hold: None,
+					armed_at: None,
 				}),
 			}),
 			_backend: PhantomData,
@@ -408,31 +408,57 @@ impl<BE> FlipFinalityHold<BE> {
 			_backend: PhantomData,
 		};
 		let mut state = self.shared.state.lock().unwrap_or_else(|e| e.into_inner());
-		let verdict = decide(
+		let base_pair = (base.hash(), *base.number());
+
+		// Judged on the best block so arming is logged once the schedule block is imported, not
+		// when GRANDPA's target first reaches it (it trails best by at least two blocks).
+		let on_best = decide(
 			&facts,
-			(base.hash(), *base.number()),
-			(target.hash(), *target.number()),
+			base_pair,
+			(best.hash(), *best.number()),
 			best.hash(),
 			self.extra_confirmations,
 			&mut state.anchors,
 		);
+		match on_best {
+			Verdict::Hold { hash, number } if state.armed_at != Some(hash) => {
+				log::info!(
+					target: LOG_TARGET,
+					"consensus flip scheduled (best #{}): GRANDPA finality held at #{number} ({hash:?}) until the first BABE block plus {} confirmation(s)",
+					best.number(),
+					self.extra_confirmations,
+				);
+				state.armed_at = Some(hash);
+			},
+			Verdict::Free(FreeReason::BabeConfirmed) if state.armed_at.take().is_some() => {
+				log::info!(
+					target: LOG_TARGET,
+					"BABE confirmed at best #{}: flip finality hold lifted, finality resumes from #{} ({} blocks pending)",
+					best.number(),
+					base.number(),
+					best.number().saturating_sub(*base.number()),
+				);
+			},
+			_ => {},
+		}
 
-		match verdict {
+		match decide(
+			&facts,
+			base_pair,
+			(target.hash(), *target.number()),
+			best.hash(),
+			self.extra_confirmations,
+			&mut state.anchors,
+		) {
 			Verdict::Hold { hash, number } => {
-				if state.last_hold != Some(hash) {
-					log::info!(
-						target: LOG_TARGET,
-						"consensus flip pending: holding GRANDPA votes at #{number} ({hash:?}) below target #{}",
-						target.number(),
-					);
-					state.last_hold = Some(hash);
-				}
+				log::debug!(
+					target: LOG_TARGET,
+					"restricting GRANDPA vote to #{number} ({hash:?}) instead of target #{}",
+					target.number(),
+				);
 				Some((hash, number))
 			},
 			Verdict::Free(reason) => {
-				if state.last_hold.take().is_some() {
-					log::info!(target: LOG_TARGET, "flip finality hold lifted at target #{}: {reason:?}", target.number());
-				}
 				if let FreeReason::Unreadable(e) = reason {
 					log::warn!(target: LOG_TARGET, "cannot read consensus-engine state at {:?}: {e}; not restricting", target.hash());
 				}
