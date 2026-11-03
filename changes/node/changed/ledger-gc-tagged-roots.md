@@ -15,8 +15,8 @@ and the emitted state key, host functions and runtime are unchanged.
 A background worker runs one slice per finality notification. A slice scans the root set (the
 pruning window plus forks on a pruned node), marks a wrapper dead once its block height is below
 `finalized - state_pruning` and no child of its parent block still has state, confirmed on two
-consecutive slices, runs a bounded incremental arena sweep, and finally releases the dead
-wrappers. The worker keeps no state across slices beyond that debounce, every error path keeps
+consecutive slices, and releases the dead wrappers. A bounded incremental arena sweep runs
+after block imports, paced to a maximum share of wall time. The worker keeps no state across slices beyond that debounce, every error path keeps
 the wrapper, and it keeps running during major sync so a resync from genesis stays bounded by
 the pruning window.
 
@@ -57,7 +57,8 @@ the pruning window.
 
 ## Observability
 
-- `ledger_gc_phase_time{phase=scan|release|arena_gc}`
+- `ledger_gc_phase_time{phase=scan|release|arena_gc|arena_gc_dirty}` (`arena_gc_dirty` counts
+  sweeps refused because the next block had already written to the ledger cache)
 - `ledger_gc_tagged_roots{kind=total|candidates|pinned}`
 - `ledger_gc_released_total`, `ledger_gc_culled_total`
 - `ledger_gc_suspended{reason=mbm|sweep_panic|legacy_roots|unindexed_columns}`
@@ -71,6 +72,13 @@ the pruning window.
   through a 14-hour load with no import penalty, for about 21% more disk writes and 11% more
   CPU than running no sweep. Sustained load at block capacity is untested; the hold warning
   fires above twice the budget.
+- `MIDNIGHT_LEDGER_GC_MAX_DUTY_PCT`: maximum share of wall time the arena sweep may hold the
+  ledger arena (default 20, range 1 to 100). Sweep slices follow block imports, including
+  imports during major sync, at most one per `slice * 100 / duty`. With 6-second blocks the cap
+  never binds and the node sweeps once per block; during a resync (about 6 blocks per second)
+  it does, so the sweep gets 20% of wall time instead of one slice per finality notification
+  (about 1% on the perfnet resync, where no mark cycle completed and the ledger kept the full
+  garbage of the replayed history). Import slows by at most that share while syncing.
 - `MIDNIGHT_LEDGER_GC_ARENA_SWEEP`: `0` releases tips but never sweeps; escape hatch if the
   sweep's mark set uses too much memory on a very large arena.
 - `--ledger-state-pruning <N>`: explicit ledger window (see *Archive modes*).

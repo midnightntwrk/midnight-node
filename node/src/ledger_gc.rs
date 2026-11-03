@@ -23,11 +23,14 @@
 //!
 //! # Shape
 //!
-//! The worker is stateless across slices apart from a two-slice debounce set and a
-//! few flags. Every finality notification runs one slice (see [`reclaim_slice`]):
+//! The worker is stateless across slices apart from a two-slice debounce set, the
+//! wrapper list of the last scan, a sweep pacer and a few flags. It runs two kinds of
+//! slice, one at a time, in one task:
+//!
+//! **Reclaim slice**, on every finality notification (see [`reclaim_slice`]):
 //!
 //! 0. gate: a multi-block migration in flight (or an unreadable cursor) suspends
-//!    *release*; scan, pin and arena gc still run. Major sync is deliberately NOT
+//!    *release*; scan and the sweep still run. Major sync is deliberately NOT
 //!    a gate: a resync from genesis must release tips as finality advances,
 //!    otherwise ledger storage holds every tip of the whole chain until the sync
 //!    ends (the pre-GC bloat, as a peak);
@@ -35,11 +38,28 @@
 //!    that is not a wrapper stops the worker (see *Legacy roots*);
 //! 2. liveness, with no lock held: resolve each tag to its parent block, height
 //!    gate, child-state gate, two-slice debounce;
-//! 3. pin every scanned wrapper, run one arena gc slice (optional), drop the pins;
-//! 4. release (`gc::release_to_zero`, this slice's counts, zero reads) — after the
-//!    sweep, because a staged `unpersist` dirties the write cache and the sweep
-//!    refuses a dirty cache;
-//! 5. metrics.
+//! 3. release (`gc::release_to_zero`, this slice's counts, zero reads); the scanned
+//!    wrappers that were not released become the pin list of the sweep slices;
+//! 4. metrics.
+//!
+//! **Sweep slice**, on a block import notification when the [`SweepPacer`] allows it
+//! (see [`sweep_slice`]): pin the last scan's surviving wrappers, run one arena gc
+//! slice of `slice` budget, drop the pins. The trigger is every imported block,
+//! including blocks imported during major sync (`every_import_notification_stream`;
+//! the plain import stream is silent while major-syncing). The runtime flushes the
+//! ledger write cache at the end of every block (`on_finalize`), so right after an
+//! import notification the cache is clean unless the next block already wrote to it;
+//! the sweep refuses a dirty cache and the next import retries. A staged release
+//! dirties the cache until the next block's flush, so the sweep after a release is
+//! the one after the next import, which is why releasing never starves the sweep.
+//!
+//! The pacer caps the sweep's share of wall time at `MIDNIGHT_LEDGER_GC_MAX_DUTY_PCT`
+//! (default 20 %): after a sweep that took `t`, the next waits `t * (100 / duty - 1)`.
+//! With 6 s blocks one 200 ms sweep per block is 3 % and the cap never binds, so
+//! normal operation sweeps once per block as before. During a resync (~6 blocks/s)
+//! the cap binds: the sweep gets 20 % of wall time instead of one slice per finality
+//! notification (~1 % measured, which never completed a mark cycle), and the arena
+//! mutex it holds slows import by at most the same share.
 //!
 //! Per-slice work is proportional to the root set, which on a pruned node is the
 //! pruning window plus forks (a few hundred roots): the scan reads each root once,
@@ -55,10 +75,14 @@
 //! that itself: every flush that changes a root count forces a root rescan, and the
 //! next `gc()` call greys and marks every unmarked root before it sweeps again
 //! (`gc::wrapper_flushed_mid_sweep_survives_without_pins` is the regression test;
-//! the guarantee is a `gc-v1` feature detail a dependency bump could drop). The
-//! worker additionally pins every scanned wrapper across its gc call (`live_inserts`
-//! is the other root source the sweep consults), which costs one lazy `Sp` per
-//! wrapper in the pruning window and makes the slice safe even without that rescan.
+//! the guarantee is a `gc-v1` feature detail a dependency bump could drop). A wrapper
+//! that is persisted but not yet flushed keeps the write cache dirty, so no sweep runs
+//! until it is on disk and covered by that rescan. The worker additionally pins the
+//! last scan's surviving wrappers across each gc call (`live_inserts` is the other
+//! root source the sweep consults), one lazy `Sp` per wrapper in the pruning window.
+//! Wrappers persisted after that scan (at most the blocks since the last finality
+//! notification) are protected by the rescan alone. Pins live for one sweep slice
+//! only: a long-lived `Sp` would keep the storage open across a re-initialisation.
 //!
 //! # Legacy roots
 //!
@@ -95,7 +119,7 @@
 use std::{
 	collections::HashSet,
 	sync::{Arc, Mutex},
-	time::Duration,
+	time::{Duration, Instant},
 };
 
 use futures::{FutureExt, StreamExt};
@@ -118,11 +142,16 @@ const LOG_TARGET: &str = "midnight::ledger_gc";
 /// perfnet A/B of the storage bundle (garbage ~130 stored nodes per block); 200 ms kept
 /// the ledger flat through a 14 h load with no import penalty.
 const DEFAULT_SLICE_MS: u64 = 200;
+/// Maximum share of wall time (percent) the arena sweep may hold the arena mutex.
+/// Binds only when blocks arrive faster than one sweep slice per `slice * 100 / duty`
+/// (a resync, a catch-up after a stall); see the module docs.
+const DEFAULT_MAX_DUTY_PCT: u32 = 20;
 /// Hold-time warning threshold for the scan and release holds.
 const HOLD_WARN: Duration = Duration::from_millis(50);
 
 const ENV_SLICE_MS: &str = "MIDNIGHT_LEDGER_GC_SLICE_MS";
 const ENV_ARENA_SWEEP: &str = "MIDNIGHT_LEDGER_GC_ARENA_SWEEP";
+const ENV_MAX_DUTY_PCT: &str = "MIDNIGHT_LEDGER_GC_MAX_DUTY_PCT";
 
 /// Which gates decide that a tagged root's block position is dead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +178,8 @@ pub struct GcConfig {
 	pub slice: Duration,
 	/// Run the arena mark/sweep (escape hatch: `false` = tip release only).
 	pub arena_sweep: bool,
+	/// Maximum share of wall time, in percent (1..=100), spent in sweep slices.
+	pub max_duty_pct: u32,
 	/// Release lag (the `--state-pruning` window, or the explicit
 	/// `--ledger-state-pruning` window); `None` = no worker.
 	pub lag: Option<u32>,
@@ -180,6 +211,50 @@ fn env_bool(name: &str, default: bool) -> bool {
 			},
 		},
 		Err(_) => default,
+	}
+}
+
+/// `MIDNIGHT_LEDGER_GC_MAX_DUTY_PCT`, clamped to `1..=100`; unparsable or `0` falls
+/// back to the default (`MIDNIGHT_LEDGER_GC_ARENA_SWEEP=0` is the way to turn the
+/// sweep off).
+fn max_duty_from_env() -> u32 {
+	match env_parse(ENV_MAX_DUTY_PCT, DEFAULT_MAX_DUTY_PCT) {
+		0 => {
+			warn!(
+				target: LOG_TARGET,
+				"⚠️  Ignoring {ENV_MAX_DUTY_PCT}=0; using {DEFAULT_MAX_DUTY_PCT} (set \
+				 {ENV_ARENA_SWEEP}=0 to disable the sweep)"
+			);
+			DEFAULT_MAX_DUTY_PCT
+		},
+		pct => pct.min(100),
+	}
+}
+
+/// Rate limit of the sweep slices: after a slice that started at `s` and took `t`,
+/// the next may start at `s + t * 100 / duty`, so sweeps hold at most `duty` percent
+/// of wall time. A refused sweep (dirty write cache) is not recorded: it held the
+/// mutex for a single length check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SweepPacer {
+	duty_pct: u32,
+	next_allowed: Option<Instant>,
+}
+
+impl SweepPacer {
+	pub fn new(duty_pct: u32) -> Self {
+		Self { duty_pct: duty_pct.clamp(1, 100), next_allowed: None }
+	}
+
+	/// Whether a sweep slice may start at `now`.
+	pub fn ready(&self, now: Instant) -> bool {
+		self.next_allowed.is_none_or(|t| now >= t)
+	}
+
+	/// Record a sweep slice that started at `started` and took `took`.
+	pub fn record(&mut self, started: Instant, took: Duration) {
+		let period = took.saturating_mul(100) / self.duty_pct;
+		self.next_allowed = Some(started + period);
 	}
 }
 
@@ -238,6 +313,7 @@ impl GcConfig {
 		Ok(Self {
 			slice: Duration::from_millis(env_parse(ENV_SLICE_MS, DEFAULT_SLICE_MS)),
 			arena_sweep: env_bool(ENV_ARENA_SWEEP, true),
+			max_duty_pct: max_duty_from_env(),
 			lag: window.map(|w| w.lag),
 			liveness: window.map(|w| w.liveness).unwrap_or(Liveness::PrunedState),
 			tagged_from_genesis,
@@ -293,6 +369,8 @@ pub struct WorkerState {
 	pub logged_unknown: HashSet<Vec<u8>>,
 	/// Whether the last slice saw a migration in flight.
 	pub mbm_suspended: bool,
+	/// Wrappers of the last scan that it did not release: what the sweep slices pin.
+	pub sweep_pins: Vec<Vec<u8>>,
 	/// Why the arena sweep is off for the rest of the process, if it is:
 	/// `"sweep_panic"` (a sweep panicked, e.g. the storage crate's `scan` failed to
 	/// decode a DB row). Tip release continues; the released tips are reclaimed by
@@ -407,6 +485,19 @@ pub fn classify(
 	out
 }
 
+/// The scanned wrappers that are not on the release list, in scan order: the pin list
+/// of the sweep slices. A released wrapper is never pinned, so its tree is not kept
+/// alive past the flush that makes the release durable.
+pub fn survivors(scanned: &[TaggedRootInfo], release: &[(Vec<u8>, u32)]) -> Vec<Vec<u8>> {
+	let releasing: HashSet<&Vec<u8>> = release.iter().map(|(w, _)| w).collect();
+	scanned
+		.iter()
+		.map(|r| &r.wrapper)
+		.filter(|w| !releasing.contains(w))
+		.cloned()
+		.collect()
+}
+
 type SharedMetrics = Arc<Mutex<Option<LedgerMetrics>>>;
 
 /// Run `f` against the shared ledger metrics; a no-op when metrics are disabled.
@@ -494,43 +585,12 @@ fn reclaim_slice(
 	let verdict = classify(finalized, window, &wrappers, state, &view);
 	with_metrics(metrics, |m| m.set_gc_tagged_roots("candidates", verdict.candidates as u64));
 
-	// Step 3: pin, then arena gc. The sweep runs BEFORE the release: a staged
-	// `unpersist` is a pending write-cache entry, and `collect_garbage` refuses to
-	// sweep a dirty cache. Releasing first would skip the sweep in every slice that
-	// releases something, which on a pruned node is every slice.
-	if sweep_allowed(state, config) {
-		let hashes: Vec<Vec<u8>> = wrappers.iter().map(|r| r.wrapper.clone()).collect();
-		let pins = gc::pin_roots(&hashes);
-		with_metrics(metrics, |m| m.set_gc_tagged_roots("pinned", pins.len() as u64));
-		match guarded_sweep(config.slice) {
-			Some(Ok((culled, hold))) => {
-				if hold > config.slice * 2 {
-					warn!(target: LOG_TARGET, "⏱️  Arena gc held the arena for {hold:?}");
-				}
-				with_metrics(metrics, |m| {
-					m.observe_gc_phase("arena_gc", hold.as_secs_f64());
-					m.inc_gc_culled(culled as u64);
-				});
-				if culled > 0 {
-					debug!(target: LOG_TARGET, "🗑️  Arena gc culled {culled} node(s) in {hold:?}");
-				}
-			},
-			Some(Err(e)) => debug!(target: LOG_TARGET, "⏸️  Arena gc deferred: {e}"),
-			None => {
-				state.sweep_off = Some("sweep_panic");
-				with_metrics(metrics, |m| m.set_gc_suspended("sweep_panic", true));
-				error!(
-					target: LOG_TARGET,
-					"💥 Arena gc slice panicked; arena sweep disabled for this process \
-					 (tip release continues; released tips are reclaimed by a later sweep)"
-				);
-			},
-		}
-		drop(pins);
-	}
+	// The sweep slices pin what this scan saw and this slice does not release.
+	state.sweep_pins = survivors(&wrappers, &verdict.release);
 
-	// Step 4: release (the list is consumed once and never retried). Durable at the
-	// next block flush; the next sweep that rescans its roots reclaims the tips.
+	// Step 3: release (the list is consumed once and never retried). Durable at the
+	// next block flush; the sweep slices after that flush stop marking the tips, and
+	// the next completed sweep cycle culls their unshared nodes.
 	if !verdict.release.is_empty() {
 		let (released, hold) = gc::release_to_zero(&verdict.release);
 		if hold > HOLD_WARN {
@@ -547,6 +607,55 @@ fn reclaim_slice(
 	Ok(())
 }
 
+/// One sweep slice: pin the last scan's surviving wrappers, run one arena gc slice,
+/// drop the pins. Returns whether the sweep actually ran (`false` = refused on a dirty
+/// write cache or deferred), for the pacer.
+fn sweep_slice(metrics: &SharedMetrics, config: &GcConfig, state: &mut WorkerState) -> bool {
+	let pins = gc::pin_roots(&state.sweep_pins);
+	with_metrics(metrics, |m| m.set_gc_tagged_roots("pinned", pins.len() as u64));
+	let ran = match guarded_sweep(config.slice) {
+		Some(Ok((Some(culled), hold))) => {
+			if hold > config.slice * 2 {
+				warn!(target: LOG_TARGET, "⏱️  Arena gc held the arena for {hold:?}");
+			}
+			with_metrics(metrics, |m| {
+				m.observe_gc_phase("arena_gc", hold.as_secs_f64());
+				m.inc_gc_culled(culled as u64);
+			});
+			if culled > 0 {
+				debug!(target: LOG_TARGET, "🗑️  Arena gc culled {culled} node(s) in {hold:?}");
+			}
+			true
+		},
+		Some(Ok((None, hold))) => {
+			// Write cache dirty: the next block is already being imported. Recorded as
+			// its own phase so the refusal rate is visible next to `arena_gc`.
+			with_metrics(metrics, |m| m.observe_gc_phase("arena_gc_dirty", hold.as_secs_f64()));
+			false
+		},
+		Some(Err(e)) => {
+			debug!(target: LOG_TARGET, "⏸️  Arena gc deferred: {e}");
+			false
+		},
+		None => {
+			disable_sweep(metrics, state);
+			false
+		},
+	};
+	drop(pins);
+	ran
+}
+
+fn disable_sweep(metrics: &SharedMetrics, state: &mut WorkerState) {
+	state.sweep_off = Some("sweep_panic");
+	with_metrics(metrics, |m| m.set_gc_suspended("sweep_panic", true));
+	error!(
+		target: LOG_TARGET,
+		"💥 Arena gc slice panicked; arena sweep disabled for this process \
+		 (tip release continues; released tips are reclaimed by a later sweep)"
+	);
+}
+
 /// Run one arena gc slice, converting a panic inside the storage crate into
 /// `None`. The arena mutex and the `RefCell` borrow are released on unwind and
 /// the sweep's resume handle is only advanced after a batch succeeds, so a
@@ -556,9 +665,40 @@ fn reclaim_slice(
 /// The node's panic hook (`sp_panic_handler`) exits the process from inside the hook
 /// unless the panicking thread holds an [`sp_panic_handler::AbortGuard`] that forces
 /// unwinding, so every `catch_unwind` here holds one; without it the catch never runs.
-fn guarded_sweep(slice: Duration) -> Option<Result<(usize, Duration), String>> {
+fn guarded_sweep(slice: Duration) -> Option<Result<(Option<usize>, Duration), String>> {
 	let _unwind = sp_panic_handler::AbortGuard::force_unwind();
-	std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| gc::collect_garbage(slice))).ok()
+	std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| gc::try_collect_garbage(slice))).ok()
+}
+
+/// Which slice the worker runs next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SliceKind {
+	Reclaim,
+	Sweep,
+}
+
+/// Run one slice on the blocking pool. A panic anywhere in it surfaces as a
+/// `JoinError`, not a process exit (see `guarded_sweep`).
+async fn run_slice(
+	kind: SliceKind,
+	state: WorkerState,
+	client: &Arc<FullClient>,
+	backend: &Arc<FullBackend>,
+	metrics: &SharedMetrics,
+	config: &GcConfig,
+	lag: u32,
+) -> Result<(WorkerState, Result<bool, Stop>), tokio::task::JoinError> {
+	let (c, b, m, cfg) = (client.clone(), backend.clone(), metrics.clone(), config.clone());
+	tokio::task::spawn_blocking(move || {
+		let _unwind = sp_panic_handler::AbortGuard::force_unwind();
+		let mut st = state;
+		let outcome = match kind {
+			SliceKind::Reclaim => reclaim_slice(&c, &b, &m, &cfg, lag, &mut st).map(|()| false),
+			SliceKind::Sweep => Ok(sweep_slice(&m, &cfg, &mut st)),
+		};
+		(st, outcome)
+	})
+	.await
 }
 
 async fn run(
@@ -568,43 +708,74 @@ async fn run(
 	config: GcConfig,
 	lag: u32,
 ) {
+	// Subscribe to both streams before the first slice: the every-import sink must
+	// exist before a block is imported to see it.
 	let mut finality = client.finality_notification_stream();
+	let mut imports = client.every_import_notification_stream();
 	let mut state = WorkerState::new();
+	let mut pacer = SweepPacer::new(config.max_duty_pct);
+	// One reclaim slice at startup, as before.
+	let mut next = Some(SliceKind::Reclaim);
 
 	loop {
-		let slice_state = std::mem::take(&mut state);
-		let (c, b, m, cfg) = (client.clone(), backend.clone(), metrics.clone(), config.clone());
-		state = match tokio::task::spawn_blocking(move || {
-			// A panic anywhere in the slice must surface as a `JoinError` below, not
-			// exit the process (see `guarded_sweep`).
-			let _unwind = sp_panic_handler::AbortGuard::force_unwind();
-			let mut st = slice_state;
-			let outcome = reclaim_slice(&c, &b, &m, &cfg, lag, &mut st);
-			(st, outcome)
-		})
-		.await
-		{
-			Ok((_, Err(Stop::LegacyRoot))) => {
-				refuse_legacy(&metrics);
-				return;
-			},
-			Ok((st, Ok(()))) => st,
-			Err(e) => {
-				// The debounce set is lost with the panicked slice: starting fresh only
-				// delays releases, it never causes one. A panic here is outside the
-				// guarded sweep (scan/release), so keep the sweep off as well: something
-				// in the arena is not healthy.
-				error!(target: LOG_TARGET, "💥 GC slice task failed: {e}");
-				with_metrics(&metrics, |m| m.set_gc_suspended("sweep_panic", true));
-				WorkerState { sweep_off: Some("sweep_panic"), ..WorkerState::new() }
-			},
-		};
+		if let Some(kind) = next.take() {
+			let started = Instant::now();
+			state = match run_slice(
+				kind,
+				std::mem::take(&mut state),
+				&client,
+				&backend,
+				&metrics,
+				&config,
+				lag,
+			)
+			.await
+			{
+				Ok((_, Err(Stop::LegacyRoot))) => {
+					refuse_legacy(&metrics);
+					return;
+				},
+				Ok((st, Ok(swept))) => {
+					if swept {
+						pacer.record(started, started.elapsed());
+					}
+					st
+				},
+				Err(e) => {
+					// The debounce set is lost with the panicked slice: starting fresh only
+					// delays releases, it never causes one. A panic here is outside the
+					// guarded sweep (scan/release/pin), so keep the sweep off as well:
+					// something in the arena is not healthy.
+					error!(target: LOG_TARGET, "💥 GC slice task failed: {e}");
+					with_metrics(&metrics, |m| m.set_gc_suspended("sweep_panic", true));
+					WorkerState { sweep_off: Some("sweep_panic"), ..WorkerState::new() }
+				},
+			};
+		}
 
-		let Some(_note) = finality.next().await else {
-			warn!(target: LOG_TARGET, "⚠️  Finality stream closed; stopping ledger GC");
-			return;
-		};
-		while let Some(Some(_)) = finality.next().now_or_never() {}
+		// Finality first: a pending reclaim slice runs before any sweep. Notifications
+		// that queued up while a slice ran are coalesced into one slice.
+		tokio::select! {
+			biased;
+			note = finality.next() => {
+				if note.is_none() {
+					warn!(target: LOG_TARGET, "⚠️  Finality stream closed; stopping ledger GC");
+					return;
+				}
+				while let Some(Some(_)) = finality.next().now_or_never() {}
+				next = Some(SliceKind::Reclaim);
+			},
+			note = imports.next() => {
+				if note.is_none() {
+					warn!(target: LOG_TARGET, "⚠️  Import stream closed; stopping ledger GC");
+					return;
+				}
+				while let Some(Some(_)) = imports.next().now_or_never() {}
+				if sweep_allowed(&state, &config) && pacer.ready(Instant::now()) {
+					next = Some(SliceKind::Sweep);
+				}
+			},
+		}
 	}
 }
 
@@ -661,14 +832,15 @@ pub fn try_spawn(
 	};
 	info!(
 		target: LOG_TARGET,
-		"♻️  Ledger GC enabled: release lag {lag} blocks ({}), slice {:?}, arena sweep {}, {} \
-		 tagged root(s) at startup",
+		"♻️  Ledger GC enabled: release lag {lag} blocks ({}), slice {:?}, arena sweep {} (at \
+		 most {}% of wall time), {} tagged root(s) at startup",
 		match config.liveness {
 			Liveness::PrunedState => "state pruning decides",
 			Liveness::HeightOnly => "height only, explicit ledger window",
 		},
 		config.slice,
 		config.arena_sweep,
+		config.max_duty_pct,
 		wrappers.len()
 	);
 	spawn.spawn("ledger-gc", Some("ledger"), run(client, backend, metrics, config, lag));
@@ -748,7 +920,7 @@ mod tests {
 	#[test]
 	fn env_overrides_and_bad_values_fall_back() {
 		let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-		let keys = [ENV_SLICE_MS, ENV_ARENA_SWEEP];
+		let keys = [ENV_SLICE_MS, ENV_ARENA_SWEEP, ENV_MAX_DUTY_PCT];
 		for k in keys {
 			unsafe { std::env::remove_var(k) };
 		}
@@ -775,6 +947,87 @@ mod tests {
 		for k in keys {
 			unsafe { std::env::remove_var(k) };
 		}
+	}
+
+	#[test]
+	fn max_duty_env() {
+		let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+		let duty = |v: Option<&str>| {
+			match v {
+				Some(v) => unsafe { std::env::set_var(ENV_MAX_DUTY_PCT, v) },
+				None => unsafe { std::env::remove_var(ENV_MAX_DUTY_PCT) },
+			}
+			GcConfig::from_env(&None, false, None, true).unwrap().max_duty_pct
+		};
+		assert_eq!(duty(None), 20);
+		assert_eq!(duty(Some("35")), 35);
+		assert_eq!(duty(Some("0")), 20, "0 is not a way to turn the sweep off");
+		assert_eq!(duty(Some("250")), 100);
+		assert_eq!(duty(Some("ten")), 20);
+		assert_eq!(duty(None), 20);
+	}
+
+	#[test]
+	fn pacer_caps_the_sweep_share_of_wall_time() {
+		let t0 = Instant::now();
+		let ms = Duration::from_millis;
+		let mut p = SweepPacer::new(20);
+		assert!(p.ready(t0), "the first sweep is never held back");
+		// 200 ms at 20 %: the next sweep may start one second after this one started.
+		p.record(t0, ms(200));
+		assert!(!p.ready(t0 + ms(200)));
+		assert!(!p.ready(t0 + ms(999)));
+		assert!(p.ready(t0 + ms(1000)));
+		// A short (finished or nearly idle) sweep earns a short pause.
+		p.record(t0 + ms(1000), ms(10));
+		assert!(p.ready(t0 + ms(1050)));
+		// 100 % never waits beyond the sweep itself; out-of-range duties are clamped.
+		let mut full = SweepPacer::new(250);
+		full.record(t0, ms(200));
+		assert!(full.ready(t0 + ms(200)));
+		let mut min = SweepPacer::new(0);
+		min.record(t0, ms(10));
+		assert!(!min.ready(t0 + ms(999)));
+		assert!(min.ready(t0 + ms(1000)));
+	}
+
+	#[test]
+	fn pacer_bounds_sweep_time_during_a_resync() {
+		// Imports every 166 ms (6 blocks/s), every sweep uses its whole 200 ms budget
+		// and the worker sweeps whenever an import finds the pacer ready: the sweep
+		// share converges to the duty, not to one slice per finality notification.
+		let t0 = Instant::now();
+		let slice = Duration::from_millis(200);
+		let mut p = SweepPacer::new(20);
+		let mut now = t0;
+		let mut swept = Duration::ZERO;
+		while now < t0 + Duration::from_secs(600) {
+			if p.ready(now) {
+				p.record(now, slice);
+				swept += slice;
+				now += slice;
+			}
+			now += Duration::from_millis(166);
+		}
+		let share = swept.as_secs_f64() / (now - t0).as_secs_f64();
+		assert!((0.15..=0.20).contains(&share), "sweep share {share}");
+		// At one block per 6 s the cap never binds: one sweep per block.
+		let mut p = SweepPacer::new(20);
+		let mut now = t0;
+		for _ in 0..100 {
+			assert!(p.ready(now));
+			p.record(now, slice);
+			now += Duration::from_secs(6);
+		}
+	}
+
+	#[test]
+	fn released_wrappers_are_not_pinned() {
+		let scanned = [root(1, h(1), 1), root(2, h(2), 3), root(3, h(3), 1)];
+		assert_eq!(survivors(&scanned, &[]), vec![w(1), w(2), w(3)]);
+		assert_eq!(survivors(&scanned, &[(w(2), 3)]), vec![w(1), w(3)]);
+		assert_eq!(survivors(&scanned, &[(w(1), 1), (w(3), 1), (w(9), 1)]), vec![w(2)]);
+		assert!(survivors(&[], &[(w(1), 1)]).is_empty());
 	}
 
 	#[test]
@@ -996,6 +1249,7 @@ mod tests {
 		let cfg = GcConfig {
 			slice: Duration::from_millis(25),
 			arena_sweep: true,
+			max_duty_pct: 20,
 			lag: Some(256),
 			liveness: Liveness::PrunedState,
 			tagged_from_genesis: true,
