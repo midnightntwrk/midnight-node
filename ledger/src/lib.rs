@@ -68,42 +68,34 @@ pub fn ledger_state_tag_version(tagged: &[u8]) -> Option<u32> {
 	core::str::from_utf8(&rest[..end]).ok()?.parse().ok()
 }
 
-/// Expand to the `(DbSeparate, DbUnified)`-parameterized call of a `Bridge` arena method on the given
-/// ledger version module (`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
+/// Expand to the call of a `Bridge` arena method on the given ledger version module
+/// (`ledger_8`/`ledger_9`) against the node's ParityDb instantiation: the ledger columns appended
+/// after Substrate's in the shared parity-db instance.
 #[cfg(feature = "std")]
 macro_rules! bridge_arena_call {
-	($ver:ident, $unified:expr, $method:ident ( $($arg:expr),* )) => {{
-		type DbSeparate = $ver::ledger_storage_local::db::ParityDb;
-		type DbUnified = $ver::ledger_storage_local::db::ParityDb<
+	($ver:ident, $method:ident ( $($arg:expr),* )) => {{
+		type Db = $ver::ledger_storage_local::db::ParityDb<
 			sha2::Sha256,
 			$ver::ledger_storage_local::db::paritydb::OwnedDb,
 			{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
 		>;
-		if $unified {
-			$ver::Bridge::<$ver::TransactionSignature, DbUnified>::$method( $($arg),* )
-		} else {
-			$ver::Bridge::<$ver::TransactionSignature, DbSeparate>::$method( $($arg),* )
-		}
+		$ver::Bridge::<$ver::TransactionSignature, Db>::$method( $($arg),* )
 	}};
 }
 
 /// Serialize the ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted warp
-/// transfer blob (trustless warp ledger-sync, server side). `unified` selects the ParityDb
-/// instantiation (separate = column offset 0; unified = offset `NUM_COLUMNS_POLKADOT`); the blob is
-/// identical across modes.
+/// transfer blob (trustless warp ledger-sync, server side).
 ///
 /// Dispatches to the ledger module matching the `StateKey`'s `ledger-state[vNN]` tag (see
 /// [`ledger_state_tag_version`]) — so a warp node can serve an arena governed by an older ledger
 /// version than this build's latest. Error rendered to `String` (the underlying `LedgerApiError` is
 /// version-specific).
 #[cfg(feature = "std")]
-pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
+pub fn serialize_ledger_snapshot(state_key: &[u8]) -> Result<Vec<u8>, String> {
 	match ledger_state_tag_version(state_key) {
-		Some(16..=18) => {
-			bridge_arena_call!(ledger_9, unified, serialize_ledger_snapshot(state_key))
-				.map_err(|e| format!("{e:?}"))
-		},
-		Some(13) => bridge_arena_call!(ledger_8, unified, serialize_ledger_snapshot(state_key))
+		Some(16..=18) => bridge_arena_call!(ledger_9, serialize_ledger_snapshot(state_key))
+			.map_err(|e| format!("{e:?}")),
+		Some(13) => bridge_arena_call!(ledger_8, serialize_ledger_snapshot(state_key))
 			.map_err(|e| format!("{e:?}")),
 		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
 	}
@@ -114,16 +106,18 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 /// annotations maintained at each storage trie root rather than iterating, so the cost does not
 /// grow with the state.
 ///
-/// `unified` selects the ParityDb instantiation and dispatch on the `StateKey`'s
-/// `ledger-state[vNN]` tag picks the ledger module, exactly as in [`serialize_ledger_snapshot`].
-/// Error rendered to `String` (the underlying `LedgerApiError` is version-specific).
+/// Dispatch on the `StateKey`'s `ledger-state[vNN]` tag picks the ledger module, exactly as in
+/// [`serialize_ledger_snapshot`]. Error rendered to `String` (the underlying `LedgerApiError` is
+/// version-specific).
 #[cfg(feature = "std")]
-pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStats, String> {
+pub fn ledger_stats(state_key: &[u8]) -> Result<types::LedgerStats, String> {
 	match ledger_state_tag_version(state_key) {
-		Some(16..=18) => bridge_arena_call!(ledger_9, unified, ledger_stats(state_key))
-			.map_err(|e| format!("{e:?}")),
-		Some(13) => bridge_arena_call!(ledger_8, unified, ledger_stats(state_key))
-			.map_err(|e| format!("{e:?}")),
+		Some(16..=18) => {
+			bridge_arena_call!(ledger_9, ledger_stats(state_key)).map_err(|e| format!("{e:?}"))
+		},
+		Some(13) => {
+			bridge_arena_call!(ledger_8, ledger_stats(state_key)).map_err(|e| format!("{e:?}"))
+		},
 		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
 	}
 }
@@ -137,12 +131,10 @@ pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStat
 /// Returns `false` for an unsupported/undecodable `StateKey` (recovery will then verify against it
 /// and fail loudly rather than silently skipping).
 #[cfg(feature = "std")]
-pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
+pub fn has_ledger_state(state_key: &[u8]) -> bool {
 	match ledger_state_tag_version(state_key) {
-		Some(16..=18) => {
-			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
-		},
-		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
+		Some(16..=18) => bridge_arena_call!(ledger_9, get_ledger_state_root(state_key)).is_ok(),
+		Some(13) => bridge_arena_call!(ledger_8, get_ledger_state_root(state_key)).is_ok(),
 		_ => false,
 	}
 }
@@ -186,16 +178,14 @@ impl std::error::Error for SnapshotImportError {}
 #[cfg(feature = "std")]
 /// Verify a `Ledger`-rooted warp snapshot `blob` against the on-chain `expected_state_key` and, on
 /// success, persist it into the already-open arena backend so `get_lazy(StateKey)` resolves (warp
-/// ledger-sync verification + import). `unified` selects the DB instantiation, and dispatch on the
-/// `StateKey`'s `ledger-state[vNN]` tag picks the ledger module, as in
-/// [`serialize_ledger_snapshot`].
+/// ledger-sync verification + import). Dispatch on the `StateKey`'s `ledger-state[vNN]` tag picks
+/// the ledger module, as in [`serialize_ledger_snapshot`].
 ///
 /// `parent_hash` is the parent block hash of the snapshot's block; it tags the tagged-root wrapper
 /// the imported state is persisted under.
 ///
 /// The caller must hold the authoring/import gate (the arena is single-writer).
 pub fn import_verified_ledger_snapshot(
-	unified: bool,
 	blob: &[u8],
 	expected_state_key: &[u8],
 	parent_hash: [u8; 32],
@@ -206,14 +196,12 @@ pub fn import_verified_ledger_snapshot(
 		Some(16..=18) => {
 			bridge_arena_call!(
 				ledger_9,
-				unified,
 				import_verified_ledger_snapshot(blob, expected_state_key, parent_hash)
 			)
 		},
 		Some(13) => {
 			bridge_arena_call!(
 				ledger_8,
-				unified,
 				import_verified_ledger_snapshot(blob, expected_state_key, parent_hash)
 			)
 		},
@@ -223,8 +211,9 @@ pub fn import_verified_ledger_snapshot(
 	}
 }
 
-/// Seed the (separate) ledger arena from a genesis `LedgerState` blob, using the
-/// deserializer that matches the blob's `ledger-state[vN]` header tag.
+/// Register the ledger arena on the ledger columns of `db_instance` (starting at `COLUMN_OFFSET`)
+/// and seed it from a genesis `LedgerState` blob, using the deserializer that matches the blob's
+/// `ledger-state[vN]` header tag.
 ///
 /// A node may boot on a chain-spec produced by an older runtime — notably the
 /// ledger 8->9 hardfork, where a ledger-9 node starts from a ledger-8
@@ -235,21 +224,7 @@ pub fn import_verified_ledger_snapshot(
 /// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
 /// latest version (`ledger_9`), preserving the prior default behaviour.
 #[cfg(feature = "std")]
-pub fn init_ledger_storage_separate<P: AsRef<std::path::Path>>(
-	dir: P,
-	genesis_state: &[u8],
-	cache_size: usize,
-) -> alloc::vec::Vec<u8> {
-	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
-		ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
-	} else {
-		ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
-	}
-}
-
-/// Unified-DB counterpart of [`init_ledger_storage_separate`].
-#[cfg(feature = "std")]
-pub fn init_ledger_storage_unified<
+pub fn init_ledger_storage<
 	D: core::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
 	const COLUMN_OFFSET: u8,
 >(
@@ -258,18 +233,50 @@ pub fn init_ledger_storage_unified<
 	cache_size: usize,
 ) -> alloc::vec::Vec<u8> {
 	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
-		ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+		ledger_8::storage::init_storage_paritydb::<D, COLUMN_OFFSET>(
 			db_instance,
 			genesis_state,
 			cache_size,
 		)
 	} else {
-		ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+		ledger_9::storage::init_storage_paritydb::<D, COLUMN_OFFSET>(
 			db_instance,
 			genesis_state,
 			cache_size,
 		)
 	}
+}
+
+/// Open a throwaway parity-db at `dir` with the node's column layout (Substrate's columns followed
+/// by the ledger's) and seed the arena from `genesis_state` as [`init_ledger_storage`] does.
+///
+/// For tests and benchmarks that need an arena without a node: the ledger columns get the same
+/// storage-core options the node gives a new database, so the registered storage is the exact
+/// instantiation the host functions dispatch to.
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_standalone<P: AsRef<std::path::Path>>(
+	dir: P,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	use midnight_primitives_ledger::LedgerStorageExt;
+	use midnight_storage_core::db::paritydb::{
+		NUM_COLUMNS as NUM_COLUMNS_LEDGER, OwnedDb, set_init_options,
+	};
+
+	let dir = dir.as_ref();
+	std::fs::create_dir_all(dir)
+		.unwrap_or_else(|e| panic!("failed to create dir {}: {e}", dir.display()));
+	let mut options =
+		parity_db::Options::with_columns(dir, LedgerStorageExt::COLUMN_OFFSET + NUM_COLUMNS_LEDGER);
+	set_init_options(&mut options, LedgerStorageExt::COLUMN_OFFSET, true);
+	let db = parity_db::Db::open_or_create(&options)
+		.unwrap_or_else(|e| panic!("failed to open parity-db at {}: {e}", dir.display()));
+	init_ledger_storage::<_, { LedgerStorageExt::COLUMN_OFFSET }>(
+		OwnedDb(std::sync::Arc::new(db)),
+		genesis_state,
+		cache_size,
+	)
 }
 
 /// Returns true if `state_key` is a ledger-8 arena root, i.e. a tagged-serialized

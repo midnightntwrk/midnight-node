@@ -15,10 +15,7 @@ use prometheus_endpoint::{
 	self as prometheus, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, PrometheusError,
 	Registry, U64,
 };
-use std::{
-	path::PathBuf,
-	sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 // Number of columns used by Polkadot in the underlying parity-db. Use this value for column offset
 // when initializing the ledger parity-db backend.
@@ -54,6 +51,8 @@ pub struct LedgerMetrics {
 	pub ledger_gc_phase_time: HistogramVec,
 	/// Tagged GC roots (label `kind`: "total", "candidates" or "pinned")
 	pub ledger_gc_tagged_roots: GaugeVec<U64>,
+	/// Storage format of the node's database (labels `version`, `status`); the matching series is 1
+	pub storage_format: GaugeVec<U64>,
 	/// Tagged GC roots released (label `reason`: "dead_position")
 	pub ledger_gc_released_total: CounterVec<U64>,
 	/// 1 while ledger GC is suspended (label `reason`: "mbm", "legacy_roots",
@@ -239,6 +238,17 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			storage_format: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"midnight_storage_format",
+						"Storage format of the node's database (1 = legacy, 2 = current bundle); \
+						 the matching series is 1",
+					),
+					&["version", "status"],
+				)?,
+				registry,
+			)?,
 			ledger_gc_released_total: prometheus::register(
 				CounterVec::new(
 					Opts::new(
@@ -391,25 +401,19 @@ impl LedgerMetricsExt {
 	}
 }
 
-#[derive(Clone)]
-pub enum LedgerStorageDb {
-	UnifiedDb(Arc<parity_db::Db>),
-	SeparateDb(PathBuf),
-}
-/// Ledger Storage info to be sent to host functions
+/// Ledger Storage info to be sent to host functions.
+///
+/// The ledger arena lives in columns appended after Substrate's in the node's single parity-db
+/// instance (offset [`LedgerStorageExt::COLUMN_OFFSET`]), so `db` is that shared instance.
 #[derive(Clone)]
 pub struct LedgerStorage {
-	pub db: LedgerStorageDb,
+	pub db: Arc<parity_db::Db>,
 	pub cache_size: usize,
 }
 
 impl LedgerStorage {
-	pub fn new_existing(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
-		Self { db: LedgerStorageDb::UnifiedDb(db), cache_size }
-	}
-
-	pub fn new_separate(db_path: PathBuf, cache_size: usize) -> Self {
-		Self { db: LedgerStorageDb::SeparateDb(db_path), cache_size }
+	pub fn new(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
+		Self { db, cache_size }
 	}
 }
 

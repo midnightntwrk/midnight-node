@@ -20,7 +20,6 @@ use crate::babe_key_readiness::{
 	reporter::BabeKeyMetrics,
 };
 use crate::backend::{create_database_source, open_paritydb};
-use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
@@ -34,7 +33,7 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
-use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use midnight_primitives_ledger::LedgerMetrics;
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
@@ -76,9 +75,10 @@ use std::{
 use time_source::SystemTimeSource;
 
 pub struct StorageInit {
-	pub separation: StorageSeparation,
-	/// Used only when separation == 'separate'
-	pub db_path: PathBuf,
+	/// Where the removed `separate` storage layout kept its own ledger parity-db
+	/// (`<base-path>/ledger_storage`). Its presence means the data directory predates the
+	/// unified layout and the node refuses to start on it.
+	pub legacy_ledger_db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
 }
@@ -266,10 +266,44 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus::BoxBlockImport<Block>,
 		// Shared ledger metrics handle (also given to the `ExtensionsFactory`), for the ledger GC worker.
 		Arc<Mutex<Option<LedgerMetrics>>>,
-		// Whether the ledger storage was created with tagged roots (ledger GC marker).
+		// Whether the database was created at the current storage format (ledger GC gate).
 		bool,
 	),
 >;
+
+fn log_storage_format(format: &crate::backend::custom_parity_db::StorageFormat) {
+	use crate::backend::custom_parity_db::{CURRENT_STORAGE_FORMAT, NODE_VERSION};
+	if format.is_current() {
+		log::info!(
+			target: "midnight::storage",
+			"Storage format: {} (current), created by node {}",
+			format.version,
+			format.created_by.as_deref().unwrap_or("unknown"),
+		);
+	} else {
+		log::info!(
+			target: "midnight::storage",
+			"Storage format: {} (legacy): created before node {NODE_VERSION}; resync to enable \
+			 ledger GC and compressed ledger columns",
+			format.version,
+		);
+	}
+	if let Some(raw) = &format.unparsable {
+		log::warn!(
+			target: "midnight::storage",
+			"Storage format marker {raw:?} is not a number; treating the database as legacy"
+		);
+	}
+	if format.version > CURRENT_STORAGE_FORMAT {
+		log::warn!(
+			target: "midnight::storage",
+			"The database has storage format {}, newer than this node's {CURRENT_STORAGE_FORMAT}; \
+			 it was created by node {}",
+			format.version,
+			format.created_by.as_deref().unwrap_or("unknown"),
+		);
+	}
+}
 
 #[allow(clippy::result_large_err)]
 fn parse_genesis_extrinsic_values(
@@ -325,11 +359,11 @@ pub fn new_partial(
 		panic!("Midnight node support only parity-db as a backend");
 	};
 
-	let (parity_db_instance, ledger_storage_db, require_create) =
+	let (parity_db_instance, ledger_storage, require_create) =
 		open_paritydb(&db_path, &storage_config)?;
-	let ledger_gc_tagged_from_genesis =
-		crate::backend::custom_parity_db::ledger_gc_tagged_from_genesis(&parity_db_instance.0)
-			.map_err(|e| ServiceError::Other(format!("reading the ledger GC marker: {e}")))?;
+	let storage_format = crate::backend::custom_parity_db::storage_format(&parity_db_instance.0)
+		.map_err(|e| ServiceError::Other(format!("reading the storage format marker: {e}")))?;
+	log_storage_format(&storage_format);
 	db_config.source = create_database_source(parity_db_instance, require_create)?;
 	let backend = sc_service::new_db_backend(db_config)?;
 
@@ -394,9 +428,11 @@ pub fn new_partial(
 				},
 			});
 
-	let ledger_storage =
-		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
-
+	if let Some(m) = &ledger_metrics {
+		m.storage_format
+			.with_label_values(&[&storage_format.version.to_string(), storage_format.status()])
+			.set(1);
+	}
 	let ledger_metrics_arc = Arc::new(Mutex::new(ledger_metrics));
 	client
 		.execution_extensions()
@@ -610,7 +646,7 @@ pub fn new_partial(
 			babe_link,
 			babe_authoring_block_import,
 			ledger_metrics_arc,
-			ledger_gc_tagged_from_genesis,
+			storage_format.is_current(),
 		),
 	};
 
@@ -644,9 +680,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			.map_err(ServiceError::Other)?;
 	}
 	let database_source = config.database.clone();
-	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
-	// warp ledger-sync server/importer dispatch to.
-	let warp_ledger_unified = matches!(storage_config.separation, StorageSeparation::Unified);
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
@@ -670,7 +703,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				babe_link,
 				babe_authoring_block_import,
 				ledger_metrics_arc,
-				ledger_gc_tagged_from_genesis,
+				storage_format_current,
 			),
 	} = new_partial_components;
 
@@ -746,7 +779,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			genesis_hash,
 			config.chain_spec.fork_id(),
 			client.clone(),
-			warp_ledger_unified,
 			config.network.default_peers_set_num_full as usize,
 			serve_ledger_sync,
 		);
@@ -812,7 +844,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			network.clone(),
 			warp_ledger_recovery_gate.clone(),
 			ledger_sync_protocol_name.clone(),
-			warp_ledger_unified,
 		),
 	);
 
@@ -826,7 +857,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			&config.state_pruning,
 			backend.requires_full_sync(),
 			ledger_state_pruning,
-			ledger_gc_tagged_from_genesis,
+			storage_format_current,
 		)
 		.map_err(|e| {
 			// Logged as well: an error returned this late is lost in the shutdown of the
@@ -922,7 +953,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
 				subscription_tracker: subscription_tracker.clone(),
-				ledger_unified: warp_ledger_unified,
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}

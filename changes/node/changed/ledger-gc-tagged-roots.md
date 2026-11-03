@@ -24,8 +24,8 @@ the pruning window.
 
 - **Resync to enable GC.** Roots written by earlier node versions carry no tag and can never be
   released, so GC does not run on a ledger storage they created. A node that creates a fresh
-  ledger storage records the marker `midnight:ledger_gc_tagged_roots` in the main database's
-  META column; at startup the worker reads that single key and, when it is absent, logs a resync
+  main database records the marker `midnight:storage_format` (value `2`) in its META column;
+  at startup the worker reads that single key and, when it is below 2 or absent, logs a resync
   message once and reports `ledger_gc_suspended{reason="legacy_roots"}`. No root is iterated to
   decide this, so the size of an old database is irrelevant. Deleting only `ledger_storage/` is
   not a resync. An upgraded-in-place node behaves exactly as before this change; nodes can be
