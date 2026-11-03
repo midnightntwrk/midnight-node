@@ -2330,14 +2330,22 @@ buck2-reindeer:
         touch /tmp/regen-stamp
     RUN scripts/buck2/regen.sh
 
+#buck2-regen-tar The regenerated files, as a tar for +buck2-regen to unpack
+buck2-regen-tar:
+    FROM +buck2-reindeer
+    RUN find . -type f -newer /tmp/regen-stamp \
+            -not -path './third-party/.cargo/*' -not -path './wasm-deps/.cargo/*' \
+        | tar cf /regen.tar -T -
+    SAVE ARTIFACT /regen.tar
+
 #buck2-regen Regenerate the buck2 graph from the cargo workspace and write it back into the tree
 buck2-regen:
-    FROM +buck2-reindeer
-    RUN mkdir /out && \
-        find . -type f -newer /tmp/regen-stamp \
-            -not -path './third-party/.cargo/*' -not -path './wasm-deps/.cargo/*' \
-            -exec cp --parents {} /out \;
-    SAVE ARTIFACT /out/* AS LOCAL ./
+    # Not `SAVE ARTIFACT /out/* AS LOCAL ./`: AS LOCAL of a directory replaces
+    # the host directory, deleting every file beside the regenerated ones
+    # (1486 tracked files, 2026-10-31). A tar unpacks only its members.
+    LOCALLY
+    COPY +buck2-regen-tar/regen.tar .buck2-regen.tar
+    RUN tar xf .buck2-regen.tar && rm .buck2-regen.tar
 
 #buck2-check-regen Fail if any @generated buck2 file is stale against the cargo workspace
 buck2-check-regen:

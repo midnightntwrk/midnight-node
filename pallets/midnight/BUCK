@@ -81,6 +81,7 @@ rust_test(
     },
     deps = [
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
+        "root//ledger/helpers:midnight-node-ledger-helpers",
         "root//ledger:midnight-node-ledger",
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
         "root//primitives/midnight:midnight-primitives",

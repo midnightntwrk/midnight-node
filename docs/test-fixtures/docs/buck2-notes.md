@@ -390,6 +390,31 @@ sidecar). `buck2/Earthfile` installs the pinned buck2 + toolchain and writes the
 `.buckconfig.local` that points `[buck2_re_client]` at the cache; `buck2/buck2-ci.sh`
 drives build then test. Cold once, warm thereafter - no borrowed cores, no mesh.
 
+**Locally** (Linux and macOS, 2026-11-01), the same shape gives a checkout CI's cache hits: a
+bazel-remote in buildkitd's network namespace, passed as `--BUCK2_CACHE_ADDR`. An
+earth `RUN` step sees neither the host's loopback nor the docker bridge's published
+ports, but a container sharing `earthly-buildkitd`'s namespace answers at the
+sandbox gateway, `172.30.0.1`. The image runs as uid 65532, hence `--user`. The
+buildkitd container is `earthly-buildkitd`, or `earthly-dev-buildkitd` for a
+dev-built engine (`docker ps`):
+
+```sh
+mkdir -p ~/data/bazel-remote
+docker run -d --name bazel-remote --restart unless-stopped \
+  --network container:earthly-buildkitd --user "$(id -u):$(id -g)" \
+  -v ~/data/bazel-remote:/data buchgr/bazel-remote-cache:v2.6.1 \
+  --dir /data --max_size 40 --grpc_address 0.0.0.0:9092 --http_address 0.0.0.0:8080
+earth +buck2-ci --RUN_ID="$(date +%s)" --BUCK2_CACHE_ADDR=grpc://172.30.0.1:9092
+```
+
+To drop the flag, put `BUCK2_CACHE_ADDR=grpc://172.30.0.1:9092` in `.arg` at the repo
+root: earth reads it as build args (`--arg-file-path`), and it is gitignored.
+
+`buck2-ci.sh` prints `action cache: grpc://172.30.0.1:9092 (shared …)` when it
+connected; `unreachable … per-job sidecar` means it did not. Measured on a
+32-thread box (2026-10-31): cold 850 s; nothing changed 41 s; a one-line edit to
+the node, build + tests, 64 s.
+
 The build selects `root//platforms:re-cache` (`platforms/defs.bzl`): local
 execution + a remote **action cache** (`remote_cache_enabled=True`), so misses run
 locally and upload. The distributed `re-exec` platform and the rebuck2 engine were
@@ -455,8 +480,9 @@ reached the blob assembly / final link.
   `jitprofiling.c` (defining `iJIT_NotifyEvent` / `iJIT_GetNewMethodID`) is never
   compiled. On Linux the node pulls `ittapi` via wasmtime's profiling and the
   final link fails `undefined symbol: iJIT_*`. Fix: local
-  `third-party/fixups/ittapi-sys/` re-enables it (`[buildscript.run.env]` +
-  `OPT_LEVEL`). macOS doesn't pull ittapi, so it's a no-op there.
+  `third-party/fixups/ittapi-sys/` re-enables it, with `rustc_link_lib` /
+  `rustc_link_search` explicit (upstream reindeer defaults them off) and
+  `OPT_LEVEL` in its env. macOS doesn't pull ittapi, so it's a no-op there.
 
 * **`protoc` + `binaryen`.** The composite now installs `protobuf-compiler`
   (substrate's `sc-network*`/`litep2p` codegen protobufs via prost-build) and a

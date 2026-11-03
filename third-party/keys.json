@@ -231,5 +231,5 @@
  "whisky|*|git+https://github.com/midnightntwrk/whisky?branch=wasm-bindgen-update": "whisky",
  "yamux|^0.13|registry+https://github.com/rust-lang/crates.io-index": "yamux",
  "zeroize|^1|registry+https://github.com/rust-lang/crates.io-index": "zeroize",
- "zstd|^0.13|registry+https://github.com/rust-lang/crates.io-index": "zstd"
+ "zstd|^0.14|registry+https://github.com/rust-lang/crates.io-index": "zstd"
 }

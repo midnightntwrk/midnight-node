@@ -234,6 +234,7 @@
    "midnight-primitives-consensus-engine",
    "pallet-aura",
    "pallet-babe",
+   "pallet-session",
    "parity-scale-codec",
    "scale-info",
    "sp-consensus-aura",

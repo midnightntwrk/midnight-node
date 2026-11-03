@@ -1,3 +1,15 @@
+filegroup(
+    name = "cfg-presets",
+    srcs = glob(["cfg/*.toml"]),
+    visibility = ["PUBLIC"],
+)
+
+filegroup(
+    name = "mock-bridge-data",
+    srcs = glob(["mock-bridge-data/*"]),
+    visibility = ["PUBLIC"],
+)
+
 export_file(
     name = "test-contract-addr",
     src = "test-contract/contract_address_undeployed.mn",

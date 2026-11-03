@@ -18,8 +18,8 @@ rust_library(
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "midnight-node-runtime",
-        "CARGO_PKG_VERSION": "3.0.0",
-        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "4",
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_AUTHORS": "Substrate DevHub <https://github.com/substrate-developer-hub>",
@@ -183,8 +183,8 @@ rust_library(
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "midnight-node-runtime",
-        "CARGO_PKG_VERSION": "3.0.0",
-        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "4",
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_AUTHORS": "Substrate DevHub <https://github.com/substrate-developer-hub>",
@@ -282,8 +282,8 @@ rust_test(
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "midnight-node-runtime",
-        "CARGO_PKG_VERSION": "3.0.0",
-        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "4",
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_AUTHORS": "Substrate DevHub <https://github.com/substrate-developer-hub>",

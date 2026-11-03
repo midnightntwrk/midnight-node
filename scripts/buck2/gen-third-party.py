@@ -52,6 +52,7 @@ for mid in members:
             e["optional_everywhere"] = False
         conflicts[(key, target)].add((src, dep["req"]))
 
+
 # Same manifest key declared with different (source, req) pairs across members
 # (e.g. rand ^0.8 with `getrandom` vs rand ^0.10 where that feature is gone).
 # One Cargo.toml can't hold two deps under one key. Variants whose reqs resolve
@@ -59,6 +60,7 @@ for mid in members:
 # them); genuinely distinct versions get suffixed keys, e.g. `rand-0-8`.
 def vparse(v):
     return tuple(int(n) for n in re.findall(r"\d+", v)[:3])
+
 
 def satisfies(version, req):
     vt = vparse(version)
@@ -76,7 +78,9 @@ def satisfies(version, req):
             # caret: leftmost nonzero component must match, and version >= base
             digits = re.findall(r"\d+", base)
             if op == "^":
-                idx = next((i for i, d in enumerate(digits) if d != "0"), len(digits) - 1)
+                idx = next(
+                    (i for i, d in enumerate(digits) if d != "0"), len(digits) - 1
+                )
             else:  # tilde: major.minor fixed
                 idx = min(1, len(digits) - 1)
             if vt[: idx + 1] != bt[: idx + 1] or vt < bt:
@@ -98,6 +102,7 @@ def satisfies(version, req):
                 return False
     return True
 
+
 # buck2 builds each third-party crate ONCE with a fixed feature set — there is
 # no per-consumer feature selection like cargo. Seed each entry with the
 # feature set the crate resolves to in the *whole-workspace* build (cargo's
@@ -105,7 +110,9 @@ def satisfies(version, req):
 # (runtime "std" -> "pallet-collective/std") is on. Without this, reindeer
 # resolves features from the third-party manifest alone and FRAME crates build
 # no_std, breaking every std-only genesis_build/host-function path.
-resolved_features = {n["id"]: set(n.get("features") or []) for n in meta["resolve"]["nodes"]}
+resolved_features = {
+    n["id"]: set(n.get("features") or []) for n in meta["resolve"]["nodes"]
+}
 
 # Match by name + version-satisfies only, NOT source: a [patch]'d dep keeps its
 # original registry source in the dependency record while the resolved package
@@ -135,7 +142,11 @@ for (key, target), variants in sorted(bad.items()):
         groups[ver].append(sr)
     if len(groups) == 1:
         # cargo unifies these: merge into one entry under the tightest req
-        ordered = sorted(variants, key=lambda sr: vparse(re.sub(r"[^\d.]", "", sr[1]) or "0"), reverse=True)
+        ordered = sorted(
+            variants,
+            key=lambda sr: vparse(re.sub(r"[^\d.]", "", sr[1]) or "0"),
+            reverse=True,
+        )
         keep = entries[(key,) + ordered[0] + (target,)]
         for sr in ordered[1:]:
             e = entries.pop((key,) + sr + (target,))
@@ -160,7 +171,9 @@ for (key, target), variants in sorted(bad.items()):
                 e = entries.pop((key,) + sr + (target,))
                 keep["features"].update(e["features"])
                 keep["default"] |= e["default"]
-                keep.setdefault("aliases", []).append((e["name"], e["req"], e["source"]))
+                keep.setdefault("aliases", []).append(
+                    (e["name"], e["req"], e["source"])
+                )
 
 # One package may be declared under several renames across members
 # (e.g. prometheus-endpoint AND substrate-prometheus-endpoint for
@@ -175,14 +188,18 @@ for ident, ks in by_ident.items():
         continue
     ks.sort(key=lambda k: (entries[k]["key"] != entries[k]["name"], entries[k]["key"]))
     keep = entries[ks[0]]
-    print(f"rename collision for {ident[0]}: keeping key {keep['key']}, "
-          f"dropping {[entries[k]['key'] for k in ks[1:]]}", file=sys.stderr)
+    print(
+        f"rename collision for {ident[0]}: keeping key {keep['key']}, "
+        f"dropping {[entries[k]['key'] for k in ks[1:]]}",
+        file=sys.stderr,
+    )
     for k in ks[1:]:
         e = entries.pop(k)
         keep["features"].update(e["features"])
         keep["default"] |= e["default"]
         keep.setdefault("aliases", []).extend(
-            [(e["name"], e["req"], e["source"])] + e.get("aliases", []))
+            [(e["name"], e["req"], e["source"])] + e.get("aliases", [])
+        )
 
 # Sidecar: (name, req, source) -> manifest key, for gen-first-party.py
 keymap = {}
@@ -191,8 +208,10 @@ for e in entries.values():
     for name, req, src in e.get("aliases", []):
         keymap[f"{name}|{req}|{src}"] = e["key"]
 
+
 def toml_str(s):
-    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
 
 def fmt_entry(e):
     parts = []
@@ -204,19 +223,20 @@ def fmt_entry(e):
         u = urllib.parse.urlparse(url)
         q = urllib.parse.parse_qs(u.query)
         base = u._replace(query="", fragment="").geturl()
-        parts.append(f'git = {toml_str(base)}')
+        parts.append(f"git = {toml_str(base)}")
         for kind in ("tag", "branch", "rev"):
             if kind in q:
-                parts.append(f'{kind} = {toml_str(q[kind][0])}')
+                parts.append(f"{kind} = {toml_str(q[kind][0])}")
     else:
         req = e["req"]
-        parts.append(f'version = {toml_str(req)}')
+        parts.append(f"version = {toml_str(req)}")
     feats = sorted(f for f in e["features"] if f)
     if feats:
         parts.append("features = [" + ", ".join(toml_str(f) for f in feats) + "]")
     if not e["default"]:
         parts.append("default-features = false")
     return "{ " + ", ".join(parts) + " }"
+
 
 plain = sorted((e for e in entries.values() if not e["target"]), key=lambda e: e["key"])
 targeted = defaultdict(list)
@@ -225,7 +245,8 @@ for e in entries.values():
         targeted[e["target"]].append(e)
 
 with open(OUT, "w") as f:
-    f.write("""# @generated by scripts/buck2/gen-third-party.py — direct external deps of all
+    f.write(
+        """# @generated by scripts/buck2/gen-third-party.py — direct external deps of all
 # workspace members (normal + build; dev-deps omitted), features unioned.
 # Regenerate: cargo metadata --format-version 1 | scripts/buck2/gen-third-party.py
 [package]
@@ -243,7 +264,8 @@ name = "top"
 path = "top/main.rs"
 
 [dependencies]
-""")
+"""
+    )
     seen = set()
     for e in plain:
         if e["key"] in seen:
@@ -282,11 +304,16 @@ path = "top/main.rs"
 # cargo build and lets yanked-but-locked versions (e.g. core2 0.4.0) resolve.
 lock_dst = os.path.join(os.path.dirname(OUT), "Cargo.lock")
 if not os.path.exists(lock_dst):
-    with open(os.path.join(meta["workspace_root"], "Cargo.lock")) as src, open(lock_dst, "w") as dst:
+    with open(os.path.join(meta["workspace_root"], "Cargo.lock")) as src, open(
+        lock_dst, "w"
+    ) as dst:
         dst.write(src.read())
     print(f"seeded {lock_dst} from workspace Cargo.lock")
 
 with open(os.path.join(os.path.dirname(OUT), "keys.json"), "w") as kf:
     json.dump(dict(sorted(keymap.items())), kf, indent=1)
+    kf.write("\n")
 
-print(f"wrote {OUT}: {len(plain)} plain, {sum(len(v) for v in targeted.values())} targeted, {len(bad)} multi-version keys")
+print(
+    f"wrote {OUT}: {len(plain)} plain, {sum(len(v) for v in targeted.values())} targeted, {len(bad)} multi-version keys"
+)

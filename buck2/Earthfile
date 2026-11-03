@@ -100,9 +100,10 @@ INSTALL:
 # the wasm toolchain shims. Run AFTER the repo sources are COPY'd (needs toolchains/).
 CONFIG:
     FUNCTION
-    # A bazel-remote shared by every job on the host, e.g. grpc://172.17.0.1:49092
-    # (the docker bridge; a RUN step cannot see the host's loopback). Empty or
-    # unreachable: buck2-ci.sh runs a per-job sidecar.
+    # A bazel-remote shared by every job on the host (the fleet provisions one;
+    # locally see docs/buck2-notes.md "Locally": a RUN step sees neither the
+    # host's loopback nor the bridge's published ports, only buildkitd's netns).
+    # Empty or unreachable: buck2-ci.sh runs a per-job sidecar.
     ARG BUCK2_CACHE_ADDR
     # The toolchains cell reads a *global* -c only, so the wasm cc/ar/linker must
     # be absolute on-host paths, not a .buckconfig section (see BUCK2_ARGS below).

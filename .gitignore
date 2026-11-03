@@ -53,6 +53,7 @@ netrc
 
 # Earthly secrets
 .secret
+.arg
 
 # Cardano secret keys
 *.skey
@@ -114,6 +115,12 @@ toolkit-image.tar
 /buck-out/
 /third-party/.cargo/
 /wasm-deps/.cargo/
+# Vendored upstream crates carry their own CI; we neither run nor pin it, and
+# zizmor skips .gitignored paths, so keep vendored .github/ out of the tree.
+/third-party/**/.github/
+# node test fixtures are assembled by the //node:node-test-fixtures genrule at
+# build time (not copied in), so they never belong in the tree.
+/node/test-fixtures/
 
 # component-rn-draft working dir
 .rn-drafts/

@@ -241,7 +241,7 @@ whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindg
 yamux = { version = "^0.13" }
 zeroize = { version = "^1", features = ["alloc", "default", "derive", "std", "zeroize_derive"] }
 zkir = { package = "midnight-zkir", version = "^2.2.0" }
-zstd = { version = "^0.13", features = ["arrays", "default", "legacy", "zdict_builder"] }
+zstd = { version = "^0.14", features = ["arrays", "default", "legacy", "zdict_builder"] }
 zswap-ledger-8 = { package = "midnight-zswap", version = "=8.1.3", features = ["default", "proof-verifying"] }
 zswap-ledger-9 = { package = "midnight-zswap", version = "=9.0.0", features = ["default", "proof-verifying"] }
 

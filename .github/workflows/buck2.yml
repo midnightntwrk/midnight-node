@@ -52,6 +52,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Use the fleet's earth config
         if: ${{ !github.event.pull_request.head.repo.fork }}
@@ -83,6 +85,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # --RUN_ID re-executes the buck2 steps every run (Earthfile +buck2-ci); the
       # bazel-remote action cache, not Earthly's layer cache, is what keeps them warm.

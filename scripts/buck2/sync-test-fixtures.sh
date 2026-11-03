@@ -13,13 +13,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# node: cfg::tests read <root>/res/cfg/*.toml ; openrpc::tests read <root>/docs/openrpc.json ;
-# main_chain_follower tests read <root>/res/mock-bridge-data/ (mock authority registrations).
-rm -rf node/test-fixtures
-mkdir -p node/test-fixtures/res/cfg node/test-fixtures/docs node/test-fixtures/res/mock-bridge-data
-cp res/cfg/*.toml node/test-fixtures/res/cfg/
-cp docs/openrpc.json node/test-fixtures/docs/
-cp res/mock-bridge-data/* node/test-fixtures/res/mock-bridge-data/
+# node: fixtures (res/cfg/*.toml, docs/openrpc.json, res/mock-bridge-data/*) are no
+# longer copied here. The //node:node-test-fixtures genrule assembles them as a build
+# artifact the tests consume as a resource (see gen-first-party.py EXPORTS/TEST_RESOURCES),
+# so there is nothing to sync and node/test-fixtures/ is gitignored.
 
 # docs: docs_tests reads <root>/{res/cfg/default.toml (anchor), runtime/src/lib.rs,
 # node/Cargo.toml, metadata/Cargo.toml, README.md, util/toolkit/src/fetcher/runtimes.rs,
@@ -55,4 +52,4 @@ cp util/toolkit/tests/cmd/*.toml util/toolkit/test-fixtures/util/toolkit/tests/c
 cp util/toolkit/README.md util/toolkit/test-fixtures/util/toolkit/
 
 echo "synced test fixtures:"
-find node/test-fixtures docs/test-fixtures util/toolkit/test-fixtures -type f | sort
+find docs/test-fixtures util/toolkit/test-fixtures -type f | sort
