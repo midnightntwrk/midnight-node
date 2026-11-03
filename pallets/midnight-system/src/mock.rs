@@ -98,9 +98,17 @@ impl Get<BlockReward> for LedgerBlockReward {
 	}
 }
 
+pub struct MockWallClock;
+impl Get<u64> for MockWallClock {
+	fn get() -> u64 {
+		pallet_timestamp::Pallet::<Test>::get()
+	}
+}
+
 impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type WallClockMillis = MockWallClock;
 }
 
 impl pallet_midnight_system::Config for Test {
