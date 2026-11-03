@@ -9,4 +9,4 @@ chain. Until then nothing from the flip window is finalized, so
 scheduled. The `flip-finality-hold` log target reports when the hold arms,
 lifts and is disabled.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2356
