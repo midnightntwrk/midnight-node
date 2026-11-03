@@ -39,7 +39,11 @@
 //!   reads only) and binary-searching them with `O(log n)` storage reads.
 //! - **BABE confirmation**: header only, via [`authoring_engine`]. Every pre-flip block of the
 //!   pallet's era carries a BABE `SecondaryPlain` digest *after* the AURA one, so "has a BABE
-//!   digest" is not enough; the authoring engine must be BABE.
+//!   digest" is not enough; the authoring engine must be BABE. It is checked on GRANDPA's best
+//!   block, not on the vote target: GRANDPA caps the target at the next unfinalized authority-set
+//!   change before voting rules run, and every session schedules one. Checked on the target, a
+//!   change scheduled between the hold point and the first BABE block would keep the target
+//!   below that block for good and finality would never resume.
 //!
 //! # Cost
 //!
@@ -162,7 +166,8 @@ impl AnchorCache {
 	}
 }
 
-/// Decide how far a vote for `target` may go, given the vote `base` (an ancestor of `target`).
+/// Decide how far a vote for `target` may go, given the vote `base` (an ancestor of `target`) and
+/// GRANDPA's `best` block (`target` or a descendant of it).
 ///
 /// Read failures at the target leave the vote unrestricted, like a runtime without the API.
 /// Read failures further down, once a flip is known to be pending, hold at the base.
@@ -170,6 +175,7 @@ pub(crate) fn decide<F: ChainFacts>(
 	facts: &F,
 	base: (Hash, Number),
 	target: (Hash, Number),
+	best: Hash,
 	extra_confirmations: u32,
 	cache: &mut AnchorCache,
 ) -> Verdict {
@@ -192,11 +198,11 @@ pub(crate) fn decide<F: ChainFacts>(
 
 	let hold_at_base = Verdict::Hold { hash: base_hash, number: base_number };
 
-	match babe_confirmed(facts, target_hash, extra_confirmations.saturating_add(1)) {
+	match babe_confirmed(facts, best, extra_confirmations.saturating_add(1)) {
 		Ok(true) => return Verdict::Free(FreeReason::BabeConfirmed),
 		Ok(false) => {},
 		Err(e) => {
-			log::warn!(target: LOG_TARGET, "cannot count BABE blocks below {target_hash:?}: {e}; holding at base");
+			log::warn!(target: LOG_TARGET, "cannot count BABE blocks below {best:?}: {e}; holding at base");
 			return hold_at_base;
 		},
 	}
@@ -218,11 +224,11 @@ pub(crate) fn decide<F: ChainFacts>(
 	}
 }
 
-/// Whether the `needed` blocks ending at `target` are all BABE-authored. After the flip every
-/// block is, so this is "first BABE block + `needed - 1` more are on the branch". Reads at most
-/// `needed` headers.
-fn babe_confirmed<F: ChainFacts>(facts: &F, target: Hash, needed: u32) -> Result<bool, String> {
-	let mut hash = target;
+/// Whether the `needed` blocks ending at `tip` are all BABE-authored. After the flip every block
+/// is, so this is "first BABE block + `needed - 1` more are on the branch". Reads at most `needed`
+/// headers.
+fn babe_confirmed<F: ChainFacts>(facts: &F, tip: Hash, needed: u32) -> Result<bool, String> {
+	let mut hash = tip;
 	for _ in 0..needed {
 		let block = facts.block(hash)?;
 		if !block.babe_authored {
@@ -376,6 +382,7 @@ impl<BE> FlipFinalityHold<BE> {
 		&self,
 		client: &C,
 		base: &<Block as BlockT>::Header,
+		best: &<Block as BlockT>::Header,
 		target: &<Block as BlockT>::Header,
 	) -> Option<(Hash, Number)>
 	where
@@ -405,6 +412,7 @@ impl<BE> FlipFinalityHold<BE> {
 			&facts,
 			(base.hash(), *base.number()),
 			(target.hash(), *target.number()),
+			best.hash(),
 			self.extra_confirmations,
 			&mut state.anchors,
 		);
@@ -449,10 +457,10 @@ where
 		&self,
 		backend: Arc<C>,
 		base: &<Block as BlockT>::Header,
-		_best_target: &<Block as BlockT>::Header,
+		best_target: &<Block as BlockT>::Header,
 		current_target: &<Block as BlockT>::Header,
 	) -> VotingRuleResult<Block> {
-		let restricted = self.evaluate(&*backend, base, current_target);
+		let restricted = self.evaluate(&*backend, base, best_target, current_target);
 		Box::pin(std::future::ready(restricted))
 	}
 }
@@ -518,7 +526,18 @@ mod tests {
 			extra: u32,
 			cache: &mut AnchorCache,
 		) -> Verdict {
-			decide(self, (h(0, base), base), (h(0, target), target), extra, cache)
+			self.decide_with_best(base, target, target, extra, cache)
+		}
+
+		fn decide_with_best(
+			&self,
+			base: Number,
+			target: Number,
+			best: Number,
+			extra: u32,
+			cache: &mut AnchorCache,
+		) -> Verdict {
+			decide(self, (h(0, base), base), (h(0, target), target), h(0, best), extra, cache)
 		}
 	}
 
@@ -614,6 +633,22 @@ mod tests {
 	}
 
 	#[test]
+	fn release_is_judged_on_best_when_target_is_capped_below_the_flip() {
+		// Local-env run: schedule at 20, authority-set change at 21 caps GRANDPA's target there,
+		// flip at 24, BABE-authored from 25. The target never reaches a BABE block on its own.
+		let chain = MockChain::linear(40, Some(20), Some(24));
+		assert_eq!(chain.decide_with_best(19, 21, 25, 1, &mut cache()), hold(19));
+		assert_eq!(
+			chain.decide_with_best(19, 21, 26, 1, &mut cache()),
+			Verdict::Free(FreeReason::BabeConfirmed)
+		);
+		assert_eq!(
+			chain.decide_with_best(19, 21, 39, 1, &mut cache()),
+			Verdict::Free(FreeReason::BabeConfirmed)
+		);
+	}
+
+	#[test]
 	fn runtime_without_api_is_not_restricted() {
 		let mut chain = MockChain::linear(20, Some(6), None);
 		chain.no_api.push(h(0, 19));
@@ -675,7 +710,7 @@ mod tests {
 		let mut cache = cache();
 		assert_eq!(chain.decide(2, 19, 1, &mut cache), hold(5));
 		assert_eq!(
-			decide(&chain, (h(0, 2), 2), (h(1, 19), 19), 1, &mut cache),
+			decide(&chain, (h(0, 2), 2), (h(1, 19), 19), h(1, 19), 1, &mut cache),
 			Verdict::Hold { hash: h(1, 7), number: 7 }
 		);
 	}
