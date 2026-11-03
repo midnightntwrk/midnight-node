@@ -18,8 +18,8 @@
 //! While a flip is pending, [`FlipFinalityHold`] keeps this node's GRANDPA votes at or below the
 //! parent of the block that dispatched `schedule_flip`. `midnight-node revert` cannot cross a
 //! finalized block, so as long as the hold stands operators can revert to the state before the
-//! flip was scheduled if the first BABE blocks go wrong. The hold lifts once the branch being
-//! voted on contains the first BABE-authored block plus `extra_confirmations` more.
+//! flip was scheduled if the first BABE blocks go wrong. The hold lifts once the best chain
+//! contains the first BABE-authored block plus `extra_confirmations` more.
 //!
 //! # Signals
 //!
@@ -40,10 +40,9 @@
 //! - **BABE confirmation**: header only, via [`authoring_engine`]. Every pre-flip block of the
 //!   pallet's era carries a BABE `SecondaryPlain` digest *after* the AURA one, so "has a BABE
 //!   digest" is not enough; the authoring engine must be BABE. It is checked on GRANDPA's best
-//!   block, not on the vote target: GRANDPA caps the target at the next unfinalized authority-set
-//!   change before voting rules run, and every session schedules one. Checked on the target, a
-//!   change scheduled between the hold point and the first BABE block would keep the target
-//!   below that block for good and finality would never resume.
+//!   block, not on the vote target: GRANDPA caps the target at the next unfinalized
+//!   authority-set change (one per session), which can sit below the first BABE block and would
+//!   then hold finality forever.
 //!
 //! # Cost
 //!
@@ -135,7 +134,7 @@ enum Anchor {
 	AtOrBelowBase,
 }
 
-/// Bounded FIFO map from a voted target to its [`Anchor`]. A block's state never changes, so
+/// Bounded FIFO map from a block to its [`Anchor`]. A block's state never changes, so
 /// entries never go stale; eviction only bounds memory.
 pub(crate) struct AnchorCache {
 	map: HashMap<Hash, Anchor>,
@@ -242,7 +241,7 @@ fn babe_confirmed<F: ChainFacts>(facts: &F, tip: Hash, needed: u32) -> Result<bo
 /// Find the [`Anchor`] for `target`, whose state is known not to be `Aura`.
 ///
 /// Walks headers from `target` down to the first block at or below `base_number` (the floor),
-/// stopping early at a cached target. Without a cache hit the schedule block lies in
+/// stopping early at a cached block. Without a cache hit the schedule block lies in
 /// `(floor, target]` unless the floor's own state is already past `Aura`; binary search over
 /// that range relies on the state being monotone along the branch.
 fn find_anchor<F: ChainFacts>(
@@ -660,7 +659,7 @@ mod tests {
 
 	#[test]
 	fn release_is_judged_on_best_when_target_is_capped_below_the_flip() {
-		// Local-env run: schedule at 20, authority-set change at 21 caps GRANDPA's target there,
+		// Schedule at 20, authority-set change at 21 caps GRANDPA's target there,
 		// flip at 24, BABE-authored from 25. The target never reaches a BABE block on its own.
 		let chain = MockChain::linear(40, Some(20), Some(24));
 		assert_eq!(chain.decide_with_best(19, 21, 25, 1, &mut cache()), hold(19));
