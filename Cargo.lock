@@ -10562,6 +10562,7 @@ dependencies = [
  "log",
  "midnight-ledger-unsafe-helpers",
  "midnight-node-ledger",
+ "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-primitives",
  "pallet-timestamp",

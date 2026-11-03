@@ -127,6 +127,7 @@ jobs:
       - name: Extract existing artifacts
         if: steps.check-images.outputs.images_exist == 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
           NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
@@ -147,6 +148,7 @@ jobs:
       - name: Run build
         if: steps.check-images.outputs.images_exist != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           # We don't use --ci as we want artifacts to be saved
@@ -340,6 +342,7 @@ jobs:
       - name: Extract existing artifacts
         if: steps.check-images.outputs.images_exist == 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
           NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
@@ -353,6 +356,7 @@ jobs:
       - name: Run Node and toolkit builds
         if: steps.check-images.outputs.images_exist != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image

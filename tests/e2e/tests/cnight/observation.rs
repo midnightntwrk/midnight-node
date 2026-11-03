@@ -1920,7 +1920,7 @@ async fn deregister_first_mapping() {
             replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed2,
+            seed: midnight_wallet_seed2.clone(),
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
@@ -1980,7 +1980,16 @@ async fn deregister_first_mapping() {
         MidnightClient::calculate_nonce(prefix3, cnight_utxo3.transaction.id, cnight_utxo3.index);
     tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce3);
 
-    //check utxo3 producing dust
+    midnight_client
+        .await_cnight_observations(
+            &[deregister_tx, tx_id3],
+            &ogmios_settings,
+            OBSERVATION_AWAIT_TIMEOUT,
+        )
+        .await
+        .expect("deregister + mint observations should arrive within timeout");
+
+    // With the first mapping gone, the second one is the only mapping and earns the DUST.
     let args3 = DustBalanceArgs {
         source: Source {
             src_files: None,
@@ -1995,7 +2004,7 @@ async fn deregister_first_mapping() {
             replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed.clone(),
+            seed: midnight_wallet_seed2.clone(),
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
@@ -2011,7 +2020,7 @@ async fn deregister_first_mapping() {
         balance = total;
     }
 
-    assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
+    assert!(matches!(result3, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
     // Wait for Midnight to produce additional blocks so dust can accrue.
     // Midnight block time is 6s; 12s ≈ 2 blocks, enough for the
@@ -2032,7 +2041,7 @@ async fn deregister_first_mapping() {
             replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed,
+            seed: midnight_wallet_seed2,
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
@@ -3063,5 +3072,250 @@ async fn update_registration_to_new_dust_address_while_rotating_cnight_issue_212
     assert!(
         matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > balance),
         "DUST should keep accruing to the new address"
+    );
+}
+
+/// Moves a Cardano address to a new DUST address using separate deregister and
+/// register transactions (not the in-place update that #2121 covers), then
+/// rotates the cNIGHT and checks the new UTXO generates DUST to the new address.
+#[e2e_test]
+async fn change_dust_address_via_deregister_and_register() {
+    let settings = Settings::default();
+    let ogmios_settings = settings.ogmios_client.clone();
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let address_bech32 = cardano_client.address_as_bech32();
+    tracing::info!("New Cardano wallet created: {:?}", address_bech32);
+
+    let seed_a = MidnightClient::new_seed();
+    register_test_seed(seed_a.clone());
+    let dust_hex_a = MidnightClient::new_dust_hex(seed_a.clone());
+    let dust_bytes_a: Vec<u8> = hex::decode(&dust_hex_a).expect("Failed to decode DUST hex A");
+
+    let seed_b = MidnightClient::new_seed();
+    register_test_seed(seed_b.clone());
+    let dust_hex_b = MidnightClient::new_dust_hex(seed_b.clone());
+    let dust_bytes_b: Vec<u8> = hex::decode(&dust_hex_b).expect("Failed to decode DUST hex B");
+    tracing::info!("Moving Cardano wallet {address_bech32} from DUST {dust_hex_a} to {dust_hex_b}");
+
+    // `mint_tokens` spends the largest UTXO, so the 20 ADA one is reserved for it.
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let register_a_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    faucet.request_tokens(&address_bech32, 20_000_000).await;
+    let deregister_in = faucet.request_tokens(&address_bech32, 7_000_000).await;
+    let register_b_in = faucet.request_tokens(&address_bech32, 8_000_000).await;
+
+    let register_a_tx_id = cardano_client
+        .register(&dust_hex_a, &register_a_in, &collateral_utxo)
+        .await
+        .expect("Failed to register DUST address A")
+        .transaction
+        .id;
+    tracing::info!(
+        "Registration A submitted: {}",
+        hex::encode(register_a_tx_id)
+    );
+
+    let validator_address = config::mapping_validator_address();
+    let registration_a_utxo = cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_a_tx_id))
+        .await
+        .expect("No registration UTXO found for DUST address A");
+
+    let amount = 100;
+    let mint_tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    tracing::info!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(mint_tx_id));
+
+    let cnight_utxo = cardano_client
+        .find_utxo_by_tx_id(&address_bech32, hex::encode(mint_tx_id))
+        .await
+        .expect("No cNIGHT UTXO found after minting");
+    let old_nonce = MidnightClient::calculate_nonce(
+        b"asset_create",
+        cnight_utxo.transaction.id,
+        cnight_utxo.index,
+    );
+    tracing::info!("Nonce of the minted cNIGHT UTXO: {}", old_nonce);
+
+    let deregister_tx_id = cardano_client
+        .deregister(&deregister_in, &registration_a_utxo, &collateral_utxo)
+        .await
+        .expect("Failed to deregister DUST address A")
+        .transaction
+        .id;
+    tracing::info!(
+        "Deregistration A submitted: {}",
+        hex::encode(deregister_tx_id)
+    );
+
+    // Registration B landing first would briefly map the address to two DUST
+    // addresses, a different scenario.
+    cardano_client
+        .wait_for_tx_inclusion(&deregister_tx_id, &address_bech32, TX_INCLUSION_TIMEOUT)
+        .await
+        .expect("deregistration tx should be included within timeout");
+
+    let register_b_tx_id = cardano_client
+        .register(&dust_hex_b, &register_b_in, &collateral_utxo)
+        .await
+        .expect("Failed to register DUST address B")
+        .transaction
+        .id;
+    tracing::info!(
+        "Registration B submitted: {}",
+        hex::encode(register_b_tx_id)
+    );
+    cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_b_tx_id))
+        .await
+        .expect("No registration UTXO found for DUST address B");
+
+    let rotate_tx_id = cardano_client
+        .rotate_cnight(&cnight_utxo)
+        .await
+        .expect("Failed to rotate cNIGHT UTXO")
+        .transaction
+        .id;
+    tracing::info!("Rotation submitted: {}", hex::encode(rotate_tx_id));
+
+    let new_cnight_utxo = cardano_client
+        .find_utxo_by_tx_id(&address_bech32, hex::encode(rotate_tx_id))
+        .await
+        .expect("No cNIGHT UTXO found after rotation");
+    let new_nonce = MidnightClient::calculate_nonce(
+        b"asset_create",
+        new_cnight_utxo.transaction.id,
+        new_cnight_utxo.index,
+    );
+    tracing::info!("Nonce of the rotated cNIGHT UTXO: {}", new_nonce);
+
+    let all_events = midnight_client
+        .await_cnight_observations(
+            &[
+                register_a_tx_id,
+                mint_tx_id,
+                deregister_tx_id,
+                register_b_tx_id,
+                rotate_tx_id,
+            ],
+            &ogmios_settings,
+            OBSERVATION_AWAIT_TIMEOUT,
+        )
+        .await
+        .expect("all cNIGHT observations should arrive within timeout");
+
+    let observed = || {
+        all_events
+            .iter()
+            .flat_map(|e| e.iter().filter_map(|x| x.ok()))
+    };
+    let reward_address = cardano_client.reward_address_bytes();
+
+    let deregistration = observed()
+        .filter_map(|evt| {
+            evt.decode_fields_as::<Deregistration>()
+                .and_then(|r| r.ok())
+        })
+        .find(|dereg| {
+            dereg.0.cardano_reward_address.0 == reward_address
+                && dereg.0.dust_public_key.0.0 == dust_bytes_a
+        });
+    assert!(
+        deregistration.is_some(),
+        "Did not find a Deregistration event for DUST address A"
+    );
+    tracing::info!(
+        "Matching Deregistration event found: {}",
+        fmt_deregistration(&deregistration.unwrap())
+    );
+
+    let registration = observed()
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
+        .find(|reg| {
+            reg.0.cardano_reward_address.0 == reward_address
+                && reg.0.dust_public_key.0.0 == dust_bytes_b
+        });
+    assert!(
+        registration.is_some(),
+        "Did not find a Registration event for DUST address B"
+    );
+    tracing::info!(
+        "Matching Registration event found: {}",
+        fmt_registration(&registration.unwrap())
+    );
+
+    assert!(
+        midnight_client
+            .query_night_utxo_owners(old_nonce)
+            .await
+            .expect("Failed to query UTXO owners")
+            .is_none(),
+        "The spent cNIGHT UTXO should no longer have an owner entry"
+    );
+
+    let new_owner = midnight_client
+        .query_night_utxo_owners(new_nonce)
+        .await
+        .expect("Failed to query UTXO owners")
+        .expect("The rotated cNIGHT UTXO should have an owner immediately after observation");
+    assert_eq!(
+        hex::encode(new_owner.0.0),
+        dust_hex_b,
+        "The rotated cNIGHT UTXO should be owned by DUST address B"
+    );
+
+    let dust_balance_args = |seed| DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: crate::fetch_concurrency(),
+            dust_warp: true,
+            ignore_block_context: false,
+            fetch_cache: crate::fetch_cache_config(),
+            fetch_only_cached: false,
+            fetch_compute_concurrency: None,
+            ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
+        },
+        seed: SchemeSeed {
+            seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
+        dry_run: false,
+    };
+
+    let result = crate::gated_dust_balance(dust_balance_args(seed_b.clone()))
+        .await
+        .expect("dust-balance error");
+    let mut balance: u128 = 0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        tracing::info!("Total dust balance of DUST address B: {}", total);
+        balance = *total;
+    }
+    assert!(
+        balance > 0,
+        "DUST address B should be generating after the rotation"
+    );
+
+    // Midnight block time is 6s; 12s ≈ 2 blocks.
+    tokio::time::sleep(Duration::from_secs(12)).await;
+
+    let result2 = crate::gated_dust_balance(dust_balance_args(seed_b))
+        .await
+        .expect("dust-balance error");
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        tracing::info!("Total dust balance of DUST address B: {}", total);
+    }
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > balance),
+        "DUST should keep accruing to DUST address B"
     );
 }
