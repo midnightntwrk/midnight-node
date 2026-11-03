@@ -65,7 +65,6 @@
     "@polkadot/types": "^16.3.1",
     "@polkadot/util": "^13.5.2",
     "@polkadot/util-crypto": "^13.5.2",
-    "@types/wait-on": "^5.3.4",
     "commander": "^14.0.0",
     "dotenv": "^16.5.0",
     "eslint": "^10.8.1",
@@ -73,7 +72,6 @@
     "globals": "^17.11.0",
     "prettier": "3.5.3",
     "typescript-eslint": "^8.67.0",
-    "wait-on": "^8.0.3",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
