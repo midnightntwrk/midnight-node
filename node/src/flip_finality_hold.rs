@@ -19,7 +19,12 @@
 //! parent of the block that dispatched `schedule_flip`. `midnight-node revert` cannot cross a
 //! finalized block, so as long as the hold stands operators can revert to the state before the
 //! flip was scheduled if the first BABE blocks go wrong. The hold lifts once the best chain
-//! contains the first BABE-authored block plus `extra_confirmations` more.
+//! contains the first BABE-authored block plus `extra_confirmations` more, or once more than
+//! `max_unfinalized_blocks` blocks are unfinalized. It is not applied at all when the schedule
+//! block is already finalized, since a revert can no longer reach it.
+//!
+//! Only prevotes are restricted, so finality is held only while more than 1/3 of GRANDPA voting
+//! weight runs this rule.
 //!
 //! # Signals
 //!
@@ -46,7 +51,8 @@
 //!
 //! # Cost
 //!
-//! Before a flip is scheduled a vote costs two storage reads, at the best block and at the target.
+//! Before a flip is scheduled a vote costs a finalized-header read and two storage reads, at the
+//! best block and at the target.
 //! While a hold is active the anchor found for each block is cached, so the next vote walks back
 //! only to a block it already resolved. Once the finalized block is BABE-authored the rule switches
 //! itself off for the rest of the process.
@@ -76,6 +82,32 @@ const LOG_TARGET: &str = "flip-finality-hold";
 /// *after* that announcement was imported, usually from a different author. It costs one slot of
 /// extra hold.
 pub const DEFAULT_EXTRA_CONFIRMATIONS: u32 = 1;
+
+/// Default cap on unfinalized blocks before the hold gives up.
+///
+/// Four 300-slot epochs: the flip commits at the end of the epoch after `schedule_flip` unless it
+/// is postponed (e.g. while BABE's next authorities are empty), and `schedule_flip` cannot be
+/// cancelled. Past this the hold costs more liveness than its revert window is worth.
+pub const DEFAULT_MAX_UNFINALIZED_BLOCKS: u32 = 1200;
+
+/// Tunables for [`FlipFinalityHold`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HoldParams {
+	/// BABE blocks required on top of the first one before the hold lifts.
+	pub extra_confirmations: u32,
+	/// The hold lifts once the best chain is this many blocks ahead of the finalized block,
+	/// whether or not BABE has been confirmed.
+	pub max_unfinalized_blocks: u32,
+}
+
+impl Default for HoldParams {
+	fn default() -> Self {
+		Self {
+			extra_confirmations: DEFAULT_EXTRA_CONFIRMATIONS,
+			max_unfinalized_blocks: DEFAULT_MAX_UNFINALIZED_BLOCKS,
+		}
+	}
+}
 
 /// Anchors kept in the cache; a hold normally needs one entry per tracked fork tip.
 const ANCHOR_CACHE_CAPACITY: usize = 256;
@@ -120,22 +152,25 @@ pub(crate) enum FreeReason {
 	NoEngineApi,
 	/// The branch holds the first BABE block plus the required confirmations.
 	BabeConfirmed,
+	/// The schedule block is already finalized, so a revert can no longer undo it.
+	ScheduleFinalized,
+	/// More than [`HoldParams::max_unfinalized_blocks`] blocks are unfinalized.
+	HoldExpired,
 	/// The target's own state could not be read.
 	Unreadable(String),
 }
 
-/// Where the hold sits for a given target, independent of the vote base.
+/// Where the hold sits for a given target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Anchor {
 	/// Parent of the schedule block.
 	ScheduleParent { hash: Hash, number: Number },
-	/// The schedule block was at or below the vote base when the anchor was computed, so the
-	/// best the rule can do is hold at the base.
+	/// The schedule block is at or below the vote base. Depends on the base, so never cached.
 	AtOrBelowBase,
 }
 
-/// Bounded FIFO map from a block to its [`Anchor`]. A block's state never changes, so
-/// entries never go stale; eviction only bounds memory.
+/// Bounded FIFO map from a block to its [`Anchor::ScheduleParent`]. A block's state never
+/// changes, so entries never go stale; eviction only bounds memory.
 pub(crate) struct AnchorCache {
 	map: HashMap<Hash, Anchor>,
 	order: VecDeque<Hash>,
@@ -165,19 +200,23 @@ impl AnchorCache {
 	}
 }
 
-/// Decide how far a vote for `target` may go, given the vote `base` (an ancestor of `target`) and
+/// Decide how far a vote for `target` may go, given the last `finalized` block, the vote `base`
+/// (GRANDPA's previous round estimate, at or above `finalized`, an ancestor of `target`) and
 /// GRANDPA's `best` block (`target` or a descendant of it).
 ///
 /// Read failures at the target leave the vote unrestricted, like a runtime without the API.
 /// Read failures further down, once a flip is known to be pending, hold at the base.
 pub(crate) fn decide<F: ChainFacts>(
 	facts: &F,
+	finalized: (Hash, Number),
 	base: (Hash, Number),
 	target: (Hash, Number),
-	best: Hash,
-	extra_confirmations: u32,
+	best: (Hash, Number),
+	params: HoldParams,
 	cache: &mut AnchorCache,
 ) -> Verdict {
+	let (finalized_hash, finalized_number) = finalized;
+	let (best, best_number) = best;
 	let (base_hash, base_number) = base;
 	let (target_hash, target_number) = target;
 	if target_number <= base_number {
@@ -197,13 +236,17 @@ pub(crate) fn decide<F: ChainFacts>(
 
 	let hold_at_base = Verdict::Hold { hash: base_hash, number: base_number };
 
-	match babe_confirmed(facts, best, extra_confirmations.saturating_add(1)) {
+	match babe_confirmed(facts, best, params.extra_confirmations.saturating_add(1)) {
 		Ok(true) => return Verdict::Free(FreeReason::BabeConfirmed),
 		Ok(false) => {},
 		Err(e) => {
 			log::warn!(target: LOG_TARGET, "cannot count BABE blocks below {best:?}: {e}; holding at base");
 			return hold_at_base;
 		},
+	}
+
+	if best_number.saturating_sub(finalized_number) > Number::from(params.max_unfinalized_blocks) {
+		return Verdict::Free(FreeReason::HoldExpired);
 	}
 
 	let anchor = match find_anchor(facts, base_number, target_hash, cache) {
@@ -213,13 +256,25 @@ pub(crate) fn decide<F: ChainFacts>(
 			return hold_at_base;
 		},
 	};
-	cache.insert(target_hash, anchor);
 
 	match anchor {
-		Anchor::ScheduleParent { hash, number } if number >= base_number => {
-			Verdict::Hold { hash, number }
+		Anchor::ScheduleParent { number, .. } if number < finalized_number => {
+			Verdict::Free(FreeReason::ScheduleFinalized)
 		},
-		Anchor::ScheduleParent { .. } | Anchor::AtOrBelowBase => hold_at_base,
+		Anchor::ScheduleParent { hash, number } => {
+			cache.insert(target_hash, anchor);
+			if number >= base_number { Verdict::Hold { hash, number } } else { hold_at_base }
+		},
+		// The schedule block is at or below the base; whether it is also finalized decides if
+		// holding still keeps a revert possible.
+		Anchor::AtOrBelowBase => match facts.engine_state(finalized_hash) {
+			Ok(State::Aura) => hold_at_base,
+			Ok(State::ScheduledFlip | State::Babe) => Verdict::Free(FreeReason::ScheduleFinalized),
+			Err(e) => {
+				log::warn!(target: LOG_TARGET, "cannot read consensus-engine state at finalized {finalized_hash:?}: {e}; holding at base");
+				hold_at_base
+			},
+		},
 	}
 }
 
@@ -336,11 +391,13 @@ struct HoldState {
 	anchors: AnchorCache,
 	/// Hold point last reported for the best chain, to log arming and lifting once each.
 	armed_at: Option<Hash>,
+	/// Last reason the hold was skipped despite a pending flip, to warn once per reason.
+	skipped: Option<FreeReason>,
 }
 
 /// GRANDPA [`VotingRule`] that holds finality below a pending AURA→BABE flip. See the module docs.
 pub struct FlipFinalityHold<BE> {
-	extra_confirmations: u32,
+	params: HoldParams,
 	engine_state_key: Arc<StorageKey>,
 	shared: Arc<Shared>,
 	_backend: PhantomData<fn() -> BE>,
@@ -349,7 +406,7 @@ pub struct FlipFinalityHold<BE> {
 impl<BE> Clone for FlipFinalityHold<BE> {
 	fn clone(&self) -> Self {
 		Self {
-			extra_confirmations: self.extra_confirmations,
+			params: self.params,
 			engine_state_key: self.engine_state_key.clone(),
 			shared: self.shared.clone(),
 			_backend: PhantomData,
@@ -358,19 +415,18 @@ impl<BE> Clone for FlipFinalityHold<BE> {
 }
 
 impl<BE> FlipFinalityHold<BE> {
-	/// `extra_confirmations` BABE blocks beyond the first are required before the hold lifts;
-	/// see [`DEFAULT_EXTRA_CONFIRMATIONS`].
-	pub fn new(extra_confirmations: u32) -> Self {
+	pub fn new(params: HoldParams) -> Self {
 		let key =
 			pallet_consensus_engine::EngineState::<midnight_node_runtime::Runtime>::hashed_key();
 		Self {
-			extra_confirmations,
+			params,
 			engine_state_key: Arc::new(StorageKey(key.to_vec())),
 			shared: Arc::new(Shared {
 				released: AtomicBool::new(false),
 				state: Mutex::new(HoldState {
 					anchors: AnchorCache::new(ANCHOR_CACHE_CAPACITY),
 					armed_at: None,
+					skipped: None,
 				}),
 			}),
 			_backend: PhantomData,
@@ -392,7 +448,8 @@ impl<BE> FlipFinalityHold<BE> {
 		if self.shared.released.load(Ordering::Relaxed) {
 			return None;
 		}
-		let finalized = client.info().finalized_hash;
+		let info = client.info();
+		let finalized = info.finalized_hash;
 		if let Ok(Some(header)) = client.header(finalized)
 			&& authoring_engine::<Block>(&header) == Some(ActiveEngine::Babe)
 		{
@@ -407,35 +464,52 @@ impl<BE> FlipFinalityHold<BE> {
 			_backend: PhantomData,
 		};
 		let mut state = self.shared.state.lock().unwrap_or_else(|e| e.into_inner());
+		let finalized_pair = (finalized, info.finalized_number);
 		let base_pair = (base.hash(), *base.number());
+		let best_pair = (best.hash(), *best.number());
 
-		// Judged on the best block so arming is logged once the schedule block is imported, not
-		// when GRANDPA's target first reaches it (it trails best by at least two blocks).
+		// Judged on the best block so arming is logged on the first vote after the schedule block
+		// is imported, not when GRANDPA's target first reaches it (it trails best by two or more).
 		let on_best = decide(
 			&facts,
+			finalized_pair,
 			base_pair,
-			(best.hash(), *best.number()),
-			best.hash(),
-			self.extra_confirmations,
+			best_pair,
+			best_pair,
+			self.params,
 			&mut state.anchors,
 		);
 		match on_best {
 			Verdict::Hold { hash, number } if state.armed_at != Some(hash) => {
 				log::info!(
 					target: LOG_TARGET,
-					"consensus flip scheduled (best #{}): GRANDPA finality held at #{number} ({hash:?}) until the first BABE block plus {} confirmation(s)",
+					"consensus flip scheduled (best #{}): GRANDPA finality held at #{number} ({hash:?}) until the first BABE block plus {} confirmation(s), at most {} unfinalized blocks",
 					best.number(),
-					self.extra_confirmations,
+					self.params.extra_confirmations,
+					self.params.max_unfinalized_blocks,
 				);
 				state.armed_at = Some(hash);
+				state.skipped = None;
+			},
+			Verdict::Free(reason @ (FreeReason::ScheduleFinalized | FreeReason::HoldExpired))
+				if state.skipped.as_ref() != Some(&reason) =>
+			{
+				log::warn!(
+					target: LOG_TARGET,
+					"consensus flip pending but GRANDPA finality is not held (best #{}, finalized #{}): {reason:?}",
+					best.number(),
+					info.finalized_number,
+				);
+				state.armed_at = None;
+				state.skipped = Some(reason);
 			},
 			Verdict::Free(FreeReason::BabeConfirmed) if state.armed_at.take().is_some() => {
 				log::info!(
 					target: LOG_TARGET,
 					"BABE confirmed at best #{}: flip finality hold lifted, finality resumes from #{} ({} blocks pending)",
 					best.number(),
-					base.number(),
-					best.number().saturating_sub(*base.number()),
+					info.finalized_number,
+					best.number().saturating_sub(info.finalized_number),
 				);
 			},
 			_ => {},
@@ -443,10 +517,11 @@ impl<BE> FlipFinalityHold<BE> {
 
 		match decide(
 			&facts,
+			finalized_pair,
 			base_pair,
 			(target.hash(), *target.number()),
-			best.hash(),
-			self.extra_confirmations,
+			best_pair,
+			self.params,
 			&mut state.anchors,
 		) {
 			Verdict::Hold { hash, number } => {
@@ -562,7 +637,27 @@ mod tests {
 			extra: u32,
 			cache: &mut AnchorCache,
 		) -> Verdict {
-			decide(self, (h(0, base), base), (h(0, target), target), h(0, best), extra, cache)
+			self.decide_full(base, base, target, best, params(extra), cache)
+		}
+
+		fn decide_full(
+			&self,
+			finalized: Number,
+			base: Number,
+			target: Number,
+			best: Number,
+			params: HoldParams,
+			cache: &mut AnchorCache,
+		) -> Verdict {
+			decide(
+				self,
+				(h(0, finalized), finalized),
+				(h(0, base), base),
+				(h(0, target), target),
+				(h(0, best), best),
+				params,
+				cache,
+			)
 		}
 	}
 
@@ -589,6 +684,10 @@ mod tests {
 		fn has_engine_api(&self, hash: Hash) -> Result<bool, String> {
 			Ok(!self.no_api.contains(&hash))
 		}
+	}
+
+	fn params(extra: u32) -> HoldParams {
+		HoldParams { extra_confirmations: extra, max_unfinalized_blocks: u32::MAX }
 	}
 
 	fn cache() -> AnchorCache {
@@ -628,10 +727,43 @@ mod tests {
 	}
 
 	#[test]
-	fn schedule_at_or_below_base_holds_at_base() {
+	fn unfinalized_schedule_at_or_below_base_holds_at_base() {
+		// GRANDPA's base is the previous round estimate, which can be above the finalized block.
 		let chain = MockChain::linear(20, Some(6), None);
-		assert_eq!(chain.decide(8, 19, 1, &mut cache()), hold(8));
-		assert_eq!(chain.decide(6, 19, 1, &mut cache()), hold(6));
+		assert_eq!(chain.decide_full(4, 8, 19, 19, params(1), &mut cache()), hold(8));
+		assert_eq!(chain.decide_full(5, 6, 19, 19, params(1), &mut cache()), hold(6));
+	}
+
+	#[test]
+	fn finalized_schedule_block_is_not_held() {
+		let chain = MockChain::linear(20, Some(6), None);
+		let finalized = Verdict::Free(FreeReason::ScheduleFinalized);
+		// Schedule block at or below both base and finalized.
+		assert_eq!(chain.decide(6, 19, 1, &mut cache()), finalized);
+		assert_eq!(chain.decide(8, 19, 1, &mut cache()), finalized);
+		// Finalized past the schedule block while the cached anchor still sits above the base.
+		let mut cache = cache();
+		assert_eq!(chain.decide_full(2, 2, 19, 19, params(1), &mut cache), hold(5));
+		assert_eq!(chain.decide_full(6, 2, 19, 19, params(1), &mut cache), finalized);
+	}
+
+	#[test]
+	fn hold_expires_after_max_unfinalized_blocks() {
+		let chain = MockChain::linear(40, Some(6), None);
+		let p = HoldParams { extra_confirmations: 1, max_unfinalized_blocks: 30 };
+		assert_eq!(chain.decide_full(2, 2, 30, 32, p, &mut cache()), hold(5));
+		assert_eq!(
+			chain.decide_full(2, 2, 30, 33, p, &mut cache()),
+			Verdict::Free(FreeReason::HoldExpired)
+		);
+	}
+
+	#[test]
+	fn at_or_below_base_anchor_is_not_cached() {
+		let chain = MockChain::linear(20, Some(6), None);
+		let mut cache = cache();
+		assert_eq!(chain.decide_full(4, 8, 19, 19, params(1), &mut cache), hold(8));
+		assert!(cache.get(&h(0, 19)).is_none());
 	}
 
 	#[test]
@@ -735,7 +867,15 @@ mod tests {
 		let mut cache = cache();
 		assert_eq!(chain.decide(2, 19, 1, &mut cache), hold(5));
 		assert_eq!(
-			decide(&chain, (h(0, 2), 2), (h(1, 19), 19), h(1, 19), 1, &mut cache),
+			decide(
+				&chain,
+				(h(0, 2), 2),
+				(h(0, 2), 2),
+				(h(1, 19), 19),
+				(h(1, 19), 19),
+				params(1),
+				&mut cache
+			),
 			Verdict::Hold { hash: h(1, 7), number: 7 }
 		);
 	}
