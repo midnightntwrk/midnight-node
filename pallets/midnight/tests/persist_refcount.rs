@@ -299,7 +299,7 @@ fn keep_alive_invariants() {
 		let mut reclaimed = false;
 		for _ in 0..200 {
 			midnight_node_ledger::latest::storage::flush_default_storage_for_test();
-			midnight_node_ledger::gc::collect_garbage(std::time::Duration::from_millis(250))
+			midnight_node_ledger::gc::collect_garbage(std::time::Duration::from_millis(250), None)
 				.expect("storage initialised");
 			if !midnight_node_ledger::has_ledger_state(false, &post_block_1_key) {
 				reclaimed = true;
