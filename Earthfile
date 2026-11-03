@@ -31,7 +31,7 @@ ARG --global CACHE_KEY=local
 ARG --global CI=false
 
 # renovate: datasource=node-version depName=node versioning=node
-ARG --global NODEJS_VERSION=24.18.0
+ARG --global NODEJS_VERSION=24.22.2
 
 # renovate: datasource=npm packageName=npm
 ARG --global NPM_VERSION=12.0.2
