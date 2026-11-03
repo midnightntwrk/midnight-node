@@ -73,8 +73,8 @@ pub struct RunMidnight {
 	#[arg(long, default_value_t = crate::flip_finality_hold::DEFAULT_EXTRA_CONFIRMATIONS)]
 	pub flip_finality_hold_confirmations: u32,
 
-	/// Lift the flip finality hold once this many blocks are unfinalized, even if BABE has not
-	/// been confirmed yet.
+	/// Lift the flip finality hold once more than this many blocks are unfinalized, even if BABE
+	/// has not been confirmed yet.
 	#[arg(long, default_value_t = crate::flip_finality_hold::DEFAULT_MAX_UNFINALIZED_BLOCKS)]
 	pub flip_finality_hold_max_unfinalized: u32,
 }

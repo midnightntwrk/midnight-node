@@ -95,8 +95,8 @@ pub const DEFAULT_MAX_UNFINALIZED_BLOCKS: u32 = 1200;
 pub struct HoldParams {
 	/// BABE blocks required on top of the first one before the hold lifts.
 	pub extra_confirmations: u32,
-	/// The hold lifts once the best chain is this many blocks ahead of the finalized block,
-	/// whether or not BABE has been confirmed.
+	/// The hold lifts once the best chain is more than this many blocks ahead of the finalized
+	/// block, whether or not BABE has been confirmed.
 	pub max_unfinalized_blocks: u32,
 }
 
