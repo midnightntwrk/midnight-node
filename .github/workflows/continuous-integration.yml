@@ -190,6 +190,7 @@ jobs:
           # accept GHA's ACTIONS_RUNTIME_TOKEN.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
           # Retry the earthly invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
@@ -204,7 +205,7 @@ jobs:
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images --STRIP_BINARIES="$STRIP_BINARIES"; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
