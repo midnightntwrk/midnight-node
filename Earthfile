@@ -1420,11 +1420,16 @@ build:
     # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
     # (local, CI=false); otherwise cargo would re-link every binary on the next run even
     # when its inputs are unchanged.
+    # Shipped binaries are stripped: symbols make bindiffing a patched release for an embargoed
+    # fix trivial. Post-build rather than profile.release.strip, so wasm-builder can't inherit it.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
-        && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
+        && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/ \
+        && strip --strip-all /artifacts-$NATIVEARCH/midnight-node \
+            /artifacts-$NATIVEARCH/midnight-node-toolkit \
+            /artifacts-$NATIVEARCH/aiken-deployer
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
