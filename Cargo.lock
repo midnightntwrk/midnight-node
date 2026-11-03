@@ -7679,7 +7679,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto"
 version = "1.1.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=base-crypto-1.1.1-rc.2#516074e8e624dce1fc4b3947dc72123b471239df"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=base-crypto-1.1.1#516074e8e624dce1fc4b3947dc72123b471239df"
 dependencies = [
  "anyhow",
  "atomic-write-file",
@@ -7711,7 +7711,7 @@ dependencies = [
 [[package]]
 name = "midnight-base-crypto-derive"
 version = "1.1.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=base-crypto-derive-1.1.0-rc.2#4a748f74c9f461e065bfebf14e27d59d6e3d4b92"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=base-crypto-derive-1.1.0#4a748f74c9f461e065bfebf14e27d59d6e3d4b92"
 dependencies = [
  "proc-macro2",
  "quote 1.0.45",
@@ -7809,7 +7809,7 @@ dependencies = [
 [[package]]
 name = "midnight-coin-structure"
 version = "3.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=coin-structure-3.0.1-rc.1#3724c05c96be9aa3e7a61c7a796cff29238955b3"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=coin-structure-3.0.1#3724c05c96be9aa3e7a61c7a796cff29238955b3"
 dependencies = [
  "fake",
  "lazy_static",
@@ -7925,7 +7925,7 @@ dependencies = [
 [[package]]
 name = "midnight-ledger-static"
 version = "10.0.0"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-ledger-9.1.0.1-rc.2#3e69c5e3092fa29c1e8b1728a68fc3ca98774e34"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-ledger-9.1.0.1#3e69c5e3092fa29c1e8b1728a68fc3ca98774e34"
 dependencies = [
  "proc-macro2",
  "quote 1.0.45",
@@ -7964,7 +7964,7 @@ dependencies = [
 [[package]]
 name = "midnight-ledger-v9"
 version = "1.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-ledger-9.1.0.1-rc.2#3e69c5e3092fa29c1e8b1728a68fc3ca98774e34"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-ledger-9.1.0.1#3e69c5e3092fa29c1e8b1728a68fc3ca98774e34"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -8443,7 +8443,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-runtime"
 version = "4.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-onchain-runtime-4.0.1-rc.2#1a1ecc215c57de483bd07c142a4ed6bade5764c9"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-onchain-runtime-4.0.1#1a1ecc215c57de483bd07c142a4ed6bade5764c9"
 dependencies = [
  "derive-where",
  "enum_index",
@@ -8487,7 +8487,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-state"
 version = "4.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=onchain-state-4.0.1-rc.1#b565356fda5d05bec3e5c4f31a289c90021e0f50"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=onchain-state-4.0.1#b565356fda5d05bec3e5c4f31a289c90021e0f50"
 dependencies = [
  "derive-where",
  "fake",
@@ -8528,7 +8528,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-vm"
 version = "4.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=onchain-vm-4.0.1-rc.2#a37f9471e556515a0ac791f4dffdeb8a5c73b091"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=onchain-vm-4.0.1#a37f9471e556515a0ac791f4dffdeb8a5c73b091"
 dependencies = [
  "derive-where",
  "fake",
@@ -8725,7 +8725,7 @@ dependencies = [
 [[package]]
 name = "midnight-serialize"
 version = "1.2.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=serialize-1.2.1-rc.1#fd8cae5f12ab2e311b216d52855beaa0c6ece8ba"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=serialize-1.2.1#fd8cae5f12ab2e311b216d52855beaa0c6ece8ba"
 dependencies = [
  "crypto",
  "konst",
@@ -8768,7 +8768,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage"
 version = "3.0.0"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=storage-3.0.0-rc.1#a7454030bfd876d18ffdc0c2943b47e1209c0a68"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=storage-3.0.0#a7454030bfd876d18ffdc0c2943b47e1209c0a68"
 dependencies = [
  "crypto",
  "derive-where",
@@ -8787,7 +8787,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage-core"
 version = "1.2.3"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=storage-core-1.2.3-rc.2#07a07ed568a7b7d91185d8aa7e56a6f56f316e43"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=storage-core-1.2.3#07a07ed568a7b7d91185d8aa7e56a6f56f316e43"
 dependencies = [
  "archery",
  "crypto",
@@ -8813,7 +8813,7 @@ dependencies = [
 [[package]]
 name = "midnight-storage-macros"
 version = "1.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=storage-macros-1.0.1-rc.1#875209a36859e283d7e29401ad280f986371c3ee"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=storage-macros-1.0.1#875209a36859e283d7e29401ad280f986371c3ee"
 dependencies = [
  "midnight-serialize-macros",
  "proc-macro2",
@@ -8824,7 +8824,7 @@ dependencies = [
 [[package]]
 name = "midnight-transient-crypto"
 version = "2.2.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=transient-crypto-2.2.0-rc.1#a01a1ea0270d2e8a1f9a58f0e3cf5ceb029283e1"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=transient-crypto-2.2.0#30830e00e6072d959d01b162fcd1d3983c43210a"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -8835,7 +8835,6 @@ dependencies = [
  "flate2",
  "futures",
  "group 0.13.0",
- "k256 0.13.4",
  "lazy_static",
  "lru 0.18.2",
  "midnight-base-crypto",
@@ -8852,7 +8851,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "sha2 0.11.0",
- "signature 2.2.0",
+ "subtle 2.6.1",
  "tracing",
  "zeroize",
 ]
@@ -8860,7 +8859,7 @@ dependencies = [
 [[package]]
 name = "midnight-transient-crypto"
 version = "3.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=transient-crypto-3.0.1-rc.1#83d909aacb03657e1cb6be6bf99a648ba1c95d2b"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=transient-crypto-3.0.1#83d909aacb03657e1cb6be6bf99a648ba1c95d2b"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -8942,7 +8941,7 @@ dependencies = [
 [[package]]
 name = "midnight-zkir"
 version = "2.2.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=zkir-2.2.0-rc.4#b15b1b0ba18180f93600d8e556c8f1574b5c8e36"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=crate-zkir-2.2.0#da6d984750cb98a0c6aa99264ade5c09cd367791"
 dependencies = [
  "anyhow",
  "const-hex",
@@ -9026,7 +9025,7 @@ dependencies = [
 [[package]]
 name = "midnight-zswap"
 version = "9.0.1"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=zswap-9.0.1-rc.2#6f97cd22a8867fc18a25feb8e9761ce06ce4a5a7"
+source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=zswap-9.0.1#6f97cd22a8867fc18a25feb8e9761ce06ce4a5a7"
 dependencies = [
  "anyhow",
  "derive-where",
