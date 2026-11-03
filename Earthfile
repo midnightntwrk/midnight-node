@@ -53,6 +53,9 @@ ARG --global IMAGE_REPO=midnight-node
 # named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
 ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
 
+# Strip symbols and debuginfo from the shipped binaries in +build
+ARG --global STRIP_BINARIES=false
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -1455,6 +1458,14 @@ build:
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
+
+    # Private clones strip so a patched release cannot be bindiffed to locate an embargoed fix.
+    # Post-build rather than profile.release.strip, so wasm-builder cannot inherit it.
+    IF [ "$STRIP_BINARIES" = "true" ]
+        RUN strip --strip-all /artifacts-$NATIVEARCH/midnight-node \
+            /artifacts-$NATIVEARCH/midnight-node-toolkit \
+            /artifacts-$NATIVEARCH/aiken-deployer
+    END
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
