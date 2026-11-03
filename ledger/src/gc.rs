@@ -322,11 +322,17 @@ pub fn pin_roots(wrappers: &[Vec<u8>]) -> Vec<(Vec<u8>, PinnedRoot)> {
 /// invisible to it); otherwise returns `Ok((0, hold))`. Returns
 /// `(culled nodes, hold)`; `Err` only when no storage is initialised.
 pub fn collect_garbage(budget: Duration) -> Result<(usize, Duration), String> {
-	fn gc<D: DB + 'static>(budget: Duration) -> (usize, Duration) {
+	try_collect_garbage(budget).map(|(culled, hold)| (culled.unwrap_or(0), hold))
+}
+
+/// As [`collect_garbage`], but tells a refused sweep apart from one that culled
+/// nothing: `Ok((None, hold))` when the write cache was dirty and `gc` was not called.
+pub fn try_collect_garbage(budget: Duration) -> Result<(Option<usize>, Duration), String> {
+	fn gc<D: DB + 'static>(budget: Duration) -> (Option<usize>, Duration) {
 		let storage = default_storage::<D>();
 		let start = Instant::now();
 		let culled = storage.with_backend(|backend| {
-			if backend.get_write_cache_len() > 0 { 0 } else { backend.gc(budget) }
+			if backend.get_write_cache_len() > 0 { None } else { Some(backend.gc(budget)) }
 		});
 		(culled, start.elapsed())
 	}
@@ -656,9 +662,11 @@ mod tests {
 		let _w = persist_tagged(&arena(), tag(1004), &inner);
 		assert!(write_cache_len().unwrap() > 0);
 		assert_eq!(collect_garbage(Duration::from_millis(50)).unwrap().0, 0);
+		assert_eq!(try_collect_garbage(Duration::from_millis(50)).unwrap().0, None);
 		flush();
-		// With a clean cache the slice runs (it may legitimately cull nothing).
-		assert!(collect_garbage(Duration::from_millis(50)).is_ok());
+		// With a clean cache the slice runs (it may legitimately cull nothing). Not
+		// asserting `Some`: non-gc tests share the arena and may dirty the cache again.
+		assert!(try_collect_garbage(Duration::from_millis(50)).is_ok());
 	}
 
 	#[test]
