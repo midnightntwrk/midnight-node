@@ -522,14 +522,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					storage_config,
 					tx_filter_config,
 				)?;
-				// TODO: also revert BABE aux data (epoch changes, block weights) via
-				// `sc_consensus_babe::revert`, gated on `BabeApi` being present at best. Today only
-				// GRANDPA aux data is reverted, so reverting across the AURA→BABE flip (see
-				// `flip_finality_hold`) leaves stale BABE epoch-tree entries behind.
-				let aux_revert = Box::new(|client, _, blocks| {
-					sc_consensus_grandpa::revert(client, blocks)?;
-					Ok(())
-				});
+				let aux_revert =
+					Box::new(|client: std::sync::Arc<service::FullClient>, backend, blocks| {
+						crate::babe_authoring::revert(client.clone(), backend, blocks)?;
+						sc_consensus_grandpa::revert(client, blocks)?;
+						Ok(())
+					});
 				Ok((cmd.run(client, backend, Some(aux_revert)), task_manager))
 			})
 		},

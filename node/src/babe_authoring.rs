@@ -130,6 +130,34 @@ where
 	}
 }
 
+/// Reverts BABE's aux data (epoch tree and block weights) for the `revert` subcommand.
+///
+/// Without it a revert across the flip leaves the flip block seeded as an epoch-tree root after
+/// the block itself is gone, and the next flip fails to seed. `sc_consensus_babe::revert` reads
+/// `BabeApi::configuration`, which a runtime from before the pallet-babe upgrade lacks; such a
+/// chain has no BABE aux data, so the call is skipped.
+pub fn revert<C, B>(
+	client: Arc<C>,
+	backend: Arc<B>,
+	blocks: NumberFor<Block>,
+) -> sp_blockchain::Result<()>
+where
+	C: AuxStore
+		+ HeaderMetadata<Block, Error = sp_blockchain::Error>
+		+ HeaderBackend<Block>
+		+ ProvideRuntimeApi<Block>
+		+ UsageProvider<Block>,
+	C::Api: BabeApi<Block>,
+	B: sc_client_api::Backend<Block>,
+{
+	let best = client.info().best_hash;
+	if client.runtime_api().api_version::<dyn BabeApi<Block>>(best)?.is_none() {
+		log::info!(target: LOG_TARGET, "BabeApi is not implemented at {best:?}; no BABE aux data to revert");
+		return Ok(());
+	}
+	sc_consensus_babe::revert(client, backend, blocks)
+}
+
 pub(crate) fn placeholder_configuration(
 	aura_slot_duration: SlotDuration,
 	slots_per_epoch: u32,
