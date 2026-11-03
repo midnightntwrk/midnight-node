@@ -17,6 +17,35 @@ GitHub artifact attestations use Sigstore under the hood but are fully managed b
 3. The attestation is stored in GitHub's attestation API, linked to the image digest
 4. Consumers verify with `gh attestation verify`, which checks the attestation against GitHub's API
 
+### Keyed Signing (opt-in)
+
+`actions/attest` needs GitHub Enterprise Cloud for private and internal repositories, so the release attestation steps only run in `midnightntwrk/midnight-node`. A repository that can't attest (for example a private fork) can sign its releases with cosign and an AWS KMS key instead. Set these Actions variables on the repository or its organisation:
+
+| Variable | Value |
+|----------|-------|
+| `SIGNING_KMS_KEY` | KMS key ID, alias or ARN, used as `awskms:///<value>` |
+| `SIGNING_AWS_ROLE_ARN` | IAM role assumed through GitHub OIDC. It needs `kms:Sign` and `kms:GetPublicKey` on the key |
+| `SIGNING_AWS_REGION` | Region of the key |
+
+When `SIGNING_KMS_KEY` is unset, every signing step is skipped. When it is set, `release-image.yml` signs:
+
+- the release-tagged node and toolkit images, by digest. The signature is pushed to the image's own registry
+- each release tarball, uploaded as `<tarball>.sig`
+- the combined `SHA256SUMS`, uploaded as `SHA256SUMS.sig`
+
+Signatures are not uploaded to the public Rekor transparency log (`--tlog-upload=false`), so a private repository publishes nothing about its releases. cosign is pinned to v2 because v3 rejects that flag.
+
+To verify, get the public key from the key owner through a channel you already trust. A key fetched from the release being verified proves nothing. Anyone with `kms:GetPublicKey` can export it:
+
+```bash
+cosign public-key --key awskms:///<SIGNING_KMS_KEY> > cosign.pub
+
+cosign verify --key cosign.pub --insecure-ignore-tlog=true <image>@<digest>
+cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true \
+  --signature SHA256SUMS.sig SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
 ### SBOM Generation
 
 SBOMs are generated using [Syft](https://github.com/anchore/syft) in SPDX-JSON format:
