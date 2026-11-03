@@ -84,7 +84,9 @@ use {
 		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
+	midnight_primitives_ledger::{
+		LedgerMetricsExt, LedgerStatesExt, LedgerStorageDb, LedgerStorageExt,
+	},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -181,6 +183,20 @@ lazy_static! {
 			.build();
 }
 
+/// Keep an intra-block state addressable past this host call: it is not persisted, so
+/// dropping the `Sp` would `uncache` it. Holding the live `Arc` also lets later reads of
+/// the same tip skip deserialization via the arena's `sp_cache`.
+#[cfg(feature = "std")]
+fn hold_intermediate<D: DB>(
+	externalities: &mut dyn Externalities,
+	sp: Sp<Ledger<D>, D>,
+) -> Result<(), LedgerApiError> {
+	LedgerStatesExt::hold(externalities, Box::new(sp)).map_err(|e| {
+		log::error!(target: LOG_TARGET, "Failed to hold intermediate ledger state: {e:?}");
+		LedgerApiError::HostApiError
+	})
+}
+
 #[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
@@ -230,25 +246,6 @@ where
 		}
 	}
 
-	pub fn pre_fetch_storage(
-		mut externalities: &mut dyn Externalities,
-		state_key: &[u8],
-	) -> Result<(), LedgerApiError> {
-		let api = api::new();
-		let typed_key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
-		let key: ArenaKey<D::Hasher> = typed_key.into();
-
-		let now = std::time::Instant::now();
-		default_storage::<D>().with_backend(|backend| backend.pre_fetch(key.hash(), None, true));
-		let elapsed = now.elapsed().as_secs_f64();
-
-		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
-		if let Some(metrics) = maybe_metrics {
-			metrics.observe_storage_fetch_time(elapsed, "ledger_state");
-		}
-		Ok(())
-	}
-
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
 		let now = std::time::Instant::now();
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
@@ -260,8 +257,19 @@ where
 		}
 	}
 
+	/// Apply the post-block transformation and produce the post-block ledger
+	/// state.
+	///
+	/// # Persist / keep-alive contract
+	///
+	/// The post-block tip is the one state per block that is `persist()`ed: a GC root kept
+	/// for RPC and history. Nothing unpersists it, so sibling forks persisting the same tip
+	/// each hold their own count.
+	///
+	/// Then drops every held intermediate, the input included, so the following storage
+	/// flush `uncache`s them instead of writing them to disk.
 	pub fn post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
@@ -305,6 +313,7 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 		ledger.persist();
+		LedgerStatesExt::release_all(externalities);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -318,8 +327,12 @@ where
 	/// per-transaction via prevalidation, and fullness is clamped before applying), so this is
 	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
 	/// remain fallible — those represent genuine bugs rather than block-content conditions.
+	///
+	/// # Persist / keep-alive contract
+	///
+	/// Same contract as [`Self::post_block_update`].
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
@@ -328,6 +341,7 @@ where
 		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 		ledger.persist();
+		LedgerStatesExt::release_all(externalities);
 		Ok(state_root)
 	}
 
@@ -335,6 +349,15 @@ where
 		crate::utils::find_crate_version(CRATE_NAME).unwrap_or(b"unknown".into())
 	}
 
+	/// Apply a user transaction and produce the resulting ledger state.
+	///
+	/// # Persist / keep-alive contract
+	///
+	/// The resulting state is *not* persisted; [`LedgerStatesExt`] keeps it addressable
+	/// until the post-block update.
+	///
+	/// The input is not released, so a FRAME storage rollback after this returns can
+	/// still resolve the `StateKey` it reverts to.
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -394,7 +417,7 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let (mut new_ledger, applied_stage) =
+		let (new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -521,13 +544,13 @@ where
 		// Only update state after no errors
 		log::trace!(
 			target: LOG_TARGET,
-			"⏱️  Persisting ledger (elapsed_ms={})",
+			"⏱️  Retaining ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		new_ledger.persist();
+		hold_intermediate(externalities, new_ledger)?;
 		log::trace!(
 			target: LOG_TARGET,
-			"⏱️  Ledger persisted (elapsed_ms={})",
+			"⏱️  Ledger retained (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
@@ -549,6 +572,11 @@ where
 		Ok(event)
 	}
 
+	/// Apply a system transaction and produce the resulting ledger state.
+	///
+	/// # Persist / keep-alive contract
+	///
+	/// Same contract as [`Self::apply_transaction`].
 	pub fn apply_system_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -569,7 +597,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -579,7 +607,7 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		hold_intermediate(externalities, ledger)?;
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -623,7 +651,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -633,7 +661,7 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		hold_intermediate(externalities, ledger)?;
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -1141,9 +1169,28 @@ where
 		state.get_parameters()
 	}
 
+	/// Load the ledger state `state_key` addresses.
+	///
+	/// Every read and write path funnels through here, including mid-block reads of an
+	/// intermediate tip (`pre_dispatch`, the weight macro). For a retained state the first
+	/// deref resolves via the arena's `sp_cache` to the live `Arc`, skipping
+	/// deserialization. The handle is refcount-balanced, so dropping it can't uncache a
+	/// retained state.
 	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
-		default_storage().arena.get_lazy(&key).map_err(|e| {
+		let storage = default_storage::<D>();
+		// `get_lazy` returns `Ok` for a key absent from the arena and panics on first deref
+		// (`force_as_arc`). Probe the root node so an unresolvable key is a clean
+		// `NoLedgerState`; `has_ledger_state` relies on this. The backend's `get` also sees
+		// unflushed `Create`s, so never-persisted states pass. A `Direct` key embeds its node
+		// inline, so there is nothing to probe.
+		if let ArenaKey::Ref(hash) = &key.key
+			&& !storage.with_backend(|backend| backend.get(hash).is_some())
+		{
+			log::error!(target: LOG_TARGET, "Ledger State {} not in arena", hex::encode(hash.0));
+			return Err(LedgerApiError::NoLedgerState);
+		}
+		storage.arena.get_lazy(&key).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error loading Ledger State: {e:?}");
 			LedgerApiError::NoLedgerState
 		})
@@ -1911,5 +1958,72 @@ mod tests {
 		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	/// A FRAME storage rollback after a successful apply reverts `StateKey` to the apply's
+	/// input. That input must still resolve, so no apply may release it.
+	#[test]
+	fn intermediate_states_survive_rollback_until_post_block_update() {
+		use mn_ledger_local::dust::DustPublicKey;
+		use transient_crypto_local::curve::Fr;
+
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+		let mut genesis =
+			default_storage::<DefaultDB>()
+				.arena
+				.alloc(Ledger::new(LedgerState::<DefaultDB>::new("undeployed")));
+		genesis.persist();
+		let genesis_key = api.tagged_serialize(&genesis.as_typed_key()).unwrap();
+
+		let root_count = |state_key: &[u8]| {
+			let typed: TypedArenaKey<Ledger<DefaultDB>, _> =
+				midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).unwrap();
+			let key: ArenaKey<_> = typed.into();
+			default_storage::<DefaultDB>()
+				.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+		};
+		let resolves = |state_key: &[u8]| TestBridge::get_ledger(&api, state_key).is_ok();
+		let tx = |nonce: u8| {
+			api.tagged_serialize(&SystemTransaction::CNightGeneratesDustUpdate {
+				events: vec![CNightGeneratesDustEvent {
+					value: 1_000,
+					owner: DustPublicKey(Fr::from(7u64)),
+					time: Timestamp::from_secs(BLOCK_TBLOCK),
+					action: CNightGeneratesDustActionType::Create,
+					nonce: InitialNonce(HashOutput([nonce; 32])),
+				}],
+			})
+			.expect("serialize system tx")
+		};
+		let apply = |ext: &mut sp_io::TestExternalities, state_key: &[u8], nonce: u8| {
+			TestBridge::apply_system_transaction(
+				&mut ext.ext(),
+				state_key,
+				&tx(nonce),
+				block_context(),
+			)
+			.expect("system tx applies")
+			.state_root
+		};
+
+		let mut ext = sp_io::TestExternalities::default();
+		ext.register_extension(LedgerStatesExt::default());
+
+		let first = apply(&mut ext, &genesis_key, 1);
+		assert_eq!(root_count(&first), None, "an intermediate must never be a GC root");
+		apply(&mut ext, &first, 2);
+		assert!(resolves(&first), "a rollback to the input must find it still held");
+		let third = apply(&mut ext, &first, 3);
+		assert_eq!(root_count(&genesis_key), Some(1), "the persisted genesis is untouched");
+
+		let tip = TestBridge::apply_post_block_update(&mut ext.ext(), &third, block_context())
+			.expect("post-block update applies");
+		assert_eq!(root_count(&tip), Some(1), "the post-block tip is persisted at rc=1");
+		// Only `first` is checked: on this near-empty ledger the later states get `Direct`
+		// keys, which embed their node and so always resolve.
+		assert!(!resolves(&first), "the post-block update must drop every intermediate");
+		assert!(resolves(&tip));
 	}
 }

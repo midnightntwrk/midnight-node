@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use midnight_primitives_ledger::{
-	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt,
+	LedgerMetrics, LedgerMetricsExt, LedgerStatesExt, LedgerStorage, LedgerStorageExt,
 };
 use sc_client_api::execution_extensions::ExtensionsFactory as ExtensionsFactoryT;
 use sp_externalities::Extensions;
@@ -51,6 +51,7 @@ where
 
 		exts.register(LedgerMetricsExt::new(self.ledger_metrics.clone()));
 		exts.register(LedgerStorageExt::new(self.ledger_storage.clone()));
+		exts.register(LedgerStatesExt::default());
 
 		exts
 	}

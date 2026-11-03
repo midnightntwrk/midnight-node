@@ -12,17 +12,15 @@
 // limitations under the License.
 
 use crate::ledger_8::{
-	ArenaKey, BindingKind, BlockContext, ContractAddress, ContractState, DB, DUST_EXPECTED_FILES,
-	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader, MidnightDataProvider,
-	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
-	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
-	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
+	BindingKind, BlockContext, ContractAddress, ContractState, DB, DUST_EXPECTED_FILES,
+	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, MidnightDataProvider, Offer,
+	OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen, Resolver,
+	SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged, Timestamp,
+	Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
 	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState,
 	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use crate::replay_stats::{FAILED_TXS, PARTIALLY_FAILED_TXS};
-use derive_where::derive_where;
 use hex::encode as hex_encode;
 use lazy_static::lazy_static;
 use std::{
@@ -81,30 +79,6 @@ pub struct LedgerContext<D: DB + Clone> {
 	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
 	pub resolver: MutexTokio<&'static Resolver>,
-}
-
-#[derive(Debug, Storable)]
-#[derive_where(Clone)]
-#[storable(db = D)]
-struct StorableLedgerState<D: DB> {
-	state: LedgerState<D>,
-	block_fullness: StorableSyntheticCost<D>,
-}
-
-impl<D: DB> StorableLedgerState<D> {
-	fn new(state: LedgerState<D>) -> Self {
-		Self { state, block_fullness: StorableSyntheticCost::zero() }
-	}
-}
-
-impl<D: DB> Tagged for StorableLedgerState<D> {
-	fn tag() -> std::borrow::Cow<'static, str> {
-		<LedgerState<D> as Tagged>::tag()
-	}
-
-	fn tag_unique_factor() -> String {
-		<LedgerState<D> as Tagged>::tag_unique_factor()
-	}
 }
 
 impl<D: DB + Clone> LedgerContext<D> {
@@ -358,9 +332,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
 		let storage = default_storage::<D>();
-		let ledger = StorableLedgerState::new(state.clone());
-		let sp = storage.arena.alloc(ledger);
-		crate::ledger_8::serialize(&sp.as_typed_key()).ok()
+		let sp = storage.arena.alloc(state.clone());
+		super::serialize_untagged(&sp.as_typed_key()).ok()
 	}
 
 	/// Genesis blocks skip balancing. `replay` selects the relaxed verification for
@@ -737,6 +710,7 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::ledger_8::mn_ledger_storage as storage;
 	use std::{
 		sync::{
 			Arc,

@@ -1249,11 +1249,12 @@ test-pallet-fixtures:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Limit compilation as well as execution to the fixture tests' library.
+    # Limit compilation as well as execution to the fixture tests' targets.
+    # `persist_refcount` needs `test-utils` (its `required-features`), or cargo silently skips it.
     WITH DOCKER
         RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
-            --package pallet-midnight --lib \
-            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+            --package pallet-midnight --features test-utils --lib --test persist_refcount \
+            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/) | binary_id(pallet-midnight::persist_refcount)'
     END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
