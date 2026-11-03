@@ -1158,7 +1158,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			network,
 			sync: Arc::new(sync_service),
 			notification_service: grandpa_notification_service,
-			voting_rule: sc_consensus_grandpa::VotingRulesBuilder::default().build(),
+			// Hold finality below a pending AURA→BABE flip so `revert` can still undo it.
+			voting_rule: sc_consensus_grandpa::VotingRulesBuilder::default()
+				.add(crate::flip_finality_hold::FlipFinalityHold::<FullBackend>::new(
+					crate::flip_finality_hold::DEFAULT_EXTRA_CONFIRMATIONS,
+				))
+				.build(),
 			prometheus_registry,
 			shared_voter_state,
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
