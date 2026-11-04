@@ -1,5 +1,7 @@
 # Root cell targets.
 
+export_file(name = "readme", src = "README.md", visibility = ["PUBLIC"])
+
 # WASM_BINARY = None stub for the runtime. runtime/src/lib.rs does
 # include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs")); the real file is
 # emitted by substrate-wasm-builder (build.rs), which spawns cargo and can't

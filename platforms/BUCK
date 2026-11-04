@@ -40,3 +40,16 @@ platform(
     ],
     visibility = ["PUBLIC"],
 )
+
+# linux-arm64 twin, for iterating buck2 locally on an arm64 dev box via Earthbuild
+# without x86 emulation. The reindeer graph already carries `linux-arm64` branches,
+# so this selects them deterministically (os:linux + cpu:arm64). CI still pins
+# linux-x86_64 for CAS alignment with the x86 fleet; this is a local-loop convenience.
+platform(
+    name = "linux-arm64",
+    constraint_values = [
+        "prelude//os/constraints:linux",
+        "prelude//cpu/constraints:arm64",
+    ],
+    visibility = ["PUBLIC"],
+)

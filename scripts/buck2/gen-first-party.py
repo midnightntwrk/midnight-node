@@ -176,38 +176,75 @@ ENV_HOOKS = {
 # external files at their repo-relative paths — with crate_root/CARGO_MANIFEST_DIR
 # prefixed by <rel>. The external files live in other buck packages, so they're
 # pulled via export_file labels (see EXPORTS). Value: {label: dest-in-tree}.
-# Starlark `resources` expr per package whose TEST targets read files at runtime.
-# See the emit_target comment: resource `n` lands at <package>/<n>, project-relative.
+# buck2 (the re-cache platform) runs rust tests IN-PLACE at the project root, where the
+# full real repo tree is present - so tests read the real res/, docs/, Cargo.toml etc.
+# via their own workspace-root walk, no copied fixtures and no MN_WORKSPACE_ROOT. buck2
+# does NOT materialize `resources` at a path the test can read CWD-relative here; what a
+# resource DOES do is make the file a DECLARED INPUT, so the (remote-cached) test action
+# re-runs when it changes. So resources below exist purely for cache-correctness - a
+# drift/config test must re-run when its fixture changes - and are listed, not placed.
+# A filegroup tracks a whole res/ subdir in one entry. (Verified in-container: the test
+# reads the in-place tree and the listed inputs re-trigger it; a `resources` MAP keyed at
+# <package>/<key> does NOT work, as the files never appear at that path under in-place
+# execution.)
 TEST_RESOURCES = {
     # res tests: locate_workspace_root() walks up from CWD (= project root) for
     # res/cfg/default.toml, then read cfg presets + chainspec/openrpc/genesis blobs.
-    # Globbed relative to the res package, they materialize back at res/… .
+    # Globbed relative to the res package (same-package), tracked as inputs.
     "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
-    # node cfg::tests read <root>/res/cfg/*.toml and openrpc::tests read
-    # <root>/docs/openrpc.json, with MN_WORKSPACE_ROOT=node/test-fixtures. These
-    # are same-package source resources: buck2 stages only same-package attrs.source
-    # onto RE workers - a genrule-output or cross-package target-ref resource is NOT
-    # staged (proven red on RE). So node/test-fixtures/ is assembled at build time by
-    # scripts/buck2/stage-node-fixtures.sh (run in Earthfile +buck2-prep, and by
-    # local devs before `buck2 test //node/...`) and gitignored: no committed dupe.
-    "midnight-node": 'glob(["test-fixtures/**"])',
-    # docs_tests reads a workspace-spanning fixture set (res/cfg, runtime/src/lib.rs,
-    # node+metadata Cargo.toml, README.md, util/toolkit source, docs/*.md), copied under
-    # docs/test-fixtures/ by sync-test-fixtures.sh; MN_WORKSPACE_ROOT points root() here.
-    "docs": 'glob(["test-fixtures/**"])',
+    # node: only the LIB unit-test reads fixtures (see
+    # TEST_TARGET_RESOURCES["midnight-node-unit-test"]); the integration tests read
+    # none, so no package-wide entry.
+    # docs_tests reads res/cfg, the runtime/node/metadata manifests, README, toolkit
+    # source and docs/*.md - all from the real in-place tree via its root() walk. Listed
+    # here only to declare them as inputs (so a version bump re-runs the drift test).
+    "docs": '[\n'
+            '        "root//res:cfg-default",\n'
+            '        "root//runtime:lib-rs",\n'
+            '        "root//runtime:cargo-toml",\n'
+            '        "root//node:cargo-toml",\n'
+            '        "root//metadata:cargo-toml",\n'
+            '        "root//:readme",\n'
+            '        "root//util/toolkit:fetcher-runtimes",\n'
+            '    ] + glob(["*.md"])',
 }
 
 # Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
 # targets need different runtime files. Takes precedence over TEST_RESOURCES.
+# res/ input set shared by toolkit's unit-test and cli_tests (declared inputs only; both
+# read the real in-place tree - unit-test via test_paths::res()'s walk, cli_tests after
+# chdir to CARGO_MANIFEST_DIR then ../../res). Filegroups track whole subdirs; the two
+# genesis blobs by name (res/genesis holds 23, only these two are read).
+_TOOLKIT_RES = (
+    '        "root//res:fg-cfg",\n'
+    '        "root//res:fg-dev",\n'
+    '        "root//res:fg-test-contract",\n'
+    '        "root//res:fg-test-tx-deserialize",\n'
+    '        "root//res:genesis-block-undeployed",\n'
+    '        "root//res:genesis-state-undeployed",\n'
+)
+
 TEST_TARGET_RESOURCES = {
+    # node unit-test reads res/cfg/*.toml, docs/openrpc.json and res/mock-bridge-data/
+    # from the in-place tree; listed as inputs for cache-correctness.
+    "midnight-node-unit-test": '[\n'
+        '        "root//docs:openrpc-json",\n'
+        '        "root//res:fg-cfg",\n'
+        '        "root//res:fg-mock-bridge-data",\n'
+        '    ]',
     # cached_context reads test-data/genesis/genesis_block_undeployed.mn at runtime
     # (via CARGO_MANIFEST_DIR, resolved at runtime after the env!-> std::env::var fix).
     "midnight-node-toolkit-cached_context": 'glob(["test-data/genesis/**"])',
-    # toolkit unit tests read test-data/** (same-package) via manifest_dir(), and walk to
-    # res fixtures copied under test-fixtures/ (see sync-test-fixtures.sh + UNIT_TEST_ENV).
-    "midnight-node-toolkit-unit-test": 'glob(["test-data/**", "test-fixtures/**"])',
-    # cli_tests reads the staged mirror under test-fixtures/ (see MN_CLI_FIXTURES_ROOT).
-    "midnight-node-toolkit-cli_tests": 'glob(["test-fixtures/**"])',
+    # toolkit unit tests read test-data/** (same-package, via manifest_dir()) and a broad
+    # res/ set (via test_paths::res()'s walk to the real tree).
+    "midnight-node-toolkit-unit-test":
+        '[\n' + _TOOLKIT_RES + '    ] + glob(["test-data/**"])',
+    # cli_tests (trycmd) chdirs to CARGO_MANIFEST_DIR (util/toolkit) and runs the README +
+    # tests/cmd/*.toml cases, which exec the toolkit bin and read ../../res/... from the
+    # real tree. The corpus is same-package; the res block is the shared input set.
+    "midnight-node-toolkit-cli_tests":
+        '[\n' + _TOOLKIT_RES + '        "README.md",\n'
+        '    ] + glob(["tests/cmd/*.toml"])',
 }
 
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
@@ -256,7 +293,27 @@ EXPORTS = {
     "midnight-node": [
         'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
     ],
+    "docs": [
+        'export_file(name = "openrpc-json", src = "openrpc.json", visibility = ["PUBLIC"])',
+    ],
+    "midnight-node-runtime": [
+        'export_file(name = "lib-rs", src = "src/lib.rs", visibility = ["PUBLIC"])',
+        'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
+    ],
+    "midnight-node-metadata": [
+        'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
+    ],
     "midnight-node-res": [
+        # Filegroups over whole subdirs, listed as test `resources` for input-tracking.
+        'filegroup(name = "fg-cfg", srcs = glob(["cfg/*.toml"]), visibility = ["PUBLIC"])',
+        'filegroup(name = "fg-dev", srcs = glob(["dev/*.json"]), visibility = ["PUBLIC"])',
+        'filegroup(name = "fg-test-contract", srcs = glob(["test-contract/*.mn"]), visibility = ["PUBLIC"])',
+        'filegroup(name = "fg-test-tx-deserialize", srcs = glob(["test-tx-deserialize/*.mn"]), visibility = ["PUBLIC"])',
+        'filegroup(name = "fg-mock-bridge-data", srcs = glob(["mock-bridge-data/*.json"]), visibility = ["PUBLIC"])',
+        'export_file(name = "cfg-default", src = "cfg/default.toml", visibility = ["PUBLIC"])',
+        'export_file(\n    name = "genesis-state-undeployed",\n'
+        '    src = "genesis/genesis_state_undeployed.mn",\n'
+        '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "test-contract-addr",\n'
         '    src = "test-contract/contract_address_undeployed.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
@@ -278,6 +335,7 @@ EXPORTS = {
     # `midnight_node_toolkit` (underscore); cargo names it `midnight-node-toolkit`
     # (hyphen). Provide a hyphen-named copy so the usage output matches the README.
     "midnight-node-toolkit": [
+        'export_file(name = "fetcher-runtimes", src = "src/fetcher/runtimes.rs", visibility = ["PUBLIC"])',
         'genrule(\n    name = "toolkit-hyphen-bin",\n'
         '    out = "midnight-node-toolkit",\n'
         '    cmd = "cp $(location :midnight-node-toolkit-bin) $OUT",\n'
@@ -291,9 +349,9 @@ EXPORTS = {
 TEST_ENV_HOOKS = {
     ("midnight-node-toolkit", "cli_tests"): {
         "CARGO_BIN_EXE_midnight-node-toolkit": "$(location :toolkit-hyphen-bin)",
-        # chdir target: a staged mirror of the crate dir (2 levels deep) so the trycmd
-        # corpus' tests/cmd/*.toml, README.md, and `../../res/...` paths all resolve.
-        "MN_CLI_FIXTURES_ROOT": "util/toolkit/test-fixtures/util/toolkit",
+        # No MN_CLI_FIXTURES_ROOT: cli_tests falls back to CARGO_MANIFEST_DIR (util/toolkit)
+        # and chdirs there in the in-place tree, where tests/cmd/, README.md and the tomls'
+        # `../../res/...` all resolve against the real repo.
         # README show-wallet examples build ledger state -> zk-params cache dir.
         "MIDNIGHT_PP": ".zk-params",
     },
@@ -304,26 +362,21 @@ TEST_ENV_HOOKS = {
     ("midnight-node-toolkit", "cached_context"): {
         "MIDNIGHT_PP": ".zk-params",
     },
-    # docs_tests' root() reads its fixtures from docs/test-fixtures/ (see TEST_RESOURCES).
-    ("docs", "docs_tests"): {
-        "MN_WORKSPACE_ROOT": "docs/test-fixtures",
-    },
+    # docs_tests reads the real repo tree in-place via root()'s upward walk; no env.
 }
 
 # Env for a package's LIB unit-test (the tests/*.rs integration targets use
 # TEST_ENV_HOOKS instead). Same zk-params reason as above.
 UNIT_TEST_ENV = {
     "midnight-node-ledger-helpers": {"MIDNIGHT_PP": ".zk-params"},
-    # node-unit-test's cfg/openrpc tests resolve the workspace root via res's
-    # locate_workspace_root(); point it at node/ where TEST_RESOURCES stages res/
-    # and docs/openrpc.json. Only the lib unit-test (not the integration tests).
-    "midnight-node": {"MN_WORKSPACE_ROOT": "node/test-fixtures"},
-    # toolkit unit tests walk to res via test_paths::workspace_root() and some build a
-    # LedgerContext (needs the zk-params cache dir).
-    "midnight-node-toolkit": {
-        "MN_WORKSPACE_ROOT": "util/toolkit/test-fixtures",
-        "MIDNIGHT_PP": ".zk-params",
-    },
+    # buck2 runs tests in-place at the project root, so the real tree is the current dir:
+    # MN_WORKSPACE_ROOT="." anchors fixture lookups there (not a copied dir). Most reads
+    # would walk up to the same place, but node's main_chain_follower test builds its path
+    # from env!("CARGO_MANIFEST_DIR") (compile-time -> buck's ephemeral sandbox, gone at
+    # runtime) and relies on this override instead; "." makes it read the real res/.
+    "midnight-node": {"MN_WORKSPACE_ROOT": "."},
+    # toolkit unit tests reach res via test_paths::res() and build a LedgerContext.
+    "midnight-node-toolkit": {"MN_WORKSPACE_ROOT": ".", "MIDNIGHT_PP": ".zk-params"},
 }
 
 # Crates to skip emitting a unit-test target for. sc-partner-chains-consensus and

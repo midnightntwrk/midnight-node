@@ -1,3 +1,21 @@
+filegroup(name = "fg-cfg", srcs = glob(["cfg/*.toml"]), visibility = ["PUBLIC"])
+
+filegroup(name = "fg-dev", srcs = glob(["dev/*.json"]), visibility = ["PUBLIC"])
+
+filegroup(name = "fg-test-contract", srcs = glob(["test-contract/*.mn"]), visibility = ["PUBLIC"])
+
+filegroup(name = "fg-test-tx-deserialize", srcs = glob(["test-tx-deserialize/*.mn"]), visibility = ["PUBLIC"])
+
+filegroup(name = "fg-mock-bridge-data", srcs = glob(["mock-bridge-data/*.json"]), visibility = ["PUBLIC"])
+
+export_file(name = "cfg-default", src = "cfg/default.toml", visibility = ["PUBLIC"])
+
+export_file(
+    name = "genesis-state-undeployed",
+    src = "genesis/genesis_state_undeployed.mn",
+    visibility = ["PUBLIC"],
+)
+
 export_file(
     name = "test-contract-addr",
     src = "test-contract/contract_address_undeployed.mn",

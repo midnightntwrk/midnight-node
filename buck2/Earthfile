@@ -82,11 +82,14 @@ INSTALL:
         buck2 --version && test -x /usr/local/bin/bazel-remote  # bazel-remote has no --version flag; sha256 above already verifies it
 
     # binaryen (wasm-opt) for the on-chain blob genrule. apt's is too old for
-    # --signext-lowering; pin version_130. x86_64 only (the self-hosted fleet).
+    # --signext-lowering; pin version_130. The CI fleet is x86_64; arm64 is here
+    # only so an arm64 dev box can run +buck2-test-one locally via Earthbuild.
     RUN case "$(dpkg --print-architecture)" in \
           amd64) BIN_ARCH=x86_64; \
                  BIN_SHA=0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc ;; \
-          *) echo "binaryen pin is x86_64 only (fleet arch); got $(dpkg --print-architecture)" >&2 && exit 1 ;; \
+          arm64) BIN_ARCH=aarch64; \
+                 BIN_SHA=e6ae6e09ac40f4e14bc5be6f687c58e2995c84170013975fa641809dd3b480a0 ;; \
+          *) echo "unsupported arch for binaryen pin: $(dpkg --print-architecture)" >&2 && exit 1 ;; \
         esac && \
         curl -fsSL --retry 5 -o /tmp/binaryen.tgz "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-${BIN_ARCH}-linux.tar.gz" && \
         echo "${BIN_SHA}  /tmp/binaryen.tgz" | sha256sum -c - && \

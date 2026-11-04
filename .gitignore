@@ -118,13 +118,6 @@ toolkit-image.tar
 # Vendored upstream crates carry their own CI; we neither run nor pin it, and
 # zizmor skips .gitignored paths, so keep vendored .github/ out of the tree.
 /third-party/**/.github/
-# buck2 test fixtures (node, docs, util/toolkit) are assembled at build time from
-# the workspace source-of-truth by scripts/buck2/stage-test-fixtures.sh - not
-# committed copies - so they never belong in the tree. cargo reads the real tree
-# instead (MN_WORKSPACE_ROOT / MN_CLI_FIXTURES_ROOT fallback), so only buck2 uses them.
-/node/test-fixtures/
-/docs/test-fixtures/
-/util/toolkit/test-fixtures/
 
 # component-rn-draft working dir
 .rn-drafts/

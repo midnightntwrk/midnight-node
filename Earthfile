@@ -2309,11 +2309,9 @@ buck2-prep:
     DO buck2+INSTALL
     WORKDIR /work
     COPY --keep-ts --dir +buck2-src/work /
-    # <pkg>/test-fixtures/ are gitignored (no committed dupe); assemble node, docs
-    # and util/toolkit fixtures from the workspace source-of-truth so each BUCK's
-    # same-package glob can stage them onto RE workers. Not in regen.sh - see
-    # stage-test-fixtures.sh.
-    RUN scripts/buck2/stage-test-fixtures.sh
+    # No fixture staging step: tests read their runtime fixtures as buck2 `resources`
+    # mapped from the REAL repo files (see gen-first-party.py TEST_RESOURCES /
+    # TEST_TARGET_RESOURCES), so buck2 stages them into each test's run tree itself.
     DO --pass-args buck2+CONFIG
 
 #buck2-ci Build the deliverables then run the tests, both under the action cache
@@ -2354,6 +2352,20 @@ buck2-clippy:
     DO --pass-args buck2+BUCK2 --mode=clippy \
         --targets="root//... - root//third-party/... - root//wasm-deps/... - root//relay/... - attrfilter('labels', 'ci-infra', root//...)" \
         --buck2_args="--target-platforms root//platforms:linux-x86_64 $_wasm"
+
+#buck2-test-one Build+test ONE target, for the local spike loop. Defaults to the
+# native arch (PLATFORM=linux-arm64) so it runs on an arm64 dev box via Earthbuild
+# with no x86 emulation; the CI jobs keep the linux-x86_64 pin for CAS alignment.
+buck2-test-one:
+    FROM +buck2-prep
+    ARG RUN_ID=0
+    ARG --required TARGET
+    ARG PLATFORM=linux-arm64
+    RUN echo "buck2-test-one run ${RUN_ID}"
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    DO --pass-args buck2+BUCK2 --mode=test \
+        --targets="$TARGET" \
+        --buck2_args="--target-platforms root//platforms:${PLATFORM} $_wasm"
 
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
 buck2-reindeer:
