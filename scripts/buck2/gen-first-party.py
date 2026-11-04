@@ -10,7 +10,7 @@ if present). Renamed deps land in named_deps so the extern crate name matches.
 Features come from the workspace-resolved feature set (cargo's unification).
 Build scripts are NOT run — members with build.rs get a placeholder comment.
 """
-import json, os, re, sys
+import json, os, re, sys, tomllib
 from collections import defaultdict
 
 META = sys.argv[1]
@@ -18,6 +18,40 @@ only = set(sys.argv[2:])
 
 meta = json.load(open(META))
 ws_root = meta["workspace_root"]
+
+# ── workspace lints → rustc flags ────────────────────────────────────────────
+# buck2 has no notion of Cargo's [lints]; translate [workspace.lints.<tool>] into
+# the -A/-W/-D/-F flags cargo would pass, in cargo's priority order (ascending, so
+# a higher-priority entry overrides a lower one; ties keep source order). Crates
+# opt in with `[lints] workspace = true`, exactly as under cargo, and then every
+# target of that crate carries the flags - so buck2 clippy honours the repo's lint
+# policy (e.g. `clippy::all = allow`) instead of clippy's stricter defaults. The
+# root Cargo.toml stays the single source of truth. (rustc tolerates `clippy::`
+# flags, so the shared non-clippy build is unaffected.)
+with open(os.path.join(ws_root, "Cargo.toml"), "rb") as _f:
+    _ws_lints = tomllib.load(_f).get("workspace", {}).get("lints", {})
+def _lint_flags():
+    lvl = {"allow": "-A", "warn": "-W", "deny": "-D", "forbid": "-F"}
+    rows, order = [], 0
+    for tool, prefix in (("rust", ""), ("clippy", "clippy::")):
+        for name, spec in _ws_lints.get(tool, {}).items():
+            level = spec["level"] if isinstance(spec, dict) else spec
+            prio = spec.get("priority", 0) if isinstance(spec, dict) else 0
+            rows.append((prio, order, lvl[level] + prefix + name.replace("-", "_")))
+            order += 1
+    rows.sort(key=lambda r: (r[0], r[1]))
+    return [f for _, _, f in rows]
+LINT_FLAGS = _lint_flags()
+_lint_optin = {}
+def opts_into_workspace_lints(pkg):
+    mp = pkg["manifest_path"]
+    if mp not in _lint_optin:
+        try:
+            with open(mp, "rb") as f:
+                _lint_optin[mp] = tomllib.load(f).get("lints", {}).get("workspace") is True
+        except Exception:
+            _lint_optin[mp] = False
+    return _lint_optin[mp]
 # (name, req, source) -> third-party manifest key, written by gen-third-party.py
 keymap = json.load(open(os.path.join(ws_root, "third-party", "keys.json")))
 members = set(meta["workspace_members"])
@@ -423,6 +457,8 @@ def gen_buck(pkg, prefix=""):
     pdir = (prefix + "/") if prefix else ""
     node = resolve_by_id[pkg["id"]]
     features = sorted(f for f in node.get("features", []) if f != "default")
+    # Workspace lint flags, applied to every target of a crate that opts in.
+    pkg_lints = LINT_FLAGS if opts_into_workspace_lints(pkg) else []
     lt = lib_target(pkg)
     bins = [t for t in pkg["targets"] if t["kind"] == ["bin"]]
     tests = [t for t in pkg["targets"] if t["kind"] == ["test"]]  # tests/*.rs
@@ -470,7 +506,7 @@ def gen_buck(pkg, prefix=""):
 
     def emit_target(rule, name, crate, crate_root, tdeps, tnamed,
                     extra=(), extra_globs=(), wasm=None, feats=None,
-                    env_override=None, labels=None):
+                    env_override=None, labels=None, rustc_flags=()):
         out.append(f"{rule}(\n")
         out.append(f'    name = "{name}",\n')
         out.append(f'    crate = "{crate}",\n')
@@ -530,6 +566,9 @@ def gen_buck(pkg, prefix=""):
             res_expr = TEST_TARGET_RESOURCES.get(name) or TEST_RESOURCES.get(pkg["name"])
             if res_expr:
                 out.append(f'    resources = {res_expr},\n')
+        rflags = pkg_lints + list(rustc_flags)
+        if rflags:
+            out.append("    rustc_flags = [" + ", ".join(f'"{x}"' for x in rflags) + "],\n")
         for e in extra:
             out.append(e)
         emit_list_field("deps", tdeps, wasm["deps"] if wasm else None)
@@ -566,8 +605,8 @@ def gen_buck(pkg, prefix=""):
             emit_target("rust_library", f"{pkg['name']}-wasm-cdylib",
                         underscore(lt["name"]), rel_root(lt),
                         wasm_lib["deps"], wasm_lib["named"],
-                        extra=['    preferred_linkage = "shared",\n',
-                               '    rustc_flags = ["--cfg", "substrate_runtime"],\n'],
+                        extra=['    preferred_linkage = "shared",\n'],
+                        rustc_flags=["--cfg", "substrate_runtime"],
                         feats=wasm_lib["features"],
                         # The cdylib IS the blob source — it must use the stub
                         # OUT_DIR, not runtime-wasm-binary-rs (which embeds this

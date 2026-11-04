@@ -193,8 +193,8 @@ rust_library(
         "CARGO_PKG_HOMEPAGE": "",
         "OUT_DIR": "$(location root//:runtime-wasm-stub)",
     },
-    preferred_linkage = "shared",
     rustc_flags = ["--cfg", "substrate_runtime"],
+    preferred_linkage = "shared",
     deps = [
         "root//ledger:midnight-node-ledger",
         "root//pallets/c2m-bridge:pallet-c2m-bridge",

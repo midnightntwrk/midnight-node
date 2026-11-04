@@ -17,6 +17,7 @@ rust_library(
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/mn4",
         "CARGO_PKG_HOMEPAGE": "https://midnight.network",
     },
+    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
         "root//third-party:cardano-serialization-lib",
@@ -46,6 +47,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/mn4",
         "CARGO_PKG_HOMEPAGE": "https://midnight.network",
     },
+    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
         "root//third-party:cardano-serialization-lib",
