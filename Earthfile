@@ -33,7 +33,7 @@ ARG --global CACHE_KEY=local
 ARG --global CI=false
 
 # renovate: datasource=node-version depName=node versioning=node
-ARG --global NODEJS_VERSION=24.18.0
+ARG --global NODEJS_VERSION=24.22.2
 
 # renovate: datasource=npm packageName=npm
 ARG --global NPM_VERSION=12.0.2
@@ -54,6 +54,9 @@ ARG --global IMAGE_REPO=midnight-node
 # Repo this build came from, for the OCI source label (GHCR links a package to the repo
 # named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
 ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
+
+# Strip symbols and debuginfo from the shipped binaries in +build
+ARG --global STRIP_BINARIES=false
 
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
@@ -206,7 +209,7 @@ build-node-only:
     # The runtime's fork-transition feature must never be released; feature
     # unification could turn it on from any crate in the build.
     RUN ./scripts/assert-no-fork-transition.sh features -p midnight-node
-    RUN cargo auditable build -p midnight-node --locked --release
+    RUN --secret NODE_GIT_TOKEN with-git-creds cargo auditable build -p midnight-node --locked --release
 
     # cp (not mv) so the linked binary stays in the persistent /target cache (see +build).
     RUN mkdir -p /artifacts-$NATIVEARCH \
@@ -264,9 +267,9 @@ rebuild-sqlx:
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
     COPY local-environment/localenv_postgres.password .
-    RUN \
+    RUN --secret NODE_GIT_TOKEN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
-        cargo sqlx prepare --workspace
+        with-git-creds cargo sqlx prepare --workspace
     SAVE ARTIFACT .sqlx AS LOCAL .sqlx
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
@@ -886,6 +889,12 @@ prep-no-copy:
     # debug = 1`), so set it as an ENV for every derived target.
     ENV WASM_BUILD_RUSTFLAGS="-C link-arg=--allow-undefined"
 
+    # Wrapper that mints a throw-away ~/.netrc so cargo can fetch private git dependencies.
+    # Every cargo step that resolves the dependency graph runs through it with
+    # `--secret NODE_GIT_TOKEN`; a shared RUN would bake the token into a cached layer and
+    # push it to the ghcr remote cache. Inert when NODE_GIT_TOKEN is empty.
+    COPY scripts/with-git-creds.sh /usr/local/bin/with-git-creds
+
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
@@ -1070,7 +1079,7 @@ check-deps:
     RUN cargo install cargo-shear --version 1.6.6 --locked
 
     # shear
-    RUN cargo shear
+    RUN --secret NODE_GIT_TOKEN with-git-creds cargo shear
 
 # check-rust runs cargo fmt (clippy moved to buck2 - see +buck2-ci).
 planner:
@@ -1082,7 +1091,7 @@ planner:
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
-    RUN cargo chef prepare --recipe-path recipe.json
+    RUN --secret NODE_GIT_TOKEN with-git-creds cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
 check-rust-prepare:
@@ -1112,9 +1121,11 @@ check-rust:
 
     ENV CARGO_INCREMENTAL=0
 
-    # clippy moved to buck2 (Earthfile +buck2-ci --mode=clippy over root//...),
-    # which shares the warm build+test action cache; this job keeps only the
-    # fast cargo fmt check above.
+    # clippy moved to buck2 (Earthfile +buck2-clippy over the first-party graph),
+    # which shares the warm build+test action cache; this job keeps only the fast
+    # cargo fmt check above. (main's with-git-creds/NODE_GIT_TOKEN on the old cargo
+    # clippy line is moot - the line is gone; buck2 gets its deps from the vendored
+    # third-party graph, not a live private-git fetch.)
 
     ENV SKIP_WASM_BUILD=1
 
@@ -1145,13 +1156,13 @@ check-feature-unification:
     # renovate: datasource=crate packageName=cargo-hack
     ARG CARGO_HACK_VERSION=0.6.45
     RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
-    RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
+    RUN --secret NODE_GIT_TOKEN PACKAGES="$(node scripts/feature-unification-scope.ts \
             .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
         if [ -z "$PACKAGES" ]; then \
             echo "feature-unification: nothing affected - skipping"; exit 0; \
         fi && \
         echo "feature-unification scope: $PACKAGES" && \
-        cargo hack check $PACKAGES --no-dev-deps
+        with-git-creds cargo hack check $PACKAGES --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -1209,12 +1220,12 @@ test:
     # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
     # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
-        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+        RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
               echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
-            MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+            MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
             -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))' && \
@@ -1253,7 +1264,7 @@ test-pallet-fixtures:
 
     # Limit compilation as well as execution to the fixture tests' library.
     WITH DOCKER
-        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+        RUN --secret NODE_GIT_TOKEN MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest r --profile ci --locked \
             --package pallet-midnight --lib \
             -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
     END
@@ -1308,9 +1319,12 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js)
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
+    # inside the container, so the private git dependencies are fetched there: +test-toolkit
+    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
+    # netrc for the duration of the run (never baked into the image).
     COPY scripts/test-toolkit.sh /test-toolkit.sh
-    ENTRYPOINT ["/test-toolkit.sh"]
+    ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
     SAVE IMAGE
 
 test-toolkit:
@@ -1343,7 +1357,7 @@ test-toolkit:
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
-            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1355,13 +1369,14 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1373,6 +1388,7 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
@@ -1433,8 +1449,8 @@ build:
     RUN ./scripts/assert-no-fork-transition.sh features --workspace
 
     # Default build (no hardfork)
-    RUN \
-        cargo auditable build --workspace --locked --release
+    RUN --secret NODE_GIT_TOKEN \
+        with-git-creds cargo auditable build --workspace --locked --release
 
     RUN ./scripts/assert-no-fork-transition.sh wasm /target/release/wbuild/midnight-node-runtime/*.wasm
 
@@ -1446,6 +1462,14 @@ build:
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
+
+    # Private clones strip so a patched release cannot be bindiffed to locate an embargoed fix.
+    # Post-build rather than profile.release.strip, so wasm-builder cannot inherit it.
+    IF [ "$STRIP_BINARIES" = "true" ]
+        RUN strip --strip-all /artifacts-$NATIVEARCH/midnight-node \
+            /artifacts-$NATIVEARCH/midnight-node-toolkit \
+            /artifacts-$NATIVEARCH/aiken-deployer
+    END
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
@@ -1460,8 +1484,8 @@ build-benchmarks:
 
     # Build with runtime-benchmarks feature
     RUN ./scripts/assert-no-fork-transition.sh features --workspace --features runtime-benchmarks
-    RUN \
-        cargo auditable build --workspace --locked --release --features runtime-benchmarks
+    RUN --secret NODE_GIT_TOKEN \
+        with-git-creds cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
@@ -1494,6 +1518,8 @@ srtool-build:
 
     # Copy source code as root - include all workspace members referenced in Cargo.toml
     USER root
+    # srtool is a foreign image, so it needs its own copy of the private-dep credential wrapper.
+    COPY scripts/with-git-creds.sh /usr/local/bin/with-git-creds
     COPY Cargo.lock Cargo.toml ./
     # Include .sqlx for offline query validation (sqlx macros need this)
     COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
@@ -1507,7 +1533,7 @@ srtool-build:
     # Build the runtime deterministically as builder user
     USER builder
     # Run srtool build with --app flag to show all output, save JSON result
-    RUN --no-cache /srtool/build --app --json | tee /tmp/srtool-output.txt && \
+    RUN --no-cache --secret NODE_GIT_TOKEN with-git-creds /srtool/build --app --json | tee /tmp/srtool-output.txt && \
         tail -1 /tmp/srtool-output.txt > /build/srtool-digest.json
 
     # This is the runtime proposed for on-chain upgrades: it must never be a
@@ -1674,7 +1700,7 @@ audit-rust:
     FROM +prep
     RUN mkdir -p /scan_reports
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
+    RUN --no-cache --secret NODE_GIT_TOKEN with-git-creds cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
     SAVE ARTIFACT scan_reports/cargo-deny.sarif AS LOCAL scan_reports/cargo-deny.sarif
 
 audit-npm:
@@ -1800,7 +1826,7 @@ fix-lock-js:
 # fix-lock-rust regenerates Cargo.lock
 fix-lock-rust:
     FROM +prep
-    RUN cargo generate-lockfile
+    RUN --secret NODE_GIT_TOKEN with-git-creds cargo generate-lockfile
     SAVE ARTIFACT Cargo.lock AS LOCAL Cargo.lock
 
 # fix-lock regenerates all lockfiles
@@ -1832,7 +1858,7 @@ local-env-e2e:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
+    RUN --secret NODE_GIT_TOKEN with-git-creds cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -1963,7 +1989,7 @@ local-env-ci:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
     # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
     # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
@@ -1975,7 +2001,7 @@ local-env-ci:
             --pull $CHAIN_INDEXER_IMAGE \
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
-        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+        RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
               echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -2007,7 +2033,7 @@ local-env-ci:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
@@ -2041,11 +2067,11 @@ local-env-full-ci-localimg:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     ENV RUSTFLAGS="-C debuginfo=1"
     # Pre-build the e2e binary as a cacheable layer (same flags as the run below).
-    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     COPY local-env-images.tar .
     COPY toolkit-image.tar .
     WITH DOCKER
-        RUN docker load -i local-env-images.tar && \
+        RUN --secret NODE_GIT_TOKEN docker load -i local-env-images.tar && \
             docker load -i toolkit-image.tar && \
             ROOT="$PWD" && \
             cd local-environment && \
@@ -2074,7 +2100,7 @@ local-env-full-ci-localimg:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
@@ -2104,13 +2130,13 @@ local-env-oneshot:
         echo "Submodules not checked out — indexer/ and/or midnight-reserve-contracts/ are empty."; \
         echo "Run:  git submodule update --init --recursive"; \
         exit 1; }
-    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     # --load builds the node + toolkit images and loads them into the nested daemon under
     # fixed :local tags (no registry). The 3 indexer images are built in-sandbox below.
     WITH DOCKER \
             --load ghcr.io/midnight-ntwrk/midnight-node:local=+node-image \
             --load ghcr.io/midnight-ntwrk/midnight-node-toolkit:local=+toolkit-image
-        RUN ROOT="$PWD" && \
+        RUN --secret NODE_GIT_TOKEN ROOT="$PWD" && \
             IRV=$(grep '^channel' indexer/rust-toolchain.toml | sed -r 's/.*"(.*)".*/\1/') && \
             for pkg in indexer-api chain-indexer wallet-indexer; do \
               docker build --build-arg RUST_VERSION="$IRV" --build-arg PROFILE=dev \
@@ -2142,7 +2168,7 @@ local-env-oneshot:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
