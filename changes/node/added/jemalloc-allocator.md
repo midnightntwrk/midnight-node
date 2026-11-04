@@ -13,5 +13,5 @@ Building with the new `jemalloc-profiling` cargo feature compiles in jemalloc's 
 It stays off until it is enabled with `MALLOC_CONF` at run time. See
 `docs/operations/heap-profiling.md` for how to run the node with profiling and read the dumps.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2373
 Issue:
