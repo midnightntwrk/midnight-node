@@ -52,6 +52,14 @@ fn init_ics_tx_hash() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000001"))
 }
 
+fn unknown_block_hash() -> McBlockHash {
+	McBlockHash(hex!("b0000000000000000000000000000000000000000000000000000000000000ff"))
+}
+
+fn unknown_tx_hash() -> McTxHash {
+	McTxHash(hex!("c0000000000000000000000000000000000000000000000000000000000000ff"))
+}
+
 fn reserve_transfer() -> BridgeTransferV1<ByteString> {
 	BridgeTransferV1 {
 		amount: 100,
@@ -442,6 +450,66 @@ with_migration_versions_and_caching! {
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
 	}
 
+	// No node can resolve a checkpoint transaction missing from Cardano up to the current block,
+	// so all of them keep the checkpoint instead of failing the block.
+	async fn keeps_tx_checkpoint_that_is_not_on_the_main_chain(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Tx(unknown_tx_hash());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![]);
+		assert_eq!(new_checkpoint, data_checkpoint)
+	}
+
+	async fn keeps_reserve_transfer_checkpoint_that_is_not_on_the_main_chain(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::TxReserveTransfer(unknown_tx_hash());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![]);
+		assert_eq!(new_checkpoint, data_checkpoint)
+	}
+
+	// A checkpoint ahead of the observed Cardano block must not move back to that block, or the
+	// transfers between the two would be handled although the checkpoint has already passed them.
+	async fn keeps_block_checkpoint_ahead_of_current_block(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(4));
+		let current_mc_block = block_2_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![]);
+		assert_eq!(new_checkpoint, data_checkpoint)
+	}
+
+	// Without the current Cardano block a missing transaction cannot be told apart from one that
+	// has not been synced yet, so the call fails and is retried.
+	async fn fails_when_current_block_is_unknown(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Tx(unknown_tx_hash());
+		let current_mc_block = unknown_block_hash();
+		let max_transfers = 32;
+
+		let result = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await;
+
+		assert!(result.is_err())
+	}
+
 	async fn utxos_from_checkpoint_block_are_not_included_in_result(data_source: &dyn TokenBridgeDataSource<ByteString>) {
 		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(2));
 		let current_mc_block = block_3_hash();
@@ -456,5 +524,86 @@ with_migration_versions_and_caching! {
 		assert_eq!(transfers, vec![]);
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(3)))
+	}
+}
+
+type BoxedDataSource = Box<dyn TokenBridgeDataSource<ByteString> + Send + Sync>;
+
+// Nodes observing the same Cardano block must agree on a checkpoint transaction from a later
+// block, whether their Db-Sync has already synced that block or not.
+async fn db_sync_before_and_after_checkpoint_tx_agree(
+	pool: PgPool,
+	create: fn(PgPool) -> BoxedDataSource,
+) {
+	// `user_transfer_2_tx` is in block 4
+	let data_checkpoint = BridgeDataCheckpoint::Tx(user_transfer_2_tx());
+	let max_transfers = 32;
+
+	let synced_past_checkpoint = create(pool.clone())
+		.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, block_3_hash())
+		.await
+		.unwrap();
+
+	sqlx::query("DELETE FROM block WHERE block_no > 3")
+		.execute(&pool)
+		.await
+		.unwrap();
+
+	let synced_to_current_block = create(pool)
+		.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, block_3_hash())
+		.await
+		.unwrap();
+
+	assert_eq!(synced_past_checkpoint, (vec![], data_checkpoint));
+	assert_eq!(synced_to_current_block, synced_past_checkpoint)
+}
+
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-enabled")]
+async fn db_sync_before_and_after_checkpoint_tx_agree_uncached(pool: PgPool) {
+	db_sync_before_and_after_checkpoint_tx_agree(pool, |pool| Box::new(create_data_source(pool)))
+		.await
+}
+
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-enabled")]
+async fn db_sync_before_and_after_checkpoint_tx_agree_cached(pool: PgPool) {
+	db_sync_before_and_after_checkpoint_tx_agree(pool, |pool| Box::new(create_cached_source(pool)))
+		.await
+}
+
+// The cache holds blocks past the current one and resolves transactions from them, so an ahead or
+// unknown checkpoint must also be kept once the cache is filled.
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-enabled")]
+async fn cached_source_keeps_unobserved_checkpoints_with_filled_cache(pool: PgPool) {
+	let data_source = create_cached_source(pool);
+	let max_transfers = 32;
+
+	let (transfers, _) = data_source
+		.get_transfers(
+			main_chain_scripts(),
+			BridgeDataCheckpoint::Tx(init_ics_tx_hash()),
+			max_transfers,
+			block_2_hash(),
+		)
+		.await
+		.unwrap();
+	assert_eq!(transfers, vec![reserve_transfer(), user_transfer_1()]);
+
+	for data_checkpoint in [
+		// `reserve_and_user_transfer_tx` is in block 5
+		BridgeDataCheckpoint::TxReserveTransfer(reserve_and_user_transfer_tx()),
+		BridgeDataCheckpoint::Block(McBlockNumber(6)),
+		BridgeDataCheckpoint::Tx(unknown_tx_hash()),
+	] {
+		let result: (Vec<BridgeTransferV1<ByteString>>, _) = data_source
+			.get_transfers(
+				main_chain_scripts(),
+				data_checkpoint.clone(),
+				max_transfers,
+				block_4_hash(),
+			)
+			.await
+			.unwrap();
+
+		assert_eq!(result, (vec![], data_checkpoint));
 	}
 }
