@@ -350,6 +350,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
 			run_midnight.serve_warp_ledger_sync,
+			run_midnight.flip_finality_hold(),
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;
@@ -522,10 +523,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					storage_config,
 					tx_filter_config,
 				)?;
-				let aux_revert = Box::new(|client, _, blocks| {
-					sc_consensus_grandpa::revert(client, blocks)?;
-					Ok(())
-				});
+				let aux_revert =
+					Box::new(|client: std::sync::Arc<service::FullClient>, backend, blocks| {
+						crate::babe_authoring::revert(client.clone(), backend, blocks)?;
+						sc_consensus_grandpa::revert(client, blocks)?;
+						Ok(())
+					});
 				Ok((cmd.run(client, backend, Some(aux_revert)), task_manager))
 			})
 		},
