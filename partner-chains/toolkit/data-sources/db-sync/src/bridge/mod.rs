@@ -98,21 +98,22 @@ observed_async_trait!(
 				.await?
 				.ok_or(format!("Could not find block for hash {current_mc_block_hash:?}"))?;
 
-			let resolved_checkpoint = match &data_checkpoint {
-				BridgeDataCheckpoint::Tx(tx_hash) => {
-					let TxBlockInfo { block_number, tx_ix } =
-						self.resolve_tx_position(*tx_hash).await?;
-					ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix }
+			let block_bound = current_mc_block.block_no;
+
+			let tx_position = match &data_checkpoint {
+				BridgeDataCheckpoint::Tx(tx_hash)
+				| BridgeDataCheckpoint::TxReserveTransfer(tx_hash) => {
+					get_block_info_for_tx_hash(&self.pool, (*tx_hash).into())
+						.await?
+						.map(|TxBlockInfo { block_number, tx_ix }| (block_number, tx_ix))
 				},
-				// The reserve transfer of this transaction, which the runtime has already
-				// handled, is left out of the returned data below.
-				BridgeDataCheckpoint::TxReserveTransfer(tx) => {
-					let TxBlockInfo { block_number, tx_ix } = self.resolve_tx_position(*tx).await?;
-					ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, tx_ix }
-				},
-				BridgeDataCheckpoint::Block(number) => {
-					ResolvedBridgeDataCheckpoint::Block { number: (*number).into() }
-				},
+				BridgeDataCheckpoint::Block(_) => None,
+			};
+
+			let Some(resolved_checkpoint) =
+				resolve_checkpoint(&data_checkpoint, tx_position, block_bound)
+			else {
+				return Ok((vec![], data_checkpoint));
 			};
 
 			let txs = get_bridge_txs(
@@ -122,25 +123,61 @@ observed_async_trait!(
 				&main_chain_scripts.reserve_validator_address.into(),
 				asset,
 				resolved_checkpoint,
-				current_mc_block.block_no,
+				block_bound,
 				Some(max_txs_to_read(max_transfers)),
 			)
 			.await?;
 
-			Ok(txs_to_transfers(txs, &data_checkpoint, max_transfers, current_mc_block.block_no))
+			Ok(txs_to_transfers(txs, &data_checkpoint, max_transfers, block_bound))
 		}
 	}
 );
 
-impl TokenBridgeDataSourceImpl {
-	async fn resolve_tx_position(
-		&self,
-		tx_hash: McTxHash,
-	) -> Result<TxBlockInfo, Box<dyn std::error::Error + Send + Sync>> {
-		get_block_info_for_tx_hash(&self.pool, tx_hash.into()).await?.ok_or_else(|| {
-			format!("Could not find block info for data checkpoint tx: {tx_hash:?}").into()
-		})
+/// Resolves `data_checkpoint` to its position in Cardano history as of `block_bound`
+///
+/// `tx_position` is the position Db-Sync knows for the checkpoint transaction, if there is one.
+/// Returns `None` when the checkpoint is not at or before `block_bound`. The checkpoint is then
+/// kept with no transfers: moving it back to `block_bound` would return transfers it has already
+/// passed, and failing would also fail the block carrying a governance call that replaces it.
+fn resolve_checkpoint(
+	data_checkpoint: &BridgeDataCheckpoint,
+	tx_position: Option<TxOrderingKey>,
+	block_bound: BlockNumber,
+) -> Option<ResolvedBridgeDataCheckpoint> {
+	let known_position = |tx_hash: &McTxHash| {
+		if tx_position.is_none() {
+			log::warn!(
+				"Bridge data checkpoint transaction {tx_hash:?} not found in Db-Sync, no transfers are observed until it is"
+			);
+		}
+		tx_position
+	};
+
+	let resolved = match data_checkpoint {
+		BridgeDataCheckpoint::Block(number) => {
+			ResolvedBridgeDataCheckpoint::Block { number: (*number).into() }
+		},
+		BridgeDataCheckpoint::Tx(tx_hash) => {
+			let (block_number, tx_ix) = known_position(tx_hash)?;
+			ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix }
+		},
+		// The reserve transfer of this transaction, which the runtime has already handled, is
+		// left out of the returned data.
+		BridgeDataCheckpoint::TxReserveTransfer(tx_hash) => {
+			let (block_number, tx_ix) = known_position(tx_hash)?;
+			ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, tx_ix }
+		},
+	};
+
+	if resolved.get_block_number() > block_bound {
+		log::debug!(
+			"Bridge data checkpoint {data_checkpoint:?} is ahead of Cardano block {}, no transfers are observed",
+			block_bound.0
+		);
+		return None;
 	}
+
+	Some(resolved)
 }
 
 /// Number of Cardano transaction rows to read in order to return up to `max_transfers` transfers

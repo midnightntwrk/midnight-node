@@ -137,7 +137,17 @@ observed_async_trait!(
 
 			let to_block = self.get_block_by_hash(&current_mc_block_hash).await?.number.into();
 
-			let resolved_checkpoint = self.resolve_data_checkpoint(&data_checkpoint).await?;
+			let tx_position = match &data_checkpoint {
+				BridgeDataCheckpoint::Tx(tx_hash)
+				| BridgeDataCheckpoint::TxReserveTransfer(tx_hash) => self.resolve_tx_position(tx_hash).await?,
+				BridgeDataCheckpoint::Block(_) => None,
+			};
+
+			let Some(resolved_checkpoint) =
+				resolve_checkpoint(&data_checkpoint, tx_position, to_block)
+			else {
+				return Ok((vec![], data_checkpoint));
+			};
 
 			let max_txs = max_txs_to_read(max_transfers);
 
@@ -248,35 +258,14 @@ impl CachedTokenBridgeDataSourceImpl {
 	async fn resolve_tx_position(
 		&self,
 		tx_hash: &McTxHash,
-	) -> Result<TxOrderingKey, Box<dyn Error + Send + Sync>> {
-		if let Some(position) = self.cache.lock().await.try_resolve_tx_position_from_cache(tx_hash)
-		{
-			return Ok(position);
+	) -> Result<Option<TxOrderingKey>, Box<dyn Error + Send + Sync>> {
+		let cached = self.cache.lock().await.try_resolve_tx_position_from_cache(tx_hash);
+		if cached.is_some() {
+			return Ok(cached);
 		}
-		let TxBlockInfo { block_number, tx_ix } =
-			get_block_info_for_tx_hash(&self.pool, (*tx_hash).into())
-				.await?
-				.ok_or(format!("Could not find block info for tx: {tx_hash:?}"))?;
-		Ok((block_number, tx_ix))
-	}
-
-	async fn resolve_data_checkpoint(
-		&self,
-		data_checkpoint: &BridgeDataCheckpoint,
-	) -> Result<ResolvedBridgeDataCheckpoint, Box<dyn Error + Send + Sync>> {
-		match data_checkpoint {
-			BridgeDataCheckpoint::Block(number) => {
-				Ok(ResolvedBridgeDataCheckpoint::Block { number: (*number).into() })
-			},
-			BridgeDataCheckpoint::Tx(tx_hash) => {
-				let (block_number, tx_ix) = self.resolve_tx_position(tx_hash).await?;
-				Ok(ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix })
-			},
-			BridgeDataCheckpoint::TxReserveTransfer(tx) => {
-				let (block_number, tx_ix) = self.resolve_tx_position(tx).await?;
-				Ok(ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, tx_ix })
-			},
-		}
+		Ok(get_block_info_for_tx_hash(&self.pool, (*tx_hash).into())
+			.await?
+			.map(|TxBlockInfo { block_number, tx_ix }| (block_number, tx_ix)))
 	}
 
 	async fn get_block_by_hash(
