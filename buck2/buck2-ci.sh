@@ -2,7 +2,8 @@
 # One buck2 step under a bazel-remote action cache (buck2/Earthfile +BUCK2).
 # Expects buck2, bazel-remote and .buckconfig.local in place (+INSTALL, +CONFIG).
 #   build     buck2 build $TARGETS; $BIN, if set, to /usr/local/bin
-#   clippy    clippy -D warnings over $TARGETS, failing on any diagnostic
+#   clippy    clippy -D warnings over the rust targets matching $TARGETS (a
+#             pattern like root//...), failing on any diagnostic
 #   test      buck2 test $TARGETS
 #   release   buck2 build $TARGETS for $PLATFORM, the one output to $OUT
 #
@@ -72,21 +73,40 @@ build)
     fi
     ;;
 clippy)
+    # clippy only where we have source: expand the TARGETS patterns to the
+    # concrete first-party rust targets (the root// cell scope already excludes
+    # third-party// and wasm-deps//, which we neither own nor lint).
+    qfile=$(mktemp)
+    if ! buck2 uquery "kind('rust_(library|binary|test)', ${targets[*]})" > "$qfile"; then
+        echo "clippy: uquery over ${targets[*]} failed" >&2
+        exit 1
+    fi
+    mapfile -t ctargets < "$qfile"
+    if [ "${#ctargets[@]}" -eq 0 ]; then
+        echo "clippy: no rust targets matched ${targets[*]}" >&2
+        exit 2
+    fi
     # The prelude's [clippy.txt] subtarget is a report, not a gate: it always
-    # succeeds and writes the diagnostics to a file, so read the file and fail
-    # on any diagnostic. -D warnings comes from the targets' rustc_flags.
-    clippy_dir=$(mktemp -d)
+    # succeeds and writes the diagnostics to a file. Build every report in ONE
+    # buck2 invocation (a per-target loop was ~1900 client round-trips), then
+    # read each via --show-output and fail on any diagnostic. -D warnings comes
+    # from the targets' rustc_flags.
+    subtargets=("${ctargets[@]/%/[clippy.txt]}")
+    show=$(mktemp)
+    if ! buck2 build "${args[@]}" "${subtargets[@]}" --show-output > "$show"; then
+        echo "clippy: buck2 build of the [clippy.txt] reports failed" >&2
+        exit 1
+    fi
     clippy_rc=0
-    for t in "${targets[@]}"; do
-        report="$clippy_dir/${t##*:}.txt"
-        buck2 build "${args[@]}" "${t}[clippy.txt]" --out "$report"
+    while read -r tgt report; do
+        [ -n "${report:-}" ] || continue
         if sed -E 's/\x1b\[[0-9;]*m//g' "$report" | grep -q -E '^(error|warning)(\[|:)'; then
-            echo "clippy: $t"
-            cat "$report"
+            echo "clippy: $tgt"
+            sed -E 's/\x1b\[[0-9;]*m//g' "$report"
             clippy_rc=1
         fi
-    done
-    [ "$clippy_rc" -eq 0 ] && echo "clippy: clean"
+    done < "$show"
+    [ "$clippy_rc" -eq 0 ] && echo "clippy: clean (${#ctargets[@]} targets)"
     exit "$clippy_rc"
     ;;
 test)

@@ -1072,7 +1072,7 @@ check-deps:
     # shear
     RUN cargo shear
 
-# check-rust runs cargo fmt and clippy.
+# check-rust runs cargo fmt (clippy moved to buck2 - see +buck2-ci).
 planner:
     FROM +prep
     ARG TARGETARCH
@@ -1112,9 +1112,9 @@ check-rust:
 
     ENV CARGO_INCREMENTAL=0
 
-    # ensure runtime benchmark and try runtime features enable to check they compile.
-    # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
-    RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks,try-runtime -- -D warnings
+    # clippy moved to buck2 (Earthfile +buck2-ci --mode=clippy over root//...),
+    # which shares the warm build+test action cache; this job keeps only the
+    # fast cargo fmt check above.
 
     ENV SKIP_WASM_BUILD=1
 
@@ -2305,6 +2305,22 @@ buck2-ci:
     DO --pass-args buck2+BUCK2 --mode=test \
         --targets="root//..." \
         --buck2_args="--target-platforms root//platforms:linux-x86_64 --exclude ci-infra $_wasm"
+
+#buck2-clippy clippy over the first-party graph (replaces cargo clippy in +check-rust)
+buck2-clippy:
+    FROM +buck2-prep
+    # Own job, not a step in +buck2-ci: clippy is non-essential, so a lint nit
+    # must not redden the build+test gate. Shares the bazel-remote action cache
+    # with +buck2-ci, so the dep rmetas build+test compiled are cache hits here;
+    # only the ~1900 first-party clippy-driver passes are this job's own work.
+    ARG RUN_ID=0
+    RUN echo "buck2-clippy run ${RUN_ID}"
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    # buck2-ci.sh expands root//... to the concrete rust targets (the src we own);
+    # same platform + wasm shims as build/test so the shared rmetas line up.
+    DO --pass-args buck2+BUCK2 --mode=clippy \
+        --targets="root//..." \
+        --buck2_args="--target-platforms root//platforms:linux-x86_64 $_wasm"
 
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
 buck2-reindeer:
