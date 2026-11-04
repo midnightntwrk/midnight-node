@@ -254,7 +254,7 @@ mod test {
 	#[tokio::test]
 	async fn test_show_block_from_file() {
 		let result = super::execute(ShowBlockArgs {
-			src_file: Some("../../res/test-tx-deserialize/serialized_tx.mn".to_string()),
+			src_file: Some(crate::test_paths::res("test-tx-deserialize/serialized_tx.mn")),
 			block_number: None,
 			json: true,
 			src_url: "".to_string(),

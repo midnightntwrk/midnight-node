@@ -1,0 +1,30 @@
+[cell_aliases]
+config = prelude
+
+[cells]
+root = .
+prelude = prelude
+toolchains = toolchains
+none = none
+fbsource = none
+fbcode = none
+
+[external_cells]
+prelude = bundled
+
+[parser]
+target_platform_detector_spec = target:root//...->prelude//platforms:default
+
+[build]
+# Register the host as the execution platform so build scripts (exec_deps)
+# compile+run on the host when cross-compiling the runtime to wasm32v1-none.
+execution_platforms = prelude//platforms:default
+
+[rust]
+default_edition = 2024
+remap_src_paths = yes
+
+[project]
+# third-party/.cargo is reindeer's download cache; some crates (cxx) ship their
+# own BUCK files there which buck2 would otherwise try to parse under root//.
+ignore = .git, target, buck-out, third-party/.cargo, wasm-deps/.cargo
