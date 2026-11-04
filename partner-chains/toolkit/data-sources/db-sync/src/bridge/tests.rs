@@ -1,7 +1,10 @@
 extern crate alloc;
 
+use crate::block::BlocksCache;
 use crate::bridge::cache::CachedTokenBridgeDataSourceImpl;
 use crate::{BlockDataSourceImpl, DbSyncBlockDataSourceConfig, TokenBridgeDataSourceImpl};
+use chrono::TimeDelta;
+use db_sync_sqlx::BlockNumber;
 use hex_literal::hex;
 use sidechain_domain::byte_string::ByteString;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -15,6 +18,7 @@ use sp_partner_chains_bridge::{
 use sqlx::PgPool;
 use std::str::FromStr;
 use std::sync::Arc;
+use time_source::SystemTimeSource;
 
 fn token_policy_id() -> PolicyId {
 	PolicyId(hex!("500000000000000000000000000000000000434845434b504f494e69"))
@@ -457,4 +461,28 @@ with_migration_versions_and_caching! {
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(3)))
 	}
+}
+
+// The block fixture's latest block is 5 at 2022-04-21T17:36:10. With security parameter 2 and
+// stability window [5000s, 1667s] before it, the stable tip is block 3.
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
+async fn cache_resolves_latest_stable_block_from_latest_block_timestamp(pool: PgPool) {
+	let blocks = Arc::new(BlockDataSourceImpl::new(
+		pool.clone(),
+		2,
+		TimeDelta::seconds(1667),
+		TimeDelta::seconds(5000),
+		main_chain_epoch_config(),
+		0,
+		100,
+		100,
+		BlocksCache::new_arc_mutex(),
+		None,
+		Arc::new(SystemTimeSource),
+	));
+	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
+
+	let stable_tip = source.get_latest_stable_block().await.unwrap();
+
+	assert_eq!(stable_tip, Some(BlockNumber(3)));
 }

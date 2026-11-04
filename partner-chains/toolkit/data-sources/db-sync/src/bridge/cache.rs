@@ -2,15 +2,22 @@ use super::*;
 use crate::BlockDataSourceImpl;
 use crate::db_model::BridgeTx;
 use futures::lock::Mutex;
+use log::debug;
 use sidechain_domain::{MainchainBlock, McBlockHash, McTxHash};
-use std::{cmp::min, collections::HashMap, error::Error, sync::Arc};
+use sp_timestamp::Timestamp;
+use std::{
+	cmp::{max, min},
+	collections::HashMap,
+	error::Error,
+	sync::Arc,
+};
 
 /// Bridge transfer data source with block range-based caching
 ///
 /// This data source caches utxos in some range [from_block, to_block] (inclusive) and serves
 /// queries from the cache. In case of a cache miss, the cache is first replaced before serving
 /// data. The cache is filled with utxos in range:
-///     [lower_query_bound, min(upper_query_bound + cache_lookahead, current_stable_tip)]
+///     [lower_query_bound, max(upper_query_bound, min(upper_query_bound + cache_lookahead, current_stable_tip))]
 ///
 /// In case of queries where the lower bound is a UTXO, all UTXOs from the containing
 /// block are stored. Technically servable case where the lower bound UTXO is the last one in its
@@ -202,10 +209,20 @@ impl CachedTokenBridgeDataSourceImpl {
 		let effective_data_checkpoint =
 			ResolvedBridgeDataCheckpoint::Block { number: from_block.saturating_sub(1u32) };
 
-		let latest_block = self.get_latest_stable_block().await?.unwrap_or(to_block);
+		let latest_block = match self.get_latest_stable_block().await? {
+			Some(block) => block,
+			None => {
+				debug!(
+					"No stable Cardano block found, bridge cache lookahead capped at block {}",
+					to_block.0
+				);
+				to_block
+			},
+		};
 
+		// The stable tip can be below the requested block, which the range must still cover.
 		let to_block: BlockNumber =
-			min(to_block.saturating_add(self.cache_lookahead), latest_block);
+			max(to_block, min(to_block.saturating_add(self.cache_lookahead), latest_block));
 
 		let utxos = get_bridge_txs(
 			self.db_sync_config.get_tx_in_config().await?,
@@ -234,13 +251,17 @@ impl CachedTokenBridgeDataSourceImpl {
 		cache.set_cached_transfers(start_block, end_block, txs);
 	}
 
-	async fn get_latest_stable_block(
+	pub(super) async fn get_latest_stable_block(
 		&self,
 	) -> Result<Option<BlockNumber>, Box<dyn Error + Send + Sync>> {
-		let latest_block_timestamp = self.blocks.get_latest_block_info().await?.timestamp;
+		// `MainchainBlock::timestamp` is in seconds, `Timestamp` is in milliseconds.
+		let latest_block_timestamp_secs = self.blocks.get_latest_block_info().await?.timestamp;
+		let latest_block_timestamp_millis = latest_block_timestamp_secs.checked_mul(1000).ok_or(
+			format!("Cardano block timestamp out of range: {latest_block_timestamp_secs}"),
+		)?;
 		Ok(self
 			.blocks
-			.get_latest_stable_block_for(latest_block_timestamp.into())
+			.get_latest_stable_block_for(Timestamp::new(latest_block_timestamp_millis))
 			.await?
 			.map(|block| block.number.into()))
 	}
