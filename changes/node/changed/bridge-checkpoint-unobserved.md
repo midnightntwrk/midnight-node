@@ -14,3 +14,5 @@ on the result as long as their Db-Sync holds complete Cardano history up to the 
 
 The bridge inherent data changes only while a checkpoint is ahead of the observed block or
 unresolvable, so all validators should run this version before such a checkpoint is set.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2369
