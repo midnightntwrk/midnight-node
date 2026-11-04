@@ -15915,6 +15915,7 @@ dependencies = [
 name = "sidechain-domain"
 version = "1.8.1"
 dependencies = [
+ "bech32 0.11.1",
  "blake2b_simd",
  "byte-string-derive",
  "derive-where",

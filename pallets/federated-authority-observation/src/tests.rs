@@ -12,7 +12,8 @@
 // limitations under the License.
 
 use crate::{
-	CouncilMainchainMembers, Event, MainchainMember, TechnicalCommitteeMainchainMembers, mock::*,
+	CouncilMainchainMembers, Error, Event, MainchainMember, TechnicalCommitteeMainchainMembers,
+	mock::*,
 };
 use core::str::FromStr;
 use frame_support::inherent::ProvideInherent;
@@ -21,7 +22,7 @@ use frame_support::{BoundedVec, assert_noop, assert_ok};
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData, INHERENT_IDENTIFIER,
 };
-use parity_scale_codec::Encode;
+use parity_scale_codec::{Decode, Encode};
 use sidechain_domain::{MainchainAddress, McBlockHash, PolicyId};
 use sp_inherents::InherentData;
 use sp_runtime::traits::Dispatchable;
@@ -978,6 +979,72 @@ fn set_council_address_works() {
 
 		// Verify the address was set
 		assert_eq!(crate::MainChainCouncilAddress::<Test>::get(), mainchain_address);
+	});
+}
+
+// Council and technical committee addresses stored on mainnet block #3281949 and preview
+// block #1565068.
+#[test]
+fn set_addresses_accept_live_network_values() {
+	new_test_ext().execute_with(|| {
+		for (council, technical_committee) in [
+			(
+				"addr1wxg3mm3436f57r4r9t6cqdvxe0hwjusayz4ed8ulmlenttqj62ul2",
+				"addr1w8umlgsw6cfkxpdk2jekzwa7rjdx7tc937mpahhyn00430s074k8y",
+			),
+			(
+				"addr_test1wzy47zdsq22pg9l48c5v0f835ljdjzkz47sa5za9cehcejcw28k2d",
+				"addr_test1wptcy7h9rmkhdnhn3jvm6tuhehcq2hhhzntvn00nq79ph8c44v43j",
+			),
+		] {
+			let council = MainchainAddress::from_str(council).expect("Fits the bound");
+			let technical_committee =
+				MainchainAddress::from_str(technical_committee).expect("Fits the bound");
+
+			assert_ok!(FederatedAuthorityObservation::set_council_address(
+				frame_system::RawOrigin::Root.into(),
+				council.clone()
+			));
+			assert_ok!(FederatedAuthorityObservation::set_technical_committee_address(
+				frame_system::RawOrigin::Root.into(),
+				technical_committee.clone()
+			));
+			assert_eq!(crate::MainChainCouncilAddress::<Test>::get(), council);
+			assert_eq!(
+				crate::MainChainTechnicalCommitteeAddress::<Test>::get(),
+				technical_committee
+			);
+		}
+	});
+}
+
+#[test]
+fn set_addresses_reject_invalid_address() {
+	new_test_ext().execute_with(|| {
+		for address in [
+			MainchainAddress::decode(&mut &vec![0xffu8].encode()[..]).expect("Fits the bound"),
+			MainchainAddress::from_str("x").expect("Fits the bound"),
+			// Enterprise address with a key payment credential
+			MainchainAddress::from_str(
+				"addr_test1vqqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcftcpvd",
+			)
+			.expect("Fits the bound"),
+		] {
+			assert_noop!(
+				FederatedAuthorityObservation::set_council_address(
+					frame_system::RawOrigin::Root.into(),
+					address.clone()
+				),
+				Error::<Test>::InvalidMainchainAddress
+			);
+			assert_noop!(
+				FederatedAuthorityObservation::set_technical_committee_address(
+					frame_system::RawOrigin::Root.into(),
+					address
+				),
+				Error::<Test>::InvalidMainchainAddress
+			);
+		}
 	});
 }
 
