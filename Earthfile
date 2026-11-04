@@ -2283,6 +2283,10 @@ buck2-prep:
     DO buck2+INSTALL
     WORKDIR /work
     COPY --keep-ts --dir +buck2-src/work /
+    # node/test-fixtures/ is gitignored (no committed dupe); assemble it from the
+    # //res + //docs source-of-truth so node/BUCK's same-package glob can stage it
+    # onto RE workers. Not in regen.sh - see stage-node-fixtures.sh.
+    RUN scripts/buck2/stage-node-fixtures.sh
     DO --pass-args buck2+CONFIG
 
 #buck2-ci Build the deliverables then run the tests, both under the action cache

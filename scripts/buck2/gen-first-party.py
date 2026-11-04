@@ -150,12 +150,13 @@ TEST_RESOURCES = {
     # Globbed relative to the res package, they materialize back at res/… .
     "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
     # node cfg::tests read <root>/res/cfg/*.toml and openrpc::tests read
-    # <root>/docs/openrpc.json, with MN_WORKSPACE_ROOT=node/test-fixtures. A
-    # same-package genrule (see EXPORTS["midnight-node"]) assembles that tree from
-    # the //res and //docs source-of-truth; the dict key places its output at
-    # node/test-fixtures/. Genrule outputs are built artifacts the test depends on,
-    # so RE stages them into the action input - no committed copy, no sync script.
-    "midnight-node": '{"test-fixtures": ":node-test-fixtures"}',
+    # <root>/docs/openrpc.json, with MN_WORKSPACE_ROOT=node/test-fixtures. These
+    # are same-package source resources: buck2 stages only same-package attrs.source
+    # onto RE workers - a genrule-output or cross-package target-ref resource is NOT
+    # staged (proven red on RE). So node/test-fixtures/ is assembled at build time by
+    # scripts/buck2/stage-node-fixtures.sh (run in Earthfile +buck2-prep, and by
+    # local devs before `buck2 test //node/...`) and gitignored: no committed dupe.
+    "midnight-node": 'glob(["test-fixtures/**"])',
     # docs_tests reads a workspace-spanning fixture set (res/cfg, runtime/src/lib.rs,
     # node+metadata Cargo.toml, README.md, util/toolkit source, docs/*.md), copied under
     # docs/test-fixtures/ by sync-test-fixtures.sh; MN_WORKSPACE_ROOT points root() here.
@@ -220,34 +221,8 @@ MAPPED_SRCS_EXTERNAL = {
 EXPORTS = {
     "midnight-node": [
         'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
-        # Assemble node's cross-package test fixtures as a genrule OUTPUT rather than
-        # a committed copy (what sync-test-fixtures.sh used to stage under
-        # node/test-fixtures/). The node tests consume this via
-        #   resources = {"test-fixtures": ":node-test-fixtures"}
-        # so the output dir materializes at node/test-fixtures/ (where
-        # MN_WORKSPACE_ROOT points). A genrule output IS a built artifact the test
-        # depends on, so RE stages it into the test action input — unlike a
-        # cross-package export_file(reference) resource, which is never staged. The
-        # source-of-truth files stay single-copy in //res and //docs; buck2 tracks
-        # the dep, so there is no committed dupe and no drift to police.
-        'genrule(\n    name = "node-test-fixtures",\n'
-        '    out = "test-fixtures",\n'
-        '    cmd = "mkdir -p $OUT/res/cfg $OUT/res/mock-bridge-data $OUT/docs && "\n'
-        '        + "cp $(location //res:cfg-presets)/cfg/*.toml $OUT/res/cfg/ && "\n'
-        '        + "cp $(location //res:mock-bridge-data)/mock-bridge-data/* $OUT/res/mock-bridge-data/ && "\n'
-        '        + "cp $(location //docs:openrpc-json) $OUT/docs/openrpc.json",\n'
-        '    visibility = ["PUBLIC"],\n)',
-    ],
-    "docs": [
-        'export_file(name = "openrpc-json", src = "openrpc.json", visibility = ["PUBLIC"])',
     ],
     "midnight-node-res": [
-        'filegroup(\n    name = "cfg-presets",\n'
-        '    srcs = glob(["cfg/*.toml"]),\n'
-        '    visibility = ["PUBLIC"],\n)',
-        'filegroup(\n    name = "mock-bridge-data",\n'
-        '    srcs = glob(["mock-bridge-data/*"]),\n'
-        '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "test-contract-addr",\n'
         '    src = "test-contract/contract_address_undeployed.mn",\n'
         '    visibility = ["PUBLIC"],\n)',

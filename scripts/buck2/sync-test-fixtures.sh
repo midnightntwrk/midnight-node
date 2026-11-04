@@ -14,9 +14,10 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # node: fixtures (res/cfg/*.toml, docs/openrpc.json, res/mock-bridge-data/*) are no
-# longer copied here. The //node:node-test-fixtures genrule assembles them as a build
-# artifact the tests consume as a resource (see gen-first-party.py EXPORTS/TEST_RESOURCES),
-# so there is nothing to sync and node/test-fixtures/ is gitignored.
+# longer copied here. node/test-fixtures/ is gitignored and assembled at build time
+# by scripts/buck2/stage-node-fixtures.sh (run in Earthfile +buck2-prep) - kept out
+# of this script, and of regen.sh, so the gitignored output is not read as regen
+# drift. docs/ and toolkit/ below stay committed and drift-checked.
 
 # docs: docs_tests reads <root>/{res/cfg/default.toml (anchor), runtime/src/lib.rs,
 # node/Cargo.toml, metadata/Cargo.toml, README.md, util/toolkit/src/fetcher/runtimes.rs,

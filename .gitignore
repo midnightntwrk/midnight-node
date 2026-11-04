@@ -118,8 +118,9 @@ toolkit-image.tar
 # Vendored upstream crates carry their own CI; we neither run nor pin it, and
 # zizmor skips .gitignored paths, so keep vendored .github/ out of the tree.
 /third-party/**/.github/
-# node test fixtures are assembled by the //node:node-test-fixtures genrule at
-# build time (not copied in), so they never belong in the tree.
+# node test fixtures are assembled at build time from the //res + //docs
+# source-of-truth by scripts/buck2/stage-node-fixtures.sh (not committed copies),
+# so they never belong in the tree.
 /node/test-fixtures/
 
 # component-rn-draft working dir
