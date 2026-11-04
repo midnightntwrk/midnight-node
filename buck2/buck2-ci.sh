@@ -2,8 +2,8 @@
 # One buck2 step under a bazel-remote action cache (buck2/Earthfile +BUCK2).
 # Expects buck2, bazel-remote and .buckconfig.local in place (+INSTALL, +CONFIG).
 #   build     buck2 build $TARGETS; $BIN, if set, to /usr/local/bin
-#   clippy    clippy -D warnings over the rust targets matching $TARGETS (a
-#             pattern like root//...), failing on any diagnostic
+#   clippy    clippy -D warnings over the rust targets in $TARGETS (a uquery
+#             expression the caller scopes to first-party), failing on any diagnostic
 #   test      buck2 test $TARGETS
 #   release   buck2 build $TARGETS for $PLATFORM, the one output to $OUT
 #
@@ -73,9 +73,9 @@ build)
     fi
     ;;
 clippy)
-    # clippy only where we have source: expand the TARGETS patterns to the
-    # concrete first-party rust targets (the root// cell scope already excludes
-    # third-party// and wasm-deps//, which we neither own nor lint).
+    # clippy only where we have source: TARGETS is a query expression the caller
+    # scopes to first-party (e.g. root//... minus the vendored dirs), which we
+    # expand to the concrete rust targets to lint.
     qfile=$(mktemp)
     if ! buck2 uquery "kind('rust_(library|binary|test)', ${targets[*]})" > "$qfile"; then
         echo "clippy: uquery over ${targets[*]} failed" >&2

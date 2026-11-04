@@ -53,6 +53,9 @@ INSTALL:
 
     # The on-chain runtime target. The base rust image ships rustup.
     RUN rustup target add "$RUST_WASM_TARGET"
+    # clippy-driver for the +buck2-clippy job: the prelude's [clippy.txt] action
+    # shells out to it through the rustc toolchain, and the base image omits it.
+    RUN rustup component add clippy
 
     # buck2 + bazel-remote. Checksums from the release assets (neither project
     # publishes them); bump version and checksums together. Use the image's own

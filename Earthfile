@@ -2316,10 +2316,13 @@ buck2-clippy:
     ARG RUN_ID=0
     RUN echo "buck2-clippy run ${RUN_ID}"
     ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
-    # buck2-ci.sh expands root//... to the concrete rust targets (the src we own);
-    # same platform + wasm shims as build/test so the shared rmetas line up.
+    # The src we own: root//... minus the vendored third-party/ and wasm-deps/
+    # dirs (they live under the root cell, not a separate one, so root//... would
+    # otherwise lint 1915 crates incl. windows-only ones that break on linux).
+    # buck2-ci.sh expands this to the ~166 first-party rust targets; same platform
+    # + wasm shims as build/test so the shared rmetas line up.
     DO --pass-args buck2+BUCK2 --mode=clippy \
-        --targets="root//..." \
+        --targets="root//... - root//third-party/... - root//wasm-deps/..." \
         --buck2_args="--target-platforms root//platforms:linux-x86_64 $_wasm"
 
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
