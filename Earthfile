@@ -2316,15 +2316,16 @@ buck2-clippy:
     ARG RUN_ID=0
     RUN echo "buck2-clippy run ${RUN_ID}"
     ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
-    # The src we own and actually build: root//... minus the vendored third-party/
-    # and wasm-deps/ dirs (they live under the root cell, not a separate one, so
-    # root//... would otherwise lint 1915 crates incl. windows-only ones) and minus
-    # the ci-infra targets build+test excludes (--exclude ci-infra) - linting one
-    # pulls a third-party dep that only check-builds under the real stack. Leaves
-    # ~159 first-party targets; same platform + wasm shims as build/test so the
-    # shared rmetas line up.
+    # The src we own and actually build. From root//... drop: the vendored
+    # third-party/ + wasm-deps/ dirs (they live under the root cell, so root//...
+    # would otherwise lint 1915 crates incl. windows-only ones); the ci-infra
+    # targets build+test excludes; and relay/ - the midnight-beefy-relay binary
+    # is not a buck2 deliverable (build+test never compiles it) and its rs_merkle
+    # fork resolves to a third-party variant that fails rustc check (generic-array
+    # without more_lengths; see midnight-node-nits.md). Leaves 158 first-party
+    # targets; same platform + wasm shims as build/test so the shared rmetas line up.
     DO --pass-args buck2+BUCK2 --mode=clippy \
-        --targets="root//... - root//third-party/... - root//wasm-deps/... - attrfilter('labels', 'ci-infra', root//...)" \
+        --targets="root//... - root//third-party/... - root//wasm-deps/... - root//relay/... - attrfilter('labels', 'ci-infra', root//...)" \
         --buck2_args="--target-platforms root//platforms:linux-x86_64 $_wasm"
 
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
