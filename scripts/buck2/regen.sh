@@ -27,4 +27,7 @@ scripts/buck2/gen-wasm-deps.sh
 scripts/buck2/normalize-git-sources.py wasm-deps
 
 scripts/buck2/gen-first-party.py "$meta"
-scripts/buck2/sync-test-fixtures.sh
+# Test fixtures are NOT synced here: they are gitignored, build-time-only trees
+# assembled by scripts/buck2/stage-test-fixtures.sh in Earthfile +buck2-prep. The
+# regen check `diff -r`s /tmp/before against /work with no path-scoped exclude, so
+# a fixture tree generated here would read as drift against the (absent) committed copy.
