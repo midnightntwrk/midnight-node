@@ -14,9 +14,6 @@
 // limitations under the License.
 
 //! Publishes jemalloc's memory statistics to Prometheus.
-//!
-//! `allocated` is memory held by live allocations; `resident` is what the allocator keeps in
-//! physical memory. A growing gap between the two points to fragmentation rather than a leak.
 
 use prometheus_endpoint::{GaugeVec, Opts, PrometheusError, Registry, U64, register};
 use std::time::Duration;
