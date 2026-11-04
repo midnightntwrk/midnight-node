@@ -4,7 +4,6 @@ use crate::db_model::BridgeTx;
 use futures::lock::Mutex;
 use log::debug;
 use sidechain_domain::{MainchainBlock, McBlockHash, McTxHash};
-use sp_timestamp::Timestamp;
 use std::{
 	cmp::{max, min},
 	collections::HashMap,
@@ -254,14 +253,11 @@ impl CachedTokenBridgeDataSourceImpl {
 	pub(super) async fn get_latest_stable_block(
 		&self,
 	) -> Result<Option<BlockNumber>, Box<dyn Error + Send + Sync>> {
-		// `MainchainBlock::timestamp` is in seconds, `Timestamp` is in milliseconds.
-		let latest_block_timestamp_secs = self.blocks.get_latest_block_info().await?.timestamp;
-		let latest_block_timestamp_millis = latest_block_timestamp_secs.checked_mul(1000).ok_or(
-			format!("Cardano block timestamp out of range: {latest_block_timestamp_secs}"),
-		)?;
+		// Measured from the current time, not the latest Cardano block's: a block that arrived
+		// too early becomes stable as time passes, even if Cardano produces no further blocks.
 		Ok(self
 			.blocks
-			.get_latest_stable_block_for(Timestamp::new(latest_block_timestamp_millis))
+			.get_latest_stable_block_now()
 			.await?
 			.map(|block| block.number.into()))
 	}
