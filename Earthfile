@@ -2309,9 +2309,10 @@ buck2-prep:
     DO buck2+INSTALL
     WORKDIR /work
     COPY --keep-ts --dir +buck2-src/work /
-    # No fixture staging step: tests read their runtime fixtures as buck2 `resources`
-    # mapped from the REAL repo files (see gen-first-party.py TEST_RESOURCES /
-    # TEST_TARGET_RESOURCES), so buck2 stages them into each test's run tree itself.
+    # No fixture staging step: buck2 runs tests in-place at the project root (this COPY'd
+    # tree), so they read the real res/, docs/, Cargo.toml directly. Each such file is
+    # listed as a `resources` input (gen-first-party.py TEST_RESOURCES /
+    # TEST_TARGET_RESOURCES) only so the cached test action re-runs when it changes.
     DO --pass-args buck2+CONFIG
 
 #buck2-ci Build the deliverables then run the tests, both under the action cache

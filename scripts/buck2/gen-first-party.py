@@ -178,8 +178,10 @@ ENV_HOOKS = {
 # pulled via export_file labels (see EXPORTS). Value: {label: dest-in-tree}.
 # buck2 (the re-cache platform) runs rust tests IN-PLACE at the project root, where the
 # full real repo tree is present - so tests read the real res/, docs/, Cargo.toml etc.
-# via their own workspace-root walk, no copied fixtures and no MN_WORKSPACE_ROOT. buck2
-# does NOT materialize `resources` at a path the test can read CWD-relative here; what a
+# via their own workspace-root walk, no copied fixtures (a couple of readers that build a
+# path from env!(CARGO_MANIFEST_DIR) instead of walking get MN_WORKSPACE_ROOT="." - the
+# real root - see UNIT_TEST_ENV). buck2 does NOT materialize `resources` at a path the
+# test can read CWD-relative here; what a
 # resource DOES do is make the file a DECLARED INPUT, so the (remote-cached) test action
 # re-runs when it changes. So resources below exist purely for cache-correctness - a
 # drift/config test must re-run when its fixture changes - and are listed, not placed.
@@ -610,11 +612,11 @@ def gen_buck(pkg, prefix=""):
         for k, v in sorted(env.items()):
             out.append(f'        "{k}": {json.dumps(v)},\n')
         out.append("    },\n")
-        # Runtime resources: buck2 runs rust tests with run_from_project_root=True in
-        # an otherwise-empty remote sandbox, so files a test reads at runtime (not at
-        # compile) must be declared here. Each resource named `n` materializes at the
-        # project-relative path <package>/<n>, i.e. exactly where CWD-relative /
-        # workspace-root-walk lookups expect it. Only test targets get these.
+        # Runtime resources: buck2 runs rust tests IN-PLACE at the project root, where the
+        # real repo tree is present, so a test reads its fixtures from that tree directly.
+        # A `resources` entry does NOT place a file; it declares the file an INPUT of the
+        # (remote-cached) test action, so the action re-runs when a fixture changes. Only
+        # test targets get these.
         if rule == "rust_test":
             res_expr = TEST_TARGET_RESOURCES.get(name) or TEST_RESOURCES.get(pkg["name"])
             if res_expr:
