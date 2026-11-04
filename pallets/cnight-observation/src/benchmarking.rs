@@ -24,9 +24,8 @@ use alloc::vec::Vec;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
-	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
-	UtxoIndexInTx,
+	CARDANO_ASSET_NAME_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH, CardanoPosition,
+	CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis, UtxoIndexInTx,
 };
 use midnight_primitives_mainchain_follower::{
 	ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData,
@@ -106,10 +105,11 @@ mod benchmarks {
 		assert_eq!(NextCardanoPosition::<T>::get().block_number, 2);
 	}
 
-	/// Benchmark `set_mapping_validator_contract_address` with a maximum-length address.
+	/// Benchmark `set_mapping_validator_contract_address` with a testnet enterprise script address.
 	#[benchmark]
 	fn set_mapping_validator_contract_address() {
-		let address: Vec<u8> = alloc::vec![0u8; CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize];
+		let address: Vec<u8> =
+			b"addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng".to_vec();
 
 		#[extrinsic_call]
 		set_mapping_validator_contract_address(RawOrigin::Root, address.clone());
