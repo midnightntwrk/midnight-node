@@ -219,7 +219,8 @@ impl CachedTokenBridgeDataSourceImpl {
 			},
 		};
 
-		// The stable tip can be below the requested block, which the range must still cover.
+		// The requested block passed stability against the partner-chain block's timestamp, which can
+		// be ahead of this node's clock, so it can be above the stable tip and must still be covered.
 		let to_block: BlockNumber =
 			max(to_block, min(to_block.saturating_add(self.cache_lookahead), latest_block));
 
