@@ -248,7 +248,7 @@ where
 	));
 
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
-	module.merge(Midnight::new(client.clone()).into_rpc())?;
+	module.merge(Midnight::new(client.clone(), ledger_unified).into_rpc())?;
 	module.merge(
 		crate::ledger_stats_rpc::LedgerStatsRpc::<_, Block, B>::new(client.clone(), ledger_unified)
 			.into_rpc(),

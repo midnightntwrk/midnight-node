@@ -72,6 +72,9 @@ pub trait MidnightApi<BlockHash> {
 	/// If `at` is `None`, the best block is used.
 	#[method(name = "midnight_ledgerVersion")]
 	fn get_ledger_version(&self, at: Option<BlockHash>) -> Result<String, BlockRpcError>;
+
+	#[method(name = "midnight_validateTransaction", blocking)]
+	fn validate_transaction(&self, tx_hex: String, at: Option<BlockHash>) -> RpcResult<String>;
 }
 
 #[derive(Debug)]
@@ -239,15 +242,15 @@ pub struct RpcBlock<Header> {
 }
 
 pub struct Midnight<C, Block> {
-	/// Shared reference to the client.
 	client: Arc<C>,
-	//todo do I need this one?
+	/// Whether the ledger arena uses the unified ParityDb layout.
+	ledger_unified: bool,
 	_marker: std::marker::PhantomData<Block>,
 }
 
 impl<C, Block> Midnight<C, Block> {
-	pub fn new(client: Arc<C>) -> Self {
-		Self { client, _marker: Default::default() }
+	pub fn new(client: Arc<C>, ledger_unified: bool) -> Self {
+		Self { client, ledger_unified, _marker: Default::default() }
 	}
 }
 
@@ -370,5 +373,67 @@ where
 			.map_err(|_e| BlockRpcError::BlockNotFound)?;
 
 		Ok(String::from_utf8_lossy(&ledger_version).to_string())
+	}
+
+	fn validate_transaction(
+		&self,
+		tx_hex: String,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> RpcResult<String> {
+		let tx_bytes = hex::decode(&tx_hex).map_err(|e| {
+			ErrorObject::owned(
+				INVALID_PARAMS_CODE,
+				format!("Invalid hex encoding: {e}"),
+				None::<()>,
+			)
+		})?;
+
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		let api = self.client.runtime_api();
+
+		let api_version = get_api_version::<C, Block>(&api, at).map_err(|e| {
+			ErrorObject::owned(-32603, format!("Runtime API error: {e}"), None::<()>)
+		})?;
+		if api_version < 6 {
+			return Err(ErrorObject::owned(
+				-32601,
+				"midnight_validateTransaction requires MidnightRuntimeApi version >= 6",
+				None::<()>,
+			));
+		}
+
+		let ctx = api.get_validation_context(at).map_err(|e| {
+			ErrorObject::owned(-32603, format!("Failed to get validation context: {e}"), None::<()>)
+		})?;
+
+		match midnight_node_ledger::native_api::validate_transaction_verbose(
+			self.ledger_unified,
+			&ctx.state_key,
+			&tx_bytes,
+			ctx.block_context,
+			ctx.spec_version,
+			ctx.max_block_weight,
+		) {
+			Ok(tx_hash) => Ok(format!("0x{}", hex::encode(tx_hash))),
+			Err(validation_err) => {
+				#[derive(Serialize)]
+				struct ValidationErrorData {
+					error_code: u8,
+					reason: String,
+					details: String,
+				}
+
+				Err(ErrorObject::owned(
+					-32001,
+					"Transaction validation failed",
+					Some(ValidationErrorData {
+						error_code: validation_err.error_code,
+						reason: validation_err.reason,
+						details: validation_err.details,
+					}),
+				))
+			},
+		}
 	}
 }

@@ -740,3 +740,4 @@ mod cnight;
 mod contract_state;
 mod governance;
 mod operational;
+mod validate_transaction;
