@@ -22,6 +22,7 @@
 //! (the shared/production ledger glue) and depends on it for the version-independent
 //! passthrough types (`BlockContext`, `WalletSeed`, `fork::raw_block_data`, etc.).
 
+pub mod arena_db;
 pub mod extract_tx_with_context;
 
 /// Process-wide counters of replayed transactions that did not fully apply,

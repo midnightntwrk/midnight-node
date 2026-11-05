@@ -16,6 +16,12 @@ midnight-serialize = { workspace = true }
 transient-crypto = { workspace = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"] }
+ledger-storage-ledger-8 = { workspace = true }
+# The toolkit's ledger arena (`arena_db`) can live in a ParityDB. Pulled in directly so the
+# toolkit runs the storage layout and incremental GC the node runs (`layout-v2`, `gc-v1`)
+# whether it is built alone or as part of the workspace.
+midnight-storage-core = { workspace = true }
+parity-db.workspace = true
 
 mn-ledger-9 = { workspace = true, features = ["proving"] }
 ledger-storage-ledger-9 = { workspace = true }
