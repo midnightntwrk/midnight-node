@@ -151,6 +151,35 @@ fn read_root_snapshot(path: &Path, block_height: u64) -> Option<LedgerSnapshot> 
 	}
 }
 
+/// Root keys of every arena-root snapshot under `root`, across all chains, one entry per
+/// snapshot file. `None` if a snapshot that looks like one cannot be read, so a caller
+/// reconciling arena roots never drops a root it could not account for.
+pub fn arena_root_keys(root: &Path) -> Option<Vec<Vec<u8>>> {
+	let mut keys = Vec::new();
+	for chain in list_dir(root) {
+		if hex::decode(&chain).map_or(true, |b| b.len() != 32) {
+			continue;
+		}
+		let dir = root.join(&chain).join("ledger");
+		for name in list_dir(&dir) {
+			let Some(height) = parse_ledger_height(&name) else { continue };
+			let path = dir.join(&name);
+			let mut version = [0u8; 1];
+			{
+				use std::io::Read;
+				let mut file = fs::File::open(&path).ok()?;
+				if file.read_exact(&mut version).is_err() {
+					continue;
+				}
+			}
+			if version[0] == ROOT_SNAPSHOT_FORMAT_VERSION {
+				keys.push(read_root_snapshot(&path, height)?.ledger_state_bytes);
+			}
+		}
+	}
+	Some(keys)
+}
+
 /// List filenames in a directory, returning empty vec if the directory doesn't exist.
 fn list_dir(dir: &Path) -> Vec<String> {
 	let entries = match fs::read_dir(dir) {

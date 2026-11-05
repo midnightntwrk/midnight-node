@@ -1200,6 +1200,12 @@ async fn usable_snapshot(
 		Some(s) if s.storage == SnapshotStorage::ArenaRoot && !ledger_arena::is_persistent() => {
 			"it is kept in the on-disk ledger arena, which this run does not use"
 		},
+		Some(s)
+			if s.storage == SnapshotStorage::ArenaRoot
+				&& !ledger_arena::has_root(&s.ledger_state_bytes) =>
+		{
+			"its state is not in the ledger arena"
+		},
 		Some(_) => return snapshot,
 	};
 	log::warn!(

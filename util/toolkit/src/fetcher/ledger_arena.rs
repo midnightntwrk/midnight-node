@@ -45,9 +45,9 @@ const LOCK_FILE: &str = "ledger-arena.lock";
 const GC_STATE_FILE: &str = "ledger-arena.gc";
 
 /// Run a full mark-and-sweep once this many nodes were written since the last one.
-/// Roughly the size of a long chain's live state (preprod at block 600k: 3.4M
-/// nodes), so the DB holds at most about twice what is reachable.
-const GC_THRESHOLD_NODES: u64 = 4_000_000;
+/// A full preprod replay to block 600,000 writes about 770k nodes, of which a GC
+/// then removes about 250k in 35 s, so this collects about once per such replay.
+const GC_THRESHOLD_NODES: u64 = 1_000_000;
 
 /// Seconds to wait for another toolkit process holding the arena; 0 waits forever.
 const LOCK_TIMEOUT_ENV: &str = "MN_LEDGER_STATE_DB_LOCK_TIMEOUT";
@@ -120,7 +120,65 @@ pub fn open(ledger_state_db: &Path) -> Result<(), ArenaError> {
 	FLUSHED_SINCE_GC.store(flushed, Ordering::Relaxed);
 	log::info!("opened ledger arena {} in {:?}", dir.display(), t.elapsed());
 	let _ = OPEN.set(OpenArena { root: ledger_state_db.to_path_buf(), _lock: lock });
+	reconcile_roots(ledger_state_db);
 	Ok(())
+}
+
+/// Make the DB's GC roots exactly the roots of the snapshot files, one reference per
+/// file. Runs before this process holds anything, so any other root count is left
+/// over from an earlier process: the storage crate's `ChildRef` uses root counts as an
+/// in-memory reference count, and the ones still alive at a process's last flush are
+/// never released; a crash between persisting a root and writing its snapshot leaves
+/// one too. Left alone, they would keep old states from ever being collected.
+fn reconcile_roots(ledger_state_db: &Path) {
+	use std::collections::HashMap;
+	let Some(keys) = super::fetch_storage::file_backend::arena_root_keys(ledger_state_db) else {
+		log::warn!("ledger arena: a snapshot could not be read; GC roots left as they are");
+		return;
+	};
+	let mut wanted: HashMap<_, u32> = HashMap::new();
+	for bytes in &keys {
+		match decode_key(bytes) {
+			Ok(key) => {
+				key.refs().into_iter().for_each(|h| *wanted.entry(h.clone()).or_default() += 1)
+			},
+			Err(e) => {
+				log::warn!(
+					"ledger arena: undecodable snapshot root ({e}); GC roots left as they are"
+				);
+				return;
+			},
+		}
+	}
+	let storage = arena_db::try_default_storage().expect("ledger arena not installed");
+	let (dropped, missing) = storage.arena.with_backend(|b| {
+		let mut dropped = 0u64;
+		let roots = b.get_roots();
+		let hashes: std::collections::HashSet<_> =
+			roots.keys().chain(wanted.keys()).cloned().collect();
+		for hash in hashes {
+			let count = roots.get(&hash).copied().unwrap_or(0);
+			let keep = wanted.get(&hash).copied().unwrap_or(0);
+			for _ in keep..count {
+				b.unpersist(&hash);
+				dropped += 1;
+			}
+			for _ in count..keep {
+				b.persist(&hash);
+			}
+		}
+		let missing = wanted.keys().filter(|h| b.get(h).is_none()).count();
+		(dropped, missing)
+	});
+	if dropped > 0 {
+		log::info!("ledger arena: released {dropped} root references no snapshot holds");
+	}
+	if missing > 0 {
+		log::warn!(
+			"ledger arena: {missing} snapshot root(s) are not in the database; those snapshots will replay from genesis"
+		);
+	}
+	flush();
 }
 
 fn acquire_lock(path: &Path) -> Result<File, ArenaError> {
@@ -188,6 +246,16 @@ pub fn release_root(key_bytes: &[u8]) -> io::Result<()> {
 		.arena
 		.with_backend(|b| key.refs().into_iter().for_each(|h| b.unpersist(h)));
 	Ok(())
+}
+
+/// Whether the state rooted at `key_bytes` is in the arena.
+pub fn has_root(key_bytes: &[u8]) -> bool {
+	let (Ok(key), Some(storage)) = (decode_key(key_bytes), arena_db::try_default_storage()) else {
+		return false;
+	};
+	storage
+		.arena
+		.with_backend(|b| key.refs().into_iter().all(|h| b.get(h).is_some()))
 }
 
 /// Lazily open the state rooted at `key_bytes`: only its top node is read now.

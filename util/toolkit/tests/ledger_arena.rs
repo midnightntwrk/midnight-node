@@ -108,4 +108,56 @@ async fn snapshot_roots_survive_gc_and_released_roots_do_not_leak() {
 	}
 	ledger_arena::flush();
 	assert_eq!(root_count(), snapshots - released.len());
+	// Age every snapshot past the grace period, then let a longer chain's checkpoints
+	// delete them: each deleted snapshot's root must go with it.
+	let ledger_dir = files.path().join(hex::encode(chain_id.0)).join("ledger");
+	let snapshot_files = || std::fs::read_dir(&ledger_dir).unwrap().count();
+	let aged = std::time::SystemTime::now() - Duration::from_secs(3600);
+	for entry in std::fs::read_dir(&ledger_dir).unwrap() {
+		let file = std::fs::File::options().write(true).open(entry.unwrap().path()).unwrap();
+		file.set_modified(aged).unwrap();
+	}
+	let longer = synthetic_source(6, 20);
+	let _ = build_fork_aware_context_cached(&seeds, &longer, Some(&backend), 2).await;
+	assert_eq!(root_count(), snapshot_files(), "deleted snapshots released their roots");
+}
+
+/// Full GC of an existing arena, for sizing the GC threshold:
+/// `MN_LEDGER_STATE_DB=<dir> cargo test --release --test ledger_arena -- --ignored --nocapture`.
+/// Needs exclusive use of the directory, like any toolkit command.
+#[test]
+#[ignore]
+fn gc_an_existing_arena() {
+	let dir = std::env::var("MN_LEDGER_STATE_DB").expect("set MN_LEDGER_STATE_DB");
+	let t = std::time::Instant::now();
+	ledger_arena::open(std::path::Path::new(&dir)).unwrap();
+	println!("open: {:?}", t.elapsed());
+	let storage = arena_db::try_default_storage().unwrap();
+	let t = std::time::Instant::now();
+	let removed = storage.arena.with_backend(|b| b.gc(Duration::from_secs(24 * 3600)));
+	println!("gc removed {removed} nodes in {:?}; roots {}", t.elapsed(), root_count());
+}
+
+#[test]
+#[ignore]
+fn list_roots_of_an_existing_arena() {
+	let dir = std::env::var("MN_LEDGER_STATE_DB").expect("set MN_LEDGER_STATE_DB");
+	ledger_arena::open(std::path::Path::new(&dir)).unwrap();
+	let roots = arena_db::try_default_storage().unwrap().arena.with_backend(|b| b.get_roots());
+	for (k, c) in &roots {
+		println!("root {k:?} count {c}");
+	}
+	let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+	let backend = FileBackend::new(&dir);
+	for entry in std::fs::read_dir(&dir).unwrap() {
+		let name = entry.unwrap().file_name().into_string().unwrap();
+		let Ok(bytes) = hex::decode(&name) else { continue };
+		let chain = subxt::utils::H256::from_slice(&bytes);
+		for f in std::fs::read_dir(std::path::Path::new(&dir).join(&name).join("ledger")).unwrap() {
+			let f = f.unwrap().file_name().into_string().unwrap();
+			let h: u64 = f.trim_end_matches(".zstd").parse().unwrap();
+			let s = rt.block_on(backend.get_root_snapshot(chain, h)).unwrap();
+			println!("snapshot {h}: {}", hex::encode(&s.ledger_state_bytes));
+		}
+	}
 }
