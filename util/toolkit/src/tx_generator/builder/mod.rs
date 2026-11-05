@@ -1329,10 +1329,8 @@ fn process_rss_mib() -> Option<(u64, u64)> {
 	Some((field("VmRSS:")?, field("VmHWM:")?))
 }
 
-/// Where the replay's time has gone so far, plus the memory it holds: the cumulative
+/// Where the replay's time has gone so far and the memory it holds: the cumulative
 /// phase timers from `replay_stats`, the storage arena occupancy and the process RSS.
-/// Logged at the progress heartbeat and once at the end of every replay batch, at
-/// debug level alongside the other `[perf]` lines.
 fn log_replay_perf(version: LedgerVersion, stage: &str) {
 	use midnight_ledger_unsafe_helpers::replay_stats::{self, Phases};
 	if !log::log_enabled!(log::Level::Debug) {
