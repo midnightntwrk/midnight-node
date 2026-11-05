@@ -1,0 +1,17 @@
+# Test plan items, referenced by the refs column of the checks.
+HF-01	The full fork flow: binary rollout and governance runtime upgrade
+HF-02	Contract state survives the fork
+HF-03	Maintenance authorities keep working
+HF-04	Balances, NIGHT pools, DUST and the bridge
+HF-05	Pre-fork balances are spendable
+HF-06	The new ledger-9 features
+HF-07	Pre-fork dApps and proofs keep working
+HF-08	Ledger-8 transactions are rejected cleanly
+HF-09	Ledger parameters and min_block_price
+HF-10	Contract events
+HF-11	A wiped validator re-syncs through the fork
+HF-12	The indexer and wallets across the fork
+HF-13	Mixed-version rollout and cross-node agreement
+HF-14	Replay of a mainnet state snapshot
+HF-15	The migration completes and is accounted identically
+HF-16	The whole chain is fetchable across the fork
