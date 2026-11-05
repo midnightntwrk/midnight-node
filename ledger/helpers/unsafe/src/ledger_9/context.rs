@@ -507,7 +507,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 			},
 		};
 
-		{
+		// Most replayed transactions carry no shielded offer (system transactions,
+		// unshielded transfers); dispatching every wallet onto the thread pool for
+		// nothing is a measurable share of replay time.
+		if !offers.is_empty() {
 			use rayon::prelude::*;
 			let t = Instant::now();
 			self.wallets

@@ -19,6 +19,7 @@ use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
 	ForkAwareLedgerContext, apply_block_8, apply_block_9, block_context_from_raw_8,
 	block_context_from_raw_9, fork_context_8_to_9,
 };
+use midnight_ledger_unsafe_helpers::replay_stats;
 use midnight_ledger_unsafe_helpers::*;
 use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use serde::Deserialize;
@@ -1326,31 +1327,65 @@ fn log_replay_perf(version: LedgerVersion, stage: &str) {
 	);
 }
 
+/// Progress of one replay across all of its batches, driving the heartbeat that
+/// shows users a long replay is still alive.
+pub(crate) struct ReplayProgress {
+	total: usize,
+	done: usize,
+	last_info_at: std::time::Instant,
+}
+
+impl ReplayProgress {
+	pub(crate) fn new(total: usize) -> Self {
+		Self { total, done: 0, last_info_at: std::time::Instant::now() }
+	}
+
+	/// One more block replayed. Evaluated for every block, not only when dust
+	/// events flush, so sparse chains still get a signal at the 30 s cadence.
+	fn tick(&mut self, version: LedgerVersion) {
+		self.done += 1;
+		if self.last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log_replay_progress(self.done, self.total);
+			log_replay_perf(version, "progress");
+			self.last_info_at = std::time::Instant::now();
+		}
+	}
+}
+
+/// Blocks decoded ahead of the sequential apply, in parallel. Bounds the decoded
+/// transactions held at once; the apply itself must stay in block order.
+const DECODE_AHEAD_BLOCKS: usize = 512;
+
 fn replay_blocks_8(
 	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
+	progress: &mut ReplayProgress,
 ) {
+	use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
+		DecodedTxs8, apply_decoded_block_8, decode_block_8,
+	};
+	use rayon::prelude::*;
+
 	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_8::Event<Db8>> = Vec::new();
 
 	let total = blocks_sorted_by_height.len();
-	let mut last_info_at = std::time::Instant::now();
 
-	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
-		events.extend(apply_block_8(ctx, block));
+	for (chunk_idx, chunk) in blocks_sorted_by_height.chunks(DECODE_AHEAD_BLOCKS).enumerate() {
+		let t_decode = std::time::Instant::now();
+		let decoded: Vec<DecodedTxs8> = chunk.par_iter().map(decode_block_8).collect();
+		replay_stats::record(&replay_stats::TX_DESERIALIZE_NS, t_decode);
+		for (j, (block, txs)) in chunk.iter().zip(&decoded).enumerate() {
+			let i = chunk_idx * DECODE_AHEAD_BLOCKS + j;
+			events.extend(apply_decoded_block_8(ctx, block, txs));
 
-		let is_last = i + 1 == total;
-		if events.len() >= DUST_BATCH_SIZE || is_last {
-			ctx.update_dust_from_events(events.as_slice());
-			events.clear();
-			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
-		}
+			let is_last = i + 1 == total;
+			if events.len() >= DUST_BATCH_SIZE || is_last {
+				ctx.update_dust_from_events(events.as_slice());
+				events.clear();
+				log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+			}
 
-		// Heartbeat lives outside the flush branch so a long stretch of blocks
-		// with no dust events still gets a "still alive" signal.
-		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
-			log_replay_progress(i + 1, total);
-			log_replay_perf(LedgerVersion::Ledger8, "progress");
-			last_info_at = std::time::Instant::now();
+			progress.tick(LedgerVersion::Ledger8);
 		}
 	}
 
@@ -1364,41 +1399,45 @@ fn replay_blocks_9(
 	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
+	progress: &mut ReplayProgress,
 ) {
+	use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
+		DecodedTxs9, apply_decoded_block_9, decode_block_9,
+	};
+	use rayon::prelude::*;
+
 	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
-	let mut last_info_at = std::time::Instant::now();
 
-	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
-		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
-		if n > 0 {
-			let (to_inject, rest) = remaining.split_at(n);
-			if !events.is_empty() {
+	for (chunk_idx, chunk) in blocks_sorted_by_height.chunks(DECODE_AHEAD_BLOCKS).enumerate() {
+		let t_decode = std::time::Instant::now();
+		let decoded: Vec<DecodedTxs9> = chunk.par_iter().map(decode_block_9).collect();
+		replay_stats::record(&replay_stats::TX_DESERIALIZE_NS, t_decode);
+		for (j, (block, txs)) in chunk.iter().zip(&decoded).enumerate() {
+			let i = chunk_idx * DECODE_AHEAD_BLOCKS + j;
+			let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
+			if n > 0 {
+				let (to_inject, rest) = remaining.split_at(n);
+				if !events.is_empty() {
+					ctx.update_dust_from_events(events.as_slice());
+					events.clear();
+				}
+				let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
+				inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
+				remaining = rest;
+			}
+
+			events.extend(apply_decoded_block_9(ctx, block, txs));
+
+			let is_last = i + 1 == total;
+			if events.len() >= DUST_BATCH_SIZE || is_last {
 				ctx.update_dust_from_events(events.as_slice());
 				events.clear();
+				log::debug!("[perf] replay_blocks_9 progress: {}/{} blocks", i + 1, total);
 			}
-			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
-			inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
-			remaining = rest;
-		}
 
-		events.extend(apply_block_9(ctx, block));
-
-		let is_last = i + 1 == total;
-		if events.len() >= DUST_BATCH_SIZE || is_last {
-			ctx.update_dust_from_events(events.as_slice());
-			events.clear();
-			log::debug!("[perf] replay_blocks_9 progress: {}/{} blocks", i + 1, total);
-		}
-
-		// See note in `replay_blocks_8`: heartbeat must be evaluated every
-		// iteration, not gated on the event-flush condition, so sparse
-		// chains still get a "still alive" signal at the 30 s cadence.
-		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
-			log_replay_progress(i + 1, total);
-			log_replay_perf(LedgerVersion::Ledger9, "progress");
-			last_info_at = std::time::Instant::now();
+			progress.tick(LedgerVersion::Ledger9);
 		}
 	}
 
@@ -1423,6 +1462,7 @@ fn fork_8_to_9_if_needed(
 	cached: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
 	keyed_at_fork: &[WalletSeed],
+	progress: &mut ReplayProgress,
 ) -> ForkAwareLedgerContext {
 	if l9_blocks.is_empty() {
 		ForkAwareLedgerContext::Ledger8(ctx8)
@@ -1432,7 +1472,7 @@ fn fork_8_to_9_if_needed(
 		for seed in keyed_at_fork {
 			ctx9.install_unshielded_keys(seed, scheme_of(schemes, seed));
 		}
-		replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
+		replay_blocks_9(&ctx9, l9_blocks, cached, schemes, progress);
 		ForkAwareLedgerContext::Ledger9(ctx9)
 	}
 }
@@ -1445,6 +1485,19 @@ pub(crate) fn replay_blocks(
 	cached: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
 	keyed_at_fork: &[WalletSeed],
+) -> ForkAwareLedgerContext {
+	let mut progress = ReplayProgress::new(blocks.len());
+	replay_blocks_tracked(fork_ctx, blocks, cached, schemes, keyed_at_fork, &mut progress)
+}
+
+/// [`replay_blocks`] for one batch of a longer replay whose heartbeat spans the batches.
+pub(crate) fn replay_blocks_tracked(
+	fork_ctx: ForkAwareLedgerContext,
+	blocks: &[RawBlockData],
+	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
+	keyed_at_fork: &[WalletSeed],
+	progress: &mut ReplayProgress,
 ) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
 		log::info!(
@@ -1465,12 +1518,12 @@ pub(crate) fn replay_blocks(
 	// built at ledger 9, matching the upgraded chain.
 	let result = match fork_ctx {
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
-			replay_blocks_8(&ctx8, l8_blocks);
-			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes, keyed_at_fork)
+			replay_blocks_8(&ctx8, l8_blocks, progress);
+			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes, keyed_at_fork, progress)
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
-			replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
+			replay_blocks_9(&ctx9, l9_blocks, cached, schemes, progress);
 			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
 	};
@@ -1633,6 +1686,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		},
 	};
 	let total = batches.total();
+	let mut progress = ReplayProgress::new(total);
 
 	// 5. Replay with mid-replay wallet injection, optionally saving
 	// checkpoints so an interrupted long replay resumes from the last
@@ -1664,12 +1718,13 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		} else {
 			cached.partition_point(|(_, ws)| ws.block_height <= batch_last)
 		};
-		fork_ctx = replay_blocks(
+		fork_ctx = replay_blocks_tracked(
 			fork_ctx,
 			&batch,
 			&cached[cached_cursor..cached_end],
 			schemes,
 			&keyed_at_fork,
+			&mut progress,
 		);
 		cached_cursor = cached_end;
 		replayed += batch.len();
@@ -1989,12 +2044,13 @@ async fn build_fork_aware_context_uncached(
 	);
 
 	let mut batches = ReplayBatches::streamed(chain, 0);
+	let mut progress = ReplayProgress::new(batches.total());
 	while let Some(batch) = batches
 		.next()
 		.await
 		.unwrap_or_else(|e| panic!("failed to read blocks from the fetch cache: {e}"))
 	{
-		ctx = replay_blocks(ctx, &batch, &[], schemes, &keyed_at_fork);
+		ctx = replay_blocks_tracked(ctx, &batch, &[], schemes, &keyed_at_fork, &mut progress);
 	}
 	// The dust-warp block follows the chain, as it does in `blocks` for a file source.
 	if let Some(synthetic) = received_tx.synthetic_dust_warp_block() {
