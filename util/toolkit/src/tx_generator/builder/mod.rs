@@ -1264,6 +1264,39 @@ fn log_replay_progress(done: usize, total: usize) {
 	);
 }
 
+/// Resident set size of this process and its peak, in MiB (Linux only).
+fn process_rss_mib() -> Option<(u64, u64)> {
+	let status = std::fs::read_to_string("/proc/self/status").ok()?;
+	let field = |name: &str| -> Option<u64> {
+		status
+			.lines()
+			.find_map(|line| line.strip_prefix(name))
+			.and_then(|rest| rest.trim().trim_end_matches("kB").trim().parse::<u64>().ok())
+			.map(|kib| kib / 1024)
+	};
+	Some((field("VmRSS:")?, field("VmHWM:")?))
+}
+
+/// Where the replay's time has gone so far, plus the memory it holds: the cumulative
+/// phase timers from `replay_stats`, the storage arena occupancy and the process RSS.
+/// Logged at the progress heartbeat and once at the end of every replay batch, at
+/// debug level alongside the other `[perf]` lines.
+fn log_replay_perf(version: LedgerVersion, stage: &str) {
+	use midnight_ledger_unsafe_helpers::replay_stats::{self, Phases};
+	if !log::log_enabled!(log::Level::Debug) {
+		return;
+	}
+	let phases = Phases::snapshot();
+	let arena = match version {
+		LedgerVersion::Ledger8 => replay_stats::arena_stats_8(),
+		LedgerVersion::Ledger9 => replay_stats::arena_stats_9(),
+	};
+	let (rss, peak) = process_rss_mib().unwrap_or((0, 0));
+	log::debug!(
+		"[perf] replay {stage}: {phases}; arena ({version:?}): {arena}; rss {rss} MiB (peak {peak} MiB)"
+	);
+}
+
 fn replay_blocks_8(
 	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
@@ -1287,6 +1320,7 @@ fn replay_blocks_8(
 		// with no dust events still gets a "still alive" signal.
 		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
 			log_replay_progress(i + 1, total);
+			log_replay_perf(LedgerVersion::Ledger8, "progress");
 			last_info_at = std::time::Instant::now();
 		}
 	}
@@ -1334,6 +1368,7 @@ fn replay_blocks_9(
 		// chains still get a "still alive" signal at the 30 s cadence.
 		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
 			log_replay_progress(i + 1, total);
+			log_replay_perf(LedgerVersion::Ledger9, "progress");
 			last_info_at = std::time::Instant::now();
 		}
 	}
@@ -1412,6 +1447,7 @@ pub(crate) fn replay_blocks(
 	};
 
 	log::debug!("[perf] block replay: {} blocks in {:?}", blocks.len(), t_replay.elapsed());
+	log_replay_perf(result.version(), "batch done");
 	let (partial, failed) = replay_tx_failures();
 	if partial + failed > 0 {
 		log::info!(

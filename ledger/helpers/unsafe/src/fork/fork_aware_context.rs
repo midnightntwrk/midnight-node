@@ -233,6 +233,7 @@ pub fn apply_block_8(
 	>;
 	type SerdeTx8 = SerdeTransaction<crate::ledger_8::Signature, crate::ledger_8::ProofMarker, Db8>;
 
+	let t = std::time::Instant::now();
 	let mut transactions: Vec<SerdeTx8> = Vec::new();
 	for raw_tx in &block.transactions {
 		match raw_tx {
@@ -248,6 +249,7 @@ pub fn apply_block_8(
 			},
 		}
 	}
+	crate::replay_stats::record(&crate::replay_stats::TX_DESERIALIZE_NS, t);
 
 	let block_context = block_context_from_raw_8(block);
 
@@ -278,6 +280,7 @@ pub fn apply_block_9(
 	>;
 	type SerdeTx9 = SerdeTransaction<crate::ledger_9::Signature, crate::ledger_9::ProofMarker, Db9>;
 
+	let t = std::time::Instant::now();
 	let mut transactions: Vec<SerdeTx9> = Vec::new();
 	for raw_tx in &block.transactions {
 		match raw_tx {
@@ -293,6 +296,7 @@ pub fn apply_block_9(
 			},
 		}
 	}
+	crate::replay_stats::record(&crate::replay_stats::TX_DESERIALIZE_NS, t);
 
 	let block_context = block_context_from_raw_9(block);
 
