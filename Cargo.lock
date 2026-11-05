@@ -8000,7 +8000,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "2.1.100"
+version = "2.1.101"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -8251,7 +8251,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "2.1.100"
+version = "2.1.101"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -8281,7 +8281,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-runtime"
-version = "2.1.100"
+version = "2.1.101"
 dependencies = [
  "authority-selection-inherents",
  "binary-merkle-tree",
@@ -8358,7 +8358,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-toolkit"
-version = "2.1.100"
+version = "2.1.101"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -8824,7 +8824,8 @@ dependencies = [
 [[package]]
 name = "midnight-transient-crypto"
 version = "2.2.0"
-source = "git+https://github.com/shieldedtech/embargo-2026-10-midnight-ledger?tag=transient-crypto-2.2.0#30830e00e6072d959d01b162fcd1d3983c43210a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "363a7902e27e5c85ce833c0a4404cf9dfb75027e70ff54b3b4cfd4fa2c0c5ad0"
 dependencies = [
  "anyhow",
  "blake2b_simd",

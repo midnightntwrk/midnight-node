@@ -476,8 +476,11 @@ parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "
 # version deps, so cargo resolves each crate through this table instead of implicitly
 # through one repo's directory layout. That is why `midnight-ledger-static` needs an entry
 # here: under a workspace tag it arrived free via `path = "../static"`, but crates.io has no
-# 10.0.0. The final tags all live on the embargo repo, including the three crates (derive, the
-# 2.x transient-crypto, zkir) whose rc tags came from the public ledger repo.
+# 10.0.0. The final tags all live on the embargo repo, including the two crates (derive, zkir)
+# whose rc tags came from the public ledger repo. The 2.x `midnight-transient-crypto` that
+# `midnight-zkir` pulls in as `transient-crypto-old` is deliberately NOT patched: the embargo
+# `transient-crypto-2.2.0` tag lacks a security fix that ledger 8.1.2 shipped, and the
+# crates.io 2.2.0 (published 2026-11-04) carries it, so it must resolve to the registry.
 # `midnight-storage` here is 3.0.0 and only reaches the ledger-9 side: ledger 8's `=2.0.3`
 # requirement does not match it and resolves to crates.io.
 midnight-ledger-v9            = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "crate-ledger-9.1.0.1" }
@@ -487,7 +490,6 @@ midnight-coin-structure       = { git = "https://github.com/shieldedtech/embargo
 midnight-base-crypto          = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "base-crypto-1.1.1" }
 midnight-base-crypto-derive   = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "base-crypto-derive-1.1.0" }
 midnight-transient-crypto     = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "transient-crypto-3.0.1" }
-midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "transient-crypto-2.2.0" }
 midnight-onchain-vm           = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "onchain-vm-4.0.1" }
 midnight-onchain-state        = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "onchain-state-4.0.1" }
 midnight-onchain-runtime      = { git = "https://github.com/shieldedtech/embargo-2026-10-midnight-ledger", tag = "crate-onchain-runtime-4.0.1" }
