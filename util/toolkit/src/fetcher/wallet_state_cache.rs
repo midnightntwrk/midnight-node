@@ -43,6 +43,21 @@ pub const WALLET_CACHE_FORMAT_VERSION: u8 = 3;
 /// (raw zstd, implicitly ledger 9) start with the zstd magic byte and are detected as a miss.
 pub const SNAPSHOT_FORMAT_VERSION: u8 = 2;
 
+/// Format version of a snapshot whose `ledger_state_bytes` is the root key of the state in
+/// the on-disk ledger arena (see [`super::ledger_arena`]) instead of the state itself. Same
+/// body as [`SNAPSHOT_FORMAT_VERSION`]; the version byte tells the two apart.
+pub const ROOT_SNAPSHOT_FORMAT_VERSION: u8 = 3;
+
+/// Where a [`LedgerSnapshot`] keeps its ledger state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SnapshotStorage {
+	/// `ledger_state_bytes` is the whole tagged, serialized state.
+	#[default]
+	Inline,
+	/// `ledger_state_bytes` is the key of a GC root in the on-disk ledger arena.
+	ArenaRoot,
+}
+
 /// Byte identifying the unshielded signature scheme in the cache key, so the same seed maps to
 /// distinct entries for Schnorr vs ECDSA (they resolve to different NIGHT — and therefore
 /// different dust — identities).
@@ -83,6 +98,9 @@ impl From<&BlockContext> for SerializableBlockContext {
 pub struct LedgerSnapshot {
 	#[serde(skip)]
 	pub block_height: u64,
+	/// Carried by the format version byte, not the body.
+	#[serde(skip)]
+	pub storage: SnapshotStorage,
 	/// Which ledger generation serialized `ledger_state_bytes`.
 	pub ledger_version: LedgerVersion,
 	#[serde(with = "serde_bytes")]
@@ -213,7 +231,10 @@ impl LedgerSnapshot {
 		let compressed = zstd::encode_all(encoded.as_slice(), ZSTD_COMPRESSION_LEVEL)
 			.map_err(|e| CacheError::Compression(format!("compress: {e}")))?;
 		let mut out = Vec::with_capacity(1 + compressed.len());
-		out.push(SNAPSHOT_FORMAT_VERSION);
+		out.push(match self.storage {
+			SnapshotStorage::Inline => SNAPSHOT_FORMAT_VERSION,
+			SnapshotStorage::ArenaRoot => ROOT_SNAPSHOT_FORMAT_VERSION,
+		});
 		out.extend_from_slice(&compressed);
 		Ok(out)
 	}
@@ -221,19 +242,21 @@ impl LedgerSnapshot {
 	pub fn from_value_bytes(bytes: &[u8], block_height: u64) -> Result<Self, CacheError> {
 		// A missing/mismatched version byte means the value predates this format (or is
 		// a future one): report it as an error so the backend treats it as a miss.
-		match bytes.first() {
-			Some(&SNAPSHOT_FORMAT_VERSION) => {},
+		let storage = match bytes.first() {
+			Some(&SNAPSHOT_FORMAT_VERSION) => SnapshotStorage::Inline,
+			Some(&ROOT_SNAPSHOT_FORMAT_VERSION) => SnapshotStorage::ArenaRoot,
 			other => {
 				return Err(CacheError::DeserializeLedgerState(format!(
-					"unsupported ledger snapshot format version {other:?} (expected {SNAPSHOT_FORMAT_VERSION})"
+					"unsupported ledger snapshot format version {other:?} (expected {SNAPSHOT_FORMAT_VERSION} or {ROOT_SNAPSHOT_FORMAT_VERSION})"
 				)));
 			},
-		}
+		};
 		let decompressed = zstd::decode_all(&bytes[1..])
 			.map_err(|e| CacheError::Compression(format!("decompress: {e}")))?;
 		let mut snapshot: Self = postcard::from_bytes(&decompressed)
 			.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?;
 		snapshot.block_height = block_height;
+		snapshot.storage = storage;
 		Ok(snapshot)
 	}
 }
@@ -298,6 +321,7 @@ pub fn create_ledger_snapshot(
 
 	Ok(LedgerSnapshot {
 		block_height,
+		storage: SnapshotStorage::Inline,
 		ledger_version: LedgerVersion::Ledger9,
 		ledger_state_bytes,
 		latest_block_context: serializable_context,
@@ -329,11 +353,78 @@ pub fn create_ledger_snapshot_8(
 
 	Ok(LedgerSnapshot {
 		block_height,
+		storage: SnapshotStorage::Inline,
 		ledger_version: LedgerVersion::Ledger8,
 		ledger_state_bytes,
 		latest_block_context: serializable_context,
 		state_root,
 	})
+}
+
+/// [`create_ledger_snapshot`] for the on-disk ledger arena: persists the state as a GC
+/// root (flushing it to disk) and records only its root key. The caller owns that root
+/// reference and must release it when the snapshot is replaced or deleted.
+pub fn create_root_snapshot(
+	context: &LedgerContext<DefaultDB>,
+	block_height: u64,
+) -> Result<LedgerSnapshot, CacheError> {
+	let sp = context
+		.ledger_state
+		.lock()
+		.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?
+		.clone();
+	let key = super::ledger_arena::persist_root(&sp)
+		.map_err(|e| CacheError::SerializeLedgerState(e.to_string()))?;
+	Ok(LedgerSnapshot {
+		block_height,
+		storage: SnapshotStorage::ArenaRoot,
+		ledger_version: LedgerVersion::Ledger9,
+		state_root: compute_state_root(&key),
+		ledger_state_bytes: key,
+		latest_block_context: SerializableBlockContext::from(&context.latest_block_context()),
+	})
+}
+
+/// Ledger-8 variant of [`create_root_snapshot`].
+pub fn create_root_snapshot_8(
+	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
+	block_height: u64,
+) -> Result<LedgerSnapshot, CacheError> {
+	let sp = context
+		.ledger_state
+		.lock()
+		.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?
+		.clone();
+	let key = super::ledger_arena::persist_root(&sp)
+		.map_err(|e| CacheError::SerializeLedgerState(e.to_string()))?;
+	let ctx8 = context.latest_block_context();
+	Ok(LedgerSnapshot {
+		block_height,
+		storage: SnapshotStorage::ArenaRoot,
+		ledger_version: LedgerVersion::Ledger8,
+		state_root: compute_state_root(&key),
+		ledger_state_bytes: key,
+		latest_block_context: SerializableBlockContext {
+			tblock_secs: ctx8.tblock.to_secs(),
+			tblock_err: ctx8.tblock_err,
+			parent_block_hash: ctx8.parent_block_hash.0,
+			last_block_time: ctx8.last_block_time.to_secs(),
+		},
+	})
+}
+
+/// Release the arena root a [`SnapshotStorage::ArenaRoot`] snapshot holds; a no-op for
+/// an inline snapshot.
+pub fn release_snapshot_root(snapshot: &LedgerSnapshot) {
+	if snapshot.storage != SnapshotStorage::ArenaRoot {
+		return;
+	}
+	if let Err(e) = super::ledger_arena::release_root(&snapshot.ledger_state_bytes) {
+		log::warn!(
+			"failed to release the ledger arena root of the snapshot at block {}: {e}",
+			snapshot.block_height
+		);
+	}
 }
 
 /// Ledger-8 variant of [`create_wallet_snapshot`].
@@ -398,13 +489,21 @@ pub fn restore_context_from_ledger_snapshot_8(
 		return Err(CacheError::StateRootMismatch);
 	}
 
-	// Both ledger generations share one `midnight-storage-core`, so the trusted
-	// deserializer works for ledger-8 state too.
-	let ledger_state: ledger_8::LedgerState<ledger_8::DefaultDB> =
-		super::trusted_deserialize::trusted_deserialize_tagged::<
+	let sp = match snapshot.storage {
+		// Both ledger generations share one `midnight-storage-core`, so the trusted
+		// deserializer works for ledger-8 state too.
+		SnapshotStorage::Inline => ledger_8::Sp::new(
+			super::trusted_deserialize::trusted_deserialize_tagged::<
+				ledger_8::LedgerState<ledger_8::DefaultDB>,
+			>(&snapshot.ledger_state_bytes)
+			.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?,
+		),
+		SnapshotStorage::ArenaRoot => super::ledger_arena::load_root::<
 			ledger_8::LedgerState<ledger_8::DefaultDB>,
 		>(&snapshot.ledger_state_bytes)
-		.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?;
+		.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?,
+	};
+	let ledger_state = (*sp).clone();
 
 	let context = ledger_8::context::LedgerContext::new("restored");
 	{
@@ -412,7 +511,7 @@ pub fn restore_context_from_ledger_snapshot_8(
 			.ledger_state
 			.lock()
 			.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?;
-		*state = ledger_8::Sp::new(ledger_state.clone());
+		*state = sp;
 	}
 
 	let block_context = ledger_8::BlockContext {
@@ -532,10 +631,19 @@ pub fn restore_context_from_ledger_snapshot(
 		return Err(CacheError::StateRootMismatch);
 	}
 
-	let ledger_state = super::trusted_deserialize::trusted_deserialize_tagged::<
-		LedgerState<DefaultDB>,
-	>(&snapshot.ledger_state_bytes)
-	.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?;
+	let sp = match snapshot.storage {
+		SnapshotStorage::Inline => Sp::new(
+			super::trusted_deserialize::trusted_deserialize_tagged::<LedgerState<DefaultDB>>(
+				&snapshot.ledger_state_bytes,
+			)
+			.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?,
+		),
+		SnapshotStorage::ArenaRoot => {
+			super::ledger_arena::load_root::<LedgerState<DefaultDB>>(&snapshot.ledger_state_bytes)
+				.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?
+		},
+	};
+	let ledger_state = (*sp).clone();
 
 	let context = LedgerContext::new("restored");
 	{
@@ -543,7 +651,7 @@ pub fn restore_context_from_ledger_snapshot(
 			.ledger_state
 			.lock()
 			.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?;
-		*state = Sp::new(ledger_state.clone());
+		*state = sp;
 	}
 
 	let block_context = BlockContext {
@@ -760,6 +868,7 @@ mod tests {
 	fn ledger_snapshot_byte_encoding_roundtrip() {
 		let snapshot = LedgerSnapshot {
 			block_height: 42,
+			storage: Default::default(),
 			ledger_version: LedgerVersion::Ledger9,
 			ledger_state_bytes: vec![0xAA; 1024],
 			latest_block_context: SerializableBlockContext {
@@ -1108,6 +1217,7 @@ mod tests {
 
 		let mut snapshot = LedgerSnapshot {
 			block_height: 100,
+			storage: Default::default(),
 			ledger_version: LedgerVersion::Ledger9,
 			ledger_state_bytes,
 			latest_block_context: SerializableBlockContext {

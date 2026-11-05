@@ -13,13 +13,18 @@
 
 //! Integration tests verifying `build_fork_aware_context_cached` produces the
 //! same result as `build_fork_aware_context_raw` across all cache scenarios.
+//!
+//! This binary keeps ledger states in the on-disk ledger arena, as a toolkit run with
+//! `--ledger-state-db` does; `cached_context_in_memory` runs the same tests with the
+//! in-memory arena and inline snapshots.
 
 use midnight_ledger_unsafe_helpers::{
 	DefaultDB, LedgerContext, UnshieldedSignatureScheme, WalletSeed, ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use midnight_node_toolkit::fetcher::wallet_state_cache::{
-	serialize_ledger_state_fast, serialize_ledger_state_fast_8, wallet_cache_key,
+	self as wallet_state_cache, serialize_ledger_state_fast, serialize_ledger_state_fast_8,
+	wallet_cache_key,
 };
 use midnight_node_toolkit::{
 	fetcher::{
@@ -27,6 +32,7 @@ use midnight_node_toolkit::{
 		fetch_storage::{
 			BlockReader, FetchStorage, InMemory, WalletStateCaching, file_backend::FileBackend,
 		},
+		ledger_arena,
 	},
 	serde_def::SourceTransactions,
 	tx_generator::{
@@ -40,6 +46,28 @@ use midnight_node_toolkit::{
 };
 use std::sync::Arc;
 use subxt::utils::H256;
+
+/// Whether this build of the tests uses the on-disk arena (see the module docs).
+fn persistent_arena() -> bool {
+	!module_path!().ends_with("in_memory")
+}
+
+/// Install this process's ledger arena before any ledger object is built. The on-disk
+/// arena is shared by every test of the binary, as by every command on one
+/// `--ledger-state-db`; each test still has its own snapshot and wallet files.
+fn setup_arena() {
+	static ARENA_DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+	if !persistent_arena() {
+		midnight_ledger_unsafe_helpers::arena_db::ensure_default_storage();
+		return;
+	}
+	ARENA_DIR.get_or_init(|| {
+		let dir = tempfile::TempDir::new().expect("arena temp dir");
+		ledger_arena::open(dir.path()).expect("open ledger arena");
+		dir
+	});
+	assert!(ledger_arena::is_persistent(), "the on-disk arena must be installed");
+}
 
 fn load_genesis_source() -> SourceTransactions {
 	let genesis_path =
@@ -199,6 +227,7 @@ async fn test_split_cached(backend: &dyn WalletStateCaching, source: &SourceTran
 
 #[tokio::test]
 async fn file_cached_context() {
+	setup_arena();
 	let source = load_genesis_source();
 	let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
 	let backend = FileBackend::new(tmp.path());
@@ -267,6 +296,7 @@ fn assert_contexts_equal_8(
 
 #[tokio::test]
 async fn ledger8_chain_cache_and_restore() {
+	setup_arena();
 	let source = synthetic_source(6, 0);
 	let seeds = vec![wallet_seed(0x01), wallet_seed(0x02)];
 	let tmp = tempfile::TempDir::new().unwrap();
@@ -303,6 +333,7 @@ async fn ledger8_chain_cache_and_restore() {
 /// A ledger-8 cache is discarded once the chain has crossed to ledger 9.
 #[tokio::test]
 async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
+	setup_arena();
 	let tmp = tempfile::TempDir::new().unwrap();
 	let backend = FileBackend::new(tmp.path());
 
@@ -330,6 +361,7 @@ async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
 /// GH #2180: every cached path agrees with the raw replay for an ECDSA wallet across the fork.
 #[tokio::test]
 async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
+	setup_arena();
 	let source = synthetic_source(6, 4);
 	let (schnorr, ecdsa) = (wallet_seed(0x01), wallet_seed(0x02));
 	let seeds = vec![schnorr.clone(), ecdsa.clone()];
@@ -390,6 +422,7 @@ async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
 #[tokio::test]
 #[should_panic(expected = "only supported from ledger 9")]
 async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
+	setup_arena();
 	let source = synthetic_source(6, 0);
 	let ecdsa = wallet_seed(0x02);
 	let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
@@ -423,6 +456,7 @@ async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
 
 #[tokio::test]
 async fn ledger8_cache_with_mixed_heights_replays_from_genesis() {
+	setup_arena();
 	let tmp = tempfile::TempDir::new().unwrap();
 	let backend = FileBackend::new(tmp.path());
 
@@ -472,6 +506,7 @@ impl BlockReader for CountingReader {
 
 #[tokio::test]
 async fn cached_chain_source_loads_only_the_window_it_needs() {
+	setup_arena();
 	let source = load_genesis_source();
 	let chain_id = source.chain_id().unwrap();
 	let tip = source.blocks.last().unwrap().number;
@@ -537,4 +572,91 @@ async fn cached_chain_source_loads_only_the_window_it_needs() {
 		.unwrap();
 	assert_contexts_equal("lazy uncached", &uncached, &raw, &seeds);
 	assert_eq!(reads(&reader).first().map(|r| r.0), Some(0));
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot storage: arena roots on disk, inline states in memory
+// ---------------------------------------------------------------------------
+
+fn snapshot_format_version(dir: &std::path::Path, chain_id: H256, height: u64) -> u8 {
+	let path = dir
+		.join(hex::encode(chain_id.0))
+		.join("ledger")
+		.join(format!("{height:012}.zstd"));
+	std::fs::read(&path).expect("snapshot file")[0]
+}
+
+/// The snapshot keeps an arena root with the on-disk arena and the whole state without it.
+#[tokio::test]
+async fn snapshot_format_follows_the_arena() {
+	setup_arena();
+	let source = load_genesis_source();
+	let chain_id = source.chain_id().unwrap();
+	let tip = source.blocks.last().unwrap().number;
+	let seeds = vec![wallet_seed(0x05)];
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	let _ = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0).await;
+	let expected = if persistent_arena() {
+		wallet_state_cache::ROOT_SNAPSHOT_FORMAT_VERSION
+	} else {
+		wallet_state_cache::SNAPSHOT_FORMAT_VERSION
+	};
+	assert_eq!(snapshot_format_version(tmp.path(), chain_id, tip), expected);
+}
+
+/// An inline snapshot written before the on-disk arena existed is restored once and
+/// saved back as an arena root, with the same result as a replay from genesis.
+#[tokio::test]
+async fn inline_snapshot_is_imported_into_the_arena() {
+	setup_arena();
+	if !persistent_arena() {
+		return;
+	}
+	let source = load_genesis_source();
+	let chain_id = source.chain_id().unwrap();
+	let tip = source.blocks.last().unwrap().number;
+	let seeds = vec![wallet_seed(0x06), wallet_seed(0x07)];
+	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
+
+	// What an older toolkit left behind: an inline snapshot and wallet entries at the tip.
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+	let inline = wallet_state_cache::create_ledger_snapshot(&raw, tip).unwrap();
+	backend.set_ledger_snapshot(chain_id, inline).await;
+	let wallets: Vec<_> = seeds
+		.iter()
+		.map(|seed| {
+			wallet_state_cache::create_wallet_snapshot(
+				&raw,
+				seed,
+				UnshieldedSignatureScheme::Schnorr,
+				tip,
+			)
+			.unwrap()
+		})
+		.collect();
+	backend.set_wallet_states(chain_id, &wallets).await;
+	assert_eq!(
+		snapshot_format_version(tmp.path(), chain_id, tip),
+		wallet_state_cache::SNAPSHOT_FORMAT_VERSION
+	);
+
+	let imported = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("imported", &imported, &raw, &seeds);
+	assert_eq!(
+		snapshot_format_version(tmp.path(), chain_id, tip),
+		wallet_state_cache::ROOT_SNAPSHOT_FORMAT_VERSION,
+		"the inline snapshot is converted in place"
+	);
+
+	let reopened = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("reopened", &reopened, &raw, &seeds);
 }

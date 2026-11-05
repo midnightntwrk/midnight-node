@@ -169,6 +169,8 @@ pub enum SourceError {
 	NetworkIdFetchError(#[from] subxt::Error),
 	#[error("invalid source args")]
 	InvalidSourceArgs(Source),
+	#[error("failed to open the ledger state db")]
+	LedgerArena(#[from] crate::fetcher::ledger_arena::ArenaError),
 	#[error(
 		"toolkit only supports a single .json transaction as input - use `--to-bytes` and `.mn` format for multiple txs"
 	)]

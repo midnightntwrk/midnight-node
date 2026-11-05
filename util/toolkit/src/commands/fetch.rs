@@ -39,6 +39,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 
 	let ledger_state_db = src.ledger_state_db.clone();
 	let fetch_cache = src.fetch_cache.clone();
+	crate::fetcher::ledger_arena::init_async(&ledger_state_db, &fetch_cache).await?;
 	let replay_checkpoint_interval = src.replay_checkpoint_interval;
 
 	let start = std::time::Instant::now();

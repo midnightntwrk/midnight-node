@@ -33,8 +33,10 @@ use std::{
 use crate::{
 	cli_parsers as cli,
 	fetcher::{
-		CachedBlocks, FetchError, fetch_storage::WalletStateCaching, wallet_state_cache,
-		wallet_state_cache::CachedWalletState,
+		CachedBlocks, FetchError,
+		fetch_storage::WalletStateCaching,
+		ledger_arena, wallet_state_cache,
+		wallet_state_cache::{CachedWalletState, LedgerSnapshot, SnapshotStorage},
 	},
 	serde_def::SourceTransactions,
 };
@@ -1114,13 +1116,11 @@ fn inject_cached_wallets(
 async fn initialize_context(
 	received_tx: &SourceTransactions,
 	uncached_seeds: &[WalletSeed],
-	restore_height: Option<u64>,
-	storage: &dyn WalletStateCaching,
-	chain_id: H256,
+	snapshot: Option<LedgerSnapshot>,
 	schemes: &WalletSchemes,
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
 ) -> ForkAwareLedgerContext {
-	let Some(start_height) = restore_height else {
+	let Some(snapshot) = snapshot else {
 		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
 			.iter()
 			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
@@ -1135,13 +1135,7 @@ async fn initialize_context(
 		);
 	};
 
-	let snapshot = timed!(
-		"storage.get_ledger_snapshot",
-		storage.get_ledger_snapshot(chain_id, start_height).await
-	)
-	.unwrap_or_else(|| {
-		panic!("ledger snapshot missing at height {} — clear caches and retry", start_height)
-	});
+	let start_height = snapshot.block_height;
 	log::info!(
 		"restoring {:?} ledger snapshot at block {start_height} (skipping replay of everything before it)",
 		snapshot.ledger_version
@@ -1190,6 +1184,28 @@ async fn initialize_context(
 			ForkAwareLedgerContext::Ledger9(ctx)
 		},
 	}
+}
+
+/// The ledger snapshot a warm start restores from, or `None` to replay from genesis
+/// (logged) when it is missing or its arena root cannot be opened in this process.
+async fn usable_snapshot(
+	storage: &dyn WalletStateCaching,
+	chain_id: H256,
+	height: u64,
+) -> Option<LedgerSnapshot> {
+	let snapshot =
+		timed!("storage.get_ledger_snapshot", storage.get_ledger_snapshot(chain_id, height).await);
+	let reason = match &snapshot {
+		None => "it is missing",
+		Some(s) if s.storage == SnapshotStorage::ArenaRoot && !ledger_arena::is_persistent() => {
+			"it is kept in the on-disk ledger arena, which this run does not use"
+		},
+		Some(_) => return snapshot,
+	};
+	log::warn!(
+		"ledger snapshot at block {height} cannot be restored ({reason}); replaying from genesis"
+	);
+	None
 }
 
 /// The one place deciding which cache entries a replay can consume; the rest are
@@ -1642,7 +1658,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 
 	// 2. Warm start only when every seed is cached: an uncached wallet needs its
 	//    full history scanned, which forces the replay back to genesis.
-	let restore_height = if uncached_seeds.is_empty() {
+	let mut restore_height = if uncached_seeds.is_empty() {
 		cached.first().map(|c| c.1.block_height)
 	} else {
 		log::warn!(
@@ -1655,19 +1671,24 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		None
 	};
 
+	let snapshot = match restore_height {
+		Some(height) => usable_snapshot(storage, chain_id, height).await,
+		None => None,
+	};
+	if restore_height.is_some() && snapshot.is_none() {
+		restore_height = None;
+		uncached_seeds.extend(cached.drain(..).map(|(seed, _)| seed));
+	}
+	// An inline snapshot restored into the on-disk arena is saved back as an arena root
+	// even when there is nothing to replay, so the next run opens it lazily.
+	let import_legacy_snapshot = ledger_arena::is_persistent()
+		&& snapshot.as_ref().is_some_and(|s| s.storage == SnapshotStorage::Inline);
+
 	// 3. Initialize context (cold genesis or warm snapshot restore).
 	let keyed_at_fork =
 		ecdsa_seeds_keyed_at_fork(&uncached_seeds, schemes, received_tx.ledger_version());
-	let fork_ctx = initialize_context(
-		received_tx,
-		&uncached_seeds,
-		restore_height,
-		storage,
-		chain_id,
-		schemes,
-		&mut cached,
-	)
-	.await;
+	let fork_ctx =
+		initialize_context(received_tx, &uncached_seeds, snapshot, schemes, &mut cached).await;
 
 	// 4. Determine blocks to replay: everything after the restore height.
 	//
@@ -1687,6 +1708,14 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	};
 	let total = batches.total();
 	let mut progress = ReplayProgress::new(total);
+	// With the on-disk arena a checkpoint only writes the nodes changed since the last
+	// one, and then drops the state from memory, so a long replay checkpoints every
+	// window by default: memory stays bounded and an interrupted replay resumes.
+	let checkpoint_every = if interval == 0 && ledger_arena::is_persistent() {
+		crate::fetcher::CACHE_READ_CHUNK as usize
+	} else {
+		interval
+	};
 
 	// 5. Replay with mid-replay wallet injection, optionally saving
 	// checkpoints so an interrupted long replay resumes from the last
@@ -1731,7 +1760,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		since_checkpoint += batch.len();
 		last_replayed = Some(batch_last);
 		// The final batch's save is step 6 below.
-		if interval > 0 && since_checkpoint >= interval && !last_batch {
+		if checkpoint_every > 0 && since_checkpoint >= checkpoint_every && !last_batch {
 			log::info!(
 				"replay checkpoint: saving cache at block {batch_last} ({replayed}/{total} blocks replayed)"
 			);
@@ -1749,7 +1778,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	// 6. Save updated cache at the last replayed block. The dust-warp
 	// synthetic (`number = 0`) is never part of the batches, so this is the
 	// real chain head.
-	if let Some(height) = last_replayed {
+	if let Some(height) = last_replayed.or(restore_height.filter(|_| import_legacy_snapshot)) {
 		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, height, storage, schemes).await;
 	}
 
@@ -1821,7 +1850,13 @@ async fn save_cache_ledger8(
 	schemes: &WalletSchemes,
 ) {
 	let t = std::time::Instant::now();
-	let snapshot = match wallet_state_cache::create_ledger_snapshot_8(ctx, block_height) {
+	let persistent = ledger_arena::is_persistent();
+	let snapshot = if persistent {
+		wallet_state_cache::create_root_snapshot_8(ctx, block_height)
+	} else {
+		wallet_state_cache::create_ledger_snapshot_8(ctx, block_height)
+	};
+	let snapshot = match snapshot {
 		Ok(s) => s,
 		Err(e) => {
 			log::warn!("Failed to create ledger snapshot: {}", e);
@@ -1830,7 +1865,7 @@ async fn save_cache_ledger8(
 	};
 	log::debug!("[perf] create_ledger_snapshot_8 took {:?}", t.elapsed());
 
-	storage.set_ledger_snapshot(chain_id, snapshot).await;
+	store_ledger_snapshot(storage, chain_id, snapshot).await;
 
 	let wallet_snapshots: Vec<_> = wallet_seeds
 		.iter()
@@ -1859,7 +1894,13 @@ async fn save_cache_ledger8(
 	if !keep_heights.contains(&block_height) {
 		keep_heights.push(block_height);
 	}
-	storage.gc_ledger_snapshots(chain_id, &keep_heights).await;
+	release_roots(storage.gc_ledger_snapshots(chain_id, &keep_heights).await);
+	if persistent {
+		ledger_arena::finish_save();
+		// The state is on disk now: drop it from memory and reload what the
+		// next blocks touch.
+		ctx.ledger_state.lock().expect("ledger_state lock poisoned").unload();
+	}
 
 	log::info!(
 		"Saved per-wallet cache at block {} ({} wallets, 1 ledger snapshot)",
@@ -1879,7 +1920,13 @@ async fn save_cache_ledger9(
 ) {
 	// Save ledger snapshot
 	let t = std::time::Instant::now();
-	let snapshot = match wallet_state_cache::create_ledger_snapshot(ctx, block_height) {
+	let persistent = ledger_arena::is_persistent();
+	let snapshot = if persistent {
+		wallet_state_cache::create_root_snapshot(ctx, block_height)
+	} else {
+		wallet_state_cache::create_ledger_snapshot(ctx, block_height)
+	};
+	let snapshot = match snapshot {
 		Ok(s) => s,
 		Err(e) => {
 			log::warn!("Failed to create ledger snapshot: {}", e);
@@ -1889,7 +1936,7 @@ async fn save_cache_ledger9(
 	log::debug!("[perf] create_ledger_snapshot took {:?}", t.elapsed());
 
 	let t = std::time::Instant::now();
-	storage.set_ledger_snapshot(chain_id, snapshot).await;
+	store_ledger_snapshot(storage, chain_id, snapshot).await;
 	log::debug!("[perf] storage.set_ledger_snapshot took {:?}", t.elapsed());
 
 	// Save individual wallet snapshots
@@ -1931,14 +1978,41 @@ async fn save_cache_ledger9(
 		keep_heights.push(block_height);
 	}
 	let t = std::time::Instant::now();
-	storage.gc_ledger_snapshots(chain_id, &keep_heights).await;
+	release_roots(storage.gc_ledger_snapshots(chain_id, &keep_heights).await);
 	log::debug!("[perf] storage.gc_ledger_snapshots took {:?}", t.elapsed());
+	if persistent {
+		let t = std::time::Instant::now();
+		ledger_arena::finish_save();
+		ctx.ledger_state.lock().expect("ledger_state lock poisoned").unload();
+		log::debug!("[perf] ledger arena finish_save took {:?}", t.elapsed());
+	}
 
 	log::info!(
 		"Saved per-wallet cache at block {} ({} wallets, 1 ledger snapshot)",
 		block_height,
 		wallet_snapshots.len()
 	);
+}
+
+/// Store `snapshot`, releasing the arena root of any snapshot it replaces at the same height.
+async fn store_ledger_snapshot(
+	storage: &dyn WalletStateCaching,
+	chain_id: H256,
+	snapshot: LedgerSnapshot,
+) {
+	let replaced = if snapshot.storage == SnapshotStorage::ArenaRoot {
+		storage.get_root_snapshot(chain_id, snapshot.block_height).await
+	} else {
+		None
+	};
+	storage.set_ledger_snapshot(chain_id, snapshot).await;
+	release_roots(replaced);
+}
+
+fn release_roots(snapshots: impl IntoIterator<Item = LedgerSnapshot>) {
+	for snapshot in snapshots {
+		wallet_state_cache::release_snapshot_root(&snapshot);
+	}
 }
 
 #[derive(Debug, thiserror::Error)]

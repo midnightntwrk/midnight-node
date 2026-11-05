@@ -14,6 +14,7 @@
 pub mod compute_task;
 pub mod fetch_storage;
 pub mod fetch_task;
+pub mod ledger_arena;
 pub mod runtimes;
 pub mod trusted_deserialize;
 pub mod wallet_state_cache;
