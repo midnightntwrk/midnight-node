@@ -68,6 +68,37 @@ pub trait WalletStateCaching: Send + Sync {
 	async fn get_all_cached_wallet_heights(&self, chain_id: H256) -> Vec<u64>;
 }
 
+/// Object-safe, read-only view of a [`FetchStorage`], so the blocks a replay needs can be
+/// loaded on demand through an `Arc<dyn BlockReader>` once it knows which window that is.
+#[async_trait]
+pub trait BlockReader: Send + Sync {
+	async fn read_block(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData>;
+
+	/// Blocks `from..to` in order, `None` where the cache has no entry.
+	async fn read_block_range(
+		&self,
+		chain_id: H256,
+		from: u64,
+		to: u64,
+	) -> Vec<Option<RawBlockData>>;
+}
+
+#[async_trait]
+impl<T: FetchStorage + 'static> BlockReader for T {
+	async fn read_block(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
+		self.get_block_data(chain_id, block_number).await
+	}
+
+	async fn read_block_range(
+		&self,
+		chain_id: H256,
+		from: u64,
+		to: u64,
+	) -> Vec<Option<RawBlockData>> {
+		self.get_block_data_range(chain_id, from..to).await
+	}
+}
+
 #[derive(Clone)]
 pub struct FetchedBlock {
 	pub block: MidnightClientAtBlock,

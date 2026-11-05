@@ -53,7 +53,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 	)
 	.get_txs()
 	.await?;
-	log::info!("fetched {} blocks in {:.3} s", txs.blocks.len(), start.elapsed().as_secs_f32());
+	log::info!("fetched {} blocks in {:.3} s", txs.block_count(), start.elapsed().as_secs_f32());
 
 	if let Some(seeds) = seeds {
 		let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);

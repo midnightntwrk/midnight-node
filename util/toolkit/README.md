@@ -135,6 +135,8 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 
 Wallet state reconstructed during block replay is cached per seed in `--ledger-state-db` (`MN_LEDGER_CACHE_DB`), so repeat queries only replay new blocks. This works on ledger-8 and ledger-9 chains; a cache written under ledger 8 is discarded (with a warning, falling back to a full replay) once the chain has moved on to ledger 9. During a long replay, `--replay-checkpoint-interval <BLOCKS>` (`MN_REPLAY_CHECKPOINT_INTERVAL`) saves intermediate checkpoints so an interrupted run resumes from the last one instead of genesis.
 
+Blocks are read from the fetch cache only as the replay needs them: a run whose wallets are all cached reads just the blocks after the cached height, and a full replay streams the chain in windows of 10,000 blocks, so memory use does not grow with the length of the chain. `-v` prints a `[perf]` breakdown of where replay time goes (transaction decoding, verification, state updates, state-root checks, dust events) together with the storage arena size and process memory, every 30 s and at the end of the replay.
+
 Replay verifies finalized history in proof-erased form (no zero-knowledge proof, signature or balancing re-verification) and instead compares the locally computed ledger state root with the on-chain `Midnight.StateKey` after every block; a mismatch aborts the replay. The toolkit is a testing tool that trusts the node it talks to, so there is no strict-verification mode.
 
 #### Generate Zswap & Unshielded Utxos batches

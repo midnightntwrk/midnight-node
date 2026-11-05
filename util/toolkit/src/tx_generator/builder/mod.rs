@@ -23,6 +23,7 @@ use midnight_ledger_unsafe_helpers::*;
 use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use serde::Deserialize;
 use std::{
+	borrow::Cow,
 	collections::{HashMap, HashSet},
 	path::PathBuf,
 	sync::Arc,
@@ -31,7 +32,7 @@ use std::{
 use crate::{
 	cli_parsers as cli,
 	fetcher::{
-		fetch_storage::WalletStateCaching, wallet_state_cache,
+		CachedBlocks, FetchError, fetch_storage::WalletStateCaching, wallet_state_cache,
 		wallet_state_cache::CachedWalletState,
 	},
 	serde_def::SourceTransactions,
@@ -1205,6 +1206,35 @@ fn discard_unusable_cache(
 		let i = blocks.partition_point(|b| b.number <= height);
 		i.checked_sub(1).map(|i| blocks[i].ledger_version())
 	};
+	let tip_version = blocks.last().map(|b| b.ledger_version());
+	discard_unusable_cache_with(uncached_seeds, cached, version_at, tip_version);
+}
+
+/// [`discard_unusable_cache`] for a chain still in the fetch cache: the generation of each
+/// cached height is a point read instead of a scan of loaded blocks.
+async fn discard_unusable_cache_lazy(
+	uncached_seeds: &mut Vec<WalletSeed>,
+	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
+	chain: &CachedBlocks,
+) {
+	let heights: std::collections::BTreeSet<u64> =
+		cached.iter().map(|(_, ws)| ws.block_height).collect();
+	let mut versions: HashMap<u64, LedgerVersion> = HashMap::new();
+	for height in heights {
+		if let Some(version) = chain.ledger_version_at(height).await {
+			versions.insert(height, version);
+		}
+	}
+	let version_at = |height: u64| versions.get(&height).copied();
+	discard_unusable_cache_with(uncached_seeds, cached, version_at, Some(chain.tip_version));
+}
+
+fn discard_unusable_cache_with(
+	uncached_seeds: &mut Vec<WalletSeed>,
+	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
+	version_at: impl Fn(u64) -> Option<LedgerVersion>,
+	tip_version: Option<LedgerVersion>,
+) {
 	let is_ledger9 =
 		|ws: &CachedWalletState| version_at(ws.block_height) == Some(LedgerVersion::Ledger9);
 
@@ -1213,7 +1243,6 @@ fn discard_unusable_cache(
 		return;
 	}
 
-	let tip_version = blocks.last().map(|b| b.ledger_version());
 	let restore_height = cached.first().map(|(_, ws)| ws.block_height);
 	let reason = if tip_version != Some(LedgerVersion::Ledger8) {
 		"the chain has moved on to ledger 9"
@@ -1499,14 +1528,18 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 ) -> ForkAwareLedgerContext {
 	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
 	if wallet_seeds.is_empty() {
-		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
+		return build_fork_aware_context_uncached(received_tx, wallet_seeds, schemes).await;
 	}
 	let Some(chain_id) = received_tx.chain_id() else {
-		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
+		return build_fork_aware_context_uncached(received_tx, wallet_seeds, schemes).await;
 	};
 	let Some(storage) = cache_storage else {
-		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
+		return build_fork_aware_context_uncached(received_tx, wallet_seeds, schemes).await;
 	};
+
+	// 1. Load cache and partition wallets.
+	let (mut uncached_seeds, mut cached) =
+		load_and_partition_cache(wallet_seeds, chain_id, storage, schemes).await;
 
 	// Exclude any dust-warp synthetic block from the replay set so the
 	// persisted snapshot (step 6) captures the real-head `BlockContext`
@@ -1527,20 +1560,32 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	// check anyway, but we double-guard for clarity). We apply it
 	// explicitly *after* save as step 7 so the in-memory context for
 	// this run reflects the warp.
-	let synthetic_dust_warp = received_tx
-		.blocks
-		.last()
-		.filter(|last| last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0));
-	let real_blocks: &[RawBlockData] = if synthetic_dust_warp.is_some() {
-		&received_tx.blocks[..received_tx.blocks.len() - 1]
-	} else {
-		&received_tx.blocks[..]
-	};
-
-	// 1. Load cache and partition wallets.
-	let (mut uncached_seeds, mut cached) =
-		load_and_partition_cache(wallet_seeds, chain_id, storage, schemes).await;
-	discard_unusable_cache(&mut uncached_seeds, &mut cached, real_blocks);
+	//
+	// A chain source keeps its blocks in the fetch cache: nothing is loaded here,
+	// step 4 streams the window the replay needs (after the restore height when
+	// every seed is cached, from genesis otherwise). The materialised path
+	// (files, tests) keeps its blocks and slices them.
+	let synthetic_owned: Option<RawBlockData>;
+	let (real_blocks, synthetic_dust_warp): (&[RawBlockData], Option<&RawBlockData>) =
+		match &received_tx.cached {
+			Some(chain) => {
+				discard_unusable_cache_lazy(&mut uncached_seeds, &mut cached, chain).await;
+				synthetic_owned = received_tx.synthetic_dust_warp_block();
+				(&[], synthetic_owned.as_ref())
+			},
+			None => {
+				let synthetic = received_tx.blocks.last().filter(|last| {
+					last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0)
+				});
+				let real: &[RawBlockData] = if synthetic.is_some() {
+					&received_tx.blocks[..received_tx.blocks.len() - 1]
+				} else {
+					&received_tx.blocks[..]
+				};
+				discard_unusable_cache(&mut uncached_seeds, &mut cached, real);
+				(real, synthetic)
+			},
+		};
 
 	// 2. Warm start only when every seed is cached: an uncached wallet needs its
 	//    full history scanned, which forces the replay back to genesis.
@@ -1571,69 +1616,86 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	)
 	.await;
 
-	// 4. Determine blocks to replay.
+	// 4. Determine blocks to replay: everything after the restore height.
 	//
-	// Warm path uses `partition_point` (O(log n) binary search) rather
-	// than a linear `.filter()` — `real_blocks` is sorted by `b.number`
-	// ascending (the rest of `replay_blocks_*` already relies on this).
-	// Cold path takes the whole slice.
-	let blocks: &[RawBlockData] = match restore_height {
-		None => real_blocks,
-		Some(height) => &real_blocks[real_blocks.partition_point(|b| b.number <= height)..],
+	// Blocks already in memory are sliced with `partition_point` (O(log n)
+	// binary search; `real_blocks` is sorted by `b.number` ascending, which
+	// the rest of `replay_blocks_*` already relies on) and handed out in
+	// checkpoint-sized batches. A chain source is streamed from the fetch
+	// cache in windows instead, so the whole history is never held at once.
+	let interval = replay_checkpoint_interval as usize;
+	let mut batches = match &received_tx.cached {
+		Some(chain) => ReplayBatches::streamed(chain, restore_height.map_or(0, |h| h + 1)),
+		None => {
+			let skip = restore_height
+				.map_or(0, |height| real_blocks.partition_point(|b| b.number <= height));
+			ReplayBatches::loaded(&real_blocks[skip..], interval)
+		},
 	};
+	let total = batches.total();
 
 	// 5. Replay with mid-replay wallet injection, optionally saving
 	// checkpoints so an interrupted long replay resumes from the last
 	// checkpoint instead of starting over.
-	let interval = replay_checkpoint_interval as usize;
-	let fork_ctx = if interval > 0 && blocks.len() > interval {
-		let mut ctx = fork_ctx;
-		let mut cached_cursor = 0usize;
-		let mut start = 0usize;
-		while start < blocks.len() {
-			let end = usize::min(start + interval, blocks.len());
-			let chunk = &blocks[start..end];
-			let chunk_last = chunk[chunk.len() - 1].number;
-			// Wallets cached beyond this chunk's last block must be withheld:
-			// `replay_blocks` injects any leftovers of the slice it is given
-			// at the end of its block range, which would splice a
-			// future-height wallet state into an older ledger state. Wallets
-			// cached exactly at `chunk_last` are injected against the same
-			// post-block ledger state either way, so `<=` matches the
-			// monolithic behavior.
-			let cached_end = cached.partition_point(|(_, ws)| ws.block_height <= chunk_last);
-			ctx = replay_blocks(
-				ctx,
-				chunk,
-				&cached[cached_cursor..cached_end],
-				schemes,
-				&keyed_at_fork,
+	let mut fork_ctx = fork_ctx;
+	let mut cached_cursor = 0usize;
+	let mut replayed = 0usize;
+	let mut since_checkpoint = 0usize;
+	let mut last_replayed: Option<u64> = None;
+	while let Some(batch) = batches
+		.next()
+		.await
+		.unwrap_or_else(|e| panic!("failed to read blocks from the fetch cache: {e}"))
+	{
+		let Some(batch_last) = batch.last().map(|b| b.number) else {
+			continue;
+		};
+		let last_batch = batches.is_exhausted();
+		// Wallets cached beyond this batch's last block must be withheld:
+		// `replay_blocks` injects any leftovers of the slice it is given
+		// at the end of its block range, which would splice a
+		// future-height wallet state into an older ledger state. Wallets
+		// cached exactly at `batch_last` are injected against the same
+		// post-block ledger state either way, so `<=` matches the
+		// monolithic behavior. The last batch takes every remaining wallet,
+		// as a single-batch replay always did.
+		let cached_end = if last_batch {
+			cached.len()
+		} else {
+			cached.partition_point(|(_, ws)| ws.block_height <= batch_last)
+		};
+		fork_ctx = replay_blocks(
+			fork_ctx,
+			&batch,
+			&cached[cached_cursor..cached_end],
+			schemes,
+			&keyed_at_fork,
+		);
+		cached_cursor = cached_end;
+		replayed += batch.len();
+		since_checkpoint += batch.len();
+		last_replayed = Some(batch_last);
+		// The final batch's save is step 6 below.
+		if interval > 0 && since_checkpoint >= interval && !last_batch {
+			log::info!(
+				"replay checkpoint: saving cache at block {batch_last} ({replayed}/{total} blocks replayed)"
 			);
-			cached_cursor = cached_end;
-			// The final chunk's save is step 6 below.
-			if end < blocks.len() {
-				log::info!(
-					"replay checkpoint: saving cache at block {} ({}/{} blocks replayed)",
-					chunk_last,
-					end,
-					blocks.len(),
-				);
-				try_save_cache_v2(&ctx, wallet_seeds, chain_id, chunk_last, storage, schemes).await;
-			}
-			start = end;
+			try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, batch_last, storage, schemes)
+				.await;
+			since_checkpoint = 0;
 		}
-		ctx
-	} else {
-		replay_blocks(fork_ctx, blocks, &cached, schemes, &keyed_at_fork)
-	};
+	}
+	// Nothing to replay (every wallet is cached at the tip, or ahead of it):
+	// the cached wallets still join the restored context.
+	if cached_cursor < cached.len() {
+		fork_ctx = replay_blocks(fork_ctx, &[], &cached[cached_cursor..], schemes, &keyed_at_fork);
+	}
 
-	// 6. Save updated cache. `blocks.last()` is sound here because
-	// step 4 already excluded the dust-warp synthetic (`number = 0`)
-	// from `blocks`; the last entry is the real chain head, and
-	// pointer lookup beats an O(n) `max_by_key` on long replays.
-	if let Some(final_block) = blocks.last() {
-		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage, schemes)
-			.await;
+	// 6. Save updated cache at the last replayed block. The dust-warp
+	// synthetic (`number = 0`) is never part of the batches, so this is the
+	// real chain head.
+	if let Some(height) = last_replayed {
+		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, height, storage, schemes).await;
 	}
 
 	// 7. Apply the dust-warp synthetic block (in-memory only, post-save).
@@ -1831,6 +1893,115 @@ pub struct ContextNotLedger8Error(pub LedgerVersion);
 #[derive(Debug, thiserror::Error)]
 #[error("chain has not reached ledger 9 (final version: {0:?})")]
 pub struct ContextNotLedger9Error(pub LedgerVersion);
+
+/// The blocks a replay consumes, in order: batches of blocks already in memory, or
+/// windows read from the fetch cache as they are needed, so a chain source never
+/// holds its whole history at once.
+enum ReplayBatches<'a> {
+	Loaded { blocks: &'a [RawBlockData], batch: usize, pos: usize },
+	Streamed { chain: &'a CachedBlocks, next: u64, total: usize },
+}
+
+impl<'a> ReplayBatches<'a> {
+	/// Hand out `blocks` in batches of `batch` (0: all at once).
+	fn loaded(blocks: &'a [RawBlockData], batch: usize) -> Self {
+		let batch = if batch == 0 { blocks.len().max(1) } else { batch };
+		Self::Loaded { blocks, batch, pos: 0 }
+	}
+
+	/// Stream blocks `from..=tip` of `chain` in [`crate::fetcher::CACHE_READ_CHUNK`] windows.
+	fn streamed(chain: &'a CachedBlocks, from: u64) -> Self {
+		let total = (chain.tip_height + 1).saturating_sub(from) as usize;
+		if total > 0 {
+			log::info!(
+				"replaying {total} blocks ({from}..={}) streamed from the fetch cache in windows of {}",
+				chain.tip_height,
+				crate::fetcher::CACHE_READ_CHUNK
+			);
+		}
+		Self::Streamed { chain, next: from, total }
+	}
+
+	fn total(&self) -> usize {
+		match self {
+			Self::Loaded { blocks, .. } => blocks.len(),
+			Self::Streamed { total, .. } => *total,
+		}
+	}
+
+	fn is_exhausted(&self) -> bool {
+		match self {
+			Self::Loaded { blocks, pos, .. } => *pos >= blocks.len(),
+			Self::Streamed { chain, next, .. } => *next > chain.tip_height,
+		}
+	}
+
+	async fn next(&mut self) -> Result<Option<Cow<'a, [RawBlockData]>>, FetchError> {
+		match self {
+			Self::Loaded { blocks, batch, pos } => {
+				if *pos >= blocks.len() {
+					return Ok(None);
+				}
+				let end = usize::min(*pos + *batch, blocks.len());
+				let chunk = &blocks[*pos..end];
+				*pos = end;
+				Ok(Some(Cow::Borrowed(chunk)))
+			},
+			Self::Streamed { chain, next, .. } => {
+				if *next > chain.tip_height {
+					return Ok(None);
+				}
+				let to =
+					next.saturating_add(crate::fetcher::CACHE_READ_CHUNK - 1).min(chain.tip_height);
+				let window = chain.load_range(*next, to).await?;
+				*next = to + 1;
+				Ok(Some(Cow::Owned(window)))
+			},
+		}
+	}
+}
+
+/// [`build_fork_aware_context_raw_with_schemes`] for any source. Without a usable wallet
+/// cache the replay starts at genesis; a chain source is streamed from the fetch cache.
+async fn build_fork_aware_context_uncached(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
+	let Some(chain) = &received_tx.cached else {
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
+	};
+	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
+
+	let initial_version = received_tx.ledger_version();
+	let keyed_at_fork = ecdsa_seeds_keyed_at_fork(wallet_seeds, schemes, initial_version);
+	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
+		.iter()
+		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
+		.collect();
+	let mut ctx = timed!(
+		"new_from_wallet_seeds (raw)",
+		ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
+			initial_version,
+			&received_tx.network_id,
+			&seeds_with_schemes,
+		)
+	);
+
+	let mut batches = ReplayBatches::streamed(chain, 0);
+	while let Some(batch) = batches
+		.next()
+		.await
+		.unwrap_or_else(|e| panic!("failed to read blocks from the fetch cache: {e}"))
+	{
+		ctx = replay_blocks(ctx, &batch, &[], schemes, &keyed_at_fork);
+	}
+	// The dust-warp block follows the chain, as it does in `blocks` for a file source.
+	if let Some(synthetic) = received_tx.synthetic_dust_warp_block() {
+		ctx = replay_blocks(ctx, std::slice::from_ref(&synthetic), &[], schemes, &keyed_at_fork);
+	}
+	ctx
+}
 
 /// Build a fork-aware context from source transactions, returning the raw
 /// `ForkAwareLedgerContext` without extracting a specific version.

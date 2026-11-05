@@ -22,7 +22,12 @@ use midnight_node_toolkit::fetcher::wallet_state_cache::{
 	serialize_ledger_state_fast, serialize_ledger_state_fast_8, wallet_cache_key,
 };
 use midnight_node_toolkit::{
-	fetcher::fetch_storage::{WalletStateCaching, file_backend::FileBackend},
+	fetcher::{
+		CachedBlocks,
+		fetch_storage::{
+			BlockReader, FetchStorage, InMemory, WalletStateCaching, file_backend::FileBackend,
+		},
+	},
 	serde_def::SourceTransactions,
 	tx_generator::{
 		builder::{
@@ -33,6 +38,7 @@ use midnight_node_toolkit::{
 		source::GetTxsFromFile,
 	},
 };
+use std::sync::Arc;
 use subxt::utils::H256;
 
 fn load_genesis_source() -> SourceTransactions {
@@ -435,4 +441,100 @@ async fn ledger8_cache_with_mixed_heights_replays_from_genesis() {
 		.expect("cached: ledger 8");
 	assert_contexts_equal_8("mixed heights", &cached, &raw, &seeds);
 	verify_cache_state(&backend, long.chain_id().unwrap(), long.blocks.len(), seeds).await;
+}
+
+// ---------------------------------------------------------------------------
+// Chain sources: blocks stay in the fetch cache until the replay picks its window
+// ---------------------------------------------------------------------------
+
+/// Records every range read so a test can see which window the replay loaded.
+struct CountingReader {
+	inner: InMemory,
+	ranges: std::sync::Mutex<Vec<(u64, u64)>>,
+}
+
+#[async_trait::async_trait]
+impl BlockReader for CountingReader {
+	async fn read_block(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
+		self.inner.get_block_data(chain_id, block_number).await
+	}
+
+	async fn read_block_range(
+		&self,
+		chain_id: H256,
+		from: u64,
+		to: u64,
+	) -> Vec<Option<RawBlockData>> {
+		self.ranges.lock().unwrap().push((from, to));
+		self.inner.get_block_data_range(chain_id, from..to).await
+	}
+}
+
+#[tokio::test]
+async fn cached_chain_source_loads_only_the_window_it_needs() {
+	let source = load_genesis_source();
+	let chain_id = source.chain_id().unwrap();
+	let tip = source.blocks.last().unwrap().number;
+
+	let storage = InMemory::default();
+	storage.insert_block_data_range(chain_id, source.blocks.iter().cloned()).await;
+	storage.set_highest_verified_block(chain_id, tip).await;
+	let reader = Arc::new(CountingReader { inner: storage, ranges: Default::default() });
+	let cached = CachedBlocks::open(chain_id, reader.clone(), tip).await.expect("open");
+	let lazy = SourceTransactions::from_cache(cached, false, source.network_id.clone());
+	assert!(lazy.blocks.is_empty(), "a chain source holds no blocks until a window is loaded");
+	assert_eq!(lazy.chain_id(), Some(chain_id));
+	assert_eq!(lazy.block_count(), source.blocks.len() as u64);
+	assert_eq!(lazy.ledger_version(), source.ledger_version());
+	assert_eq!(lazy.tip_ledger_version(), source.tip_ledger_version());
+	let reads = |reader: &CountingReader| -> Vec<(u64, u64)> {
+		reader.ranges.lock().unwrap().drain(..).collect()
+	};
+
+	let seeds = vec![wallet_seed(0x01), wallet_seed(0x02)];
+	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	// Cold: no wallet is cached, so the whole chain is loaded and replayed.
+	let cold = build_fork_aware_context_cached(&seeds, &lazy, Some(&backend), 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("lazy cold", &cold, &raw, &seeds);
+	verify_cache_state(&backend, chain_id, source.blocks.len(), seeds.clone()).await;
+	let cold_reads = reads(&reader);
+	assert_eq!(cold_reads.first().map(|r| r.0), Some(0), "cold replay starts at genesis");
+	assert_eq!(cold_reads.last().map(|r| r.1), Some(tip + 1), "cold replay reaches the tip");
+
+	// Warm: every seed is cached at the tip, so the snapshot is restored and no
+	// block is read at all.
+	let warm = build_fork_aware_context_cached(&seeds, &lazy, Some(&backend), 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("lazy warm", &warm, &raw, &seeds);
+	assert!(reads(&reader).is_empty(), "a warm restore at the tip reads no blocks");
+
+	// A seed without a cache entry sends the window back to genesis.
+	let seeds3 = vec![wallet_seed(0x01), wallet_seed(0x02), wallet_seed(0x03)];
+	let raw3 = build_fork_aware_context_raw(&source, &seeds3).into_ledger9().unwrap();
+	let mixed = build_fork_aware_context_cached(&seeds3, &lazy, Some(&backend), 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("lazy mixed", &mixed, &raw3, &seeds3);
+	assert_eq!(
+		reads(&reader).first().map(|r| r.0),
+		Some(0),
+		"an uncached seed replays from genesis"
+	);
+
+	// Without a usable wallet cache the chain source is loaded in full, like a file source.
+	let uncached = build_fork_aware_context_cached(&seeds, &lazy, None, 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("lazy uncached", &uncached, &raw, &seeds);
+	assert_eq!(reads(&reader).first().map(|r| r.0), Some(0));
 }

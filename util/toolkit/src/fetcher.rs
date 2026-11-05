@@ -27,7 +27,7 @@ use std::{
 };
 
 use backoff::{ExponentialBackoff, future::retry_notify};
-use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
+use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
 use tokio::task::JoinSet;
 
@@ -35,7 +35,7 @@ use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
 	fetcher::{
 		compute_task::{ComputeError, ComputeTask},
-		fetch_storage::FetchStorage,
+		fetch_storage::{BlockReader, FetchStorage},
 		fetch_task::{FetchCounters, FetchTask, FetchTaskError},
 	},
 };
@@ -44,6 +44,10 @@ pub type MidnightClientAtBlock = OnlineClientAtBlock<MidnightNodeClientConfig>;
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
+
+/// Blocks read from the fetch cache per query when loading a window. Bounds the
+/// transient memory of a read (rows plus decoded blocks) to one chunk.
+pub const CACHE_READ_CHUNK: u64 = 10_000;
 
 /// Maximum time to wait for a block fetch before giving up.
 pub const BLOCK_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -127,34 +131,120 @@ pub async fn fetch_single_block(
 	Ok(raw)
 }
 
-pub async fn read_blocks_from_cache(
+/// Read blocks `from..=to` from the fetch cache in [`CACHE_READ_CHUNK`] pieces, with each
+/// block's `last_block_time_secs` set from its predecessor (block `from - 1` is read for
+/// that alone when `from > 0`). Returns an empty list when `from > to`.
+pub async fn read_block_window(
 	chain_id: H256,
-	fetch_storage: impl FetchStorage + Clone + 'static,
+	reader: &dyn BlockReader,
+	from: u64,
+	to: u64,
 ) -> Result<Vec<RawBlockData>, FetchError> {
+	if from > to {
+		return Ok(Vec::new());
+	}
+	let first = from.saturating_sub(1);
+	let total = to - first + 1;
+	log::debug!("loading blocks {from}..={to} from the fetch cache...");
 	let t = std::time::Instant::now();
-	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
-	log::debug!("[perf] get_highest_verified_block took {:?}", t.elapsed());
-
-	log::info!("loading {} blocks from local cache (this can take a while)...", max_height + 1);
-	let t = std::time::Instant::now();
-	let mut blocks: Vec<_> = fetch_storage
-		.get_block_data_range(chain_id, (0..max_height + 1).into_iter())
-		.await
-		.into_iter()
-		.enumerate()
-		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
-		.collect();
-	log::debug!("[perf] get_block_data_range: {} blocks in {:?}", blocks.len(), t.elapsed());
+	let mut blocks: Vec<RawBlockData> = Vec::with_capacity(total as usize);
+	let mut chunk_start = first;
+	while chunk_start <= to {
+		let chunk_end = chunk_start.saturating_add(CACHE_READ_CHUNK).min(to + 1);
+		let chunk = reader.read_block_range(chain_id, chunk_start, chunk_end).await;
+		for (i, block) in chunk.into_iter().enumerate() {
+			blocks.push(block.ok_or(FetchError::BlockMissing(chunk_start + i as u64))?);
+		}
+		chunk_start = chunk_end;
+	}
+	log::debug!("[perf] read_block_window: {} blocks in {:?}", blocks.len(), t.elapsed());
 
 	// Set last_block_time for all blocks
 	// windows_mut() iterator does not exist - so we're indexing here
-	let t = std::time::Instant::now();
 	for i in 1..blocks.len() {
 		blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 	}
-	log::debug!("[perf] last_block_time fixup: {} blocks in {:?}", blocks.len(), t.elapsed());
-
+	if from > 0 && !blocks.is_empty() {
+		blocks.remove(0);
+	}
 	Ok(blocks)
+}
+
+/// A synced chain whose blocks stay in the fetch cache until a replay asks for the
+/// window it needs, instead of being materialised up front.
+#[derive(Clone)]
+pub struct CachedBlocks {
+	pub chain_id: H256,
+	/// Highest block held by the cache (inclusive).
+	pub tip_height: u64,
+	/// Ledger version of the genesis block.
+	pub first_version: LedgerVersion,
+	/// Ledger version of the tip block.
+	pub tip_version: LedgerVersion,
+	reader: Arc<dyn BlockReader>,
+}
+
+impl std::fmt::Debug for CachedBlocks {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("CachedBlocks")
+			.field("chain_id", &self.chain_id)
+			.field("tip_height", &self.tip_height)
+			.field("first_version", &self.first_version)
+			.field("tip_version", &self.tip_version)
+			.finish_non_exhaustive()
+	}
+}
+
+impl CachedBlocks {
+	/// Describe the cached chain `chain_id` up to `tip_height`, reading only the genesis
+	/// and tip blocks for their ledger versions.
+	pub async fn open(
+		chain_id: H256,
+		reader: Arc<dyn BlockReader>,
+		tip_height: u64,
+	) -> Result<Self, FetchError> {
+		let genesis = reader.read_block(chain_id, 0).await.ok_or(FetchError::BlockMissing(0))?;
+		let tip = if tip_height == 0 {
+			genesis.clone()
+		} else {
+			reader
+				.read_block(chain_id, tip_height)
+				.await
+				.ok_or(FetchError::BlockMissing(tip_height))?
+		};
+		Ok(Self {
+			chain_id,
+			tip_height,
+			first_version: genesis.ledger_version(),
+			tip_version: tip.ledger_version(),
+			reader,
+		})
+	}
+
+	/// Ledger generation at `height`: the block's own, or the tip's for a height beyond the
+	/// cache (a wallet cached from a node that was further ahead). `None` if the block is
+	/// missing from the cache.
+	pub async fn ledger_version_at(&self, height: u64) -> Option<LedgerVersion> {
+		if height > self.tip_height {
+			return Some(self.tip_version);
+		}
+		self.reader.read_block(self.chain_id, height).await.map(|b| b.ledger_version())
+	}
+
+	/// Load blocks `from..=to`; see [`read_block_window`].
+	pub async fn load_range(&self, from: u64, to: u64) -> Result<Vec<RawBlockData>, FetchError> {
+		read_block_window(self.chain_id, self.reader.as_ref(), from, to).await
+	}
+
+	/// Load blocks `from..=tip`; see [`read_block_window`].
+	pub async fn load_from(&self, from: u64) -> Result<Vec<RawBlockData>, FetchError> {
+		self.load_range(from, self.tip_height).await
+	}
+
+	/// Every cached block, genesis to tip.
+	pub async fn load_all(&self) -> Result<Vec<RawBlockData>, FetchError> {
+		self.load_from(0).await
+	}
 }
 
 pub async fn fetch_all(
@@ -163,31 +253,27 @@ pub async fn fetch_all(
 	num_compute_workers: usize,
 	fetch_only_cache: bool,
 	fetch_storage: impl FetchStorage + Clone + 'static,
-) -> Result<Vec<RawBlockData>, FetchError> {
+) -> Result<CachedBlocks, FetchError> {
 	let client = MidnightNodeClient::new(&url, None).await?;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
-	if fetch_only_cache {
-		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
-
-		log::info!(
-			"read {} blocks from cache, total transactions: {}",
-			blocks.len(),
-			blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
-		);
-
-		Ok(blocks)
-	} else {
-		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_storage).await
+	if !fetch_only_cache {
+		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_storage.clone())
+			.await?;
 	}
+	let tip_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
+	let cached = CachedBlocks::open(chain_id, Arc::new(fetch_storage), tip_height).await?;
+	log::info!("fetch cache holds blocks 0..={tip_height} ({:?} at the tip)", cached.tip_version);
+	Ok(cached)
 }
 
+/// Sync the fetch cache with the node's finalized chain, returning the synced height.
 pub async fn fetch_from_rpc(
 	url: &str,
 	chain_id: H256,
 	num_workers: usize,
 	num_compute_workers: usize,
 	fetch_storage: impl FetchStorage + Clone + 'static,
-) -> Result<Vec<RawBlockData>, FetchError> {
+) -> Result<u64, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(
 			"Error: 'MN_SYNC_CACHE' is defined - please use 'MN_FETCH_CACHE' instead. See `--help` for more info."
@@ -548,17 +634,9 @@ pub async fn fetch_from_rpc(
 	if final_height > min_height {
 		fetch_storage.set_highest_verified_block(chain_id, final_height).await;
 	}
-	let t = std::time::Instant::now();
-	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
-	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	let final_span = totals.span.load(Ordering::Relaxed);
-	log::info!(
-		"fetched {} blocks, read {} blocks from cache, total transactions: {}; synced to block {final_height}",
-		final_span,
-		blocks.len().saturating_sub(final_span as usize),
-		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
-	);
+	log::info!("fetched {final_span} blocks; synced to block {final_height}");
 	if totals.truncated.load(Ordering::Relaxed) {
 		log::warn!(
 			"sync stopped at block {final_height} without confirming the chain tip (the tip re-check failed); \
@@ -566,7 +644,7 @@ pub async fn fetch_from_rpc(
 		);
 	}
 
-	Ok(blocks)
+	Ok(final_height.max(min_height))
 }
 
 /// The socket may have dropped while the round was processed; reconnect once.

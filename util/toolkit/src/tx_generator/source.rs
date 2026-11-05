@@ -293,7 +293,7 @@ impl GetTxs for GetTxsFromUrl {
 		&self,
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let t = std::time::Instant::now();
-		let blocks = match &self.fetch_cache_config {
+		let cached = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
 				fetch_all(
 					&self.rpc_url,
@@ -332,9 +332,6 @@ impl GetTxs for GetTxsFromUrl {
 		let network_id = client.get_network_id().await?;
 		log::debug!("[perf] get_network_id took {:?}", t.elapsed());
 
-		let t = std::time::Instant::now();
-		let source_txs = SourceTransactions::from_blocks(blocks, self.dust_warp, Some(network_id));
-		log::debug!("[perf] SourceTransactions::from_blocks took {:?}", t.elapsed());
-		Ok(source_txs)
+		Ok(SourceTransactions::from_cache(cached, self.dust_warp, network_id))
 	}
 }
