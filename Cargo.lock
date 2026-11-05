@@ -8251,7 +8251,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "2.1.101"
+version = "2.1.100"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -8281,7 +8281,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-runtime"
-version = "2.1.101"
+version = "2.1.100"
 dependencies = [
  "authority-selection-inherents",
  "binary-merkle-tree",

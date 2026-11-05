@@ -1,7 +1,8 @@
-#node #runtime #toolkit
-# Bump node, runtime, metadata and toolkit crates to 2.1.101
+#node #toolkit
+# Bump node and toolkit crates to 2.1.101
 
-Node, runtime, metadata and toolkit crates move to `2.1.101`. The runtime
-`spec_version` stays at `002_001_100`, so the embedded metadata and the toolkit
-block fetcher's runtime table are unchanged: a 2.1.101 node runs the 2.1.100
-runtime.
+Node and toolkit crates move to `2.1.101`, as does `docs/openrpc.json`. The
+runtime is not released this time, so its `spec_version` stays at `002_001_100`
+and the runtime and metadata crates stay at `2.1.100` (crate version tracks
+`spec_version`, as with node 1.0.400 over runtime 1.0.300): a 2.1.101 node runs
+the 2.1.100 runtime with unchanged metadata.
