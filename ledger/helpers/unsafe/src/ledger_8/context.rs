@@ -55,9 +55,9 @@ const TBLOCK_CORRECTION_OFFSET_SECS: i128 = 12;
 /// timestamp — and only for the first ledger tx in a block, the only position where that cache
 /// could hit — so those blocks still replay.
 ///
-/// `skew_tblock` is the node's host-function gate: true when the runtime on-chain at that
-/// height imports version 1 of `Ledger8Bridge::apply_transaction`. Resolved per block into
-/// `RawBlockData::skews_tblock`. See
+/// `skew_tblock` mirrors the node's host-function gate: true when the runtime on-chain at that
+/// height imports version 1 of `Ledger8Bridge::apply_transaction`. Decided per block by
+/// `fork_aware_context::skews_tblock`. See
 /// <https://github.com/midnightntwrk/midnight-node/issues/1924>.
 fn well_formed_tblock(
 	block_context: &BlockContext,

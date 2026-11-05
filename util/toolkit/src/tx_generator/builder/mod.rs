@@ -1987,7 +1987,6 @@ mod tests {
 			parent_block_hash: [0; 32],
 			last_block_time_secs: 0,
 			spec_version: 0,
-			skews_tblock: false,
 			state_root: None,
 			state: None,
 		}

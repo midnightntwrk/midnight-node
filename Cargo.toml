@@ -214,7 +214,6 @@ sp-offchain = { default-features = false, git = "https://github.com/shieldedtech
 sp-session = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-transaction-pool = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-version = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
-sp-maybe-compressed-blob = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-genesis-builder = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 sp-externalities = { default-features = false, git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609" }
 partner-chains-node-commands = { default-features = false, path = "partner-chains/toolkit/cli/node-commands" }
@@ -338,8 +337,6 @@ reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-
 stacker = "0.1.24"
 strum = { version = "0.28.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
-wasm-encoder = { version = "0.244" }
-wasmparser = { version = "0.244" }
 
 # Partner-chains transitive workspace dependencies
 anyhow = "1.0.102"

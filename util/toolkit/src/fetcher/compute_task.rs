@@ -19,15 +19,6 @@ use subxt::{
 	utils::H256,
 };
 
-use std::sync::LazyLock;
-
-use crate::fetcher::tblock_correction::TblockCorrectionPolicy;
-
-/// One memo for the whole process: the answer only changes at a runtime upgrade, and the
-/// compute workers all walk the same chain.
-static TBLOCK_CORRECTION: LazyLock<TblockCorrectionPolicy> =
-	LazyLock::new(TblockCorrectionPolicy::default);
-
 use crate::{
 	client::MidnightNodeClientConfig,
 	fetcher::{
@@ -59,8 +50,6 @@ pub enum ComputeError {
 	ChildBlockVerificationFailed(u64),
 	#[error("spec version in block {0} doesn't have a defined ledger version mapping")]
 	LedgerVersionMissing(u64),
-	#[error("could not resolve the tblock correction: {0}")]
-	TblockCorrection(#[from] crate::fetcher::tblock_correction::TblockCorrectionError),
 }
 
 pub enum ComputeTask {
@@ -309,8 +298,6 @@ impl ComputeTask {
 
 		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
 		let tblock_secs = timestamp_ms / 1000;
-		// Read from the runtime wasm at this block, memoised per runtime.
-		let skews_tblock = TBLOCK_CORRECTION.skews_tblock(&block.block, raw_spec_version).await?;
 		let hash = block.block.block_hash();
 		let parent_hash = header.parent_hash;
 		let number = block.block.block_number();
@@ -326,7 +313,6 @@ impl ComputeTask {
 			parent_block_hash: parent_block_hash.0,
 			last_block_time_secs: tblock_secs, // Fixed later in fetcher.rs
 			spec_version: raw_spec_version,
-			skews_tblock,
 			state_root,
 			state: block.state.clone(),
 		})

@@ -8324,7 +8324,6 @@ dependencies = [
  "shellexpand",
  "sidechain-domain",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609)",
- "sp-maybe-compressed-blob",
  "sqlx",
  "stacker",
  "strum 0.28.0",
@@ -8340,8 +8339,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "trycmd",
- "wasm-encoder 0.244.0",
- "wasmparser 0.244.0",
  "whisky",
  "zeroize",
  "zstd 0.14.3",
@@ -20010,7 +20007,6 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.13.1",
  "semver 1.0.28",
- "serde",
 ]
 
 [[package]]
