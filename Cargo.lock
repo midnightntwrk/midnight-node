@@ -8522,6 +8522,7 @@ dependencies = [
  "test-log",
  "testcontainers",
  "thiserror 2.0.18",
+ "tikv-jemallocator",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
