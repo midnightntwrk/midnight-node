@@ -1098,3 +1098,100 @@ mod failed_mbm_recovery {
 		});
 	}
 }
+
+/// Inherents are required in every block, so `TxPause` must not be able to pause them.
+mod tx_pause_inherents {
+	use crate::check_call_filter::InherentCalls;
+	use crate::{Runtime, RuntimeCall, RuntimeOrigin, TxPause, UncheckedExtrinsic};
+	use frame_support::{
+		assert_noop, assert_ok,
+		traits::{CallMetadata, Contains, GetCallMetadata, IsInherent},
+	};
+	use pallet_tx_pause::RuntimeCallNameOf;
+	use parity_scale_codec::Decode;
+	use sp_runtime::BuildStorage;
+
+	type Filter = <Runtime as frame_system::Config>::BaseCallFilter;
+
+	fn name(call: &RuntimeCall) -> RuntimeCallNameOf<Runtime> {
+		let CallMetadata { pallet_name, function_name } = call.get_call_metadata();
+		(
+			pallet_name.as_bytes().to_vec().try_into().unwrap(),
+			function_name.as_bytes().to_vec().try_into().unwrap(),
+		)
+	}
+
+	/// One instance of every call in the runtime, decoded from zeroed arguments.
+	fn every_call() -> Vec<RuntimeCall> {
+		let mut calls = Vec::new();
+		for pallet in 0..=u8::MAX {
+			for call in 0..=u8::MAX {
+				let mut input = vec![pallet, call];
+				input.resize(4096, 0);
+				if let Ok(call) = RuntimeCall::decode(&mut &input[..]) {
+					calls.push(call);
+				}
+			}
+		}
+		calls
+	}
+
+	fn is_inherent(call: &RuntimeCall) -> bool {
+		<Runtime as IsInherent<_>>::is_inherent(&UncheckedExtrinsic::new_bare(call.clone()))
+	}
+
+	fn new_ext() -> sp_io::TestExternalities {
+		let t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+		let mut ext = sp_io::TestExternalities::from(t);
+		ext.execute_with(|| frame_system::Pallet::<Runtime>::set_block_number(1));
+		ext
+	}
+
+	/// Both `InherentCalls` lists must cover exactly the runtime's inherents, so a new
+	/// inherent or a renamed call fails here.
+	#[test]
+	fn whitelists_match_runtime_inherents() {
+		let calls = every_call();
+		let inherents = calls.iter().filter(|c| is_inherent(c)).count();
+		assert_eq!(inherents, 5, "inherent set changed, update `InherentCalls`");
+		for call in &calls {
+			let CallMetadata { pallet_name, function_name } = call.get_call_metadata();
+			let expected = is_inherent(call);
+			assert_eq!(
+				<InherentCalls as Contains<RuntimeCall>>::contains(call),
+				expected,
+				"{pallet_name}::{function_name}"
+			);
+			assert_eq!(
+				<InherentCalls as Contains<RuntimeCallNameOf<Runtime>>>::contains(&name(call)),
+				expected,
+				"{pallet_name}::{function_name}"
+			);
+		}
+	}
+
+	#[test]
+	fn inherents_cannot_be_paused() {
+		new_ext().execute_with(|| {
+			for call in every_call().iter().filter(|c| is_inherent(c)) {
+				assert_noop!(
+					TxPause::pause(RuntimeOrigin::root(), name(call)),
+					pallet_tx_pause::Error::<Runtime>::Unpausable
+				);
+				assert!(Filter::contains(call));
+			}
+		});
+	}
+
+	#[test]
+	fn other_calls_can_still_be_paused() {
+		new_ext().execute_with(|| {
+			let send_tx = RuntimeCall::Midnight(pallet_midnight::Call::send_mn_transaction {
+				midnight_tx: vec![],
+			});
+			assert!(Filter::contains(&send_tx));
+			assert_ok!(TxPause::pause(RuntimeOrigin::root(), name(&send_tx)));
+			assert!(!Filter::contains(&send_tx));
+		});
+	}
+}
