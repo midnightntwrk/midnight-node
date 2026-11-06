@@ -81,6 +81,6 @@
   },
   "packageManager": "pnpm@11.11.0+sha512-RGP2X9gO2A1pvB1L8WPulPYFxzgPwxi7Wy6+FfjNEtScUaTVnpUbQB52TTtsp1HL9RvFDtcAGmvLSTXmhMNIgg",
   "overrides": {
-    "minimatch": "10.2.4"
+    "minimatch": "11.0.1"
   }
 }
