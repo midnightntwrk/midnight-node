@@ -9,5 +9,5 @@ Breaking for anything that relied on a shell inside the image:
 - The `HEALTHCHECK` now runs `midnight-node health`, a new subcommand that exits 0 when `127.0.0.1:$RPC_PORT/health` answers 200.
 - The image no longer sets `GIT_CONTENT_HASH_SHORT`, `IMAGE_TAG` or `IMAGE_TAG_DEV`, and no longer ships `/version` or `/bin/.envrc`.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2378
 Issue:
