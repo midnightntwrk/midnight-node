@@ -16,5 +16,5 @@ to those directories plus `/etc`, `/usr`, `/lib*`, `/proc`, `/sys`, `/dev`, the 
 Set `LANDLOCK=false` (cfg key `landlock`) to turn it off, for example to write jemalloc heap
 profiles outside the base path.
 
-PR:
-Issue:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2381
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2380
