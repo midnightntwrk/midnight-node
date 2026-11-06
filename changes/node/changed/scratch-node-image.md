@@ -10,4 +10,4 @@ Breaking for anything that relied on a shell inside the image:
 - The image no longer sets `GIT_CONTENT_HASH_SHORT`, `IMAGE_TAG` or `IMAGE_TAG_DEV`, and no longer ships `/version` or `/bin/.envrc`.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2378
-Issue:
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2379
