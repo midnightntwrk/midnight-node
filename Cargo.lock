@@ -7301,7 +7301,7 @@ dependencies = [
  "rand 0.8.5",
  "ring 0.17.14",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "simple-dns",
  "smallvec",
  "snow",
@@ -7659,7 +7659,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signature",
  "subtle 2.6.1",
  "tracing",
@@ -7913,7 +7913,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "thiserror 2.0.18",
  "tokio",
  "v8-to-v9-state-translation",
@@ -7949,7 +7949,7 @@ dependencies = [
  "rayon",
  "reqwest 0.13.4",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -8164,7 +8164,7 @@ dependencies = [
  "scale-info-derive",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sp-externalities",
  "sp-runtime",
  "sp-runtime-interface",
@@ -8354,7 +8354,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "serde_yaml",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "shellexpand",
  "sidechain-domain",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609)",
@@ -8731,7 +8731,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sysinfo 0.39.6",
  "tempfile",
 ]
@@ -8758,7 +8758,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sysinfo 0.39.6",
  "tempfile",
 ]
@@ -8805,7 +8805,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signature",
  "tracing",
  "zeroize",
@@ -8840,7 +8840,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "signature",
  "tracing",
  "zeroize",
@@ -8947,7 +8947,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "serde_repr",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sha3 0.11.0",
  "tracing",
 ]
@@ -9284,7 +9284,7 @@ dependencies = [
  "blake2b_simd",
  "digest 0.11.3",
  "multihash-derive",
- "sha2 0.11.0",
+ "sha2 0.11.1",
  "sha3 0.11.0",
 ]
 
@@ -15844,9 +15844,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+checksum = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
