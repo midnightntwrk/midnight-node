@@ -31,7 +31,7 @@ zswap-ledger-9 = { workspace = true }
 coin-structure-ledger-9 = { workspace = true }
 transient-crypto-ledger-9 = { workspace = true }
 
-rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
+rand = { version = "0.10.0", features = ["small_rng", "getrandom"] }
 log.workspace = true
 lazy_static.workspace = true
 thiserror.workspace = true
