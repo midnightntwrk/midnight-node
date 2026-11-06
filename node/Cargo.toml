@@ -170,6 +170,7 @@ sp-transaction-pool.workspace = true
 # Linux binaries use jemalloc as the global allocator, as polkadot does.
 tikv-jemallocator.workspace = true
 tikv-jemalloc-ctl.workspace = true
+landlock.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
