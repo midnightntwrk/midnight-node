@@ -45,12 +45,9 @@ PARSE_ERROR_RE='Service\(Other\("(extrinsic not a string|error decoding extrinsi
 BOOT_OK_RE='(🏆 Imported #|💤 Idle)'
 
 echo "==> Generating baseline + malformed chainspecs in $SPECS_DIR"
-docker run --rm \
-    -v "$SCRIPT_DIR/generate-specs.sh:/generate-specs.sh:ro" \
-    -v "$SPECS_DIR:/specs" \
-    -e OUT_DIR=/specs \
-    --entrypoint /bin/bash \
-    "$MIDNIGHT_NODE_IMAGE" /generate-specs.sh
+docker run --rm "$MIDNIGHT_NODE_IMAGE" build-spec --chain dev --disable-default-bootnode \
+    > "$SPECS_DIR/baseline.json"
+OUT_DIR="$SPECS_DIR" "$SCRIPT_DIR/generate-specs.sh"
 
 # Run the node image against $variant; expect it to exit non-zero and print a
 # stderr line matching $expected_re. Returns 0 on pass, 1 on fail.

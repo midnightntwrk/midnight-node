@@ -1,13 +1,12 @@
 services:
   busybox-init:
-    # The Cardano images lack sed/awk/grep, which the cardano-node and
-    # mint-cnight-supply entrypoints need. Copy an arch-matching busybox into the
-    # shared volume once at startup; using the multi-arch busybox image lets Docker
-    # fetch the right arch automatically, so no per-arch binaries are vendored.
+    # The Cardano images lack the sed/awk/grep their entrypoints need, and the scratch
+    # node image has no shell. Applets go in /shared/bin for the node containers' PATH.
+    # The multi-arch busybox image picks the arch, so no per-arch binaries are vendored.
     container_name: busybox-init
     image: busybox:1.35.0-uclibc@sha256:e5877866756a3714cd11309f0b34e7c2c62406fdbfcae39c96beabb5dd4005a7
     platform: ${ARCHITECTURE}
-    command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
+    command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox && mkdir -p /shared/bin && /shared/busybox --install -s /shared/bin"]
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -355,9 +354,10 @@ services:
     env_file:
       - ./configurations/legacy-node-cfg.env
     environment:
+      PATH: /shared/bin
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       RPC_PORT: "9933"
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
       io.midnight.rpc-port: "9933"
@@ -391,9 +391,10 @@ services:
     env_file:
       - ./configurations/legacy-node-cfg.env
     environment:
+      PATH: /shared/bin
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       RPC_PORT: "9934"
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
       io.midnight.rpc-port: "9934"
@@ -427,6 +428,7 @@ services:
     env_file:
       - ./configurations/legacy-node-cfg.env
     environment:
+      PATH: /shared/bin
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       AURA_SEED_FILE: "/seeds/aura.seed"
       BABE_SEED_FILE: "/seeds/babe.seed"
@@ -434,7 +436,7 @@ services:
       GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
       BEEFY_SEED_FILE: "/seeds/beefy.seed"
       RPC_PORT: "9935"
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
       io.midnight.rpc-port: "9935"
@@ -469,9 +471,10 @@ services:
     env_file:
       - ./configurations/legacy-node-cfg.env
     environment:
+      PATH: /shared/bin
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       RPC_PORT: "9936"
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
       io.midnight.rpc-port: "9936"
@@ -506,9 +509,10 @@ services:
     env_file:
       - ./configurations/legacy-node-cfg.env
     environment:
+      PATH: /shared/bin
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       RPC_PORT: "9944"
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
       io.midnight.rpc-port: "9944"
@@ -544,9 +548,10 @@ services:
     env_file:
       - ./configurations/legacy-node-cfg.env
     environment:
+      PATH: /shared/bin
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
       RPC_PORT: "9945"
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
     labels:
       io.midnight.role: archive
       io.midnight.rpc-port: "9945"
@@ -569,7 +574,8 @@ services:
   # genesis here with the matching ${TOOLKIT_IMAGE} keeps any released image bootable.
   midnight-setup-configs:
     container_name: midnight-setup-configs
-    image: ${MIDNIGHT_NODE_IMAGE}
+    # Not the node image: these scripts need bash/jq/curl, which cardano-node ships.
+    image: ${CARDANO_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
       ogmios:
@@ -638,7 +644,8 @@ services:
     environment:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
-    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+      - PATH=/shared/bin
+    entrypoint: ["/shared/busybox", "sh", "/entrypoint.sh"]
 
   mint-cnight-supply:
     container_name: mint-cnight-supply

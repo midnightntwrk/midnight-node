@@ -5,8 +5,12 @@ x-common-variables: &common-variables
   USE_MAIN_CHAIN_FOLLOWER_MOCK: true
   MOCK_REGISTRATIONS_FILE: "res/mock-bridge-data/testnet-02-mock.json"
 
+# Node healthchecks only tune timing: the test is the image's own HEALTHCHECK, as
+# the scratch image has no curl. It probes RPC_PORT (default 9944).
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
+  # The data dirs are host bind mounts, which the image's uid 10001 cannot write.
+  user: "0:0"
   volumes:
     - ./res:/res # Mount the res directory for chain-spec etc.
     - ./data/boot-node:/data
@@ -23,7 +27,6 @@ services:
       - "9944:9944"
       - "30333:30333"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Assuming RPC port serves health
       interval: 5s
       timeout: 3s
       retries: 5
@@ -77,7 +80,6 @@ services:
         --public-addr /dns4/node0/tcp/30334
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Check internal RPC port
       interval: 5s
       timeout: 3s
       retries: 5
@@ -117,7 +119,6 @@ services:
         --public-addr /dns4/node1/tcp/30335
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -156,7 +157,6 @@ services:
         --public-addr /dns4/node2/tcp/30336
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -194,7 +194,6 @@ services:
         --rpc-cors=all
         --name MidnightNode3_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -233,7 +232,6 @@ services:
         --name MidnightNode4_Local
         --public-addr /dns4/node4/tcp/30338
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -273,7 +271,6 @@ services:
         --rpc-cors=all
         --name MidnightNode5_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -311,7 +308,6 @@ services:
         --public-addr /dns4/node6/tcp/30340
         --name MidnightNode6_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -352,7 +348,6 @@ services:
         --rpc-cors=all
         --name MidnightNode7_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -394,7 +389,6 @@ services:
         --rpc-cors=all
         --name MidnightNode8_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -435,7 +429,6 @@ services:
         --rpc-cors=all
         --name MidnightNode9_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -472,7 +465,6 @@ services:
         --rpc-cors=all
         --name MidnightNode10_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -509,7 +501,6 @@ services:
         --rpc-cors=all
         --name MidnightNode11_Local
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
