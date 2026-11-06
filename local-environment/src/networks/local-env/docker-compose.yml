@@ -1,11 +1,8 @@
 services:
   busybox-init:
-    # The Cardano images lack sed/awk/grep, which the cardano-node and
-    # mint-cnight-supply entrypoints need, and the scratch node image has no shell at
-    # all. Copy an arch-matching busybox into the shared volume once at startup, with
-    # its applets linked into /shared/bin for the node containers' PATH; using the
-    # multi-arch busybox image lets Docker fetch the right arch automatically, so no
-    # per-arch binaries are vendored.
+    # The Cardano images lack the sed/awk/grep their entrypoints need, and the scratch
+    # node image has no shell. Applets go in /shared/bin for the node containers' PATH.
+    # The multi-arch busybox image picks the arch, so no per-arch binaries are vendored.
     container_name: busybox-init
     image: busybox:1.35.0-uclibc@sha256:e5877866756a3714cd11309f0b34e7c2c62406fdbfcae39c96beabb5dd4005a7
     platform: ${ARCHITECTURE}
@@ -577,7 +574,7 @@ services:
   # genesis here with the matching ${TOOLKIT_IMAGE} keeps any released image bootable.
   midnight-setup-configs:
     container_name: midnight-setup-configs
-    # Only scripts needing bash/jq/curl, all of which the cardano-node image ships.
+    # Not the node image: these scripts need bash/jq/curl, which cardano-node ships.
     image: ${CARDANO_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:

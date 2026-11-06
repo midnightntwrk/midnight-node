@@ -1,6 +1,5 @@
-# Built by Earthly (+node-image-base and friends) with a +node-rootfs* artifact as the
-# context. A Dockerfile rather than Earthly commands because Earthly only writes a
-# shell-form HEALTHCHECK, which scratch has no shell to run.
+# Context: a +node-rootfs* Earthly artifact. A Dockerfile, not Earthly commands,
+# because Earthly writes HEALTHCHECK in shell form, which scratch cannot run.
 FROM scratch
 
 COPY rootfs/ /
