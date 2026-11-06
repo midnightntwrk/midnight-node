@@ -66,6 +66,8 @@ MALLOC_CONF=prof:true,prof_final:true,lg_prof_interval:31,prof_prefix:/data/heap
 - `prof_prefix` must point at a writable directory. Without it, dumps go to the working
   directory as `jeprof.*.heap`. Dumps are small (tens to hundreds of KiB), but with a low
   `lg_prof_interval` there are a lot of them.
+- The Landlock sandbox only lets the node write beneath its base path and the temp dir. Put
+  `prof_prefix` under one of those, or set `LANDLOCK=false`.
 
 ### Analyse
 
