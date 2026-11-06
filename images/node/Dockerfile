@@ -4,6 +4,9 @@ FROM scratch
 
 COPY rootfs/ /
 COPY --chown=10001:10001 rootfs/node /node
+# A fresh named volume takes its ownership from the image, so 10001 can write it.
+# Copying the empty chain dir is what creates /data: --chown skips existing dirs.
+COPY --chown=10001:10001 rootfs/node/chain /data
 
 ENV BASE_PATH=/node/chain
 ENV RPC_PORT=9944

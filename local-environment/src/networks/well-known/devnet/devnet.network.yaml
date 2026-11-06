@@ -13,6 +13,8 @@ x-common-variables: &common-variables
 # the scratch image has no curl. It probes RPC_PORT (default 9944).
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
+  # The data dirs are host bind mounts, which the image's uid 10001 cannot write.
+  user: "0:0"
   volumes:
     - ./res:/res
     - ./data/node1:/data
