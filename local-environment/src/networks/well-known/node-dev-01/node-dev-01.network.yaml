@@ -8,6 +8,8 @@ x-common-variables: &common-variables
   MC__FIRST_SLOT_NUMBER: 0
   MC__SLOT_DURATION_MILLIS: 1000
 
+# Node healthchecks only tune timing: the test is the image's own HEALTHCHECK, as
+# the scratch image has no curl. It probes RPC_PORT (default 9944).
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
   volumes:
@@ -26,7 +28,6 @@ services:
       - "9944:9944" # WebSocket port
       - "30333:30333" # P2P port
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Assuming RPC port serves health
       interval: 5s
       timeout: 3s
       retries: 5
@@ -96,7 +97,6 @@ services:
         --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Check internal RPC port
       interval: 5s
       timeout: 3s
       retries: 5
@@ -136,7 +136,6 @@ services:
         --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -177,7 +176,6 @@ services:
         --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -216,7 +214,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -256,7 +253,6 @@ services:
         --reserved-only
         --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -297,7 +293,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -338,7 +333,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -378,7 +372,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -418,7 +411,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -458,7 +450,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -498,7 +489,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -538,7 +528,6 @@ services:
         --rpc-methods=Unsafe
         --rpc-cors=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -174,16 +174,26 @@ fn runtime_wasm(binary: Option<&str>) -> Vec<u8> {
 		let (name, tag) = test_image("midnight-node");
 		let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
 		let path_in_image = format!("/artifacts-{arch}/{RUNTIME_WASM_FILE}");
-		let output = Command::new("docker")
-			.args(["run", "--rm", "--entrypoint", "cat", &format!("{name}:{tag}"), &path_in_image])
-			.output()
-			.expect("docker run cat wasm failed");
-		assert!(
-			output.status.success(),
-			"failed to extract wasm: {}",
-			String::from_utf8_lossy(&output.stderr)
-		);
-		return output.stdout;
+		let docker = |args: &[&str]| {
+			let output = Command::new("docker").args(args).output().expect("docker failed");
+			assert!(
+				output.status.success(),
+				"docker {args:?} failed: {}",
+				String::from_utf8_lossy(&output.stderr)
+			);
+			output.stdout
+		};
+		// The node image is scratch, with no `cat` to run, so copy the file out instead.
+		let cid = String::from_utf8(docker(&["create", &format!("{name}:{tag}")]))
+			.expect("container id is not utf8");
+		let cid = cid.trim();
+		let dest = std::env::temp_dir().join(format!("{cid}-{RUNTIME_WASM_FILE}"));
+		let dest_str = dest.to_str().expect("temp dir is not utf8");
+		docker(&["cp", &format!("{cid}:{path_in_image}"), dest_str]);
+		docker(&["rm", cid]);
+		let wasm = std::fs::read(&dest).expect("failed to read extracted wasm");
+		let _ = std::fs::remove_file(&dest);
+		return wasm;
 	};
 
 	let resolved = node_binary_path(binary);

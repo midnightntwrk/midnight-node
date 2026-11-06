@@ -9,6 +9,8 @@ x-common-variables: &common-variables
   MC__FIRST_SLOT_NUMBER: 0
   MC__SLOT_DURATION_MILLIS: 1000
 
+# Node healthchecks only tune timing: the test is the image's own HEALTHCHECK, as
+# the scratch image has no curl. It probes RPC_PORT (default 9944).
 x-node-common: &node-common
   image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
   volumes:
@@ -49,7 +51,6 @@ services:
         --reserved-nodes /dns4/node4/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2
         --reserved-nodes /dns4/node5/tcp/30338/p2p/12D3KooWMz5U7fR8mF5DNhZSSyFN8c19kU63xYopzDSNCzoFigYk
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -84,7 +85,6 @@ services:
         --reserved-only
         --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -119,7 +119,6 @@ services:
         --reserved-only
         --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -154,7 +153,6 @@ services:
         --reserved-only
         --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -189,7 +187,6 @@ services:
         --reserved-only
         --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
       timeout: 3s
       retries: 5

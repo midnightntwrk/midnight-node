@@ -13,17 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Generates baseline + malformed chainspecs into $OUT_DIR. Runs inside the
-# midnight-node image (jq + the node binary are already on PATH there).
+# Derives malformed chainspecs from $OUT_DIR/baseline.json. Runs on the host:
+# the scratch node image has no shell or jq.
 
 set -euo pipefail
 
-OUT_DIR="${OUT_DIR:-/specs}"
+OUT_DIR="${OUT_DIR:?}"
 BASE="$OUT_DIR/baseline.json"
-
-mkdir -p "$OUT_DIR"
-
-/midnight-node build-spec --chain dev --disable-default-bootnode > "$BASE"
 
 # Sanity: baseline must have a non-empty genesis_extrinsics array.
 count=$(jq '.properties.genesis_extrinsics | length' "$BASE")

@@ -491,6 +491,9 @@ pub enum Subcommand {
 
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
+
+	/// Exit 0 if the local node's RPC `/health` answers 200 (container healthchecks).
+	Health(crate::health_cmd::HealthCmd),
 }
 
 #[derive(Clone, Debug)]
