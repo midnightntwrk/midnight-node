@@ -80,3 +80,4 @@ and mainnet (`k = 2160`, ~12 h) exceed the GitHub Actions 6 h ceiling
 and are out of scope.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1613
+Issue: https://github.com/shieldedtech/shielded-qa/issues/50

@@ -41,9 +41,9 @@ jobs:
       contents: read
     # TEST PR — points at the new self-hosted runner pool to validate end-to-end
     # build performance. Revert before merge.
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
@@ -172,6 +172,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true,
           # so /tmp is in a per-service mount namespace that dockerd (and therefore
@@ -189,6 +190,7 @@ jobs:
           # accept GHA's ACTIONS_RUNTIME_TOKEN.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
           # Retry the earthly invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
@@ -203,7 +205,7 @@ jobs:
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images --STRIP_BINARIES="$STRIP_BINARIES"; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
@@ -330,6 +332,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
@@ -455,6 +458,8 @@ jobs:
 
       - name: Check Deps
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earth +check-deps
 
@@ -510,6 +515,7 @@ jobs:
       - name: Check Genesis Rebuild
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
@@ -532,7 +538,10 @@ jobs:
       contents: read
       actions: write
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest
+    # The fixture tests compile midnight-node-ledger with both ledger generations (and both
+    # storage lines) in one crate; rustc is SIGKILLed on the 16 GB ubuntu-latest runner.
+    # Same routing as Test Toolkit: self-hosted large for in-repo branches, GitHub-hosted for forks.
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -558,6 +567,7 @@ jobs:
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
           # under actions/checkout; reach for the actual head/ref name instead.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
@@ -583,9 +593,9 @@ jobs:
       actions: write
     name: Test Toolkit
     needs: [run]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -650,6 +660,7 @@ jobs:
       - name: Run toolkit tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
           # pulls (empty on fork PRs → anonymous, rate-limited).
@@ -861,6 +872,7 @@ jobs:
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -1141,6 +1153,7 @@ jobs:
       - name: just test
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
           . ./.envrc
@@ -1152,9 +1165,9 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [run, build-indexer-images]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:medium"]') || fromJSON('["ubuntu-latest"]') }}
     # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
@@ -1189,6 +1202,7 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         uses: ./.github/actions/local-environment-tests
         with:
+          node-git-token: ${{ secrets.NODE_GIT_TOKEN }}
           tag: CI
           image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}

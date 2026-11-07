@@ -10,3 +10,4 @@ variant, so `compact-0.33.0` now resolves rc.6 too.
 compactc 0.35.0 appends a commit and date to `--version`, so the CI image, `.envrc` and
 toolkit test version checks now compare only its first word.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

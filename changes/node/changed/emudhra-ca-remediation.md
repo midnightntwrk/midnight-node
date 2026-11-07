@@ -14,3 +14,5 @@ remains byte-equivalent with upstream for the OS layer.
 
 Advisory: https://alas.aws.amazon.com/AL2023/ALAS-2026-3306.html
 Upstream PR: https://github.com/midnightntwrk/midnight-node/pull/2327
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

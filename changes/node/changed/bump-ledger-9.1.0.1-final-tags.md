@@ -16,3 +16,4 @@ and `zkir` 2.2.0 raises its proofs/circuits/zk-stdlib requirements to the versio
 locked and silences the deprecated coordinate getters it keeps for verifier-key stability.
 Ledger 8 stays on crates.io 8.1.3.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

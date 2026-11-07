@@ -14,3 +14,5 @@ the state root were unaffected.
 runtime wasm that was on-chain at their height, which imports v1 and keeps the old
 behaviour, while the rebuilt runtime imports v2 and emits the events. Node binaries must
 therefore be upgraded before the runtime `set_code`.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

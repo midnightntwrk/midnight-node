@@ -10,4 +10,5 @@ operator edits in chain-spec files (e.g.
 `cNightObservation.config.addresses.<field>`).
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1466
+Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/365
 JIRA: https://shielded.atlassian.net/browse/PM-19896

@@ -48,3 +48,5 @@ The `process_tokens` inherent no longer rejects batches by UTXO count
 All nodes, not only validators, must run a node binary with the matching inherent
 data provider change before this runtime is enacted; older binaries stop importing
 blocks at the upgrade.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

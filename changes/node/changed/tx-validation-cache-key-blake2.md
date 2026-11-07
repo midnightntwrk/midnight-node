@@ -6,3 +6,5 @@ The strict and soft transaction validation caches, and the transaction pool
 instead of `Twox128`. Twox128 is not collision resistant, so two different
 transactions could share a cache entry. Node-only change; the pool tag is
 local and not part of consensus.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

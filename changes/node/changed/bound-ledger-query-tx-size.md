@@ -27,3 +27,5 @@ Both caps come from real transactions. Over 47k mainnet transactions (2026-10-02
 largest declared 333 nodes, 8 identifiers and 2 contract actions, and none exceeded 41 KB.
 1,024 nodes is 3x that maximum, and 4096 decoded items stays above anything the node cap
 admits.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

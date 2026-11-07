@@ -43,30 +43,6 @@ on:
         description: "Skip srtool runtime WASM build?"
         required: false
         default: false
-      archive-changes:
-        type: boolean
-        description: 'Archive changes for this release on the main branch'
-        required: true
-        default: true
-      archive-mode:
-        type: choice
-        options:
-          - move
-          - copy
-          - delete
-        description: 'Archive changes for this release on the main branch'
-        required: true
-        default: move
-      bump-version:
-        type: boolean
-        description: 'Bump components version on main'
-        required: true
-        default: false
-      reset-changes:
-        type: boolean
-        description: 'Reset `changes/` to the change template'
-        required: true
-        default: true
 
 env:
   # Registry the images built here are pushed to and pulled from. Derived from the repo owner
@@ -276,6 +252,40 @@ jobs:
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.ghcr-digests-toolkit.outputs.digest }}
+
+      # --- Release signing (cosign + AWS KMS) ---
+      # For repos that can't use actions/attest, e.g. private forks.
+      - name: Configure AWS credentials for signing
+        if: vars.SIGNING_KMS_KEY != ''
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.SIGNING_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.SIGNING_AWS_REGION }}
+
+      - name: Install cosign
+        if: vars.SIGNING_KMS_KEY != ''
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # cosign v3 hard-rejects --tlog-upload=false; v2 supports keyed no-tlog signing.
+          cosign-release: "v2.6.4"
+
+      - name: Sign node release image
+        if: vars.SIGNING_KMS_KEY != '' && inputs.skip-node != true
+        env:
+          COSIGN_KEY: awskms:///${{ vars.SIGNING_KMS_KEY }}
+          NODE_DIGEST: ${{ steps.ghcr-digests-node.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --key "$COSIGN_KEY" --tlog-upload=false --yes "${NODE_IMAGE}@${NODE_DIGEST}"
+
+      - name: Sign toolkit release image
+        if: vars.SIGNING_KMS_KEY != '' && inputs.skip-toolkit != true
+        env:
+          COSIGN_KEY: awskms:///${{ vars.SIGNING_KMS_KEY }}
+          TOOLKIT_DIGEST: ${{ steps.ghcr-digests-toolkit.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cosign sign --key "$COSIGN_KEY" --tlog-upload=false --yes "${TOOLKIT_IMAGE}@${TOOLKIT_DIGEST}"
 
       # --- GHCR midnightntwrk images ---
       # The public ghcr.io/midnightntwrk mirror and Docker Hub are upstream's alone: a fork
@@ -662,28 +672,6 @@ jobs:
             set_component_tag "runtime-${RUNTIME_TAG_RELEASE}"
           fi
 
-  archive-changes:
-    needs: [validate-inputs, prepare-release, finalize-release]
-    if: ${{ !cancelled() && !failure() }}
-    # Caps the called workflow's GITHUB_TOKEN — archive-and-bump opens a PR
-    # with a signed commit, so it needs contents + pull-requests write.
-    permissions:
-      contents: write
-      pull-requests: write
-    uses: ./.github/workflows/archive-changes.yml
-    with:
-      ref: ${{ inputs.ref }}
-      release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
-      archive-changes: ${{ inputs.archive-changes }}
-      archive-mode: ${{ inputs.archive-mode }}
-      reset-changes: ${{ inputs.reset-changes }}
-      bump-version: ${{ inputs.bump-version }}
-      skip-node: ${{ inputs.skip-node }}
-      skip-toolkit: ${{ inputs.skip-toolkit }}
-      skip-runtime: ${{ inputs.skip-runtime }}
-    secrets:
-      MIDNIGHTCI_PACKAGES_READ: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
-
   create-release-assets:
     permissions:
       contents: write
@@ -779,6 +767,33 @@ jobs:
         with:
           subject-path: ${{ steps.extract-toolkit.outputs.toolkit_release }}
 
+      - name: Configure AWS credentials for signing
+        if: vars.SIGNING_KMS_KEY != ''
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.SIGNING_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.SIGNING_AWS_REGION }}
+
+      - name: Install cosign
+        if: vars.SIGNING_KMS_KEY != ''
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v2.6.4"
+
+      - name: Sign release tarballs
+        if: vars.SIGNING_KMS_KEY != ''
+        env:
+          COSIGN_KEY: awskms:///${{ vars.SIGNING_KMS_KEY }}
+          NODE_RELEASE: ${{ steps.extract-node.outputs.node_release }}
+          TOOLKIT_RELEASE: ${{ steps.extract-toolkit.outputs.toolkit_release }}
+        run: |
+          set -euo pipefail
+          for f in "$NODE_RELEASE" "$TOOLKIT_RELEASE"; do
+            [ -n "$f" ] || continue
+            cosign sign-blob --key "$COSIGN_KEY" --tlog-upload=false --yes \
+              --output-signature "${f}.sig" "${f}"
+          done
+
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -791,6 +806,12 @@ jobs:
           [ -n "$NODE_FILE" ] && FILES+=("$NODE_FILE")
           [ -n "$TOOLKIT_FILE" ] && FILES+=("$TOOLKIT_FILE")
           FILES+=("SHA256SUMS-${{ matrix.platform }}")
+          # `.sig` files exist only if signing ran. `if`, not a trailing `&&`: a missing last
+          # `.sig` would then fail the step under `bash -e`.
+          SIGS=()
+          for f in "${FILES[@]}"; do
+            if [ -f "${f}.sig" ]; then SIGS+=("${f}.sig"); fi
+          done
           # A force-republish re-runs against a release that already carries
           # these asset names, and the tag has already been moved by then, so a
           # name collision here would strand the release on its old assets.
@@ -798,7 +819,7 @@ jobs:
           # unexpected is already there, which should fail loudly.
           CLOBBER=()
           [ "$FORCE" = "true" ] && CLOBBER=(--clobber)
-          gh release upload "${CLOBBER[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" "${FILES[@]}"
+          gh release upload "${CLOBBER[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" "${FILES[@]}" ${SIGS[@]+"${SIGS[@]}"}
 
   srtool-build:
     permissions:
@@ -815,6 +836,8 @@ jobs:
       ref: ${{ inputs.ref }}
       release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
       runtime-tag-release: ${{ needs.prepare-release.outputs.runtime-tag-release }}
+    secrets:
+      NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
 
   finalize-checksums:
     permissions:
@@ -859,17 +882,41 @@ jobs:
         with:
           subject-path: SHA256SUMS
 
+      # The combined SHA256SUMS only exists in this job, so it is signed here.
+      - name: Configure AWS credentials for signing
+        if: vars.SIGNING_KMS_KEY != ''
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.SIGNING_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.SIGNING_AWS_REGION }}
+
+      - name: Install cosign
+        if: vars.SIGNING_KMS_KEY != ''
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: "v2.6.4"
+
+      - name: Sign combined checksums
+        if: vars.SIGNING_KMS_KEY != ''
+        env:
+          COSIGN_KEY: awskms:///${{ vars.SIGNING_KMS_KEY }}
+        run: |
+          set -euo pipefail
+          cosign sign-blob --key "$COSIGN_KEY" --tlog-upload=false --yes \
+            --output-signature SHA256SUMS.sig SHA256SUMS
+
       - name: Upload final checksums
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE: ${{ github.event.inputs.force }}
         run: |
           echo "Uploading checksums to release: $GIT_TAG_RELEASE"
+          FILES=("SHA256SUMS")
+          if [ -f SHA256SUMS.sig ]; then FILES+=("SHA256SUMS.sig"); fi
           # See the note on --clobber in create-release-assets.
           CLOBBER=()
           [ "$FORCE" = "true" ] && CLOBBER=(--clobber)
-          gh release upload "${CLOBBER[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" \
-            SHA256SUMS
+          gh release upload "${CLOBBER[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" "${FILES[@]}"
 
   sbom-scan-ghcr-node:
     if: github.event.inputs.skip-node != 'true'

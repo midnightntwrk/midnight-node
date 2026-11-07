@@ -10,3 +10,5 @@ rejects keys with trailing bytes so two encodings cannot name one key. The
 crates.io 2.2.0 release carries that fix, so the git override is dropped and
 the crate resolves to the registry. Same version number, different source:
 the lockfile moves from a git source to the crates.io checksum.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

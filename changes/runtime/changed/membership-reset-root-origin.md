@@ -19,3 +19,5 @@ both bodies, and a bare `reset_members` now fails with `BadOrigin`.
 
 Covered by `bare_membership_reset_is_rejected` and
 `observed_membership_reset_updates_both_bodies` in the runtime tests.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

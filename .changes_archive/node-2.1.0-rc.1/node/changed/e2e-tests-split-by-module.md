@@ -10,3 +10,4 @@ process-global. `lib.rs` now holds only the shared statics and helpers
 Tests can now be run per group via `cargo test ... cnight::`, etc.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1565
+Issue: https://github.com/shieldedtech/shielded-qa/issues/49

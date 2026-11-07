@@ -6,3 +6,4 @@ storage, like the other ledger host calls there. Reads allocate, and in the shar
 storage a later flush could write those allocations to disk. Return values are
 unchanged, and no runtime upgrade is required.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

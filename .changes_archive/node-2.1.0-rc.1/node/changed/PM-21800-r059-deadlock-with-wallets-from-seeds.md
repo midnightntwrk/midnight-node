@@ -15,3 +15,4 @@ in `ledger/helpers/src/versions/common/context.rs` pin the fix
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1471
 JIRA: https://shielded.atlassian.net/browse/PM-21800
+Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/114

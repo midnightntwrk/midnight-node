@@ -12,3 +12,4 @@ different versions stay distinct with no version-spec guesswork. Addresses Least
 finding "Prefer Cargo.lock For Build-Time Crate Versions".
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1793
+Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/330

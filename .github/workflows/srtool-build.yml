@@ -32,11 +32,18 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      NODE_GIT_TOKEN:
+        description: "Token for private git dependencies in Cargo.toml; a reusable workflow sees no caller secrets unless they are passed"
+        required: false
 
 jobs:
   srtool-build:
     name: Build deterministic WASM
-    runs-on: ubuntu-latest
+    # srtool compiles the whole runtime dependency tree inside one container. On the
+    # 4-core / 16 GB ubuntu-latest VM rustc is OOM-killed (SIGKILL) on the ledger crate
+    # now that it links ledger 8 and ledger 9 side by side; the 16-core runner has 64 GB.
+    runs-on: ubuntu-latest-16-core-x64
     timeout-minutes: 90
     permissions:
       contents: write       # Required for gh release upload
@@ -51,6 +58,12 @@ jobs:
           submodules: true
           ref: ${{ inputs.ref }}
 
+      # The srtool image does a cold full release build of the runtime and its
+      # dependency tree inside the build container; on ubuntu-latest that ran the
+      # disk out (rustc "No space left on device") on every 2.1.100 release run.
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
@@ -59,6 +72,8 @@ jobs:
           use-cache: false
 
       - name: Run srtool build
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earth +srtool-build
 

@@ -11,3 +11,4 @@ attributed and grepped per test instead of producing interleaved
 soup. The default filter is `info`; override with `E2E_LOG=...`.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1564
+Issue: https://github.com/shieldedtech/shielded-qa/issues/48

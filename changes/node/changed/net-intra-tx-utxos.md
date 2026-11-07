@@ -17,3 +17,5 @@ host-function versions (`apply_transaction` v3, `validate_transaction` and
 replay unchanged, and a runtime that binds the new ones cannot be
 imported by a node without this change. Node binaries must therefore roll
 out before the runtime upgrade.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382
