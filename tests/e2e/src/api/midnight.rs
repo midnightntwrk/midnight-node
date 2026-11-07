@@ -1286,4 +1286,20 @@ impl MidnightClient {
         };
         Ok(response)
     }
+
+    /// Resolve state tree paths of a contract at the best block via
+    /// `midnight_queryContractState`. Paths are lists of tagged-hex `AlignedValue` keys.
+    pub async fn query_contract_state(
+        &self,
+        contract_address: &str,
+        paths: &[Vec<String>],
+    ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+        Ok(self
+            .rpc_client
+            .request(
+                "midnight_queryContractState",
+                rpc_params![contract_address, paths],
+            )
+            .await?)
+    }
 }
