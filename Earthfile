@@ -570,12 +570,7 @@ rebuild-genesis-state-stagenet:
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-local
-    # Devnet is restored to the 1.0.300 genesis, which is ledger 8
-    # (system-transaction[v6]). The toolkit's generate-genesis is hard-wired to
-    # ledger 9 (midnight_ledger_unsafe_helpers re-exports `latest` = ledger_9), so it
-    # cannot reproduce a ledger-8 genesis - it fails on the header tag. Rebuild only
-    # once devnet is regenerated for the current ledger.
-    #BUILD +rebuild-genesis-state-devnet
+    BUILD +rebuild-genesis-state-devnet
     # Perfnet genesis is not meant to be rebuild in PR CI
     #BUILD +rebuild-genesis-state-perfnet
     # Govnet genesis is not meant to be rebuild in PR CI
@@ -635,9 +630,7 @@ rebuild-chainspec:
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 # Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
-    # Devnet is pinned to the restored 1.0.300 chain spec; rebuilding would swap in the
-    # current runtime wasm and invalidate res/devnet/chain-spec-hash.json
-    #BUILD +rebuild-chainspec --NETWORK=devnet
+    BUILD +rebuild-chainspec --NETWORK=devnet
     # Govnet genesis is not meant to be rebuild in PR CI
     #BUILD +rebuild-chainspec --NETWORK=govnet
     # QANet genesis is not meant to be rebuild in PR CI
@@ -809,9 +802,9 @@ node-ci-image-single-platform:
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
 
     # Portability + compiler-version check (runs for both source and fetched builds;
-    # also the first run of a source bundle outside nix): compactc --version reports
-    # the bare semver with no tree-hash suffix, so compare against the version prefix.
-    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+    # also the first run of a source bundle outside nix): compactc --version leads with
+    # the bare semver (0.35.0+ appends a commit and date), so compare its first word.
+    RUN got="$(/compact-home/compactc --version | cut -d" " -f1)" && want="${COMPACTC_VERSION%%-*}" && \
         test "$got" = "$want" || \
         { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 

@@ -19,4 +19,3 @@ Note: this proposes changing the mainnet preset as well; the mainnet value shoul
 only take effect via a deliberate, coordinated node rollout.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1914
-Issue: https://github.com/shieldedtech/shielded-sre/issues/424

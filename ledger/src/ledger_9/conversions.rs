@@ -185,6 +185,13 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				FeeCalculationError::BlockLimitExceeded => {
 					FeeCalculationErrorCode::BlockLimitExceeded
 				},
+				other => match error_ext::try_convert_extra_fee_calculation(other) {
+					Ok(code) => code,
+					Err(other) => {
+						log::warn!("Unmapped FeeCalculationError variant: {other:?}");
+						FeeCalculationErrorCode::Unknown
+					},
+				},
 			}),
 			Mt::InvalidDustRegistrationSignature { .. } => Me::InvalidDustRegistrationSignature,
 			Mt::InvalidDustSpendProof { .. } => Me::InvalidDustSpendProof,
@@ -198,9 +205,12 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				MalformedContractDeploy::IncorrectChargedState => {
 					MalformedContractDeployErrorCode::IncorrectChargedState
 				},
-				other => {
-					log::warn!("Unmapped MalformedContractDeploy variant: {other:?}");
-					MalformedContractDeployErrorCode::Unknown
+				other => match error_ext::try_convert_extra_contract_deploy(other) {
+					Ok(code) => code,
+					Err(other) => {
+						log::warn!("Unmapped MalformedContractDeploy variant: {other:?}");
+						MalformedContractDeployErrorCode::Unknown
+					},
 				},
 			}),
 			Mt::IntentSignatureVerificationFailure => Me::IntentSignatureVerificationFailure,
@@ -272,9 +282,12 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::OutputsNotSorted(..) => Me::OutputsNotSorted,
 			Mt::DuplicateInputs(..) => Me::DuplicateInputs,
 			Mt::InputsSignaturesLengthMismatch { .. } => Me::InputsSignaturesLengthMismatch,
-			other => {
-				log::warn!("Unmapped MalformedTransaction variant: {other:?}");
-				Me::UnknownError
+			other => match error_ext::try_convert_extra_malformed(other) {
+				Ok(code) => code,
+				Err(other) => {
+					log::warn!("Unmapped MalformedTransaction variant: {other:?}");
+					Me::UnknownError
+				},
 			},
 		}
 	}

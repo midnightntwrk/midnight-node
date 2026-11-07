@@ -480,7 +480,7 @@ impl MidnightClient {
         }
     }
 
-    /// Read `cNightObservation.nextCardanoPosition.block_number` at a
+    /// Read `cNightObservation.nextCardanoCursor.position.block_number` at a
     /// specific Midnight block (by number). Used by the past-scan path
     /// to binary-search the watermark across history.
     async fn read_next_cardano_position_at(
@@ -496,7 +496,7 @@ impl MidnightClient {
         const MAX_ATTEMPTS: u32 = 5;
         let addr = mn_meta::storage()
             .c_night_observation()
-            .next_cardano_position();
+            .next_cardano_cursor();
         for attempt in 1..=MAX_ATTEMPTS {
             let result = timeout(PER_ATTEMPT_TIMEOUT, async {
                 let at = self.online_client().at_block(midnight_block).await?;
@@ -507,7 +507,7 @@ impl MidnightClient {
                     .map(|v| v.decode())
                     .transpose()?;
                 Ok::<_, Box<dyn std::error::Error>>(
-                    value.map(|p| p.block_number as u64).unwrap_or(0),
+                    value.map(|c| c.position.block_number as u64).unwrap_or(0),
                 )
             })
             .await;
