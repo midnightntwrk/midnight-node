@@ -113,12 +113,12 @@ zswap-ledger-9 = { version = "=9.0.1", package = "midnight-zswap" }
 coin-structure-ledger-9 = { version = "=3.0.1", package = "midnight-coin-structure" }
 transient-crypto-ledger-9 = { version = "=3.0.1", package = "midnight-transient-crypto" }
 
-# v8->v9 state translation table, maintained by the ledger team. Unpublished and not in any
-# release tag - it lives only on the ledger repo's `state-translation/v8-to-v9` branch - so it
-# is pinned by rev. Its dependency requirements resolve to the same crates.io releases as
+# v8->v9 state translation table, maintained by the ledger team. Unpublished, so it is pinned
+# by git tag; the tag (commit 39cfd05) keeps the commit reachable whatever becomes of the PR
+# branch it came from. Its dependency requirements resolve to the same crates.io releases as
 # the rest of the workspace, so it shares one `midnight-onchain-state` instance per generation
 # and one `midnight-storage-core` arena.
-v8-to-v9-state-translation = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "39cfd0531524b87e53198ce136777530c29646aa" }
+v8-to-v9-state-translation = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "state-translation-v8-v9-node-2.1.101" }
 
 # Storage core v2 layout
 midnight-storage-core = { version = "1.2.3", features = ["layout-v2", "gc-v1"] }

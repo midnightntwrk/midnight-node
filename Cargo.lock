@@ -20029,7 +20029,7 @@ dependencies = [
 [[package]]
 name = "v8-to-v9-state-translation"
 version = "0.1.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=39cfd0531524b87e53198ce136777530c29646aa#39cfd0531524b87e53198ce136777530c29646aa"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=state-translation-v8-v9-node-2.1.101#39cfd0531524b87e53198ce136777530c29646aa"
 dependencies = [
  "midnight-base-crypto",
  "midnight-ledger",
