@@ -182,7 +182,8 @@ sp-keystore = { workspace = true, features = ["std"] }
 substrate-build-script-utils.workspace = true
 
 [features]
-default = []
+# Heap-profiling build: compiles in jemalloc's profiler, still off until MALLOC_CONF enables it.
+default = ["jemalloc-profiling"]
 
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [

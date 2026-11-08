@@ -393,6 +393,8 @@ substrate-test-runtime-client = { default-features = false, git = "https://githu
 
 [profile.release]
 panic = "unwind"
+# Line tables let jeprof resolve heap-profile frames to source lines.
+debug = "line-tables-only"
 
 [profile.production]
 inherits = "release"
