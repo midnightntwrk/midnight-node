@@ -47,11 +47,11 @@ pub use frame_support::{
 	},
 };
 pub use frame_system::Call as SystemCall;
-use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
+use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
-use midnight_primitives_cnight_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoCursor;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
@@ -280,7 +280,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_001_000,
+	spec_version: 002_001_100,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
@@ -670,6 +670,10 @@ impl pallet_block_rewards::Config for Runtime {
 impl pallet_midnight::Config for Runtime {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
+	// admits, so the node cap binds first.
+	type MaxDecodedTxItems = ConstU32<4096>;
+	type MaxTransactionNodes = ConstU32<1024>;
 }
 
 /// Configure the pallet-midnight in pallets/midnight.
@@ -799,7 +803,7 @@ impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -851,7 +855,7 @@ impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -1175,6 +1179,7 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	pallet_cnight_observation::migrations::cursor::MigrateToNextCardanoCursor<Runtime>,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
@@ -1787,18 +1792,6 @@ impl_runtime_apis! {
 			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}
 
-		fn get_next_cardano_position() -> CardanoPosition {
-			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
-		}
-
-		fn get_utxo_capacity_per_block() -> u32 {
-			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
-		}
-
-		fn get_cardano_block_window_size() -> u32 {
-			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
-		}
-
 		fn get_cnight_token_identifier() -> (Vec<u8>, Vec<u8>) {
 			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
@@ -1806,6 +1799,14 @@ impl_runtime_apis! {
 
 		fn get_auth_token_asset_name() -> Vec<u8> {
 			pallet_cnight_observation::MainChainAuthTokenAssetName::<Runtime>::get().into_inner()
+		}
+
+		fn get_observation_cost_model() -> Option<midnight_primitives_cnight_observation::ObservationCostModel> {
+			CNightObservation::observation_cost_model()
+		}
+
+		fn get_next_cardano_cursor() -> CardanoCursor {
+			pallet_cnight_observation::NextCardanoCursor::<Runtime>::get()
 		}
 	}
 
@@ -2361,6 +2362,98 @@ mod tests {
 				// And governance can lift safe mode once the fixed runtime is applied.
 				assert_ok!(crate::SafeMode::force_exit(crate::RuntimeOrigin::root()));
 				assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), None);
+			});
+		}
+	}
+
+	mod membership_reset_origin {
+		use crate::{
+			AccountId, Executive, Runtime, RuntimeCall, RuntimeOrigin, UncheckedExtrinsic,
+		};
+		use frame_support::assert_ok;
+		use pallet_membership::{Instance1, Instance2};
+		use sidechain_domain::PolicyId;
+		use sp_runtime::{BuildStorage, DispatchError, traits::Dispatchable};
+
+		fn account(b: u8) -> AccountId {
+			AccountId::from([b; 32])
+		}
+
+		fn assert_bodies(expected: &[AccountId]) {
+			assert_eq!(
+				pallet_membership::Members::<Runtime, Instance1>::get().as_slice(),
+				expected
+			);
+			assert_eq!(
+				pallet_membership::Members::<Runtime, Instance2>::get().as_slice(),
+				expected
+			);
+			assert_eq!(pallet_collective::Members::<Runtime, Instance1>::get(), expected);
+			assert_eq!(pallet_collective::Members::<Runtime, Instance2>::get(), expected);
+		}
+
+		fn new_test_ext(members: &[AccountId]) -> sp_io::TestExternalities {
+			let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+			pallet_membership::GenesisConfig::<Runtime, Instance1> {
+				members: members.to_vec().try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+			pallet_membership::GenesisConfig::<Runtime, Instance2> {
+				members: members.to_vec().try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+			t.into()
+		}
+
+		/// A block author can append any call to a block as a bare extrinsic, which
+		/// dispatches with the `None` origin. Neither membership body may accept it.
+		#[test]
+		fn bare_membership_reset_is_rejected() {
+			let honest = [account(1), account(2)];
+			new_test_ext(&honest).execute_with(|| {
+				frame_system::Pallet::<Runtime>::initialize(
+					&1,
+					&Default::default(),
+					&Default::default(),
+				);
+				let members = vec![account(0xAA)];
+				for call in [
+					RuntimeCall::CouncilMembership(pallet_membership::Call::reset_members {
+						members: members.clone(),
+					}),
+					RuntimeCall::TechnicalCommitteeMembership(
+						pallet_membership::Call::reset_members { members: members.clone() },
+					),
+				] {
+					assert_eq!(
+						Executive::apply_extrinsic(UncheckedExtrinsic::new_bare(call)),
+						Ok(Err(DispatchError::BadOrigin))
+					);
+				}
+				assert_bodies(&honest);
+			});
+		}
+
+		#[test]
+		fn observed_membership_reset_updates_both_bodies() {
+			new_test_ext(&[account(1), account(2)]).execute_with(|| {
+				let observed = [account(3), account(4)];
+				let authorities: Vec<_> =
+					[3u8, 4].iter().map(|&b| (account(b), PolicyId([b; 28]))).collect();
+				assert_ok!(
+					RuntimeCall::FederatedAuthorityObservation(
+						pallet_federated_authority_observation::Call::reset_members {
+							council_authorities: authorities.clone().try_into().unwrap(),
+							technical_committee_authorities: authorities.try_into().unwrap(),
+						}
+					)
+					.dispatch(RuntimeOrigin::none())
+				);
+				assert_bodies(&observed);
 			});
 		}
 	}

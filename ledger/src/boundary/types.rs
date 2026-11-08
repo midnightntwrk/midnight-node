@@ -12,24 +12,13 @@
 // limitations under the License.
 
 use alloc::vec::Vec;
-use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
+use parity_scale_codec::{Compact, Decode, DecodeWithMemTracking, Encode};
 use scale_info::prelude::string::String;
 use scale_info_derive::TypeInfo;
 
 pub const PERSISTENT_HASH_BYTES: usize = 32;
 pub type Hash = [u8; PERSISTENT_HASH_BYTES];
 pub struct WrappedHash(pub Hash);
-
-const TWOX128_HASH_BYTES: usize = 16;
-pub type Hash128 = [u8; TWOX128_HASH_BYTES];
-
-impl From<Hash128> for WrappedHash {
-	fn from(value: Hash128) -> Self {
-		let mut extended = [0u8; PERSISTENT_HASH_BYTES]; // Create a new [u8; 32] array filled with zeros
-		extended[..TWOX128_HASH_BYTES].copy_from_slice(&value); // Copy the original [u8; 16] into the first part
-		WrappedHash(extended) // Return the extended array
-	}
-}
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionApplied {
@@ -275,4 +264,117 @@ pub struct UtxoInfo {
 	pub intent_hash: Hash,
 	pub value: u128,
 	pub output_no: u32,
+}
+
+impl UtxoInfo {
+	/// Ledger identity of this UTXO; owner, type and value are not part of it.
+	pub fn id(&self) -> (Hash, u32) {
+		(self.intent_hash, self.output_no)
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeCountError {
+	TagNotFound,
+	CountDecodeFailed,
+}
+
+/// Splits a tagged serialization into `(tag, body)`, where the tag is `midnight:<type>:`.
+///
+/// The second colon ends the tag, searched for within the 512-byte window
+/// `midnight_serialize::peek_tag` uses, and like `peek_tag` this relies on no tag holding a
+/// colon. `None` when no tag ends inside the window.
+pub fn split_tag(payload: &[u8]) -> Option<(&[u8], &[u8])> {
+	const TAG_SCAN_LIMIT: usize = 512;
+	let (colon_i, _) = payload
+		.iter()
+		.take(TAG_SCAN_LIMIT)
+		.enumerate()
+		.filter(|(_, byte)| **byte == b':')
+		.nth(1)?;
+	Some(payload.split_at(colon_i + 1))
+}
+
+/// The DAG node count a serialized `Transaction` declares, read without deserializing it.
+///
+/// A transaction is a tagged blob followed by a `Vec<TopoSortedNode>`, whose length comes
+/// first as a SCALE-compact `u32` (integers go through `via_scale!`). Reading it costs a
+/// bounded tag scan plus at most five bytes, whatever the payload's size.
+///
+/// A count beyond `u32` returns `CountDecodeFailed`; no payload within the byte limit could
+/// hold that many nodes.
+pub fn declared_node_count(payload: &[u8]) -> Result<u32, NodeCountError> {
+	let (_, body) = split_tag(payload).ok_or(NodeCountError::TagNotFound)?;
+
+	let Compact(node_count) =
+		Compact::<u32>::decode(&mut &body[..]).map_err(|_| NodeCountError::CountDecodeFailed)?;
+
+	Ok(node_count)
+}
+
+#[cfg(test)]
+mod node_count_tests {
+	use parity_scale_codec::Compact;
+
+	use super::{NodeCountError, declared_node_count, split_tag};
+
+	/// A tagged blob whose body is `count` as a SCALE-compact `u32`.
+	fn tagged(count: u32) -> Vec<u8> {
+		let mut v = b"midnight:transaction[v12](proof):".to_vec();
+		match count {
+			0..=0x3f => v.push((count as u8) << 2),
+			0x40..=0x3fff => v.extend(((count << 2) as u16 | 0b01).to_le_bytes()),
+			_ => v.extend(((count << 2) | 0b10).to_le_bytes()),
+		}
+		v
+	}
+
+	#[test]
+	fn split_tag_ends_the_tag_at_its_second_colon() {
+		let payload = b"midnight:transaction[v12](proof):\x04\x05";
+		assert_eq!(
+			split_tag(payload),
+			Some((&b"midnight:transaction[v12](proof):"[..], &b"\x04\x05"[..]))
+		);
+		assert_eq!(split_tag(b"midnight:t:"), Some((&b"midnight:t:"[..], &b""[..])));
+		assert_eq!(split_tag(b"midnight:no-terminator"), None);
+		// A tag ending past the scan window is not found.
+		let mut long = vec![b'x'; 511];
+		long.extend(b"::");
+		assert_eq!(split_tag(&long), None);
+	}
+
+	#[test]
+	fn reads_every_compact_width() {
+		for count in [0u32, 1, 43, 63, 64, 4501, 16_383, 16_384, 1_000_000] {
+			assert_eq!(declared_node_count(&tagged(count)), Ok(count), "{count}");
+		}
+	}
+
+	#[test]
+	fn big_integer_mode_is_treated_as_hostile() {
+		let mut v = b"midnight:transaction[v12](proof):".to_vec();
+		use parity_scale_codec::Encode as _;
+		let bytes = (Compact::<u64>(u32::MAX as u64 + 5)).encode();
+		v.extend(bytes);
+		assert_eq!(declared_node_count(&v), Err(NodeCountError::CountDecodeFailed));
+	}
+
+	#[test]
+	fn undeclarable_counts_are_left_to_the_deserializer() {
+		assert_eq!(declared_node_count(b""), Err(NodeCountError::TagNotFound));
+		assert_eq!(
+			declared_node_count(b"no tag terminator here"),
+			Err(NodeCountError::TagNotFound)
+		);
+		// Tag present, body absent.
+		assert_eq!(
+			declared_node_count(b"midnight:transaction:"),
+			Err(NodeCountError::CountDecodeFailed)
+		);
+		// A tag longer than the scan window is not searched.
+		let mut long = vec![b'x'; 600];
+		long.extend(b"::\x04");
+		assert_eq!(declared_node_count(&long), Err(NodeCountError::TagNotFound));
+	}
 }

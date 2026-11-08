@@ -26,7 +26,9 @@ use frame_support::{
 	pallet_prelude::*,
 };
 use frame_system::pallet_prelude::*;
-use midnight_primitives_cnight_observation::{CardanoPosition, INHERENT_IDENTIFIER, InherentError};
+use midnight_primitives_cnight_observation::{
+	CardanoCursor, CardanoPosition, INHERENT_IDENTIFIER, InherentError, ObservationCostModel,
+};
 use midnight_primitives_mainchain_follower::MidnightObservationTokenMovement;
 pub use pallet::*;
 use serde::{Deserialize, Serialize};
@@ -47,6 +49,9 @@ pub mod weights;
 ///  * `index`: index (zero based) of the next transaction to process in the
 ///    `block`.  If `index` equals the size of the block, it means that a block has
 ///    been processed in full.
+///  * `utxo_offset`: how many UTXOs of the transaction at `index`, in the observation
+///    order, are processed. Non-zero only when a batch ended inside that transaction,
+///    which keeps the header unique per batch.
 ///
 /// See spec for more details:
 /// https://github.com/midnightntwrk/midnight-architecture/blob/main/specification/cardano-system-transactions.md#cmst-header
@@ -56,6 +61,8 @@ pub struct CmstHeader {
 	pub block_hash: McBlockHash,
 	/// The index of the next transaction to process in the block
 	pub tx_index_in_block: u32,
+	/// UTXOs of the transaction at `tx_index_in_block` already processed
+	pub utxo_offset: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -65,26 +72,23 @@ pub enum UtxoActionType {
 	Destroy,
 }
 
-pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
-pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
+/// Default share of the block's ledger cost and length limits one observation batch
+/// may use.
+pub const DEFAULT_OBSERVATION_BUDGET_PERCENT: u32 = 50;
 
-/// Overestimate factor for UTXOs per Cardano transaction.
-/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
-/// when pre-allocating the UTXO buffer (see `get_utxos_up_to_capacity`).
-pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
-
-/// Upper bound on UTXO count per block, used for worst-case weight declaration.
-pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER_TX_OVERESTIMATE;
+/// Serialized zero field element: a valid dust public key for pricing dummy events.
+const ZERO_DUST_PUBLIC_KEY: [u8; 32] = [0; 32];
 
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::sp_runtime::traits::Hash;
+	use frame_support::{sp_runtime::traits::Hash, storage::with_storage_layer};
 	use midnight_primitives::{
 		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionCNightExecutor,
 	};
 	use midnight_primitives_cnight_observation::{
 		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
-		CardanoRewardAddressBytes, DustPublicKeyBytes,
+		CardanoRewardAddressBytes, DustPublicKeyBytes, ObservationBatch,
+		cmp_observed_utxos_by_data,
 	};
 	use midnight_primitives_mainchain_follower::{
 		CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -199,11 +203,16 @@ pub mod pallet {
 		},
 		/// `process_tokens` ignored this block's Cardano observations because a
 		/// multi-block migration of this pallet's storage is still running.
-		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the
+		/// `NextCardanoCursor` is left unchanged, so nothing is lost — the
 		/// observer re-delivers these UTXOs once the migration winds up. Emitted
 		/// once per block for as long as the gate holds; the exact versions are
 		/// in the node log.
 		ObservationsSkippedForMigration,
+		/// The ledger refused this block's cNIGHT-generates-DUST update as over the
+		/// block limit, so the native cost estimate disagrees with the ledger. The batch
+		/// was rolled back and `NextCardanoCursor` left unchanged: observation stalls
+		/// until a runtime upgrade fixes the estimate.
+		ObservationsDeferred,
 	}
 
 	#[pallet::error]
@@ -216,8 +225,8 @@ pub mod pallet {
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
 		CardanoPositionRegression,
-		/// UTXO count exceeds `CardanoTxCapacityPerBlock * UTXO_PER_TX_OVERESTIMATE`
-		TooManyUtxos,
+		/// `ObservationBudgetPercent` must be at most 100
+		BudgetPercentOutOfRange,
 		// Ledger errors mirrored from `LedgerApiError`. Flattened (rather than wrapped)
 		// so the encoding fits within `MAX_MODULE_ERROR_ENCODED_SIZE`.
 		Deserialization(DeserializationError),
@@ -289,8 +298,9 @@ pub mod pallet {
 		StorageMap<_, Blake2_128Concat, T::Hash, DustPublicKeyBytes, OptionQuery>;
 
 	#[pallet::storage]
-	// The next Cardano position to look for new transactions
-	pub type NextCardanoPosition<T: Config> = StorageValue<_, CardanoPosition, ValueQuery>;
+	/// Where the next batch starts. Its `utxo_offset` counts in the order of
+	/// [`cmp_observed_utxos_by_data`]: a batch may end inside a Cardano transaction.
+	pub type NextCardanoCursor<T: Config> = StorageValue<_, CardanoCursor, ValueQuery>;
 
 	#[pallet::storage]
 	// A full identifier for a native asset on Cardano: (policy id, asset name)
@@ -306,23 +316,17 @@ pub mod pallet {
 	>;
 
 	#[pallet::type_value]
-	pub fn DefaultCardanoBlockWindowSize() -> u32 {
-		INITIAL_CARDANO_BLOCK_WINDOW_SIZE
+	pub fn DefaultObservationBudgetPercent() -> u32 {
+		DEFAULT_OBSERVATION_BUDGET_PERCENT
 	}
 
+	/// Share of the block's ledger cost and length limits one observation batch may
+	/// consume, in percent. `CNightObservation` runs before `C2MBridge`, whose system
+	/// transactions are silently dropped when the block is already full, so this must
+	/// leave headroom.
 	#[pallet::storage]
-	pub type CardanoBlockWindowSize<T: Config> =
-		StorageValue<_, u32, ValueQuery, DefaultCardanoBlockWindowSize>;
-
-	#[pallet::type_value]
-	pub fn DefaultCardanoTxCapacityPerBlock() -> u32 {
-		DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK
-	}
-
-	#[pallet::storage]
-	/// Max amount of Cardano transactions that can be processed per block
-	pub type CardanoTxCapacityPerBlock<T: Config> =
-		StorageValue<_, u32, ValueQuery, DefaultCardanoTxCapacityPerBlock>;
+	pub type ObservationBudgetPercent<T: Config> =
+		StorageValue<_, u32, ValueQuery, DefaultObservationBudgetPercent>;
 
 	#[pallet::storage]
 	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
@@ -436,7 +440,10 @@ pub mod pallet {
 				UtxoOwners::<T>::insert(H256(*k), v);
 			}
 
-			NextCardanoPosition::<T>::set(self.config.next_cardano_position.clone());
+			NextCardanoCursor::<T>::set(CardanoCursor {
+				position: self.config.next_cardano_position.clone(),
+				utxo_offset: 0,
+			});
 		}
 	}
 
@@ -497,6 +504,179 @@ pub mod pallet {
 		// Check if any form of a registration could be considered valid as of now
 		pub fn is_registered(utxo_holder: &CardanoRewardAddressBytes) -> bool {
 			Self::unique_dust_key(utxo_holder).is_some()
+		}
+
+		/// Prices one observed UTXO by the pallet's own weight, and a one-`Create` and
+		/// a one-`Destroy` cNIGHT-generates-DUST update against the current ledger
+		/// parameters. `None` if any price is unavailable.
+		pub fn observation_cost_model() -> Option<ObservationCostModel> {
+			let full_gas = T::BlockWeights::get().max_block.ref_time();
+			let percent = ObservationBudgetPercent::<T>::get();
+			let full_bytes = *T::BlockLength::get().max.get(DispatchClass::Mandatory);
+			let weight = |n: u32| T::WeightInfo::process_tokens(n).ref_time();
+			let utxo_gas = weight(1).saturating_sub(weight(0));
+			if utxo_gas == 0 {
+				log::error!(
+					"WeightInfo::process_tokens has no per-UTXO cost; cannot bound the cNIGHT observation batch"
+				);
+				return None;
+			}
+			match (
+				Self::cnight_generates_dust_update_gas(UtxoActionType::Create),
+				Self::cnight_generates_dust_update_gas(UtxoActionType::Destroy),
+			) {
+				(Ok(create_gas), Ok(destroy_gas)) => Some(ObservationCostModel {
+					utxo_gas,
+					create_gas,
+					destroy_gas,
+					budget_gas: full_gas.saturating_mul(percent.into()) / 100,
+					full_gas,
+					budget_bytes: (u64::from(full_bytes) * u64::from(percent) / 100) as u32,
+				}),
+				(create, destroy) => {
+					log::error!(
+						"failed to price the cNIGHT-generates-DUST update: create {create:?}, destroy {destroy:?}"
+					);
+					None
+				},
+			}
+		}
+
+		/// Ledger gas of a cNIGHT-generates-DUST update carrying one `action` event.
+		/// The ledger price ignores event content, so a zero-valued dummy event prices
+		/// exactly what a real one will.
+		fn cnight_generates_dust_update_gas(action: UtxoActionType) -> Result<u64, LedgerApiError> {
+			let event = LedgerApi::construct_cnight_generates_dust_event(
+				0,
+				&ZERO_DUST_PUBLIC_KEY,
+				0,
+				action as u8,
+				[0; 32],
+			)?;
+			let tx = LedgerApi::construct_cnight_generates_dust_system_tx(alloc::vec![event])?;
+			LedgerApi::get_transaction_cost(
+				&T::LedgerStateProvider::get_ledger_state_key(),
+				&tx,
+				T::LedgerBlockContextProvider::get_block_context(),
+				T::BlockWeights::get().max_block.ref_time(),
+			)
+		}
+
+		/// Weight of `process_tokens` over `utxos`: the pallet's own weight plus the
+		/// cNIGHT-generates-DUST update's ledger gas, priced by kind as the inherent
+		/// data provider admits them. An unpriceable update charges a whole block per
+		/// event.
+		pub fn process_tokens_weight(utxos: &[ObservedUtxo]) -> Weight {
+			let full_gas = T::BlockWeights::get().max_block.ref_time();
+			let price = |action| Self::cnight_generates_dust_update_gas(action).unwrap_or(full_gas);
+			let count = |f: fn(&ObservedUtxoData) -> bool| {
+				utxos.iter().filter(|u| f(&u.data)).count() as u64
+			};
+			let creates = count(|d| matches!(d, ObservedUtxoData::AssetCreate(_)));
+			let spends = count(|d| matches!(d, ObservedUtxoData::AssetSpend(_)));
+			// Price lazily: a batch without creates or spends never queries the ledger.
+			let mut ledger_gas = 0u64;
+			if creates > 0 {
+				ledger_gas = creates.saturating_mul(price(UtxoActionType::Create));
+			}
+			if spends > 0 {
+				ledger_gas = ledger_gas
+					.saturating_add(spends.saturating_mul(price(UtxoActionType::Destroy)));
+			}
+			T::WeightInfo::process_tokens(utxos.len() as u32)
+				.saturating_add(Weight::from_parts(ledger_gas, 0))
+		}
+
+		/// Everything `process_tokens` does once the per-block guards have passed.
+		/// Runs inside a storage layer so the caller can roll it back as a whole.
+		fn apply_observations(
+			utxos: ObservationBatch,
+			next_cardano_position: CardanoPosition,
+		) -> DispatchResult {
+			let prev = NextCardanoCursor::<T>::get();
+			ensure!(next_cardano_position >= prev.position, Error::<T>::CardanoPositionRegression);
+			if utxos
+				.windows(2)
+				.any(|pair| cmp_observed_utxos_by_data(&pair[0], &pair[1]).is_ge())
+			{
+				log::error!(
+					"cNIGHT observation batch is not strictly ascending in the observation order; the offset may count the wrong UTXOs"
+				);
+			}
+			let ends_inside = utxos
+				.iter()
+				.rev()
+				.take_while(|utxo| utxo.header.tx_position == next_cardano_position)
+				.count() as u32;
+			let carried = if next_cardano_position == prev.position { prev.utxo_offset } else { 0 };
+			let utxo_offset = carried.saturating_add(ends_inside);
+
+			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
+
+			for utxo in utxos {
+				// Truncate the block timestamp from milliseconds to seconds
+				// Timestamp on Cardano is calculated using (slotLength * slotNumber) + systemStart
+				// which can be a fractional value - but in practice, it's an int for
+				// preview, pre-prod, and mainnet
+				//
+				// Check the Shelley genesis files for the networks here:
+				// https://book.world.dev.cardano.org/environments.html
+				let now = utxo.header.tx_position.block_timestamp.0 as u64 / 1000;
+
+				match utxo.data {
+					ObservedUtxoData::Registration(data) => {
+						log::debug!("Processing Registration: {data:?}");
+						Self::handle_registration(&utxo.header, data);
+					},
+					ObservedUtxoData::Deregistration(data) => {
+						log::debug!("Processing Deregistration: {data:?}");
+						Self::handle_registration_removal(&utxo.header, data)
+					},
+					ObservedUtxoData::AssetCreate(data) => {
+						log::debug!("Processing CNight Create: {data:?}");
+						if let Some(event) = Self::handle_create(now, data) {
+							events.push(event);
+						}
+					},
+					ObservedUtxoData::AssetSpend(data) => {
+						log::debug!("Processing CNight Spend: {data:?}");
+						if let Some(event) = Self::handle_spend(now, data) {
+							events.push(event);
+						}
+					},
+				}
+			}
+
+			NextCardanoCursor::<T>::set(CardanoCursor {
+				position: next_cardano_position.clone(),
+				utxo_offset,
+			});
+
+			if !events.is_empty() {
+				// Construct the Ledger system transaction
+				// Note: this into-map should compile into a no-op
+				let system_tx_result = LedgerApi::construct_cnight_generates_dust_system_tx(
+					events.into_iter().map(|e| e.0).collect(),
+				);
+				if let Ok(midnight_system_tx) = system_tx_result {
+					let system_transaction_hash =
+						<T as Config>::MidnightSystemTransactionExecutor::execute_system_transaction(midnight_system_tx)?;
+
+					// Emit System Transaction for the indexer
+					let system_tx = SystemTransactionApplied {
+						header: CmstHeader {
+							block_hash: next_cardano_position.block_hash,
+							tx_index_in_block: next_cardano_position.tx_index_in_block,
+							utxo_offset,
+						},
+						system_transaction_hash,
+					};
+					Self::deposit_event(Event::<T>::SystemTransactionApplied(system_tx));
+				} else {
+					log::error!("Fatal: failed to construct ledger system transaction");
+				}
+			}
+			Ok(())
 		}
 
 		/// Returns the unique dust key for `addr` if and only if exactly one
@@ -714,25 +894,18 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE)), DispatchClass::Mandatory))]
+		#[pallet::weight((Pallet::<T>::process_tokens_weight(utxos), DispatchClass::Mandatory))]
 		pub fn process_tokens(
 			origin: OriginFor<T>,
-			utxos: Vec<ObservedUtxo>,
+			utxos: ObservationBatch,
 			next_cardano_position: CardanoPosition,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
-			let utxo_count = utxos.len() as u32;
-			ensure!(
-				utxo_count
-					<= CardanoTxCapacityPerBlock::<T>::get()
-						.saturating_mul(UTXO_PER_TX_OVERESTIMATE),
-				Error::<T>::TooManyUtxos
-			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
 			// Skip observation processing entirely while any multi-block migration of
-			// this pallet's storage is in flight; `NextCardanoPosition` stays
+			// this pallet's storage is in flight; `NextCardanoCursor` stays
 			// unchanged so the next block's inherent re-presents the same UTXOs (plus
 			// any new ones) and we resume once the migration finishes.
 			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
@@ -748,81 +921,22 @@ pub mod pallet {
 				});
 			}
 
-			let prev = NextCardanoPosition::<T>::get();
-			ensure!(next_cardano_position >= prev, Error::<T>::CardanoPositionRegression);
-			let jump = next_cardano_position.block_number.saturating_sub(prev.block_number);
-			let window = CardanoBlockWindowSize::<T>::get();
-			if jump > window {
-				log::warn!(
-					"CardanoPosition jump ({jump}) exceeds CardanoBlockWindowSize ({window}); allowing but flagging"
-				);
+			let weight = Self::process_tokens_weight(&utxos);
+			// A failing Mandatory inherent halts the chain, so a block-limit refusal
+			// (the native estimate disagreeing with the ledger) rolls back instead.
+			let outcome =
+				with_storage_layer(|| Self::apply_observations(utxos, next_cardano_position));
+			match outcome {
+				Ok(()) => {},
+				Err(e) if T::MidnightSystemTransactionExecutor::is_block_limit_exceeded(&e) => {
+					log::error!(
+						"ObservationsDeferred: the ledger refused the cNIGHT-generates-DUST update as over the block limit although the batch was sized to fit; the native cost estimate disagrees with the ledger (bug). Batch rolled back, NextCardanoCursor unchanged."
+					);
+					Self::deposit_event(Event::<T>::ObservationsDeferred);
+				},
+				Err(e) => return Err(e.into()),
 			}
-
-			let mut events: Vec<CNightGeneratesDustEventSerialized> = Vec::new();
-
-			for utxo in utxos {
-				// Truncate the block timestamp from milliseconds to seconds
-				// Timestamp on Cardano is calculated using (slotLength * slotNumber) + systemStart
-				// which can be a fractional value - but in practice, it's an int for
-				// preview, pre-prod, and mainnet
-				//
-				// Check the Shelley genesis files for the networks here:
-				// https://book.world.dev.cardano.org/environments.html
-				let now = utxo.header.tx_position.block_timestamp.0 as u64 / 1000;
-
-				match utxo.data {
-					ObservedUtxoData::Registration(data) => {
-						log::debug!("Processing Registration: {data:?}");
-						Self::handle_registration(&utxo.header, data);
-					},
-					ObservedUtxoData::Deregistration(data) => {
-						log::debug!("Processing Deregistration: {data:?}");
-						Self::handle_registration_removal(&utxo.header, data)
-					},
-					ObservedUtxoData::AssetCreate(data) => {
-						log::debug!("Processing CNight Create: {data:?}");
-						if let Some(event) = Self::handle_create(now, data) {
-							events.push(event);
-						}
-					},
-					ObservedUtxoData::AssetSpend(data) => {
-						log::debug!("Processing CNight Spend: {data:?}");
-						if let Some(event) = Self::handle_spend(now, data) {
-							events.push(event);
-						}
-					},
-				}
-			}
-
-			NextCardanoPosition::<T>::set(next_cardano_position.clone());
-
-			if !events.is_empty() {
-				// Construct the Ledger system transaction
-				// Note: this into-map should compile into a no-op
-				let system_tx_result = LedgerApi::construct_cnight_generates_dust_system_tx(
-					events.into_iter().map(|e| e.0).collect(),
-				);
-				if let Ok(midnight_system_tx) = system_tx_result {
-					let system_transaction_hash =
-						<T as Config>::MidnightSystemTransactionExecutor::execute_system_transaction(midnight_system_tx)?;
-
-					// Emit System Transaction for the indexer
-					let system_tx = SystemTransactionApplied {
-						header: CmstHeader {
-							block_hash: next_cardano_position.block_hash,
-							tx_index_in_block: next_cardano_position.tx_index_in_block,
-						},
-						system_transaction_hash,
-					};
-					Self::deposit_event(Event::<T>::SystemTransactionApplied(system_tx));
-				} else {
-					log::error!("Fatal: failed to construct ledger system transaction");
-				}
-			}
-			Ok(PostDispatchInfo {
-				actual_weight: Some(T::WeightInfo::process_tokens(utxo_count)),
-				pays_fee: Pays::No,
-			})
+			Ok(PostDispatchInfo { actual_weight: Some(weight), pays_fee: Pays::No })
 		}
 
 		/// Changes the mainchain address for the mapping validator contract
@@ -890,6 +1004,24 @@ pub mod pallet {
 			// would make inherent-data creation fail.
 			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
 			MainChainAuthTokenAssetName::<T>::set(asset_name);
+
+			Ok(())
+		}
+
+		/// Sets the share of the block's ledger cost and length limits one cNIGHT
+		/// observation batch may consume, in percent. The remainder stays available to
+		/// the bridge and to user transactions.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(5)]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		pub fn set_observation_budget_percent(
+			origin: OriginFor<T>,
+			percent: u32,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			ensure!(percent <= 100, Error::<T>::BudgetPercentOutOfRange);
+			ObservationBudgetPercent::<T>::set(percent);
 
 			Ok(())
 		}

@@ -960,6 +960,86 @@ impl CardanoClient {
         }
     }
 
+    /// Mint `per_output * n_outputs` cNIGHT split across `n_outputs` outputs at
+    /// this wallet's address in one Cardano transaction. Each output is observed
+    /// as its own `AssetCreate`.
+    pub async fn mint_tokens_split(
+        &self,
+        per_output: u64,
+        n_outputs: usize,
+        utxo: &OgmiosUtxo,
+        collateral_utxo: &OgmiosUtxo,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let policy_id = config::cnight_token_policy_id();
+        let minting_script = config::cnight_token_cbor_double_encoding();
+        let payment_addr = self.address_as_bech32();
+        let total = per_output * n_outputs as u64;
+
+        let mut tx_builder = self.new_tx_builder();
+        tx_builder
+            .network(self.network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(utxo.transaction.id),
+                utxo.index.into(),
+                &Self::build_asset_vector(utxo),
+                &payment_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(collateral_utxo.transaction.id),
+                collateral_utxo.index.into(),
+                &Self::build_asset_vector(collateral_utxo),
+                &payment_addr,
+            );
+        let output_assets = vec![
+            Asset::new_from_str("lovelace", "1500000"),
+            Asset::new_from_str(&policy_id, &per_output.to_string()),
+        ];
+        for _ in 0..n_outputs {
+            tx_builder.tx_out(&payment_addr, &output_assets);
+        }
+        tx_builder
+            .mint_plutus_script_v3()
+            .mint(total as i128, &policy_id, "")
+            .minting_script(&minting_script)
+            .mint_redeemer_value(&WRedeemer {
+                data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+                ex_units: Budget {
+                    mem: 14000000,
+                    steps: 10000000000,
+                },
+            })
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap();
+
+        let tx_hex = tx_builder.tx_hex();
+        tracing::info!(
+            "  mint_tokens_split: {n_outputs} x {per_output} cNIGHT (total {total}), \
+             input {}#{}, tx size {} bytes",
+            hex::encode(utxo.transaction.id),
+            utxo.index,
+            tx_hex.len() / 2,
+        );
+
+        let signed_tx = self.wallet.sign_tx(&tx_hex);
+        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request).await?;
+        match response {
+            OgmiosResponse::SubmitTx(res) => {
+                tracing::info!(
+                    "  mint_tokens_split submitted: tx_id=0x{}",
+                    hex::encode(res.transaction.id)
+                );
+                Ok(res)
+            }
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
     pub async fn rotate_cnight(
         &self,
         utxo: &OgmiosUtxo,

@@ -146,11 +146,8 @@ fn reorder(utxos: &mut Vec<UtxoInfo>, expected: &[(Hash, u32)]) {
 	}
 
 	let mut reordered = Vec::with_capacity(utxos.len());
-	for (intent_hash, output_no) in expected {
-		if let Some(pos) = utxos
-			.iter()
-			.position(|u| u.intent_hash == *intent_hash && u.output_no == *output_no)
-		{
+	for id in expected {
+		if let Some(pos) = utxos.iter().position(|u| u.id() == *id) {
 			reordered.push(utxos.swap_remove(pos));
 		} else {
 			// Entry not found — override data may be stale, skip reordering
