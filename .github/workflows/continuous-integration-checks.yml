@@ -57,6 +57,8 @@ jobs:
 
       - name: Run build
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earth --ci +check
 

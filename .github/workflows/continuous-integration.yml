@@ -189,6 +189,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true,
           # so /tmp is in a per-service mount namespace that dockerd (and therefore
@@ -206,6 +207,7 @@ jobs:
           # accept GHA's ACTIONS_RUNTIME_TOKEN.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
           # Retry the earthly invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
@@ -227,7 +229,7 @@ jobs:
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P $PUSH_FLAG +images; then
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P $PUSH_FLAG +images --STRIP_BINARIES="$STRIP_BINARIES"; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
@@ -382,6 +384,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
           # Fork PRs only check that arm64 builds; nothing downstream consumes the images.
@@ -514,6 +517,8 @@ jobs:
 
       - name: Check Deps
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earth +check-deps
 
@@ -576,6 +581,7 @@ jobs:
       - name: Check Genesis Rebuild
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
@@ -624,6 +630,7 @@ jobs:
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
           # under actions/checkout; reach for the actual head/ref name instead.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
@@ -723,6 +730,7 @@ jobs:
       - name: Run toolkit tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
           # pulls (empty on fork PRs → anonymous, rate-limited).
@@ -948,6 +956,7 @@ jobs:
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -1189,7 +1198,7 @@ jobs:
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 #v2.87.29
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 #v2.87.32
         with:
           tool: just
 
@@ -1259,6 +1268,7 @@ jobs:
       - name: just test
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
           # Fork PRs don't get the secret. The tests only need some 32-byte hex key.
@@ -1319,6 +1329,7 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         uses: ./.github/actions/local-environment-tests
         with:
+          node-git-token: ${{ secrets.NODE_GIT_TOKEN }}
           tag: CI
           image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
