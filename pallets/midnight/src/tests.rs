@@ -541,4 +541,94 @@ fn test_tblock_correction_does_not_affect_mempool_validation() {
 	});
 }
 
+/// Asserts the contract external consumers such as the indexer rely on: `StateKey` points at a
+/// `Ledger` with zero `block_fullness`, so it can be recomputed from the ledger state alone.
+fn assert_state_key_is_block_start() {
+	let state_key = StateKey::<Test>::get();
+	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(true));
+	assert_eq!(midnight_node_ledger::block_start_state_key(false, &state_key), Ok(state_key));
+}
+
+/// Guards the assertion above against passing vacuously: inside a block the fullness is non-zero.
+fn assert_state_key_is_mid_block() {
+	let state_key = StateKey::<Test>::get();
+	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(false));
+}
+
+type ApplySystemTransactionFn =
+	fn(
+		&[u8],
+		&[u8],
+		BlockContext,
+		u32,
+	) -> Result<midnight_node_ledger::types::SystemTransactionAppliedStateRoot, LedgerApiError>;
+
+/// Applies a system transaction the way `pallet-midnight-system` does for cNIGHT and the bridge.
+fn apply_system_transaction(apply: ApplySystemTransactionFn, tx: Vec<u8>) {
+	<mock::Midnight as LedgerStateProviderMut>::mut_ledger_state(|state_key| {
+		let block_context =
+			<mock::Midnight as midnight_primitives::LedgerBlockContextProvider>::get_block_context(
+			);
+		let runtime_version = <frame_system::Pallet<Test>>::runtime_version().spec_version;
+		apply(&state_key, &tx, block_context, runtime_version).map(|result| (result.state_root, ()))
+	})
+	.unwrap_or_else(|err| panic!("system transaction failed: {err:?}"));
+}
+
+#[test]
+fn state_key_is_block_start_at_genesis() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+		assert_state_key_is_block_start();
+	})
+}
+
+#[test]
+fn state_key_is_block_start_after_a_block_with_a_transaction() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		assert_ok!(send_mn_transaction(tx));
+		assert_state_key_is_mid_block();
+
+		mock::Midnight::on_finalize(1);
+		assert_state_key_is_block_start();
+	})
+}
+
+#[test]
+fn state_key_is_block_start_after_a_block_with_system_transactions() {
+	use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
+	use midnight_node_ledger_helpers::{DustPublicKey, Fr, serialize_untagged};
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let owner = serialize_untagged(&DustPublicKey(Fr::from(7u64))).unwrap();
+		let event =
+			LedgerApi::construct_cnight_generates_dust_event(1_000, &owner, 0, 0, [0u8; 32])
+				.unwrap();
+		let cnight_tx = LedgerApi::construct_cnight_generates_dust_system_tx(vec![event]).unwrap();
+		apply_system_transaction(LedgerApi::apply_cnight_system_transaction, cnight_tx);
+		assert_state_key_is_mid_block();
+
+		let bridge_txs = [
+			LedgerApi::construct_unlock_to_treasury_system_tx(0).unwrap(),
+			LedgerApi::construct_distribute_reserve_system_tx(0).unwrap(),
+			LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+				0, &[0u8; 32], [0u8; 32],
+			)
+			.unwrap(),
+		];
+		for tx in bridge_txs {
+			apply_system_transaction(LedgerApi::apply_bridge_system_transaction, tx);
+		}
+		assert_state_key_is_mid_block();
+
+		mock::Midnight::on_finalize(1);
+		assert_state_key_is_block_start();
+	})
+}
 // grcov-excl-stop
