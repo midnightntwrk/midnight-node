@@ -366,7 +366,7 @@ services:
     image: ${PROOF_SERVER_IMAGE}
     restart: "always"
     ports:
-      - "6300:6300"
+      - "${PROOF_SERVER_PORT:-6300}:6300"
     # No healthcheck: the image ships no shell or curl to probe with.
     security_opt:
       - no-new-privileges:true
