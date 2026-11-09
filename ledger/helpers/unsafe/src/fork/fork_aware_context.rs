@@ -194,6 +194,28 @@ pub fn block_context_from_raw_9(block: &RawBlockData) -> crate::ledger_9::BlockC
 	)
 }
 
+/// Whether the runtime at `spec_version` verifies a block's first ledger transaction against
+/// the corrected `tblock` (`parent_block_time + 12s`) rather than the block's own timestamp
+/// (<https://github.com/midnightntwrk/midnight-node/issues/1924>).
+///
+/// On-chain the gate is which host function the runtime imports — v1 of
+/// `Ledger8Bridge::apply_transaction` corrects, v2 does not — but that set is closed: v2
+/// shipped with #2002 (backported as #2031) and the correction is never coming back, so the
+/// range is hard-coded rather than read out of the runtime blob at every height.
+///
+/// Anything outside it does not correct, including locally built blocks (`spec_version` 0)
+/// and unknown future runtimes. A wrong range fails the replay's state-root check at the
+/// offending block rather than going quietly astray.
+#[allow(clippy::zero_prefixed_literal)]
+pub fn skews_tblock(spec_version: u32) -> bool {
+	// Mirrors the lower bound of `LedgerVersion::from_spec_version`.
+	const FIRST_LEDGER_8: u32 = 000_022_000;
+	// The spec bump that shipped v2.
+	const FIRST_UNCORRECTED: u32 = 001_000_002;
+
+	(FIRST_LEDGER_8..FIRST_UNCORRECTED).contains(&spec_version)
+}
+
 /// Deserialize raw transactions and apply to a Ledger8 context, returning dust events.
 pub fn apply_block_8(
 	ctx: &crate::ledger_8::context::LedgerContext<Db8>,
@@ -234,6 +256,7 @@ pub fn apply_block_8(
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
+		skews_tblock(block.spec_version),
 	)
 	.expect("failed to update ledger 8 context from block")
 }
@@ -273,6 +296,8 @@ pub fn apply_block_9(
 
 	let block_context = block_context_from_raw_9(block);
 
+	// No `skew_tblock` counterpart here: `Ledger9Bridge`'s host functions never skew, because
+	// every ledger-9 block was produced after the upgrade that closed the loophole.
 	ctx.update_from_block(
 		&transactions,
 		&block_context,
@@ -289,6 +314,33 @@ mod tests {
 
 	fn seed() -> WalletSeed {
 		WalletSeed::Short([0x42; 16])
+	}
+
+	/// The runtimes that ran on-chain while `apply_transaction` v1 was the only version.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn pre_upgrade_ledger_8_runtimes_skew() {
+		assert!(skews_tblock(000_022_000));
+		assert!(skews_tblock(001_000_000));
+	}
+
+	/// 1.0.3 and devnet's 1.0.300 are both built from a tree that already has v2, despite
+	/// 1.0.3 reading like the older of the two.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn post_upgrade_runtimes_do_not_skew() {
+		assert!(!skews_tblock(001_000_003));
+		assert!(!skews_tblock(001_000_300));
+		assert!(!skews_tblock(002_000_000));
+		assert!(!skews_tblock(004_000_000));
+	}
+
+	/// A block built locally rather than fetched from a chain is never historical.
+	#[test]
+	fn unknown_and_synthetic_runtimes_do_not_skew() {
+		assert!(!skews_tblock(u32::MAX));
+		let block = RawBlockData::new_from_timestamp(0, LedgerVersion::Ledger8, Vec::new());
+		assert!(!skews_tblock(block.spec_version));
 	}
 
 	/// No key is derived pre-fork, and the watched address is the ECDSA one, not the Schnorr one.
