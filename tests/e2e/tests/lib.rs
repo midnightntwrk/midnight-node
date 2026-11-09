@@ -393,6 +393,8 @@ pub(crate) async fn ensure_dev_wallet_funded() {
             dry_run: false,
             indexer_url: None,
             network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         };
 
         match show_wallet::execute(args).await {
