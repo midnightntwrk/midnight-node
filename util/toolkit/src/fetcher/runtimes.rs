@@ -28,6 +28,7 @@ pub enum RuntimeVersion {
 	V1_0_3,
 	V2_0_0,
 	V2_1_0,
+	V2_1_100,
 	V3_0_0,
 	V4_0_0,
 }
@@ -45,6 +46,7 @@ impl TryFrom<u32> for RuntimeVersion {
 			001_000_003 | 001_000_300 => Ok(Self::V1_0_3),
 			002_000_000 => Ok(Self::V2_0_0),
 			002_001_000 => Ok(Self::V2_1_0),
+			002_001_100 => Ok(Self::V2_1_100),
 			003_000_000 => Ok(Self::V3_0_0),
 			004_000_000 => Ok(Self::V4_0_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
@@ -62,6 +64,7 @@ impl RuntimeVersion {
 			Self::V1_0_3 => 001_000_003,
 			Self::V2_0_0 => 002_000_000,
 			Self::V2_1_0 => 002_001_000,
+			Self::V2_1_100 => 002_001_100,
 			Self::V3_0_0 => 003_000_000,
 			Self::V4_0_0 => 004_000_000,
 		}
@@ -193,6 +196,12 @@ impl_midnight_metadata!(
 );
 
 impl_midnight_metadata!(
+	MidnightMetadata2_1_100,
+	mn_meta_2_1_100,
+	midnight_node_metadata::midnight_metadata_2_1_100
+);
+
+impl_midnight_metadata!(
 	MidnightMetadata3_0_0,
 	mn_meta_3_0_0,
 	midnight_node_metadata::midnight_metadata_3_0_0
@@ -223,5 +232,14 @@ mod tests {
 		// The digest still carries the real number.
 		assert_eq!(decode_spec_version(&001_000_300u32.encode()).unwrap(), 001_000_300);
 		assert_eq!(decode_spec_version(&001_000_000u32.encode()).unwrap(), 001_000_000);
+	}
+
+	/// Node 2.1.101 ships runtime 2.1.100, whose metadata differs from the 2.1.0 RCs'.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn runtime_2_1_100_round_trips() {
+		let version = RuntimeVersion::try_from(002_001_100).unwrap();
+		assert_eq!(version, RuntimeVersion::V2_1_100);
+		assert_eq!(version.to_spec_version(), 002_001_100);
 	}
 }
