@@ -9,3 +9,5 @@ Adds the `compact-0.36.0` variant workspace, pinning
 needs the final ledger 9 packages, so the `@midnightntwrk/ledger-v9` and
 `@midnightntwrk/onchain-runtime-v4` overrides move from release candidates to
 1.0.0 and 4.0.0. Those are the versions the node already pins in Rust.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2402
