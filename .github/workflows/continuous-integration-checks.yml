@@ -33,11 +33,11 @@ jobs:
 
       - name: Merge Conflict Finder
         if: steps.guard.outputs.hit != 'true'
-        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
+        uses: olivernybroe/action-conflict-finder@1a949ebd954a9eaee58802229ea5f9c69fb93a50 # v4.1
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: MidnightCI
