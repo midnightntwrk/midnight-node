@@ -1,0 +1,21 @@
+name: Validate local e2e partitions
+on:
+  pull_request:
+    paths:
+      - scripts/tests/**
+      - .github/workflows/ci-test-partitions.yml
+      - Earthfile
+  push:
+    branches: [main]
+    paths:
+      - scripts/tests/**
+      - .github/workflows/ci-test-partitions.yml
+      - Earthfile
+permissions:
+  contents: read
+jobs:
+  partitions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_local_e2e_shards.py' -v

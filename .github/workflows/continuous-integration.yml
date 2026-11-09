@@ -34,6 +34,54 @@ concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
+  prepare-ci-tests:
+    name: Prepare integration test binaries
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Isolate registry credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Prepare integration test binaries
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          test -n "$CACHE_KEY"
+          . ./.envrc
+          earth --secret NODE_GIT_TOKEN="$NODE_GIT_TOKEN" \
+            --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict \
+            +prepare-ci-tests --CACHE_KEY="$CACHE_KEY"
+
   run:
     name: Build node and images (linux/amd64, self-hosted-tier:large, amd64)
     permissions:
@@ -589,7 +637,8 @@ jobs:
       contents: read
       actions: write
     name: Test Toolkit
-    needs: [run]
+    needs: [run, prepare-ci-tests]
+    if: ${{ !cancelled() && !failure() && needs.run.result == 'success' }}
     # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
     # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
@@ -681,6 +730,7 @@ jobs:
           # +test's `Run build` step for the full rationale and why
           # EARTHLY_GIT_BRANCH is unsafe here.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          CI_EXECUTION: ${{ github.run_id }}-${{ github.run_attempt }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -701,7 +751,9 @@ jobs:
             --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
             +test-toolkit \
               --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
-              --CACHE_KEY="$CACHE_KEY"
+              --CACHE_KEY="$CACHE_KEY" \
+              --PRECOMPILE_TESTS=true \
+              --CI_EXECUTION="$CI_EXECUTION"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -1160,8 +1212,8 @@ jobs:
 
   local-environment-tests:
     name: Local Environment Tests
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    needs: [run, build-indexer-images]
+    if: ${{ !cancelled() && !failure() && needs.run.result == 'success' && needs.build-indexer-images.result == 'success' && ((github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group') }}
+    needs: [run, build-indexer-images, prepare-ci-tests]
     # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
     # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
@@ -1209,6 +1261,8 @@ jobs:
           indexer-tag: unused
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
+          sharded: ${{ runner.environment == 'self-hosted' && 'true' || 'false' }}
+          ci-execution: ${{ github.run_id }}-${{ github.run_attempt }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           # Empty on fork PRs → the in-DinD docker login is skipped and public
           # images (postgres, kupo, …) fall back to anonymous, rate-limited pulls.

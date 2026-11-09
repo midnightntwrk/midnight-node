@@ -29,4 +29,4 @@ fi
 MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest run \
     --profile ci --release --locked \
     ${FEATURES_ARG} \
-    -E 'package(midnight-node-toolkit)'
+    -E 'package(midnight-node-toolkit)' "$@"

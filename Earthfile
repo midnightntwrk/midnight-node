@@ -1272,6 +1272,8 @@ test-pallet-fixtures:
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 build-test-toolkit:
     ARG NATIVEARCH
+    ARG PRECOMPILE_TESTS=false
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
     FROM +prep
     ARG TARGETARCH
     IF [ "$CI" != "true" ]
@@ -1307,7 +1309,11 @@ build-test-toolkit:
     # Test
     RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
+    IF [ "$PRECOMPILE_TESTS" = "true" ]
+        ENV RUSTFLAGS="-C debuginfo=1"
+    ELSE
+        ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
+    END
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -1320,6 +1326,9 @@ build-test-toolkit:
     # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
     # netrc for the duration of the run (never baked into the image).
     COPY scripts/test-toolkit.sh /test-toolkit.sh
+    IF [ "$PRECOMPILE_TESTS" = "true" ]
+        RUN --secret NODE_GIT_TOKEN RUN_COMPACT_CONTRACT_TESTS="$RUN_COMPACT_CONTRACT_TESTS" with-git-creds /test-toolkit.sh --no-run
+    END
     ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
     SAVE IMAGE
 
@@ -1327,7 +1336,9 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
-    ARG RUN_COMPACT_CONTRACT_TESTS
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
+    ARG PRECOMPILE_TESTS=false
+    ARG CI_EXECUTION=""
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
 
@@ -1351,9 +1362,10 @@ test-toolkit:
     # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
-                --load test-toolkit:latest=+build-test-toolkit \
+                --load test-toolkit:latest=(+build-test-toolkit --PRECOMPILE_TESTS=$PRECOMPILE_TESTS --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) \
                 --pull $NODE_IMAGE
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1371,8 +1383,9 @@ test-toolkit:
                 rm -f /root/.docker/config.json
         END
     ELSE
-        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+        WITH DOCKER --load test-toolkit:latest=(+build-test-toolkit --PRECOMPILE_TESTS=$PRECOMPILE_TESTS --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS)
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1948,22 +1961,36 @@ start-local-env-with-indexer-ci:
     RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
-# Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN
-# inside earthly's nested dockerd, so each job gets its own netns and the
-# local-environment-tests job can drop the repo-wide host-port serialization. FROM +prep
-# for the in-place e2e `cargo test` (node/npm + the docker compose-v2 plugin ship in +prep);
-# the COPYs + MIDNIGHT_RESERVE_CONTRACTS_PATH + ARCHITECTURE=linux/$USERARCH below replicate
-# what the host LOCALLY path gets from .envrc/worktree (each was a real bring-up failure when
-# missing). Locally proven via the save→load twin +local-env-full-ci-localimg; this
-# registry-`--pull` form first runs in CI.
-local-env-ci:
+# Preparation has no node-image dependency, so CI can overlap it with the build.
+local-env-ci-prepare:
     FROM +prep
+    RUN microdnf -y install python3 && microdnf clean all
+    # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
+    # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
+    COPY --dir local-environment .
+    COPY --dir midnight-reserve-contracts .
+    COPY --dir scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
+    SAVE IMAGE
+
+prepare-ci-tests:
+    BUILD +local-env-ci-prepare
+    BUILD +build-test-toolkit --PRECOMPILE_TESTS=true --RUN_COMPACT_CONTRACT_TESTS=false
+
+# Each invocation gets its own nested Docker daemon and chain state.
+local-env-ci:
+    FROM +local-env-ci-prepare
     ARG NODE_IMAGE
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
     ARG TOOLKIT_IMAGE
     ARG USERARCH
+    ARG E2E_SHARD=all
+    ARG CI_EXECUTION=""
     # Fail early + kindly if any image ref is empty — otherwise `WITH DOCKER --pull` below
     # gets an empty arg and dies with the opaque "invalid reference format".
     RUN test -n "$NODE_IMAGE" && test -n "$TOOLKIT_IMAGE" && test -n "$INDEXER_API_IMAGE" \
@@ -1977,15 +2004,6 @@ local-env-ci:
         echo "    --WALLET_INDEXER_IMAGE=$GHCR_REGISTRY/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
-    # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
-    # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
-    COPY --dir local-environment .
-    COPY --dir midnight-reserve-contracts .
-    COPY --dir scripts .
-    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
-    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
-    ENV RUSTFLAGS="-C debuginfo=1"
-    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
     # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
     # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
@@ -1998,6 +2016,7 @@ local-env-ci:
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            echo "CI execution: $CI_EXECUTION; shard: $E2E_SHARD" && \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
               echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -2029,12 +2048,38 @@ local-env-ci:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              python3 ../../scripts/tests/run-local-e2e-shard.py "$E2E_SHARD" -- \
+                with-git-creds cargo test --test e2e_tests --no-default-features --features local ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
             rm -f /root/.docker/config.json
     END
+
+
+local-env-ci-sharded:
+    ARG NODE_IMAGE
+    ARG INDEXER_API_IMAGE
+    ARG CHAIN_INDEXER_IMAGE
+    ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
+    ARG CI_EXECUTION=""
+    BUILD +local-env-ci \
+        --NODE_IMAGE=$NODE_IMAGE \
+        --INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+        --CHAIN_INDEXER_IMAGE=$CHAIN_INDEXER_IMAGE \
+        --WALLET_INDEXER_IMAGE=$WALLET_INDEXER_IMAGE \
+        --TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
+        --CI_EXECUTION=$CI_EXECUTION \
+        --E2E_SHARD=default
+    BUILD +local-env-ci \
+        --NODE_IMAGE=$NODE_IMAGE \
+        --INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+        --CHAIN_INDEXER_IMAGE=$CHAIN_INDEXER_IMAGE \
+        --WALLET_INDEXER_IMAGE=$WALLET_INDEXER_IMAGE \
+        --TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
+        --CI_EXECUTION=$CI_EXECUTION \
+        --E2E_SHARD=bridge-recipient
 
 
 # local-env-full-ci-localimg: run the full integration tests (stack → verify-finality →
