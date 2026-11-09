@@ -15,5 +15,5 @@ transaction is built.
 
 `send` still fails with `--indexer-url`.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2395
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186

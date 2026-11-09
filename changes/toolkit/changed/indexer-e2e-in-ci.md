@@ -12,5 +12,5 @@ a ledger-8 chain, covering the `ledger_8` indexer path and the 4.3 GraphQL schem
 `MN_RUN_INDEXER_E2E` opt-in is gone; override the images with `INDEXER_E2E_NODE_IMAGE` and
 `INDEXER_STANDALONE_IMAGE`, or `INDEXER_4_3_NODE_IMAGE` and `INDEXER_4_3_IMAGE`.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2396
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186

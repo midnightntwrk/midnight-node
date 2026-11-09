@@ -28,5 +28,5 @@ An end-to-end test (`util/toolkit/tests/indexer_e2e.rs`) spins up a node plus
 `indexer-standalone` on a shared Docker network and asserts the synced wallet reports the funded
 genesis balances. It runs in CI as part of `+test-toolkit`.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2388
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
