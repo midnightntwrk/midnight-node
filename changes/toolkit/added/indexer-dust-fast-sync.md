@@ -34,5 +34,5 @@ frontier. The wallet cache format moves to v6, so existing entries are re-synced
 The new operations live in their own GraphQL documents. Indexers validate every operation in the
 document they are sent, so an indexer without them still accepts the existing ones.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2397
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
