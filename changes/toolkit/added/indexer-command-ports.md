@@ -17,5 +17,5 @@ and replayed blocks.
 key-derivation scheme produced it, so each seed's wallet is built under its own scheme. As on the
 replay path, ECDSA needs a ledger-9 chain.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2394
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
