@@ -68,6 +68,10 @@ pub mod pallet {
 		/// Origin that can update system parameters.
 		type SystemOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
+		/// Maximum committee size the D-Parameter may request in total.
+		#[pallet::constant]
+		type MaxCommitteeSize: Get<u32>;
+
 		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: WeightInfo;
 	}
@@ -169,6 +173,8 @@ pub mod pallet {
 				self.d_parameter.num_permissioned_candidates,
 				self.d_parameter.num_registered_candidates,
 			) {
+				Pallet::<T>::ensure_valid_d_parameter(num_permissioned, num_registered)
+					.expect("Genesis D-Parameter is invalid");
 				DParameterStorage::<T>::put((num_permissioned, num_registered));
 			}
 		}
@@ -201,6 +207,10 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// The provided URL exceeds the maximum allowed length
 		UrlTooLong,
+		/// The D-Parameter requests no committee seats
+		DParameterEmpty,
+		/// The D-Parameter's total seat count exceeds `MaxCommitteeSize`
+		DParameterTooLarge,
 	}
 
 	// Dispatchable functions (extrinsics)
@@ -243,6 +253,8 @@ pub mod pallet {
 		/// # Arguments
 		/// * `num_permissioned_candidates` - Expected number of permissioned candidates
 		/// * `num_registered_candidates` - Expected number of registered candidates
+		///
+		/// The total seat count must be non-zero and at most `MaxCommitteeSize`.
 		#[pallet::call_index(1)]
 		#[pallet::weight(T::WeightInfo::update_d_parameter())]
 		pub fn update_d_parameter(
@@ -251,6 +263,7 @@ pub mod pallet {
 			num_registered_candidates: u16,
 		) -> DispatchResult {
 			T::SystemOrigin::ensure_origin(origin)?;
+			Self::ensure_valid_d_parameter(num_permissioned_candidates, num_registered_candidates)?;
 
 			DParameterStorage::<T>::put((num_permissioned_candidates, num_registered_candidates));
 
@@ -274,6 +287,18 @@ pub mod pallet {
 		pub fn get_d_parameter() -> DParameter {
 			let (num_permissioned, num_registered) = DParameterStorage::<T>::get();
 			DParameter::new(num_permissioned, num_registered)
+		}
+
+		/// Checks that the D-Parameter requests a committee of 1 to `MaxCommitteeSize` seats.
+		pub fn ensure_valid_d_parameter(
+			num_permissioned_candidates: u16,
+			num_registered_candidates: u16,
+		) -> Result<(), Error<T>> {
+			let total =
+				u32::from(num_permissioned_candidates) + u32::from(num_registered_candidates);
+			ensure!(total > 0, Error::<T>::DParameterEmpty);
+			ensure!(total <= T::MaxCommitteeSize::get(), Error::<T>::DParameterTooLarge);
+			Ok(())
 		}
 	}
 }

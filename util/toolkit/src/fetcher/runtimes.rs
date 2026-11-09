@@ -75,13 +75,19 @@ impl RuntimeVersion {
 impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
 	type Error = RuntimeVersionError;
 
-	fn try_from(mut value: &'a [u8]) -> Result<Self, Self::Error> {
-		use parity_scale_codec::Decode;
-		match u32::decode(&mut value) {
-			Ok(version) => Self::try_from(version),
-			Err(e) => Err(RuntimeVersionError::InvalidProtocolVersion(e)),
-		}
+	fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+		Self::try_from(decode_spec_version(value)?)
 	}
+}
+
+/// Decodes the raw `spec_version` carried by the `MNSV` digest.
+///
+/// [`RuntimeVersion`] buckets several spec versions into one variant and
+/// [`RuntimeVersion::to_spec_version`] cannot round-trip, so callers that must tell two
+/// runtimes inside a bucket apart use this instead.
+pub fn decode_spec_version(mut value: &[u8]) -> Result<u32, RuntimeVersionError> {
+	use parity_scale_codec::Decode;
+	u32::decode(&mut value).map_err(RuntimeVersionError::InvalidProtocolVersion)
 }
 
 pub trait MidnightMetadata {
@@ -197,3 +203,25 @@ impl_midnight_metadata!(
 	mn_meta_4_0_0,
 	midnight_node_metadata::midnight_metadata_4_0_0
 );
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use parity_scale_codec::Encode;
+
+	/// Keying the tblock-correction lookup on the bucket would apply the first runtime
+	/// resolved in it to every other runtime in it.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn bucket_collapses_distinct_runtimes_but_raw_spec_version_does_not() {
+		assert_eq!(RuntimeVersion::try_from(001_000_003).unwrap(), RuntimeVersion::V1_0_3);
+		assert_eq!(RuntimeVersion::try_from(001_000_300).unwrap(), RuntimeVersion::V1_0_3);
+
+		// Lossy on the way back: a block that ran 001_000_300 reports as 001_000_003.
+		assert_eq!(RuntimeVersion::V1_0_3.to_spec_version(), 001_000_003);
+
+		// The digest still carries the real number.
+		assert_eq!(decode_spec_version(&001_000_300u32.encode()).unwrap(), 001_000_300);
+		assert_eq!(decode_spec_version(&001_000_000u32.encode()).unwrap(), 001_000_000);
+	}
+}
