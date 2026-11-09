@@ -8,5 +8,5 @@ path does (is the UTXO's initial nonce in `dust.generation.night_indices`). The 
 the UTXO is created, so the wallet cache keeps it alongside each UTXO. The cache format version
 goes to 5, so existing wallet cache entries (replay and indexer) are rebuilt once.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2391
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
