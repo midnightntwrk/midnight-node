@@ -1,5 +1,9 @@
 use crate::mock::*;
-use frame_support::{assert_ok, inherent::ProvideInherent, traits::Hooks};
+use frame_support::{
+	assert_ok,
+	inherent::ProvideInherent,
+	traits::{Hooks, UnfilteredDispatchable},
+};
 
 mod inherent_tests {
 	use super::*;
@@ -39,6 +43,67 @@ mod inherent_tests {
 		new_test_ext().execute_with(|| {
 			set_validators_directly(&[ALICE, BOB], 1).expect("Frist call should succeed");
 			set_validators_directly(&[ALICE, BOB], 1).expect_err("Second call should fail");
+		});
+	}
+
+	#[test]
+	fn set_rejects_empty_committee() {
+		new_test_ext().execute_with(|| {
+			assert_err!(
+				set_validators_directly(&[], 1),
+				DispatchError::from(Error::<Test>::EmptyCommittee)
+			);
+			assert!(pallet::NextCommittee::<Test>::get().is_none());
+		});
+	}
+
+	#[test]
+	fn empty_selection_keeps_queued_committee() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			SELECT_EMPTY_COMMITTEE.with(|flag| flag.set(true));
+			let queued_committee = pallet::QueuedCommittee::<Test>::get().committee;
+			assert!(!queued_committee.is_empty());
+
+			let (inherent_data, _) = create_inherent_data(&[]);
+			let call =
+				<SessionCommitteeManagement as ProvideInherent>::create_inherent(&inherent_data)
+					.expect("create_inherent should fall back to the queued committee");
+			let pallet::Call::set { validators, .. } = &call else {
+				panic!("expected a set call, got {call:?}");
+			};
+			assert_eq!(*validators, queued_committee);
+			assert_ok!(<SessionCommitteeManagement as ProvideInherent>::check_inherent(
+				&call,
+				&inherent_data
+			));
+
+			assert_ok!(call.dispatch_bypass_filter(RuntimeOrigin::none()));
+			assert_eq!(
+				pallet::NextCommittee::<Test>::get().map(|c| c.committee),
+				Some(queued_committee)
+			);
+		});
+	}
+
+	#[test]
+	fn check_inherent_rejects_empty_committee_from_empty_selection() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			SELECT_EMPTY_COMMITTEE.with(|flag| flag.set(true));
+			let (inherent_data, selection_inputs_hash) = create_inherent_data(&[]);
+			let call = pallet::Call::set {
+				validators: Default::default(),
+				for_epoch_number: pallet::QueuedCommittee::<Test>::get().epoch + 1,
+				selection_inputs_hash,
+			};
+			assert!(
+				<SessionCommitteeManagement as ProvideInherent>::check_inherent(
+					&call,
+					&inherent_data
+				)
+				.is_err()
+			);
 		});
 	}
 

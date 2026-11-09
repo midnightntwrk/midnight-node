@@ -539,6 +539,35 @@ fn check_overridden_d_param_committee_rotation() {
 	})
 }
 
+#[test]
+// Writes storage directly: a D-Parameter stored before validation existed can still request zero
+// seats, and selection must then fail so the inherent keeps the queued committee.
+fn empty_committee_selection_is_reported_as_failure() {
+	new_test_ext().execute_with(|| {
+		let permissioned_validators = vec![alice_mock_validator(), bob_mock_validator()];
+		let inputs = create_authority_selection_inputs(
+			&permissioned_validators,
+			&[],
+			DParameter { num_permissioned_candidates: 1, num_registered_candidates: 0 },
+		);
+
+		for (num_permissioned, num_registered) in [(0, 0), (1, u16::MAX)] {
+			pallet_system_parameters::DParameterStorage::<crate::Runtime>::put((
+				num_permissioned,
+				num_registered,
+			));
+			assert_eq!(
+				pallet_session_validator_management::Pallet::<crate::Runtime>::calculate_committee(
+					inputs.clone(),
+					ScEpochNumber::zero(),
+				),
+				None,
+				"D-Parameter ({num_permissioned}, {num_registered}) must not select a committee"
+			);
+		}
+	})
+}
+
 pub fn set_committee_through_inherent_data(expected_authorities: &[TestKeys]) -> PostDispatchInfo {
 	let epoch = Sidechain::current_epoch_number();
 	let slot = *ConsensusEngine::current_slot();
