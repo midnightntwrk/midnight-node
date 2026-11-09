@@ -7,5 +7,5 @@ The indexer-backed `IndexerContext` (ledger 8 and 9) now answers `ledger_paramet
 indexer has no full ledger state, and the node validates on submit. `zswap_state` and
 `backs_dust_generation` remain unimplemented.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2390
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186

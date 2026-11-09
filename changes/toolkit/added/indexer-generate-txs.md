@@ -13,5 +13,5 @@ block. Block context and ledger parameters come from one tip snapshot per build.
 `generate-intent circuit` now takes `--network` from the shared source arguments (same flag and
 default), since the two definitions clashed.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2393
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
