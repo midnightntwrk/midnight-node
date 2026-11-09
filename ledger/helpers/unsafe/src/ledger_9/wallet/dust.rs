@@ -130,30 +130,37 @@ impl<D: DB> DustWallet<D> {
 		let Some(sk) = self.secret_key.as_ref() else {
 			return Err(DustSpendError::MissingLocalState);
 		};
-		let mut spends = vec![];
-		let mut remaining_amount = amount;
-		let mut state = original_state.clone();
+		let mut candidates = vec![];
 		for qdo in original_state.utxos() {
 			if self.spent_utxos.member(&qdo.nullifier(sk)) {
 				continue;
 			}
-			let Some(gen_info) = state.generation_info(&qdo) else {
+			let Some(gen_info) = original_state.generation_info(&qdo) else {
 				return Err(DustSpendError::UnrecognizedDustOutput(Box::new(qdo)));
 			};
 			let output_amount_now = DustOutput::from(qdo).updated_value(&gen_info, ctime, params);
-			let v_fee = remaining_amount.min(output_amount_now);
-			if v_fee == 0 {
-				continue;
+			if output_amount_now > 0 {
+				candidates.push((output_amount_now, qdo));
 			}
+		}
+		// Largest first: every spend raises the fee being paid, so walking storage
+		// order through many small outputs can keep the fee loop from converging.
+		candidates.sort_by(|(a, _), (b, _)| b.cmp(a));
+
+		let mut spends = vec![];
+		let mut remaining_amount = amount;
+		let mut state = original_state.clone();
+		for (output_amount_now, qdo) in candidates {
+			if remaining_amount == 0 {
+				break;
+			}
+			let v_fee = remaining_amount.min(output_amount_now);
 			let (new_state, spend) = state
 				.spend(sk, &qdo, v_fee, ctime)
 				.map_err(|e| DustSpendError::Internal(Box::new(e)))?;
 			state = Sp::new(new_state);
 			spends.push(spend);
 			remaining_amount -= v_fee;
-			if remaining_amount == 0 {
-				break;
-			}
 		}
 		Ok((spends, state))
 	}
@@ -223,6 +230,11 @@ impl<D: DB> TryFrom<&WalletAddress> for DustWallet<D> {
 mod tests {
 	use super::{DerivationPath, DustWallet, Role, WalletSeed};
 	use crate::DefaultDB;
+	use crate::ledger_9::{
+		DustGenerationInfo, Event, Fr, HashOutput, InitialNonce, QualifiedDustOutput, Timestamp,
+		TransactionHash,
+	};
+	use mn_ledger_9::events::{EventDetails, EventSource};
 
 	fn test_seed() -> WalletSeed {
 		WalletSeed::from([0u8; 32])
@@ -276,6 +288,64 @@ mod tests {
 		let mut wallet = DustWallet::<DefaultDB>::default(test_seed(), None);
 		wallet.wipe_local_state(&crate::ledger_9::INITIAL_PARAMETERS);
 		assert!(wallet.dust_local_state.is_none());
+	}
+
+	/// Replays one dust output per entry of `values` into `wallet`, each created
+	/// at `now` so that its current value is exactly its entry.
+	fn receive_dust(wallet: &mut DustWallet<DefaultDB>, values: &[u128], now: Timestamp) {
+		let events: Vec<Event<DefaultDB>> = values
+			.iter()
+			.enumerate()
+			.map(|(i, &value)| {
+				let backing_night = InitialNonce(HashOutput([i as u8 + 1; 32]));
+				Event {
+					source: EventSource {
+						transaction_hash: TransactionHash(HashOutput([0; 32])),
+						logical_segment: 0,
+						physical_segment: 0,
+					},
+					content: EventDetails::DustInitialUtxo {
+						output: QualifiedDustOutput {
+							initial_value: value,
+							owner: wallet.public_key,
+							nonce: Fr::from(i as u64),
+							seq: 0,
+							ctime: now,
+							backing_night,
+							mt_index: i as u64,
+						},
+						generation: DustGenerationInfo {
+							value,
+							owner: wallet.public_key,
+							nonce: backing_night,
+							dtime: Timestamp::MAX,
+						},
+						generation_index: i as u64,
+						block_time: now,
+					},
+				}
+			})
+			.collect();
+		wallet.replay_events(&events).unwrap();
+	}
+
+	/// A wallet that has received many small outputs must still pay a fee from
+	/// one large output rather than a spend per small one: each spend adds to
+	/// the fee, so the caller's fee loop may never catch up otherwise.
+	#[test]
+	fn speculative_spend_takes_the_largest_outputs_first() {
+		let params = crate::ledger_9::INITIAL_PARAMETERS;
+		let now = Timestamp::from_secs(1_000);
+		let mut wallet = DustWallet::<DefaultDB>::default(test_seed(), Some(&params));
+		let mut values = vec![10; 20];
+		values.push(1_000_000);
+		receive_dust(&mut wallet, &values, now);
+
+		let (spends, _) = wallet.speculative_spend(1_000, now, &params.dust).unwrap();
+		assert_eq!(spends.iter().map(|s| s.v_fee).collect::<Vec<_>>(), vec![1_000]);
+
+		let (spends, _) = wallet.speculative_spend(1_000_015, now, &params.dust).unwrap();
+		assert_eq!(spends.iter().map(|s| s.v_fee).collect::<Vec<_>>(), vec![1_000_000, 10, 5]);
 	}
 }
 

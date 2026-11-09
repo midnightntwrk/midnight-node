@@ -17,6 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 
 import { restoreSnapshot } from "./snapshotRestore";
@@ -110,4 +111,99 @@ test("prepares the extracted snapshot once, then replicates it into every data d
       "converted",
     );
   }
+});
+
+function setup(t: test.TestContext) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "snapshot-restore-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const src = path.join(root, "src", "node", "chains", "test");
+  fs.mkdirSync(src, { recursive: true });
+  fs.writeFileSync(path.join(src, "db"), "state");
+  const archive = path.join(root, "archives", "snap.tar.gz");
+  fs.mkdirSync(path.dirname(archive));
+  const tar = spawnSync("tar", [
+    "-czf",
+    archive,
+    "-C",
+    path.join(root, "src"),
+    "node",
+  ]);
+  assert.equal(tar.status, 0);
+
+  const composeFile = path.join(root, "compose", "test.network.yaml");
+  fs.mkdirSync(path.dirname(composeFile));
+  fs.writeFileSync(
+    composeFile,
+    YAML.stringify({
+      services: {
+        node1: { volumes: ["./data/node-1:/data"] },
+        node2: { volumes: ["./data/node-2:/data"] },
+      },
+    }),
+  );
+  return { archive, composeFile };
+}
+
+for (const [name, toUri] of [
+  ["path", (p: string) => p],
+  ["file:// URL", (p: string) => pathToFileURL(p).href],
+] as const) {
+  test(`restores a local archive given as a ${name}, leaving it in place`, async (t) => {
+    const { archive, composeFile } = setup(t);
+
+    const restored = await restoreSnapshot({
+      namespace: "test",
+      composeFile,
+      snapshotUri: toUri(archive),
+      env: {},
+      stripComponents: 1,
+    });
+
+    assert.equal(restored.length, 2);
+    for (const dir of restored) {
+      assert.equal(
+        fs.readFileSync(path.join(dir, "chains", "test", "db"), "utf-8"),
+        "state",
+      );
+    }
+    assert.deepEqual(fs.readdirSync(path.dirname(archive)), ["snap.tar.gz"]);
+  });
+}
+
+test("rejects a local archive that does not exist", async (t) => {
+  const { archive, composeFile } = setup(t);
+
+  await assert.rejects(
+    restoreSnapshot({
+      namespace: "test",
+      composeFile,
+      snapshotUri: `${archive}.missing`,
+      env: {},
+    }),
+    /Snapshot archive not found/,
+  );
+});
+
+test("stages next to the data dirs and cleans up", async (t) => {
+  const { archive, composeFile } = setup(t);
+  const dataRoot = path.join(path.dirname(composeFile), "data");
+  const log = t.mock.method(console, "log", () => undefined);
+
+  await restoreSnapshot({
+    namespace: "test",
+    composeFile,
+    snapshotUri: archive,
+    env: {},
+    stripComponents: 1,
+  });
+
+  const extracting = log.mock.calls
+    .map((call) => String(call.arguments[0]))
+    .find((line) => line.startsWith("Extracting "));
+  assert.ok(
+    extracting?.includes(path.join(dataRoot, ".snapshot-staging-")),
+    extracting,
+  );
+  assert.deepEqual(fs.readdirSync(dataRoot).sort(), ["node-1", "node-2"]);
 });
