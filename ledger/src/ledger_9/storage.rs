@@ -198,3 +198,24 @@ pub fn init_storage_paritydb_unified<
 		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
 	>(genesis_state)
 }
+
+// grcov-excl-start
+#[cfg(test)]
+mod tests {
+	use super::get_root;
+
+	/// Genesis ledger state of a local "undeployed" chain run by node 2.1.0-rc.4.
+	const UNDEPLOYED_GENESIS: &[u8] =
+		include_bytes!("../../test-data/genesis_state_undeployed_node_2_1_0_rc_4.raw");
+
+	/// `StateKey` that node 2.1.0-rc.4 stored at block 0 of that chain. The indexer pins the same
+	/// pair, so the two sides cannot drift apart unnoticed.
+	const UNDEPLOYED_GENESIS_STATE_KEY: &str = "6d69646e696768743a73746f726167652d6b6579286c65646765722d73746174655b7631385d293a0067100cb9fcfc392a863e7b22751c6baf4602e96deef27c4e5339205586ab44c3";
+
+	#[test]
+	fn get_root_reproduces_the_genesis_state_key() {
+		let state_key = get_root(UNDEPLOYED_GENESIS, Some("undeployed")).expect("get_root failed");
+		assert_eq!(hex::encode(state_key), UNDEPLOYED_GENESIS_STATE_KEY);
+	}
+}
+// grcov-excl-stop
