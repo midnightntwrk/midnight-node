@@ -22,7 +22,7 @@ earthly -P +rebuild-all-genesis-states    # Rebuild all network genesis states
 earthly +node-image                       # Build node Docker image
 earthly +toolkit-image                    # Build toolkit image
 earthly doc                               # List all available targets
-earthly -P +prepare-ci-tests               # Prepare local e2e and toolkit test binaries
+earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 ```
 
 **GitHub PR bots:** Comment on a PR to trigger rebuilds:
@@ -30,7 +30,7 @@ earthly -P +prepare-ci-tests               # Prepare local e2e and toolkit test 
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks
 - `/bot cargo-fmt` - Run cargo fmt
 
-CI prepares integration-test binaries alongside node-image builds on the existing
+CI prepares local e2e test binaries alongside node-image builds on the existing
 self-hosted pool. Fork PRs retain inline compilation. The local environment CI
 check runs two disjoint test partitions in separate nested Docker daemons;
 `+local-env-ci` defaults to the complete suite for local use. See

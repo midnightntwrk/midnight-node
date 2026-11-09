@@ -1272,8 +1272,6 @@ test-pallet-fixtures:
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 build-test-toolkit:
     ARG NATIVEARCH
-    ARG PRECOMPILE_TESTS=false
-    ARG RUN_COMPACT_CONTRACT_TESTS=false
     FROM +prep
     ARG TARGETARCH
     IF [ "$CI" != "true" ]
@@ -1308,12 +1306,8 @@ build-test-toolkit:
 
     # Test
     RUN mkdir /test-artifacts-toolkit
-    # Prepared binaries may be reused on another runner with the same architecture.
-    IF [ "$PRECOMPILE_TESTS" = "true" ]
-        ENV RUSTFLAGS="-C debuginfo=1"
-    ELSE
-        ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
-    END
+    # Compile the tests to go as fast as possible on this machine:
+    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -1321,11 +1315,11 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # with-git-creds removes its transient netrc before the image layer is saved.
+    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
+    # inside the container, so the private git dependencies are fetched there: +test-toolkit
+    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
+    # netrc for the duration of the run (never baked into the image).
     COPY scripts/test-toolkit.sh /test-toolkit.sh
-    IF [ "$PRECOMPILE_TESTS" = "true" ]
-        RUN --secret NODE_GIT_TOKEN RUN_COMPACT_CONTRACT_TESTS="$RUN_COMPACT_CONTRACT_TESTS" with-git-creds /test-toolkit.sh --no-run
-    END
     ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
     SAVE IMAGE
 
@@ -1333,8 +1327,7 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
-    ARG RUN_COMPACT_CONTRACT_TESTS=false
-    ARG PRECOMPILE_TESTS=false
+    ARG RUN_COMPACT_CONTRACT_TESTS
     ARG CI_EXECUTION=""
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
@@ -1359,7 +1352,7 @@ test-toolkit:
     # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
-                --load test-toolkit:latest=(+build-test-toolkit --PRECOMPILE_TESTS=$PRECOMPILE_TESTS --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) \
+                --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 echo "CI execution: $CI_EXECUTION" && \
@@ -1380,7 +1373,7 @@ test-toolkit:
                 rm -f /root/.docker/config.json
         END
     ELSE
-        WITH DOCKER --load test-toolkit:latest=(+build-test-toolkit --PRECOMPILE_TESTS=$PRECOMPILE_TESTS --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS)
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
@@ -1972,10 +1965,6 @@ local-env-ci-prepare:
     ENV RUSTFLAGS="-C debuginfo=1"
     RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     SAVE IMAGE
-
-prepare-ci-tests:
-    BUILD +local-env-ci-prepare
-    BUILD +build-test-toolkit --PRECOMPILE_TESTS=true --RUN_COMPACT_CONTRACT_TESTS=false
 
 # Each invocation gets its own nested Docker daemon and chain state.
 local-env-ci:

@@ -18,7 +18,7 @@ required compute path.
 5. Keep the change draft if the candidate fails, skips required work or does not
    demonstrate an improvement before merge.
 
-The initial candidates are preparing Rust integration-test binaries alongside
+The initial candidates are preparing local Rust integration-test binaries alongside
 node-image compilation and partitioning slow local bridge tests onto independent
 chain state. Keep the existing shared-state locks within each test process.
 Runner-capacity changes require separate infrastructure configuration; a node
@@ -28,11 +28,13 @@ workflow change cannot reserve runner slots across other repositories.
 
 Existing jobs keep their runner selectors. The preparation job uses the existing
 self-hosted pool for trusted PRs and runs alongside node-image compilation. It
-warms the exact Earthly targets later used by Local Environment Tests and Test
-Toolkit. This avoids publishing build images or transferring large artifacts.
+warms the exact Earthly target later used by Local Environment Tests. This
+avoids publishing build images or transferring large artifacts.
 Toolkit compilation selects `--package midnight-node-toolkit` as well as the
 existing Nextest execution filter, so unrelated workspace test binaries are not
-compiled and carried into its test image. Validate both the selected test count
+compiled before the runtime test filter is applied. Toolkit compilation remains
+inside its test container; precompiled intermediates are not transported in the
+image. Validate both the selected test count
 and test outcomes when changing Cargo package selection.
 
 Preparation is skipped for external fork PRs; those retain inline compilation
