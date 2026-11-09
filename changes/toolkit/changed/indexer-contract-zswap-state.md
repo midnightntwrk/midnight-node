@@ -8,5 +8,5 @@ that is all `send-intent` needs to spend contract-owned coins. The local backend
 ledger state. The indexer backend reads `block { contractZswapState(address) }` at the latest
 block, which needs indexer 4.4.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2392
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
