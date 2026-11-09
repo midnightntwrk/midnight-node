@@ -13,4 +13,4 @@ returns `LedgerApiError::NoLedgerState`. The read is cached, so the deref that
 follows costs nothing extra. Only the root is checked: a node missing deeper
 in the tree still needs a resync.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2401
