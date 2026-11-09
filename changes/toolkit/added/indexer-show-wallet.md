@@ -30,5 +30,5 @@ genesis balances. It is gated behind `MN_RUN_INDEXER_E2E=1` until the `indexer-s
 published and pinned in CI (set `--INDEXER_STANDALONE_IMAGE` on the `+test-toolkit` Earthly target,
 which then enables the test).
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2388
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
