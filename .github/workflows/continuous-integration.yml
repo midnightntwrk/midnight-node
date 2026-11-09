@@ -257,7 +257,7 @@ jobs:
 
       - name: Save images for downstream jobs (fork PRs)
         if: env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/save-fork-images
+        uses: ./.github/actions/save-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-name: fork-images-amd64
           images: |
@@ -564,7 +564,7 @@ jobs:
 
       - name: Load images (fork PRs)
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/load-fork-images
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
           registry: "true"
@@ -713,7 +713,7 @@ jobs:
 
       - name: Load images (fork PRs)
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/load-fork-images
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
           registry: "true"
@@ -948,7 +948,7 @@ jobs:
 
       - name: Load images (fork PRs)
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/load-fork-images
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
           registry: "true"
@@ -1098,7 +1098,7 @@ jobs:
 
       - name: Load images (fork PRs)
         if: env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/load-fork-images
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
 
@@ -1241,7 +1241,7 @@ jobs:
 
       - name: Save indexer images for downstream jobs (fork PRs)
         if: steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/save-fork-images
+        uses: ./.github/actions/save-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-name: fork-images-indexer
           images: |
@@ -1320,7 +1320,7 @@ jobs:
 
       - name: Load images (fork PRs)
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
-        uses: ./.github/actions/load-fork-images
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-*
           registry: "true"

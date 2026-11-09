@@ -36,7 +36,7 @@ runs:
 
     - name: Load images
       if: inputs.images-artifact != ''
-      uses: ./.github/actions/load-fork-images
+      uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
       with:
         artifact-pattern: ${{ inputs.images-artifact }}
 
