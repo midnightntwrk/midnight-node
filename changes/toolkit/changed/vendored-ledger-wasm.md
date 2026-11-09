@@ -7,4 +7,4 @@ installed packages in a `postinstall` step. The published packages compute contr
 under the previous ledger's rules, so every contract transaction they build is rejected by the
 node with `ran out of gas budget`. Temporary until the matching packages are published.
 
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/85
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

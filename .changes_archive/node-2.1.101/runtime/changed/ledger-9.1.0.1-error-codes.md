@@ -10,4 +10,4 @@ RepeatedDustRegistration}`, `FeeCalculationErrorCode::{RepeatedEntries, Unknown}
 
 Runtime metadata needs rebuilding (`/bot rebuild-metadata`).
 
-PR: https://github.com/shieldedtech/shadow-midnight-node/pull/85
+PR: https://github.com/midnightntwrk/midnight-node/pull/2382

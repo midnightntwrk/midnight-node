@@ -12,6 +12,5 @@ pinning the full NVR forces microdnf to install the fixed package.
 Mirrors the equivalent change on `midnightntwrk/midnight-node` so this shadow
 remains byte-equivalent with upstream for the OS layer.
 
-Issue: https://github.com/shieldedtech/shielded-sre/issues/706
 Advisory: https://alas.aws.amazon.com/AL2023/ALAS-2026-3306.html
 Upstream PR: https://github.com/midnightntwrk/midnight-node/pull/2327
