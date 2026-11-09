@@ -1308,7 +1308,7 @@ build-test-toolkit:
 
     # Test
     RUN mkdir /test-artifacts-toolkit
-    # Compile the tests to go as fast as possible on this machine:
+    # Prepared binaries may be reused on another runner with the same architecture.
     IF [ "$PRECOMPILE_TESTS" = "true" ]
         ENV RUSTFLAGS="-C debuginfo=1"
     ELSE
@@ -1321,10 +1321,7 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
-    # inside the container, so the private git dependencies are fetched there: +test-toolkit
-    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
-    # netrc for the duration of the run (never baked into the image).
+    # with-git-creds removes its transient netrc before the image layer is saved.
     COPY scripts/test-toolkit.sh /test-toolkit.sh
     IF [ "$PRECOMPILE_TESTS" = "true" ]
         RUN --secret NODE_GIT_TOKEN RUN_COMPACT_CONTRACT_TESTS="$RUN_COMPACT_CONTRACT_TESTS" with-git-creds /test-toolkit.sh --no-run
