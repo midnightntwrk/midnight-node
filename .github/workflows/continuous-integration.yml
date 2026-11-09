@@ -85,8 +85,7 @@ jobs:
           CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
           test -n "$CACHE_KEY"
           . ./.envrc
-          earth --secret NODE_GIT_TOKEN="$NODE_GIT_TOKEN" \
-            --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict \
+          earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict \
             +prepare-ci-tests --CACHE_KEY="$CACHE_KEY"
 
   run:
