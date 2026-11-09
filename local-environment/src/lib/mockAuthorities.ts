@@ -24,7 +24,7 @@ export interface MockAuthoritiesConvertOptions {
   chainId: string;
   /** Number of validators to materialize. */
   numValidators: number;
-  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:f6cbf91). */
+  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:8e7f81d). */
   image: string;
 }
 
@@ -43,7 +43,10 @@ export interface MockAuthoritiesConvertOptions {
 // Cardano hash. On >=2.x nodes the real hash decodes to a far-future mock block
 // number, so peers reject every new block as regressing (midnight-node#2307).
 // It is also the first build with `convert --node-dir`, used below.
-const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:f6cbf91";
+//
+// 8e7f81d builds the fork block through the runtime (mock-authorities #110), so
+// its state root is derived rather than predicted, and adds `convert --fork-at`.
+const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:8e7f81d";
 
 export function defaultMockAuthoritiesImage(): string {
   return process.env.MOCK_AUTHORITIES_IMAGE ?? DEFAULT_IMAGE;
