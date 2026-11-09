@@ -30,5 +30,5 @@ Caching is on by default and uses the existing `--ledger-state-db` /
 for the replay path. Bumping the wallet cache format to v4 costs existing replay
 caches one re-replay.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2389
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
