@@ -77,6 +77,11 @@ pub struct MidnightCfg {
 	/// On start-up, wipe the chain
 	pub wipe_chain_state: bool,
 
+	/// Linux only: sandbox the node with Landlock. Writes are confined to the base path, keystore,
+	/// node key dir and temp dir, and nothing can be exec'd. Once started, on kernels with Landlock
+	/// ABI v8, reads are also confined to those dirs plus system dirs and `ssl_root_cert`.
+	pub landlock: bool,
+
 	/// Path to file containing a secret string to use as the AURA seed (32 bytes)
 	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase

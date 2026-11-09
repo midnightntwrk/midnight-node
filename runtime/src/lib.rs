@@ -946,6 +946,7 @@ impl pallet_federated_authority_observation::Config for Runtime {
 
 impl pallet_system_parameters::Config for Runtime {
 	type SystemOrigin = EnsureRoot<AccountId>;
+	type MaxCommitteeSize = MaxAuthorities;
 	type WeightInfo = weights::pallet_system_parameters::WeightInfo<Runtime>;
 }
 

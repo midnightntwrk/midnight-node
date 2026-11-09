@@ -148,6 +148,9 @@ pub mod pallet {
 	/// Theoretical maximum: 40 + 1 + 1024 = 1065 bytes
 	pub type StateKeyLength = ConstU32<1065>;
 	type MaxNetworkIdLength = ConstU32<64>;
+	// Tagged arena key of the ledger's `Ledger` wrapper, whose `block_fullness` is zero at the end
+	// of every block; external consumers such as the indexer reproduce it from the ledger state.
+	// A plain comment keeps this note out of the runtime metadata.
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
 	/// It is safe to keep the state key unbounded as its size can not be influenced by external users.
