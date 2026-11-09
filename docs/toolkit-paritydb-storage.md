@@ -49,9 +49,10 @@ The storage crate keeps one default storage per DB type per process. It creates 
 So the arena is chosen once, before the first ledger object is built:
 
 * `TxGenerator::source` (every command that reads a chain) and `fetch` call
-  `ledger_arena::init`. With a ledger state cache (`--ledger-state-db` set and a fetch
-  cache that is not `inmemory`, the same rule as before) it installs a ParityDB in
-  `<ledger-state-db>/ledger-arena`; otherwise the in-memory arena.
+  `ledger_arena::init`. With `PARITYDB_MODE=true` (off by default) and a ledger state
+  cache (`--ledger-state-db` set and a fetch cache that is not `inmemory`, the same rule
+  as before) it installs a ParityDB in `<ledger-state-db>/ledger-arena`; otherwise the
+  in-memory arena, and cached states are saved as snapshot files as before.
 * `run_command` installs the in-memory arena for every other command.
 * `LedgerContext::new` (both generations) installs the in-memory arena if nothing is
   installed yet, which covers library users and tests.

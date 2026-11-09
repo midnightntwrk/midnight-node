@@ -13,8 +13,8 @@
 
 //! The on-disk ledger arena under `--ledger-state-db`.
 //!
-//! With a ledger state cache, every ledger object of the run lives in a ParityDB in
-//! `<ledger-state-db>/ledger-arena`. A cached ledger state is a GC root in that DB:
+//! Opt-in with `PARITYDB_MODE=true`: with a ledger state cache, every ledger object of
+//! the run then lives in a ParityDB in `<ledger-state-db>/ledger-arena`. A cached ledger state is a GC root in that DB:
 //! its snapshot file only records the root key, a command opens it lazily and loads
 //! the nodes it touches. See `docs/toolkit-paritydb-storage.md`.
 //!
@@ -52,6 +52,21 @@ const GC_THRESHOLD_NODES: u64 = 1_000_000;
 /// Seconds to wait for another toolkit process holding the arena; 0 waits forever.
 const LOCK_TIMEOUT_ENV: &str = "MN_LEDGER_STATE_DB_LOCK_TIMEOUT";
 
+/// Opt-in switch for the on-disk arena; anything but a true value keeps it in memory.
+pub const PARITYDB_MODE_ENV: &str = "PARITYDB_MODE";
+
+/// Whether `value` (of [`PARITYDB_MODE_ENV`]) turns the on-disk arena on.
+fn parity_db_mode_from(value: Option<&str>) -> bool {
+	value.is_some_and(|v| {
+		matches!(v.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+	})
+}
+
+/// Whether this process may keep its ledger arena in ParityDB (off unless opted in).
+pub fn parity_db_mode() -> bool {
+	parity_db_mode_from(std::env::var(PARITYDB_MODE_ENV).ok().as_deref())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ArenaError {
 	#[error("ledger state db {path}: {source}")]
@@ -74,15 +89,18 @@ static OPEN: OnceLock<OpenArena> = OnceLock::new();
 static FLUSHED_SINCE_GC: AtomicU64 = AtomicU64::new(0);
 static INIT: Mutex<()> = Mutex::new(());
 
-/// Choose this process's ledger arena: on disk under `ledger_state_db` when the
-/// ledger state cache is enabled (same rule as `create_file_wallet_cache`), in
-/// memory otherwise. A no-op once an arena is installed.
+/// Choose this process's ledger arena: on disk under `ledger_state_db` when
+/// `PARITYDB_MODE` is on and the ledger state cache is enabled (same rule as
+/// `create_file_wallet_cache`), in memory otherwise. A no-op once an arena is installed.
 pub fn init(ledger_state_db: &str, fetch_cache: &FetchCacheConfig) -> Result<(), ArenaError> {
 	let _guard = INIT.lock().unwrap_or_else(|e| e.into_inner());
 	if arena_db::try_default_storage().is_some() {
 		return Ok(());
 	}
-	if ledger_state_db.is_empty() || matches!(fetch_cache, FetchCacheConfig::InMemory) {
+	if !parity_db_mode()
+		|| ledger_state_db.is_empty()
+		|| matches!(fetch_cache, FetchCacheConfig::InMemory)
+	{
 		arena_db::ensure_default_storage();
 		return Ok(());
 	}
@@ -313,5 +331,21 @@ pub fn finish_save() {
 	let state = open.root.join(GC_STATE_FILE);
 	if let Err(e) = std::fs::write(&state, FLUSHED_SINCE_GC.load(Ordering::Relaxed).to_string()) {
 		log::warn!("failed to write {}: {e}", state.display());
+	}
+}
+
+#[cfg(test)]
+mod parity_db_mode_tests {
+	use super::parity_db_mode_from;
+
+	#[test]
+	fn off_unless_explicitly_on() {
+		for on in ["true", "TRUE", "1", "yes", "on", " true "] {
+			assert!(parity_db_mode_from(Some(on)), "{on:?} should enable it");
+		}
+		for off in [None, Some(""), Some("false"), Some("0"), Some("no"), Some("off"), Some("tru")]
+		{
+			assert!(!parity_db_mode_from(off), "{off:?} should keep it off");
+		}
 	}
 }
