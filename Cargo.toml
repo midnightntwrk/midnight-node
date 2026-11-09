@@ -325,6 +325,9 @@ thiserror = { version = "2.0", default-features = false }
 zeroize = { version = "1", features = ["derive"] }
 rand = { version = "0.10.0", default-features = false }
 rayon = "1.11"
+tikv-jemallocator = { version = "0.6.0", features = ["unprefixed_malloc_on_supported_platforms"] }
+tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
+landlock = "0.4.7"
 # Must track the ledger's `storage-core`: `WellBehavedHasher` is implemented for *its* `Sha256`,
 # so a 0.10 `sha2::Sha256` here is a different type and won't satisfy `DB::Hasher`.
 sha2 = "0.11.0"

@@ -27,7 +27,7 @@ use crate::{
 			MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
 			MidnightMetadata1_0_0, MidnightMetadata1_0_3, MidnightMetadata2_0_0,
 			MidnightMetadata2_1_0, MidnightMetadata3_0_0, MidnightMetadata4_0_0, RuntimeVersion,
-			RuntimeVersionError,
+			RuntimeVersionError, decode_spec_version,
 		},
 	},
 };
@@ -129,25 +129,30 @@ impl ComputeTask {
 
 	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
 		let header = &block.header;
-		let spec_version = header
+		// The raw `spec_version` is kept alongside the bucketed `RuntimeVersion`: the bucket
+		// only picks a metadata decoder and deliberately collapses runtimes that share one
+		// (001_000_003 and 001_000_300, say), which is too coarse to identify a runtime.
+		let raw_spec_version = header
 			.digest
 			.logs
 			.iter()
 			.find_map(|item| {
 				const VERSION_ID: ConsensusEngineId = *b"MNSV";
 				if let DigestItem::Consensus(VERSION_ID, data) = item {
-					Some(RuntimeVersion::try_from(data.as_slice()))
+					Some(decode_spec_version(data.as_slice()))
 				} else {
 					None
 				}
 			})
 			.expect("no runtime version found")?;
+		let spec_version = RuntimeVersion::try_from(raw_spec_version)?;
 		match spec_version {
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0>(
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -156,6 +161,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -164,6 +170,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -172,6 +179,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -180,6 +188,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -188,6 +197,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -196,6 +206,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -204,6 +215,7 @@ impl ComputeTask {
 					block,
 					&header,
 					spec_version,
+					raw_spec_version,
 				)
 				.await
 			},
@@ -214,6 +226,7 @@ impl ComputeTask {
 		block: &FetchedBlock,
 		header: &<MidnightNodeClientConfig as subxt::Config>::Header,
 		version: RuntimeVersion,
+		raw_spec_version: u32,
 	) -> Result<RawBlockData, ComputeError> {
 		let state_root = block.state_root.clone();
 		let parent_block_hash = header.parent_hash;
@@ -299,6 +312,7 @@ impl ComputeTask {
 			tblock_err: 30,
 			parent_block_hash: parent_block_hash.0,
 			last_block_time_secs: tblock_secs, // Fixed later in fetcher.rs
+			spec_version: raw_spec_version,
 			state_root,
 			state: block.state.clone(),
 		})
