@@ -26,8 +26,8 @@ use crate::{
 		runtimes::{
 			MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
 			MidnightMetadata1_0_0, MidnightMetadata1_0_3, MidnightMetadata2_0_0,
-			MidnightMetadata2_1_0, MidnightMetadata2_1_100, MidnightMetadata3_0_0, MidnightMetadata4_0_0, RuntimeVersion,
-			RuntimeVersionError, decode_spec_version,
+			MidnightMetadata2_1_0, MidnightMetadata2_1_100, MidnightMetadata3_0_0,
+			MidnightMetadata4_0_0, RuntimeVersion, RuntimeVersionError, decode_spec_version,
 		},
 	},
 };
