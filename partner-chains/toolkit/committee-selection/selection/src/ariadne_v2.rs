@@ -19,6 +19,7 @@ use rand_chacha::ChaCha20Rng;
 /// type. It is because D-parameter is desired not mandatory ratio.
 /// If `registered_seats` and `permissioned_seats` are 0, empty committee is returned.
 /// It is same as for original Ariadne.
+/// If `registered_seats + permissioned_seats` overflows `u16`, `None` is returned.
 /// This function returns same selection regardless of input vectors ordering.
 pub fn select_authorities<SC>(
 	registered_seats: u16,
@@ -30,7 +31,7 @@ pub fn select_authorities<SC>(
 where
 	SC: Ord + Clone,
 {
-	let seats_total = permissioned_seats + registered_seats;
+	let seats_total = permissioned_seats.checked_add(registered_seats)?;
 	let mut rng = ChaCha20Rng::from_seed(seed);
 	let permissioned_candidates: Vec<(SC, Weight)> =
 		permissioned_candidates.into_iter().map(|c| (c, 1)).collect();
@@ -235,6 +236,13 @@ mod tests {
 	fn use_permissioned_candidates_when_p_is_0_and_there_are_no_registered_candidates() {
 		let committee = select_authorities(3, 0, vec![], vec!["P1", "P2"], [0u8; 32]).unwrap();
 		assert_eq!(committee.len(), 3)
+	}
+
+	#[test]
+	fn returns_none_when_total_seats_overflow() {
+		assert_eq!(select_authorities(u16::MAX, 1, vec![("R1", 100)], vec![], [0u8; 32]), None);
+		assert_eq!(select_authorities(1, u16::MAX, vec![], vec!["P1"], [0u8; 32]), None);
+		assert_eq!(select_authorities(u16::MAX, 1, vec![("R1", 100)], vec!["P1"], [0u8; 32]), None);
 	}
 
 	#[quickcheck]
