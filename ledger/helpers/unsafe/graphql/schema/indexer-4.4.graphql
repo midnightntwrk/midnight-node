@@ -1,4 +1,4 @@
-# midnight-indexer 4.4.0-rc.6 (68702121, release/4.4), indexer-api/graphql/schema-v4.graphql.
+# midnight-indexer v4.4.101 (0e6d8385), indexer-api/graphql/schema-v4.graphql. Same types as 4.4.0-rc.5 and rc.6.
 """
 Tagged-union helper for fields like `Either<ZswapCoinPublicKey, ContractAddress>`
 used in standard unshielded events.
@@ -1364,6 +1364,9 @@ type Query {
 	spoIdentities(limit: Int, offset: Int): [SpoIdentity!]!
 	"""
 	Get SPO identity by pool ID.
+	
+	`poolIdHex` is case-insensitive hex with an optional `0x`/`0X` prefix; invalid hex
+	matches nothing.
 	"""
 	spoIdentityByPoolId(poolIdHex: String!): SpoIdentity
 	"""
@@ -1372,6 +1375,9 @@ type Query {
 	spoCount: Int
 	"""
 	Get pool metadata by pool ID.
+	
+	`poolIdHex` is case-insensitive hex with an optional `0x`/`0X` prefix; invalid hex
+	matches nothing.
 	"""
 	poolMetadata(poolIdHex: String!): PoolMetadata
 	"""
@@ -1380,6 +1386,9 @@ type Query {
 	poolMetadataList(limit: Int, offset: Int, withNameOnly: Boolean): [PoolMetadata!]!
 	"""
 	Get SPO with metadata by pool ID.
+	
+	`poolIdHex` is case-insensitive hex with an optional `0x`/`0X` prefix; invalid hex
+	matches nothing.
 	"""
 	spoByPoolId(poolIdHex: String!): Spo
 	"""
@@ -1388,6 +1397,9 @@ type Query {
 	spoList(limit: Int, offset: Int, search: String): [Spo!]!
 	"""
 	Get composite SPO data (identity + metadata + performance).
+	
+	`poolIdHex` is case-insensitive hex with an optional `0x`/`0X` prefix; invalid hex
+	matches nothing.
 	"""
 	spoCompositeByPoolId(poolIdHex: String!): SpoComposite
 	"""
@@ -1400,6 +1412,9 @@ type Query {
 	spoPerformanceLatest(limit: Int, offset: Int): [EpochPerf!]!
 	"""
 	Get SPO performance by SPO key.
+	
+	`spoSkHex` is case-insensitive hex with an optional `0x`/`0X` prefix; invalid hex
+	returns an empty list.
 	"""
 	spoPerformanceBySpoSk(spoSkHex: String!, limit: Int, offset: Int): [EpochPerf!]!
 	"""
