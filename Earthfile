@@ -1315,9 +1315,8 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
-    # Keep in sync with util/toolkit/test-images.docker-compose.yml. Private, so pre-pulled even
-    # without NODE_IMAGE.
-    ARG INDEXER_STANDALONE_IMAGE=ghcr.io/midnight-ntwrk/indexer-standalone:4.4.0-rc.6-68702121
+    # Optional: override the indexer e2e's indexer image (default in test-images.docker-compose.yml).
+    ARG INDEXER_STANDALONE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
@@ -1329,7 +1328,9 @@ test-toolkit:
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
     END
-    SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE"
+    IF [ -n "$INDEXER_STANDALONE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE"
+    END
     IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
     END
@@ -1344,8 +1345,7 @@ test-toolkit:
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
-                --pull $NODE_IMAGE \
-                --pull $INDEXER_STANDALONE_IMAGE
+                --pull $NODE_IMAGE
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
@@ -1363,9 +1363,7 @@ test-toolkit:
                 rm -f /root/.docker/config.json
         END
     ELSE
-        WITH DOCKER \
-                --load test-toolkit:latest=+build-test-toolkit \
-                --pull $INDEXER_STANDALONE_IMAGE
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \

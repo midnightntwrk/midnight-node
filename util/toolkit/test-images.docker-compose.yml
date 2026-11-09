@@ -16,7 +16,7 @@ services:
       guard:
         condition: service_completed_successfully
   indexer-standalone:
-    image: ${INDEXER_STANDALONE_IMAGE:-ghcr.io/midnight-ntwrk/indexer-standalone:4.4.0-rc.6-68702121}
+    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:4.4.101}
     depends_on:
       guard:
         condition: service_completed_successfully
@@ -25,7 +25,7 @@ services:
   # `NODE_VERSIONS`, not `midnight-node` (CI's fresh build). The indexer rejects unlisted versions
   # and crashes at genesis on same-spec builds with other metadata.
   midnight-node-indexer-e2e:
-    image: ${INDEXER_E2E_NODE_IMAGE:-midnightntwrk/midnight-node:2.1.0-rc.4}
+    image: ${INDEXER_E2E_NODE_IMAGE:-midnightntwrk/midnight-node:2.1.101}
     depends_on:
       guard:
         condition: service_completed_successfully
