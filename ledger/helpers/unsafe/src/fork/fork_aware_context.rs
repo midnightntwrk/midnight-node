@@ -395,6 +395,8 @@ mod tests {
 	/// No key is derived pre-fork, and the watched address is the ECDSA one, not the Schnorr one.
 	#[test]
 	fn ecdsa_seed_is_watch_only_before_the_fork() {
+		// Wallets are built before any `LedgerContext` installs the arena.
+		crate::arena_db::ensure_default_storage();
 		let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
 			LedgerVersion::Ledger8,
 			"undeployed",
@@ -423,6 +425,8 @@ mod tests {
 	/// Shielded and dust identities do not depend on the scheme, so pre-fork history still replays.
 	#[test]
 	fn ecdsa_seed_keeps_a_usable_shielded_subwallet_before_the_fork() {
+		// Wallets are built before any `LedgerContext` installs the arena.
+		crate::arena_db::ensure_default_storage();
 		let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
 			LedgerVersion::Ledger8,
 			"undeployed",

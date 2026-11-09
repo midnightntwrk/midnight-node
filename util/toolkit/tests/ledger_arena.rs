@@ -42,6 +42,7 @@ fn synthetic_source(l8: u64, l9: u64) -> SourceTransactions {
 		tblock_secs: 1_700_000_000 + number * 6,
 		tblock_err: 30,
 		parent_block_hash: [0; 32],
+		spec_version: 0,
 		last_block_time_secs: 1_700_000_000 + number.saturating_sub(1) * 6,
 		state_root: None,
 		state: None,
