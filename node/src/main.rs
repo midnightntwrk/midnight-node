@@ -17,6 +17,11 @@
 
 use midnight_node::command;
 
+// `allocator_metrics` and heap profiling (docs/operations/heap-profiling.md) rely on jemalloc.
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn main() -> sc_cli::Result<()> {
 	// Both `ring` (via sqlx) and `aws-lc-rs` (via reqwest) are compiled in, so rustls can't
 	// auto-select a default provider and panics the first time one is needed (e.g. an outbound

@@ -831,6 +831,23 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
+	#[cfg(target_os = "linux")]
+	match prometheus_registry
+		.as_ref()
+		.map(crate::allocator_metrics::AllocatorMetrics::register)
+	{
+		Some(Ok(metrics)) => task_manager.spawn_handle().spawn(
+			"allocator-metrics",
+			None,
+			metrics.run(crate::allocator_metrics::DEFAULT_INTERVAL),
+		),
+		Some(Err(err)) => log::error!(
+			target: "prometheus",
+			"Failed to register allocator metrics: {err}",
+		),
+		None => {},
+	}
+
 	let subscription_metrics =
 		prometheus_registry.as_ref().and_then(|r| SubscriptionMetrics::register(r).ok());
 	let subscription_tracker =
