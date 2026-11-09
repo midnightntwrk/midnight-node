@@ -387,9 +387,9 @@ With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-ind
 
 `-p withfaucet` (`npm run run:local-env-with-faucet`) adds the
 [faucet](https://github.com/midnightntwrk/midnight-faucet-api), dispensing from the
-`0x..01` wallet that `init-mnight-faucet` funds (see below). It starts the indexer stack
-too, plus `proof-server` (`:6300`, or `PROOF_SERVER_PORT`), `faucet-postgres` and `faucet` (`:5300` API + UI,
-`:9696` metrics). Images come from `FAUCET_IMAGE` and `PROOF_SERVER_IMAGE` in
+`0x..01` wallet that `init-mnight-faucet` funds (see below) and `init-shielded-faucet`
+mints shielded tokens to. It starts the indexer stack too, plus `proof-server` (`:6300`,
+or `PROOF_SERVER_PORT`), `faucet-postgres` and `faucet` (`:5300` API + UI, `:9696` metrics). Images come from `FAUCET_IMAGE` and `PROOF_SERVER_IMAGE` in
 `.env.default`; override them like any other image.
 
 - **UI:** <http://localhost:5300/?isTesting=true>. `isTesting` swaps in Cloudflare's

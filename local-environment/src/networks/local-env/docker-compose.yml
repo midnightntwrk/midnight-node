@@ -378,7 +378,7 @@ services:
     image: ${FAUCET_IMAGE}
     restart: "always"
     depends_on:
-      init-mnight-faucet:
+      init-shielded-faucet:
         condition: service_completed_successfully
       indexer-api:
         condition: service_healthy
@@ -752,6 +752,27 @@ services:
       - ./runtime-values:/runtime-values
       - ./configurations/init-mnight-faucet/init-mnight-faucet.sh:/init-mnight-faucet.sh
     entrypoint: ["/bin/bash", "/init-mnight-faucet.sh"]
+    restart: "no"
+
+  init-shielded-faucet:
+    profiles: ["withfaucet"]
+    container_name: init-shielded-faucet
+    image: ${TOOLKIT_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      init-mnight-faucet:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    environment:
+      - NODE_HOST=midnight-node-1
+      - NODE_PORT=9933
+      - MARKER_FILE=/runtime-values/shielded-faucet-ready
+    volumes:
+      - ./runtime-values:/runtime-values
+      - ./configurations/init-shielded-faucet/init-shielded-faucet.sh:/init-shielded-faucet.sh
+    entrypoint: ["/bin/bash", "/init-shielded-faucet.sh"]
     restart: "no"
 
 volumes:
