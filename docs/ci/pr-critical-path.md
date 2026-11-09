@@ -30,6 +30,11 @@ Existing jobs keep their runner selectors. The preparation job uses the existing
 self-hosted pool for trusted PRs and runs alongside node-image compilation. It
 warms the exact Earthly targets later used by Local Environment Tests and Test
 Toolkit. This avoids publishing build images or transferring large artifacts.
+Toolkit compilation selects `--package midnight-node-toolkit` as well as the
+existing Nextest execution filter, so unrelated workspace test binaries are not
+compiled and carried into its test image. Validate both the selected test count
+and test outcomes when changing Cargo package selection.
+
 Preparation is skipped for external fork PRs; those retain inline compilation
 on GitHub-hosted runners. Missing or evicted cache entries rebuild normally.
 A shared cache is required for this particular preparation-job optimization;
