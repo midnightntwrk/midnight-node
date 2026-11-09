@@ -7,5 +7,5 @@ this way at a runtime upgrade to a node version it doesn't support; a stalled ch
 same, which is why it warns instead of failing. An indexer with no blocks at all now says it
 may not support the node version.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2398
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
