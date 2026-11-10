@@ -7893,6 +7893,7 @@ dependencies = [
 name = "midnight-ledger-unsafe-helpers"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bech32 0.11.1",
  "bip32",
@@ -7909,6 +7910,7 @@ dependencies = [
  "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto 2.2.0",
+ "midnight-zkir 3.1.0-rc.1",
  "rand 0.8.5",
  "rayon",
  "serde",

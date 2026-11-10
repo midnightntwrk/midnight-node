@@ -83,6 +83,8 @@ transient-crypto = { version = "^2.0.0", package = "midnight-transient-crypto" }
 # crate is gone: rc.3 dropped the separate 2.x zkir, and its frozen `Zkir` impl can't satisfy
 # transient-crypto 2.2.0's new tagged-IR trait methods.
 zkir = { version = "^2.2.0", package = "midnight-zkir" }
+# ZKIR v3 (compactc 0.36+ emits only v3). Same source as ledger-v9's own `zkir_v3` dep so they unify.
+zkir-v3 = { git = "https://github.com/midnightntwrk/midnight-zkir", tag = "zkir-3.1.0-rc.1", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto (2.x) and zkir are shared above so reuse those entries.
