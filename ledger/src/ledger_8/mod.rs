@@ -1239,10 +1239,17 @@ where
 
 	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
-		default_storage().arena.get_lazy(&key).map_err(|e| {
-			log::error!(target: LOG_TARGET, "Error loading Ledger State: {e:?}");
-			LedgerApiError::NoLedgerState
-		})
+		let arena = &default_storage().arena;
+		// `get_lazy` reads nothing, so an absent root would only surface as a host panic on
+		// first deref. Read the root node here instead: one level, children stay unread, and
+		// the backend caches it for that deref. A missing descendant can still panic later.
+		if let ArenaKey::Ref(root) = &key.key
+			&& arena.with_backend(|backend| backend.get(root).is_none())
+		{
+			log::error!(target: LOG_TARGET, "Ledger state root {root:?} not in storage");
+			return Err(LedgerApiError::NoLedgerState);
+		}
+		arena.get_lazy(&key).map_err(|_| LedgerApiError::NoLedgerState)
 	}
 
 	fn get_transaction_details(
@@ -1731,6 +1738,19 @@ mod tests {
 	use coin_structure_local::coin::{ShieldedTokenType, UnshieldedTokenType};
 	use ledger_storage_local::DefaultDB;
 	use mn_ledger_local::structure::LedgerState;
+
+	/// The undeployed genesis `StateKey` (see `storage.rs`) with its last hash byte changed:
+	/// well-formed, but naming a root that was never stored.
+	const ABSENT_ROOT_STATE_KEY: &str = "6d69646e696768743a73746f726167652d6b6579286c65646765722d73746174655b7631335d293a0094da59ebc5abee3d5abc325275ee39df52f01eed96b86ea635c4f18b31f99600";
+
+	/// A node whose ledger DB lost the root its block state names must get an error back, not
+	/// a host panic on first deref that wedges block authoring.
+	#[test]
+	fn absent_ledger_root_is_no_ledger_state_not_a_panic() {
+		let state_key = hex::decode(ABSENT_ROOT_STATE_KEY).expect("valid hex");
+		let result = Bridge::<TransactionSignature, DefaultDB>::get_ledger_parameters(&state_key);
+		assert!(matches!(result, Err(LedgerApiError::NoLedgerState)), "got {result:?}");
+	}
 
 	/// Preview #128537, the block whose first transaction motivated the correction.
 	const BLOCK_TBLOCK: u64 = 1784987076;
