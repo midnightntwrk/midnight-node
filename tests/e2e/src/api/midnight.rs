@@ -730,11 +730,13 @@ impl MidnightClient {
             .block_number())
     }
 
-    /// Subscribe to the bridge handler extrinsic, skipping any block at or before `min_block_number`.
+    /// Return the first finalized block after `min_block_number` whose bridge
+    /// handler data satisfies `matches`.
     pub async fn subscribe_to_c2m_bridge_transfers(
         &self,
         timeout_duration: Duration,
         min_block_number: u64,
+        matches: impl Fn(&C2MBridgePalletCalls) -> bool,
     ) -> Result<C2MBridgePalletCalls, Box<dyn std::error::Error>> {
         tracing::info!("Subscribing for C-to-M transfer extrinsic");
         let mut blocks_sub = self.online_client().stream_blocks().await?;
@@ -786,7 +788,9 @@ impl MidnightClient {
                     transfers,
                     system_transactions_applied,
                 };
-                return Ok(result);
+                if matches(&result) {
+                    return Ok(result);
+                }
             }
             Err("Did not find bridge extrinsics".into())
         };
