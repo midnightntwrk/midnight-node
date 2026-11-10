@@ -36,7 +36,7 @@ concurrency:
 jobs:
   prepare-local-e2e:
     name: Prepare local integration test binary
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     permissions:
       contents: read
@@ -1210,9 +1210,9 @@ jobs:
     name: Local Environment Tests
     if: ${{ !cancelled() && !failure() && needs.run.result == 'success' && needs.build-indexer-images.result == 'success' && ((github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group') }}
     needs: [run, build-indexer-images, prepare-local-e2e]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:medium"]') || fromJSON('["ubuntu-latest"]') }}
     # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
