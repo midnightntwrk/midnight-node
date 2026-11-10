@@ -35,6 +35,9 @@ serde = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 
 [dev-dependencies]
+ctor = "0.5.0"
+hex-literal.workspace = true
+testcontainers-modules = { version = "0.15", features = ["blocking", "postgres"] }
 tokio = { workspace = true, features = ["full"]}
 
 [features]
