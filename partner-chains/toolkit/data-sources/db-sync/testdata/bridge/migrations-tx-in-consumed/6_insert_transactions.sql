@@ -7,6 +7,9 @@ DECLARE
  transfer_metadatum_2 jsonb := '["0x1234"]';
  invalid_metadatum jsonb := '{ "it is no a string": "but a map" }';
  reserve_and_user_tx_metadatum jsonb := '["0x9999"]';
+ -- 128 nested lists: deeper than the 128 levels serde_json accepts, so this metadatum
+ -- cannot be decoded at all and the transfer must fall back to an invalid recipient
+ deep_metadata_metadatum jsonb := (repeat('[', 128) || repeat(']', 128))::jsonb;
 
  native_token_policy hash28type := decode('500000000000000000000000000000000000434845434b504f494e69', 'hex');
  native_token_id integer := 1;
@@ -21,6 +24,7 @@ DECLARE
  irrelevant_tx integer  := 41;
  complex_withdraw_tx integer  := 51;
  reserve_and_user_tx integer  := 61;
+ deep_metadata_tx integer := 71;
 
  -- those hashes are not really important but putting them in variables help to make the data more readable
  init_ics_tx_hash hash32type := decode('c000000000000000000000000000000000000000000000000000000000000001','hex');
@@ -31,6 +35,7 @@ DECLARE
  ivalid_transfer_tx_hash_2 hash32type := decode('c000000000000000000000000000000000000000000000000000000000000006','hex');
  complex_withdraw_tx_hash hash32type := decode('c000000000000000000000000000000000000000000000000000000000000007','hex');
  reserve_and_user_tx_hash hash32type := decode('c000000000000000000000000000000000000000000000000000000000000008','hex');
+ deep_metadata_tx_hash hash32type := decode('c000000000000000000000000000000000000000000000000000000000000009','hex');
  irrelevant_tx_hash hash32type := decode('4242424242424242424242424242424242424242424242424242424242424242','hex');
 
  unit_datum_hash hash32type := decode('0000000000000000000000000000000000000000000000000000000000000001','hex');
@@ -47,6 +52,7 @@ INSERT INTO tx ( id                    , hash                       , block_id, 
               ,( invalid_transfer_tx_2 , ivalid_transfer_tx_hash_2  , 4       , 2          , 0      , 0  , 0      , 1024, NULL          , NULL             , TRUE          , 1024        )
               ,( complex_withdraw_tx   , complex_withdraw_tx_hash   , 5       , 0          , 0      , 0  , 0      , 1024, NULL          , NULL             , TRUE          , 1024        )
               ,( reserve_and_user_tx   , reserve_and_user_tx_hash   , 5       , 1          , 0      , 0  , 0      , 1024, NULL          , NULL             , TRUE          , 1024        )
+              ,( deep_metadata_tx      , deep_metadata_tx_hash      , 9       , 0          , 0      , 0  , 0      , 1024, NULL          , NULL             , TRUE          , 1024        )
 ;
 
 -- reserve_transfer_tx consumes 250 from 'reserve address' and deposits '100' at 'ics address' and '150' at 'reserve address' (change)
@@ -57,6 +63,7 @@ INSERT INTO tx ( id                    , hash                       , block_id, 
 -- invalid_transfer_tx_2 consumes 1000 from 'user address' and deposits 1000 at 'ics address' (net +1000), it doesn't have metadata
 -- complex_withdraw_tx is edge case of transaction that withdraws 50 from reserve (system assumption is that it goes to ICS), it also withdraws 55 from ICS (currently impossible with bidirectional bridge),
 --   in this case ICS net is -5, reserve net is -50, user net is +55, it should be reflected one event: Reserve Transfer of 50 because ICS withdrawals are out-of-scope
+-- deep_metadata_tx deposits 7 tokens at 'ics address' (net +7) with metadata nested too deeply to decode
 
 INSERT INTO tx_out ( id, tx_id                 , index, address           , address_raw, address_has_script, payment_cred, stake_address_id, value, data_hash                   , consumed_by_tx_id     )
             VALUES ( 11, init_ics_tx           , 0    , 'reserve address' , ''         , TRUE              , NULL        , NULL            , 0    , NULL                        , reserve_transfer_tx   ) -- Reserve initial utxo - 250 tokens
@@ -75,6 +82,7 @@ INSERT INTO tx_out ( id, tx_id                 , index, address           , addr
                   ,( 52, complex_withdraw_tx   , 1    , 'ics address'     , ''         , TRUE              , NULL        , NULL            , 0    , NULL                        , reserve_and_user_tx   ) -- ics output of complex_withdraw_tx: 1995 tokens
                   ,( 53, complex_withdraw_tx   , 2    , 'reserve address' , ''         , TRUE              , NULL        , NULL            , 0    , NULL                        , reserve_and_user_tx   ) -- reserve output of complex_withdraw_tx: 100 tokens
                   ,( 54, reserve_and_user_tx   , 0    , 'ics address'     , ''         , TRUE              , NULL        , NULL            , 0    , NULL                        , NULL                  )
+                  ,( 71, deep_metadata_tx      , 0    , 'ics address'     , ''         , TRUE              , NULL        , NULL            , 0    , NULL                        , NULL                  ) -- output of deep_metadata_tx: 7 tokens
 
 
 ;
@@ -92,6 +100,7 @@ INSERT INTO tx_metadata ( id , "key"   , json                          , bytes ,
 	                  , ( 2  , 6500973 , transfer_metadatum_2          , ''    , user_transfer_tx_2    )
 	                  , ( 3  , 6500973 , invalid_metadatum             , ''    , invalid_transfer_tx_1 )
 					  , ( 4  , 6500973 , reserve_and_user_tx_metadatum , ''    , reserve_and_user_tx   )
+					  , ( 71 , 6500973 , deep_metadata_metadatum       , ''    , deep_metadata_tx      )
 ;
 
 INSERT INTO multi_asset ( id                  , policy                  , name               , fingerprint       )
@@ -121,5 +130,6 @@ VALUES                (11 , 250      , 11        , native_token_id )  -- initial
                      ,(29 , 1995     , 52        , native_token_id ) -- ics output of complex_withdraw_tx
                      ,(30 , 100      , 53        , native_token_id ) -- reserve output of complex_withdraw_tx
                      ,(31 , 2160     , 54        , native_token_id ) -- ICS output of reserve_and_user_tx
+                     ,(71 , 7        , 71        , native_token_id ) -- ICS output of deep_metadata_tx
 ;
 END $$;

@@ -41,9 +41,9 @@ jobs:
       contents: read
     # TEST PR — points at the new self-hosted runner pool to validate end-to-end
     # build performance. Revert before merge.
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
@@ -538,7 +538,10 @@ jobs:
       contents: read
       actions: write
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest
+    # The fixture tests compile midnight-node-ledger with both ledger generations (and both
+    # storage lines) in one crate; rustc is SIGKILLed on the 16 GB ubuntu-latest runner.
+    # Same routing as Test Toolkit: self-hosted large for in-repo branches, GitHub-hosted for forks.
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -590,9 +593,9 @@ jobs:
       actions: write
     name: Test Toolkit
     needs: [run]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -1162,9 +1165,9 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [run, build-indexer-images]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:medium"]') || fromJSON('["ubuntu-latest"]') }}
     # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
