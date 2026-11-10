@@ -103,7 +103,7 @@ where
 	) {
 		let call = pallet_membership::Call::<T, I>::reset_members { members: sorted_new.to_vec() };
 
-		let _ = call.dispatch_bypass_filter(frame_system::RawOrigin::None.into());
+		let _ = call.dispatch_bypass_filter(frame_system::RawOrigin::Root.into());
 	}
 }
 
