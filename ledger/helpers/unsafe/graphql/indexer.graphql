@@ -9,6 +9,10 @@ query LatestBlock {
     timestamp
     zswapEndIndex
     ledgerParameters
+    parent {
+      hash
+      timestamp
+    }
   }
 }
 
@@ -91,5 +95,13 @@ subscription DustLedgerEvents($id: Int) {
 query BlockAtHeight($height: Int!) {
   block(offset: { height: $height }) {
     hash
+  }
+}
+
+# No offset selects the contract's latest action, i.e. its current state.
+query ContractActionState($address: HexEncoded!) {
+  contractAction(address: $address) {
+    __typename
+    state
   }
 }
