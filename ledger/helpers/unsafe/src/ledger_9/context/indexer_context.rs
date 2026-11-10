@@ -474,6 +474,17 @@ impl IndexerContext<DefaultDB> {
 						Err(ledger_9_error) => {
 							let tx: MnTx8 = crate::ledger_8::deserialize(&raw_transaction[..])
 								.map_err(|_| ledger_9_error)?;
+							// The ledger-8 wallet starts from an empty tree, so it can only take over
+							// at index 0. Past it, it would overwrite the resumed state and drop coins.
+							if pre_fork_wallet.is_none() && shielded.state.first_free != 0 {
+								return Err(format!(
+									"ledger-8 transaction ending at zswap index {zswap_end_index} \
+									 after the wallet resumed at index {}; resuming inside pre-fork \
+									 history is not supported, clear the wallet cache",
+									shielded.state.first_free
+								)
+								.into());
+							}
 							let wallet = pre_fork_wallet
 								.get_or_insert_with(|| ShieldedWallet8::default(seed_8.clone()));
 							if let Some(update_bytes) = collapsed_update {
