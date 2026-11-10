@@ -567,7 +567,7 @@ jobs:
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
-          registry: "true"
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Generate dummy genesis seeds
         if: steps.guard.outputs.hit != 'true'
@@ -716,7 +716,7 @@ jobs:
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
-          registry: "true"
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
@@ -951,7 +951,7 @@ jobs:
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
-          registry: "true"
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
@@ -1323,7 +1323,7 @@ jobs:
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-*
-          registry: "true"
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Deploy and test against local environment
         if: steps.guard.outputs.hit != 'true'

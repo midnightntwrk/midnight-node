@@ -1,7 +1,7 @@
 name: Load fork PR images
 description: >-
   Load images saved by ./.github/actions/save-fork-images into the local Docker daemon. With
-  `registry: true`, also serve them from a throwaway registry on the runner so earthly
+  a non-empty `registry` host:port, also serve them from a throwaway registry on the runner so earthly
   (whose buildkitd cannot see the host daemon's images) can FROM / `WITH DOCKER --pull` them.
 
 inputs:
@@ -40,10 +40,10 @@ runs:
         fi
 
     - name: Serve images from a local registry
-      if: inputs.registry == 'true'
+      if: inputs.registry != ''
       shell: bash
       env:
-        REGISTRY_HOST: ${{ inputs.registry-host }}
+        REGISTRY_HOST: ${{ inputs.registry }}
       run: |
         gateway=$(docker network inspect bridge -f '{{ (index .IPAM.Config 0).Gateway }}')
         if [ "${REGISTRY_HOST%:*}" != "$gateway" ]; then
