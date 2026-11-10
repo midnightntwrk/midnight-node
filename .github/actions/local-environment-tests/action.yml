@@ -44,10 +44,6 @@ inputs:
     description: "Wallet indexer image reference"
     required: true
 
-  sharded:
-    description: "Run the two disjoint local e2e shards on isolated chains"
-    required: false
-    default: 'false'
   ci-execution:
     description: "Run identity that prevents cached integration-test execution"
     required: false
@@ -104,7 +100,6 @@ runs:
     - name: Deploy + test against local environment (nested dockerd)
       shell: bash
       env:
-        E2E_TARGET: ${{ inputs.sharded == 'true' && 'local-env-ci-sharded' || 'local-env-ci' }}
         CI_EXECUTION: ${{ inputs.ci-execution }}
         GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         NODE_IMAGE: ${{ inputs.image }}
@@ -122,7 +117,7 @@ runs:
         earth -P \
           --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
           --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-          "+$E2E_TARGET" \
+          +local-env-ci \
           --CI_EXECUTION="$CI_EXECUTION" \
           --CACHE_KEY="$CACHE_KEY" \
           --NODE_IMAGE="$NODE_IMAGE" \

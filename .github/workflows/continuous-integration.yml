@@ -1257,7 +1257,6 @@ jobs:
           indexer-tag: unused
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
-          sharded: ${{ runner.environment == 'self-hosted' && 'true' || 'false' }}
           ci-execution: ${{ github.run_id }}-${{ github.run_attempt }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           # Empty on fork PRs → the in-DinD docker login is skipped and public

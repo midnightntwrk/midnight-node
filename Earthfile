@@ -1857,7 +1857,7 @@ local-env-e2e:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN --secret NODE_GIT_TOKEN with-git-creds cargo test --test e2e_tests -- --test-threads=6 --nocapture
+    RUN --secret NODE_GIT_TOKEN E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests -- --test-threads=16 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -1954,7 +1954,6 @@ start-local-env-with-indexer-ci:
 # Preparation has no node-image dependency, so CI can overlap it with the build.
 local-env-ci-prepare:
     FROM +prep
-    RUN microdnf -y install python3 && microdnf clean all
     # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
     # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
     COPY --dir local-environment .
@@ -1975,7 +1974,6 @@ local-env-ci:
     ARG WALLET_INDEXER_IMAGE
     ARG TOOLKIT_IMAGE
     ARG USERARCH
-    ARG E2E_SHARD=all
     ARG CI_EXECUTION=""
     # Fail early + kindly if any image ref is empty — otherwise `WITH DOCKER --pull` below
     # gets an empty arg and dies with the opaque "invalid reference format".
@@ -2002,7 +2000,7 @@ local-env-ci:
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            echo "CI execution: $CI_EXECUTION; shard: $E2E_SHARD" && \
+            echo "CI execution: $CI_EXECUTION" && \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
               echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -2034,39 +2032,12 @@ local-env-ci:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              python3 ../../scripts/tests/run-local-e2e-shard.py "$E2E_SHARD" -- \
-                with-git-creds cargo test --test e2e_tests --no-default-features --features local ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
             rm -f /root/.docker/config.json
     END
-
-
-local-env-ci-sharded:
-    ARG NODE_IMAGE
-    ARG INDEXER_API_IMAGE
-    ARG CHAIN_INDEXER_IMAGE
-    ARG WALLET_INDEXER_IMAGE
-    ARG TOOLKIT_IMAGE
-    ARG CI_EXECUTION=""
-    BUILD +local-env-ci \
-        --NODE_IMAGE=$NODE_IMAGE \
-        --INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
-        --CHAIN_INDEXER_IMAGE=$CHAIN_INDEXER_IMAGE \
-        --WALLET_INDEXER_IMAGE=$WALLET_INDEXER_IMAGE \
-        --TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
-        --CI_EXECUTION=$CI_EXECUTION \
-        --E2E_SHARD=default
-    BUILD +local-env-ci \
-        --NODE_IMAGE=$NODE_IMAGE \
-        --INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
-        --CHAIN_INDEXER_IMAGE=$CHAIN_INDEXER_IMAGE \
-        --WALLET_INDEXER_IMAGE=$WALLET_INDEXER_IMAGE \
-        --TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
-        --CI_EXECUTION=$CI_EXECUTION \
-        --E2E_SHARD=bridge-recipient
-
 
 # local-env-full-ci-localimg: run the full integration tests (stack → verify-finality →
 # e2e → toolkit, one nested-dockerd RUN) with NO registry permissions. It injects the
@@ -2127,7 +2098,7 @@ local-env-full-ci-localimg:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
@@ -2195,7 +2166,7 @@ local-env-oneshot:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
