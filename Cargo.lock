@@ -8488,6 +8488,7 @@ dependencies = [
  "backoff",
  "clap",
  "console 0.15.11",
+ "fs2",
  "futures",
  "hex",
  "hex-literal 1.1.0",
