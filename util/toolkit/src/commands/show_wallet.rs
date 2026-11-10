@@ -24,6 +24,9 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
+use midnight_ledger_unsafe_helpers::IndexerClient;
+use midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY;
+use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -64,11 +67,33 @@ pub struct ShowWalletArgs {
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
 	pub dry_run: bool,
+	/// Reconstruct wallet state from a Midnight indexer (`api/v4` base URL, e.g.
+	/// `http://127.0.0.1:8088/api/v4`) instead of replaying every block from the node.
+	/// Requires `--seed`. The ledger generation is taken from the chain the indexer serves.
+	/// Blockfrost URLs (`…blockfrost.io/api/v0`) need `BLOCKFROST_PROJECT_ID`.
+	#[arg(long, env = "MN_INDEXER_URL")]
+	pub indexer_url: Option<String>,
+	// TODO: make `--network` optional once the indexer exposes its network id (midnight-indexer#1539).
+	// Until then it must be supplied to build the bech32 HRPs
+	// (`mn_shield-esk_<network>`, `mn_addr_<network>`) the indexer validates exactly.
+	/// Network id used to derive the viewing key / address for the indexer path.
+	#[arg(long, default_value = "undeployed")]
+	pub network: String,
+	/// Indexer path only: how many wallets to sync at once. Each one holds three concurrent
+	/// subscriptions, so the indexer sees up to three times this many open WebSockets. Raise it
+	/// for a large seed set against an indexer that can take the load; lower it if the indexer
+	/// starts dropping connections.
+	#[arg(long, env = "MN_INDEXER_CONCURRENCY", default_value_t = DEFAULT_WALLET_SYNC_CONCURRENCY)]
+	pub indexer_concurrency: std::num::NonZeroUsize,
 }
 
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	if let Some(indexer_url) = args.indexer_url.clone() {
+		return execute_indexer(args, &indexer_url).await;
+	}
+
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
@@ -154,6 +179,78 @@ pub async fn execute(
 		))
 	}
 }
+/// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
+/// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
+///
+/// The indexer carries both ledger generations and serves each chain in its own encodings, so the
+/// generation is read off the chain rather than assumed.
+async fn execute_indexer(
+	args: ShowWalletArgs,
+	indexer_url: &str,
+) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	let Some(scheme_seed) = args.seed.clone() else {
+		return Err("indexer-backed show-wallet requires --seed \
+		            (the --address path needs local ledger state)"
+			.into());
+	};
+	let (seed, scheme) = scheme_seed.resolve();
+
+	if args.dry_run {
+		log::info!("Dry-run: indexer show-wallet for seed {seed:?} ({scheme:?}) via {indexer_url}");
+		return Ok(ShowWalletResult::DryRun(()));
+	}
+
+	// Only the Schnorr unshielded identity is derivable from the seed here, so an ECDSA seed would
+	// silently report the wrong address. The replay path handles ECDSA via `ensure_ecdsa_supported`.
+	if !matches!(scheme, midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr) {
+		return Err("indexer-backed show-wallet only supports the Schnorr NIGHT identity; \
+		            an `ecdsa:` seed requires the block-replay path (omit --indexer-url)"
+			.into());
+	}
+
+	// The per-version context re-queries this block for ledger parameters; not worth threading
+	// the first answer through just to save one cheap query.
+	let spec_version = IndexerClient::new(indexer_url)?.latest_block().await?.protocol_version;
+	let ledger_version = LedgerVersion::from_spec_version(spec_version).ok_or_else(|| {
+		format!("indexer reports protocol version {spec_version}, which is not a supported ledger")
+	})?;
+	log::info!("Indexer chain is at protocol version {spec_version} ({ledger_version:?})");
+
+	let network = args.network.clone();
+	match ledger_version {
+		LedgerVersion::Ledger9 => {
+			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
+			Ok(fork_wallet_result_v9(
+				show_wallet_from_indexer(
+					indexer_url,
+					&network,
+					seed,
+					args.debug,
+					args.indexer_concurrency,
+				)
+				.await?,
+			))
+		},
+		LedgerVersion::Ledger8 => {
+			use crate::commands::fork::ledger_8::show_wallet::show_wallet_from_indexer;
+			// `WalletSeed` is a per-generation type; the replay path converts the same way.
+			let seed =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					seed,
+				);
+			Ok(fork_wallet_result_v8(
+				show_wallet_from_indexer(
+					indexer_url,
+					&network,
+					seed,
+					args.debug,
+					args.indexer_concurrency,
+				)
+				.await?,
+			))
+		},
+	}
+}
 
 fn fork_wallet_result_v9(
 	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
@@ -224,6 +321,9 @@ mod tests {
 			address: Some(cli::wallet_address(addr).unwrap()),
 			debug: false,
 			dry_run: false,
+			indexer_url: None,
+			network: "undeployed".to_string(),
+			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		super::execute(args).await
@@ -279,6 +379,9 @@ mod tests {
 			address: None,
 			debug: false,
 			dry_run: false,
+			indexer_url: None,
+			network: "undeployed".to_string(),
+			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		super::execute(args).await
@@ -320,6 +423,9 @@ mod tests {
 			address: None,
 			debug: false,
 			dry_run: false,
+			indexer_url: None,
+			network: "undeployed".to_string(),
+			indexer_concurrency: DEFAULT_WALLET_SYNC_CONCURRENCY,
 		};
 
 		let res = super::execute(args)
@@ -330,5 +436,25 @@ mod tests {
 			"the ECDSA identity of the funded Schnorr seed 01 owns no NIGHT UTXOs (distinct \
 			 unshielded identity)"
 		);
+	}
+
+	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
+	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
+	#[test]
+	fn indexer_concurrency_rejects_zero() {
+		use clap::Parser;
+
+		#[derive(Parser)]
+		struct Cli {
+			#[command(flatten)]
+			args: ShowWalletArgs,
+		}
+
+		let parse = |n: &str| {
+			Cli::try_parse_from(["t", "--seed", &"0".repeat(64), "--indexer-concurrency", n])
+		};
+
+		assert!(parse("0").is_err(), "--indexer-concurrency 0 would hang the drain");
+		assert_eq!(parse("8").unwrap().args.indexer_concurrency.get(), 8);
 	}
 }

@@ -101,6 +101,71 @@ pub fn show_wallet_from_address(
 	})
 }
 
+/// Indexer-backed wallet reconstruction for this ledger generation.
+///
+/// The indexer's blobs are the chain's native ledger encodings, so they decode with this
+/// generation's codecs; `show_wallet::execute` picks the copy matching the chain's protocol
+/// version.
+pub async fn show_wallet_from_indexer(
+	indexer_url: &str,
+	network: &str,
+	seed: WalletSeed,
+	debug: bool,
+	concurrency: std::num::NonZeroUsize,
+) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	use ledger_helpers_local::{BuilderContext, IndexerContext};
+
+	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, network, concurrency)?;
+	ctx.init_wallets(std::slice::from_ref(&seed)).await?;
+
+	let (coins, dust_utxos, debug_str) = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
+		let coins = wallet
+			.shielded
+			.state
+			.coins
+			.iter()
+			.map(|(k, v)| {
+				(
+					serialize_untagged(&k).unwrap().encode_hex(),
+					QualifiedInfoSer {
+						nonce: serialize_untagged(&v.nonce).unwrap().encode_hex(),
+						token_type: serialize_untagged(&v.type_).unwrap().encode_hex(),
+						value: v.value,
+						mt_index: v.mt_index,
+					},
+				)
+			})
+			.collect::<HashMap<String, QualifiedInfoSer>>();
+		let dust_utxos = wallet
+			.dust
+			.dust_local_state
+			.as_ref()
+			.map_or(vec![], |s| s.utxos().map(qualified_dust_output_to_ser).collect());
+		let debug_str = debug.then(|| format!("{wallet:#?}"));
+		(coins, dust_utxos, debug_str)
+	});
+
+	let utxos: Vec<UtxoSer> = ctx
+		.unshielded_utxos(seed)
+		.await
+		.into_iter()
+		.map(|(utxo, _ctime)| utxo_to_ser(utxo))
+		.collect();
+
+	Ok(match debug_str {
+		Some(debug_str) => ShowWalletResult::Debug(debug_str, utxos),
+		// The indexer reconstructs wallet state but not the node's full `LedgerState`, so the
+		// ledger-level claimable maps are unavailable here and reported as zero.
+		None => ShowWalletResult::Json(WalletInfoJson {
+			coins,
+			utxos,
+			dust_utxos,
+			claimable_block_rewards: 0,
+			claimable_bridge_transfers: 0,
+		}),
+	})
+}
+
 pub enum ShowWalletResult {
 	Debug(String, Vec<UtxoSer>),
 	Json(WalletInfoJson),

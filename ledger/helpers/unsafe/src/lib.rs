@@ -24,6 +24,15 @@
 
 pub mod extract_tx_with_context;
 
+/// Typed GraphQL/WebSocket client for the Midnight indexer, plus the sync-progress accounting and
+/// concurrency/timeout policy layered over its subscriptions.
+///
+/// Version-independent (hex blobs, not ledger types), so `ledger_8` and `ledger_9` share it, as
+/// with `CoinSelectionStrategy` below. Only decoding the blobs into wallet updates is
+/// per-generation, in each `ledger_N::context::indexer_context`.
+pub mod indexer_client;
+pub use indexer_client::{IndexerClient, IndexerClientError};
+
 /// Process-wide counters of replayed transactions that did not fully apply,
 /// shared by every ledger generation's `LedgerContext`.
 pub mod replay_stats {
