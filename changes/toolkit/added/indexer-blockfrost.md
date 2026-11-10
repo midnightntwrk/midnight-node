@@ -8,5 +8,5 @@ URL without `BLOCKFROST_PROJECT_ID` fails before any request is made.
 
 This is the only way to use the indexer path on mainnet, where Blockfrost now hosts the indexer.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2409
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
