@@ -106,6 +106,7 @@ struct TestSetup {
 /// Build a context whose wallet holds `num_utxos` NIGHT UTXOs created at genesis time,
 /// with the chain tip `elapsed_secs` later (retroactive DUST accrues over that interval).
 fn setup(num_utxos: u8, elapsed_secs: u64) -> TestSetup {
+	midnight_ledger_unsafe_helpers::arena_db::ensure_default_storage();
 	let seed = WalletSeed::try_from_hex_str(WALLET_SEED_HEX).unwrap();
 	let ctx =
 		Arc::new(LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed.clone()]));
