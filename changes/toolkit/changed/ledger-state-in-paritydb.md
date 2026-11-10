@@ -13,4 +13,5 @@ bounded memory. A second toolkit process on the same `--ledger-state-db` waits
 for the first (`MN_LEDGER_STATE_DB_LOCK_TIMEOUT` bounds the wait). Existing
 snapshot files are imported on first use.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2414
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2413

@@ -11,4 +11,5 @@ with chain length. `-v` also prints a `[perf]` breakdown of replay time by phase
 with the storage arena size and process memory, at the progress heartbeat and
 at the end of the replay.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2414
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2413
