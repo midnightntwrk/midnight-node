@@ -15,6 +15,8 @@ DECLARE
  hash4 hash32type := decode('DBEED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  hash5 hash32type := decode('055557FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  hash6 hash32type := decode('01EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
+ hash7 hash32type := decode('07EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
+ hash9 hash32type := decode('09EED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1','hex');
  consumed_tx_hash  hash32type := decode('cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13','hex');
 
 -- uses legacy datum format
@@ -171,6 +173,8 @@ INSERT INTO tx_out ( id, tx_id           , index, address     , address_raw, add
                   ,( 7 , dereg_tx_id     , 0    , 'other_addr', ''         , TRUE              , NULL        , NULL            , 0    , hash1    , NULL              )
                   ,( 8 , reg_tx_id2      , 0    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash5    , NULL              )
                   ,( 9 , reg_tx_id2      , 1    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash6    , NULL              ) -- formatted properly but did not consumed advertisedhash
+                  ,( 10, reg_tx_id       , 3    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash7    , NULL              ) -- integer wider than 64 bits
+                  ,( 12, reg_tx_id       , 5    , script_addr , ''         , TRUE              , NULL        , NULL            , 0    , hash9    , NULL              ) -- nested past serde_json's recursion limit
 ;
 
 INSERT INTO datum ( id, hash , tx_id     , value                                            )
@@ -179,6 +183,8 @@ INSERT INTO datum ( id, hash , tx_id     , value                                
                  ,( 2 , hash3, reg_tx_id , registration_SPO_B                               )
                  ,( 4 , hash5, reg_tx_id2, registration_SPO_C                               )
                  ,( 5 , hash6, reg_tx_id2, registration3                                    )
+                 ,( 6 , hash7, reg_tx_id , '{ "int": 18446744073709551616 }'                  )
+                 ,( 8 , hash9, reg_tx_id , (repeat('{ "list": [', 64) || '{ "int": 1 }' || repeat('] }', 64))::jsonb )
 ;
 
 END $$;
