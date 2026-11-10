@@ -8,4 +8,4 @@ and one was rejected with `priority is too low`. `root-call` now assigns nonces 
 larger of the node's `system_accountNextIndex` and the next nonce it has already handed
 out for that signer in the process.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2408
