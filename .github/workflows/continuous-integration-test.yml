@@ -77,6 +77,7 @@ jobs:
       - name: Run build
         if: steps.guard.outputs.hit != 'true'
         env:
+          CI_CARGO_BUILD_JOBS: ${{ runner.environment == 'self-hosted' && '12' || '' }}
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
@@ -108,7 +109,7 @@ jobs:
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             --strict $PUSH_FLAG \
             --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test" \
-            +test --CACHE_KEY="$CACHE_KEY"
+            +test --CACHE_KEY="$CACHE_KEY" --CI_CARGO_BUILD_JOBS="$CI_CARGO_BUILD_JOBS"
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

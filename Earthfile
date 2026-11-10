@@ -30,6 +30,9 @@ ARG --global CACHE_KEY=local
 # environment variable GitHub Actions always exports.
 ARG --global CI=false
 
+# Opt-in compile budget for jobs sharing the self-hosted BuildKit daemon.
+ARG --global CI_CARGO_BUILD_JOBS=""
+
 # renovate: datasource=node-version depName=node versioning=node
 ARG --global NODEJS_VERSION=24.22.2
 
@@ -1187,6 +1190,12 @@ test:
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
+    IF [ -n "$CI_CARGO_BUILD_JOBS" ]
+        ENV CARGO_BUILD_JOBS=$CI_CARGO_BUILD_JOBS
+        RUN case "$CARGO_BUILD_JOBS" in *[!0-9]*|0) echo "CARGO_BUILD_JOBS must be a positive integer" >&2; exit 1;; esac \
+            && test "$CARGO_BUILD_JOBS" -gt 0 \
+            && printf 'Cargo parallelism: CARGO_BUILD_JOBS=%s; detected CPUs=%s\n' "$CARGO_BUILD_JOBS" "$(nproc)"
+    END
     IF [ "$CI" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
@@ -1414,6 +1423,12 @@ build-prepare:
 build:
     FROM +build-prepare
     ARG TARGETARCH
+    IF [ -n "$CI_CARGO_BUILD_JOBS" ]
+        ENV CARGO_BUILD_JOBS=$CI_CARGO_BUILD_JOBS
+        RUN case "$CARGO_BUILD_JOBS" in *[!0-9]*|0) echo "CARGO_BUILD_JOBS must be a positive integer" >&2; exit 1;; esac \
+            && test "$CARGO_BUILD_JOBS" -gt 0 \
+            && printf 'Cargo parallelism: CARGO_BUILD_JOBS=%s; detected CPUs=%s\n' "$CARGO_BUILD_JOBS" "$(nproc)"
+    END
     # Caching is gated on CI (see top of file). Local builds (CI=false) mount the cargo
     # registry/git caches and a per-branch-scoped /target dir so cargo's incremental
     # fingerprinting can skip unchanged crates across runs. A CI build (CI=true) declares

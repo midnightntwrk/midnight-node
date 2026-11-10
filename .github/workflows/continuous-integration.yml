@@ -172,6 +172,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          CI_CARGO_BUILD_JOBS: ${{ runner.environment == 'self-hosted' && '12' || '' }}
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true,
@@ -205,7 +206,7 @@ jobs:
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images --STRIP_BINARIES="$STRIP_BINARIES"; then
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images --STRIP_BINARIES="$STRIP_BINARIES" --CI_CARGO_BUILD_JOBS="$CI_CARGO_BUILD_JOBS"; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
