@@ -387,8 +387,7 @@ With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-ind
 
 `-p withfaucet` (`npm run run:local-env-with-faucet`) adds the
 [faucet](https://github.com/midnightntwrk/midnight-faucet-api), dispensing from the
-`0x..01` wallet that `init-mnight-faucet` funds (see below) and `init-shielded-faucet`
-mints shielded tokens to. It starts the indexer stack too, plus `proof-server` (`:6300`,
+`0x..01` wallet that `init-mnight-faucet` funds (see below). It starts the indexer stack too, plus `proof-server` (`:6300`,
 or `PROOF_SERVER_PORT`), `faucet-postgres` and `faucet` (`:5300` API + UI, `:9696` metrics). Images come from `FAUCET_IMAGE` and `PROOF_SERVER_IMAGE` in
 `.env.default`; override them like any other image.
 
@@ -402,6 +401,20 @@ or `PROOF_SERVER_PORT`), `faucet-postgres` and `faucet` (`:5300` API + UI, `:969
   ```
 
   The key defaults to `local-env`; set `FAUCET_THIRD_PARTY_API_KEY` to change it.
+
+- **No drips on a fresh chain:** faucet releases bundling `wallet-sdk-shielded` 4.0.0 never
+  report the shielded wallet synced on a chain with no shielded transactions
+  ([midnight-wallet#924](https://github.com/midnightntwrk/midnight-wallet/issues/924)), so
+  drips stay `PENDING`. Until a faucet release ships the fix, build one with a fixed SDK
+  version from npm:
+
+  ```bash
+  docker build -t local-env-faucet \
+    --build-arg FAUCET_IMAGE=ghcr.io/midnightntwrk/midnight-faucet-api:v1.2.1 \
+    --build-arg SHIELDED_SDK_VERSION=<version> \
+    src/networks/local-env/configurations/faucet
+  FAUCET_IMAGE=local-env-faucet npm run run:local-env-with-faucet
+  ```
 
 #### cNIGHT bridge funding
 
