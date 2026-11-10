@@ -402,19 +402,10 @@ or `PROOF_SERVER_PORT`), `faucet-postgres` and `faucet` (`:5300` API + UI, `:969
 
   The key defaults to `local-env`; set `FAUCET_THIRD_PARTY_API_KEY` to change it.
 
-- **No drips on a fresh chain:** faucet releases bundling `wallet-sdk-shielded` 4.0.0 never
-  report the shielded wallet synced on a chain with no shielded transactions
+- **No drips on a fresh chain:** faucet images built on `@midnightntwrk/wallet-sdk` 2.0.0
+  never report the shielded wallet synced on a chain with no shielded transactions
   ([midnight-wallet#924](https://github.com/midnightntwrk/midnight-wallet/issues/924)), so
-  drips stay `PENDING`. Until a faucet release ships the fix, build one with a fixed SDK
-  version from npm:
-
-  ```bash
-  docker build -t local-env-faucet \
-    --build-arg FAUCET_IMAGE=ghcr.io/midnightntwrk/midnight-faucet-api:v1.2.1 \
-    --build-arg SHIELDED_SDK_VERSION=<version> \
-    src/networks/local-env/configurations/faucet
-  FAUCET_IMAGE=local-env-faucet npm run run:local-env-with-faucet
-  ```
+  drips stay `PENDING`. Use a faucet built on wallet-sdk 2.0.1 or later.
 
 #### cNIGHT bridge funding
 
