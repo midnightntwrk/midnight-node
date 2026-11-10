@@ -32,6 +32,8 @@ ARG --global CI=false
 
 # Opt-in compile budget for jobs sharing the self-hosted BuildKit daemon.
 ARG --global CI_CARGO_BUILD_JOBS=""
+# Changes only the benchmarked execution layer; leaves shared caches intact.
+ARG --global CI_BENCHMARK_SAMPLE=""
 
 # renovate: datasource=node-version depName=node versioning=node
 ARG --global NODEJS_VERSION=24.22.2
@@ -1224,6 +1226,9 @@ test:
     # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
     # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
     # snapshot, which buildkit may export to the remote cache on success.
+    IF [ -n "$CI_BENCHMARK_SAMPLE" ]
+        RUN printf 'Benchmark execution: %s; Cargo jobs=%s; CPUs=%s\n' "$CI_BENCHMARK_SAMPLE" "${CARGO_BUILD_JOBS:-default}" "$(nproc)"
+    END
     WITH DOCKER
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
@@ -1458,6 +1463,10 @@ build:
     # The runtime's fork-transition feature must never be released; feature
     # unification could turn it on from any crate in the build.
     RUN ./scripts/assert-no-fork-transition.sh features --workspace
+
+    IF [ -n "$CI_BENCHMARK_SAMPLE" ]
+        RUN printf 'Benchmark execution: %s; Cargo jobs=%s; CPUs=%s\n' "$CI_BENCHMARK_SAMPLE" "${CARGO_BUILD_JOBS:-default}" "$(nproc)"
+    END
 
     # Default build (no hardfork)
     RUN --secret NODE_GIT_TOKEN \

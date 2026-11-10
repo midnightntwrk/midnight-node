@@ -1,0 +1,128 @@
+name: Cargo parallelism benchmark
+run-name: Cargo benchmark ${{ inputs.budget || 'registration' }} / ${{ inputs.round || 'none' }}
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/cargo-parallelism-benchmark.yml
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: Cargo compilation jobs per target
+        required: true
+        type: choice
+        options: [default, '12', '24']
+      round:
+        description: Sample round (first round is warm-up)
+        required: true
+        type: choice
+        options: ['1', '2', '3']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cargo-parallelism-benchmark
+  cancel-in-progress: false
+
+jobs:
+  sample:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'midnightntwrk/midnight-node'
+    runs-on: [self-hosted, 'tier:large']
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        target: [build, test]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          submodules: true
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+      - name: Isolate registry credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/benchmark-docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/benchmark-docker" >> "$GITHUB_ENV"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+      - name: Wait for paired target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 120); do
+            if ready=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+              --jq '[.jobs[] | select(.name | startswith("sample (")) | select(any(.steps[]?; .name == "Wait for paired target" and (.status == "in_progress" or .status == "completed")))] | length'); then
+              if [ "$ready" -eq 2 ]; then exit 0; fi
+            fi
+            sleep 15
+          done
+          echo "Paired target did not become ready within 30 minutes" >&2
+          exit 1
+      - name: Measure target execution
+        env:
+          TARGET: ${{ matrix.target }}
+          BUDGET: ${{ inputs.budget }}
+          ROUND: ${{ inputs.round }}
+          SOURCE_SHA: ${{ github.sha }}
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+          EARTHLY_REMOTE_CACHE: ''
+          ACTIONS_CACHE_URL: ''
+          ACTIONS_RUNTIME_URL: ''
+          TMPDIR: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          case "$BUDGET" in default) jobs='';; 12|24) jobs="$BUDGET";; *) exit 2;; esac
+          case "$TARGET" in build|test) ;; *) exit 2;; esac
+          # .envrc writes the existing secret-file input and selects the host's BuildKit config.
+          . ./.envrc
+          mkdir -p benchmark-results
+          python3 scripts/ci/benchmark-host-metrics.py > benchmark-results/host.jsonl &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          export SAMPLE="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${TARGET}"
+          export START_EPOCH
+          START_EPOCH=$(date +%s)
+          set +e
+          earth -P --secret GITHUB_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            "+$TARGET" --CI_CARGO_BUILD_JOBS="$jobs" --CI_BENCHMARK_SAMPLE="$SAMPLE"
+          result=$?
+          set -e
+          export RESULT="$result"
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          result = {key: os.environ[key] for key in ('SOURCE_SHA', 'TARGET', 'BUDGET', 'ROUND', 'SAMPLE', 'RUNNER_NAME')}
+          result.update(start_epoch=int(os.environ['START_EPOCH']), end_epoch=time.time(), exit_code=int(os.environ['RESULT']))
+          result['elapsed_seconds'] = result['end_epoch'] - result['start_epoch']
+          Path('benchmark-results/summary.json').write_text(json.dumps(result, indent=2) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('```json\n' + json.dumps(result, indent=2) + '\n```\n')
+          PY
+          exit "$result"
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-benchmark-${{ inputs.budget }}-${{ inputs.round }}-${{ matrix.target }}
+          path: benchmark-results/
+          if-no-files-found: error
+          retention-days: 14
