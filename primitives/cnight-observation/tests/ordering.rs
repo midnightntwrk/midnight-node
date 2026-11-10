@@ -15,9 +15,12 @@
 
 use midnight_primitives_cnight_observation::{
 	CardanoPosition, CardanoRewardAddressBytes, CreateData, DATA_ORDERED_UTXOS_SPEC_VERSION,
-	DeregistrationData, DustPublicKeyBytes, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
-	RegistrationData, SpendData, TimestampUnixMillis, UtxoIndexInTx, sort_observed_utxos,
+	DeregistrationData, DustPublicKeyBytes, ObservationBatch, ObservedUtxo, ObservedUtxoData,
+	ObservedUtxoHeader, RegistrationData, SpendData, TimestampUnixMillis, UtxoIndexInTx,
+	sort_observed_utxos,
 };
+use parity_scale_codec::{Decode, Encode};
+use scale_info::TypeInfo;
 use sidechain_domain::{McBlockHash, McTxHash};
 
 const LEGACY_SPEC_VERSION: u32 = DATA_ORDERED_UTXOS_SPEC_VERSION - 1;
@@ -377,4 +380,18 @@ fn data_ordering_of_two_rotate_and_consolidate_transactions() {
 			"shuffle seed {seed}"
 		);
 	}
+}
+
+#[test]
+fn a_batch_is_sorted_and_encodes_and_describes_itself_as_a_plain_vec() {
+	let mut expected = mixed_single_transaction();
+	sort_observed_utxos(&mut expected, DATA_ORDERED_UTXOS_SPEC_VERSION);
+	let mut shuffled = expected.clone();
+	shuffle(&mut shuffled, 7);
+	let batch = ObservationBatch::new(shuffled, DATA_ORDERED_UTXOS_SPEC_VERSION);
+	assert_eq!(batch[..], expected[..]);
+	// The inherent and the `process_tokens` call stay wire-compatible with a plain Vec.
+	assert_eq!(batch.encode(), expected.encode());
+	assert_eq!(ObservationBatch::decode(&mut &expected.encode()[..]).unwrap(), batch);
+	assert_eq!(ObservationBatch::type_info(), Vec::<ObservedUtxo>::type_info());
 }
