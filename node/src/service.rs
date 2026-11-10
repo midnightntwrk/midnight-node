@@ -24,7 +24,7 @@ use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
-	extensions::ExtensionsFactory,
+	extensions::{ExtensionsFactory, LedgerContextExecutor},
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
 	metrics_push::{MetricsPushConfig, run_metrics_push_task},
@@ -224,8 +224,8 @@ pub type HostFunctions = (
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
-/// required `HostFunctions`.
-pub type RuntimeExecutor = sc_executor::WasmExecutor<HostFunctions>;
+/// required `HostFunctions`, and marks block authoring and import for the ledger host functions.
+pub type RuntimeExecutor = LedgerContextExecutor<sc_executor::WasmExecutor<HostFunctions>>;
 
 pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, RuntimeExecutor>;
 pub(crate) type FullBackend = sc_service::TFullBackend<Block>;
@@ -314,7 +314,7 @@ pub fn new_partial(
 		})
 		.transpose()?;
 
-	let executor = sc_service::new_wasm_executor(&config.executor);
+	let executor = LedgerContextExecutor(sc_service::new_wasm_executor(&config.executor));
 
 	let mut db_config = config.db_config();
 	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
