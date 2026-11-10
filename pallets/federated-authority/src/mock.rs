@@ -21,7 +21,7 @@ use frame_support::{
 	derive_impl, parameter_types,
 	traits::{ConstU32, Everything, Hooks, NeverEnsureOrigin},
 };
-use frame_system::{EnsureNone, EnsureRoot};
+use frame_system::EnsureRoot;
 use sp_core::H256;
 use sp_runtime::{
 	BuildStorage,
@@ -111,7 +111,7 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = EnsureNone<Self::AccountId>;
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = Council;
 	type MembershipChanged = Council;
@@ -142,7 +142,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = EnsureNone<Self::AccountId>;
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = TechnicalCommittee;
 	type MembershipChanged = TechnicalCommittee;
