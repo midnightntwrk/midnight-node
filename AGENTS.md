@@ -169,6 +169,9 @@ rule. Don't copy them.
 - Genesis seeds change
 - New ledger version
 
+`+rebuild-genesis-state-undeployed` also rebuilds toolkit_e2e's genesis
+(`util/toolkit/test-data/genesis/toolkit-test/`); `+rebuild-toolkit-test-genesis` rebuilds only that.
+
 ## Network Configurations
 
 Config presets are in `res/cfg/`:
