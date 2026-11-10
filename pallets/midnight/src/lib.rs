@@ -52,7 +52,7 @@ pub mod pallet {
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
 		active_version::{
-			BlockContext, DeserializationError, LedgerApiError, SerializationError,
+			BlockContext, DeserializationError, LedgerApiError, MalformedError, SerializationError,
 			TransactionError,
 		},
 	};
@@ -132,6 +132,22 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type SlotDuration: Get<<Self as pallet_timestamp::Config>::Moment>;
+
+		/// Maximum number of operations and identifiers (each, independently) that
+		/// `get_decoded_transaction` will materialize from a transaction.
+		#[pallet::constant]
+		type MaxDecodedTxItems: Get<u32>;
+
+		/// Maximum number of DAG nodes a transaction may declare before the ledger will
+		/// deserialize it at all.
+		///
+		/// 1,024 is 3x the largest real transaction: over 47k mainnet transactions
+		/// (2026-10-02..06), declared nodes were p50 38, p99 202, max 333.
+		///
+		/// There is no on-chain figure to derive this from. That is safe because the check
+		/// lives in the versioned runtime wasm, so older blocks replay without it.
+		#[pallet::constant]
+		type MaxTransactionNodes: Get<u32>;
 	}
 
 	// The pallet's runtime storage items.
@@ -479,6 +495,9 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
+			Self::ensure_declared_nodes_within_limit(midnight_tx)
+				.map_err(|e| Self::invalid_transaction(e.into()))?;
+
 			LedgerApi::validate_guaranteed_execution(
 				&state_key,
 				midnight_tx,
@@ -510,10 +529,38 @@ pub mod pallet {
 			LedgerApi::get_contract_state(&state_key, contract_address)
 		}
 
+		/// Refuse a payload declaring more structure than any real transaction has, before
+		/// the ledger deserializes it. Reachable with arbitrary bytes over the runtime API
+		/// and, via `validate_unsigned`, once per submitted extrinsic ahead of any fee.
+		fn ensure_declared_nodes_within_limit(tx: &[u8]) -> Result<(), LedgerApiError> {
+			match LedgerTypes::declared_node_count(tx) {
+				Ok(nodes) if nodes > T::MaxTransactionNodes::get() => {
+					Err(LedgerApiError::Transaction(TransactionError::Malformed(
+						MalformedError::TransactionTooLarge,
+					)))
+				},
+				Err(e) => match e {
+					LedgerTypes::NodeCountError::TagNotFound => {
+						Err(LedgerApiError::Deserialization(DeserializationError::Transaction))
+					},
+					LedgerTypes::NodeCountError::CountDecodeFailed => {
+						Err(LedgerApiError::Deserialization(DeserializationError::Transaction))
+					},
+				},
+				_ => Ok(()),
+			}
+		}
+
 		pub fn get_decoded_transaction(
 			midnight_transaction: &[u8],
 		) -> Result<LedgerTx, LedgerApiError> {
-			LedgerApi::get_decoded_transaction(midnight_transaction)
+			let state_key = StateKey::<T>::get();
+			Self::ensure_declared_nodes_within_limit(midnight_transaction)?;
+			LedgerApi::get_decoded_transaction(
+				&state_key,
+				midnight_transaction,
+				T::MaxDecodedTxItems::get(),
+			)
 		}
 
 		pub fn get_ledger_version() -> Vec<u8> {
@@ -576,6 +623,9 @@ pub mod pallet {
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
+				Self::ensure_declared_nodes_within_limit(midnight_tx)
+					.map_err(|e| Self::invalid_transaction(e.into()))?;
+
 				let tx_hash = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
@@ -616,6 +666,7 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
+			Self::ensure_declared_nodes_within_limit(tx)?;
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 
