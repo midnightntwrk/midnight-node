@@ -238,16 +238,31 @@ pub struct IndexerClient {
 	http_url: String,
 	/// WebSocket endpoint, e.g. `ws://host:8088/api/v4/graphql/ws`.
 	ws_url: String,
+	project_id: Option<String>,
 }
+
+const BLOCKFROST_PROJECT_ID_ENV: &str = "BLOCKFROST_PROJECT_ID";
 
 impl IndexerClient {
 	/// Build a client from an `api/v4` base URL, e.g. `http://127.0.0.1:8088/api/v4`.
 	///
 	/// The GraphQL endpoints (`/graphql`, `/graphql/ws`) are appended automatically, and the
 	/// WebSocket scheme is derived from the HTTP scheme (`http`→`ws`, `https`→`wss`).
+	/// A `*.blockfrost.io` URL needs `BLOCKFROST_PROJECT_ID`.
 	pub fn new(base_url: &str) -> IndexerResult<Self> {
+		let project_id = std::env::var(BLOCKFROST_PROJECT_ID_ENV).ok();
+		Self::with_project_id(base_url, project_id.as_deref())
+	}
+
+	fn with_project_id(base_url: &str, project_id: Option<&str>) -> IndexerResult<Self> {
 		let base = base_url.trim_end_matches('/');
-		let http_url = format!("{base}/graphql");
+		let blockfrost = reqwest::Url::parse(base)
+			.ok()
+			.and_then(|u| u.host_str().map(|h| h.ends_with(".blockfrost.io")))
+			.unwrap_or(false);
+		let (http_suffix, ws_suffix) =
+			if blockfrost { ("", "/ws") } else { ("/graphql", "/graphql/ws") };
+		let http_url = format!("{base}{http_suffix}");
 
 		let ws_base = if let Some(rest) = base.strip_prefix("https://") {
 			format!("wss://{rest}")
@@ -258,9 +273,35 @@ impl IndexerClient {
 				"indexer url must start with http:// or https://, got {base_url}"
 			)));
 		};
-		let ws_url = format!("{ws_base}/graphql/ws");
+		let ws_url = format!("{ws_base}{ws_suffix}");
 
-		Ok(Self { http: reqwest::Client::new(), http_url, ws_url })
+		let project_id = match project_id {
+			_ if !blockfrost => None,
+			Some(id) => Some(id.trim().to_owned()),
+			None => {
+				return Err(IndexerClientError::Decode(format!(
+					"Blockfrost indexer URL needs {BLOCKFROST_PROJECT_ID_ENV} set"
+				)));
+			},
+		};
+
+		let mut headers = reqwest::header::HeaderMap::new();
+		if let Some(id) = &project_id {
+			let mut value: reqwest::header::HeaderValue = id.parse().map_err(|_| {
+				IndexerClientError::Decode(format!(
+					"{BLOCKFROST_PROJECT_ID_ENV} is not a valid header"
+				))
+			})?;
+			// Keeps the API key out of Debug output and client trace logs.
+			value.set_sensitive(true);
+			headers.insert("project_id", value);
+		}
+		let http = reqwest::Client::builder()
+			.default_headers(headers)
+			.build()
+			.map_err(|e| IndexerClientError::Decode(format!("build http client: {e}")))?;
+
+		Ok(Self { http, http_url, ws_url, project_id })
 	}
 
 	/// POST a typed GraphQL query/mutation and return its (validated) response data.
@@ -407,6 +448,13 @@ impl IndexerClient {
 			.parse()
 			.map_err(|e| IndexerClientError::WebSocket(format!("parse subprotocol: {e}")))?;
 		request.headers_mut().insert("Sec-WebSocket-Protocol", proto);
+		if let Some(id) = &self.project_id {
+			let mut value: tokio_tungstenite::tungstenite::http::HeaderValue = id
+				.parse()
+				.map_err(|e| IndexerClientError::WebSocket(format!("project_id header: {e}")))?;
+			value.set_sensitive(true);
+			request.headers_mut().insert("project_id", value);
+		}
 
 		let (mut ws, _) = connect_async(request)
 			.await
@@ -823,6 +871,18 @@ mod tests {
 		let c = IndexerClient::new("https://indexer.example/api/v4/").unwrap();
 		assert_eq!(c.http_url, "https://indexer.example/api/v4/graphql");
 		assert_eq!(c.ws_url, "wss://indexer.example/api/v4/graphql/ws");
+	}
+
+	#[test]
+	fn blockfrost_url_uses_its_layout_and_requires_project_id() {
+		let base = "https://midnight-mainnet.blockfrost.io/api/v0";
+		let c = IndexerClient::with_project_id(base, Some("nightmainnetX")).unwrap();
+		assert_eq!(c.http_url, base);
+		assert_eq!(c.ws_url, "wss://midnight-mainnet.blockfrost.io/api/v0/ws");
+		assert!(c.project_id.is_some());
+		assert!(IndexerClient::with_project_id(base, None).is_err());
+		let plain = IndexerClient::with_project_id("http://h/api/v4", Some("x")).unwrap();
+		assert!(plain.project_id.is_none());
 	}
 
 	#[test]
