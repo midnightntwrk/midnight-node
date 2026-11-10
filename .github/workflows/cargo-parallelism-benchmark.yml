@@ -106,6 +106,10 @@ jobs:
             "+$TARGET" --CI_CARGO_BUILD_JOBS="$jobs" --CI_BENCHMARK_SAMPLE="$SAMPLE"
           result=$?
           set -e
+          if ! kill -0 "$monitor_pid" 2>/dev/null; then
+            echo "Host measurements stopped before target completion" >&2
+            result=1
+          fi
           export RESULT="$result"
           python3 - <<'PY'
           import json, os, time

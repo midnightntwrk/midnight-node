@@ -33,7 +33,7 @@ while True:
                 workers += (entry / 'comm').read_text().strip() == 'Runner.Worker'
             except (OSError, ProcessLookupError):
                 pass
-    disk = os.statvfs('/var/lib/docker')
+    disk = os.statvfs('/var')
     print(json.dumps({
         'epoch': time.time(), 'load': os.getloadavg(),
         'cpu_ticks': Path('/proc/stat').read_text().splitlines()[0],
