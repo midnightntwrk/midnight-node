@@ -402,10 +402,9 @@ or `PROOF_SERVER_PORT`), `faucet-postgres` and `faucet` (`:5300` API + UI, `:969
 
   The key defaults to `local-env`; set `FAUCET_THIRD_PARTY_API_KEY` to change it.
 
-- **No drips on a fresh chain:** faucet images built on `@midnightntwrk/wallet-sdk` 2.0.0
-  never report the shielded wallet synced on a chain with no shielded transactions
-  ([midnight-wallet#924](https://github.com/midnightntwrk/midnight-wallet/issues/924)), so
-  drips stay `PENDING`. Use a faucet built on wallet-sdk 2.0.1 or later.
+- **Older faucet images:** v1.2.1 and earlier never drip on a fresh chain; drips stay
+  `PENDING` ([midnight-wallet#924](https://github.com/midnightntwrk/midnight-wallet/issues/924)).
+  Don't override `FAUCET_IMAGE` with one of them.
 
 #### cNIGHT bridge funding
 
