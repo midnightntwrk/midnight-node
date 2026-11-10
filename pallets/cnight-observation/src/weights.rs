@@ -50,8 +50,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Placeholder until benchmarks are run — uses conservative estimates.
 	/// The range of component `n` is `[0, 12800]`.
 	fn process_tokens(n: u32) -> Weight {
-		// Fixed cost: InherentExecutedThisBlock (1R + 1W), NextCardanoPosition (1W),
-		// CardanoTxCapacityPerBlock (1R for validation)
+		// Fixed cost: InherentExecutedThisBlock (1R + 1W), NextCardanoCursor (1R + 1W)
 		Weight::from_parts(15_000_000, 1500)
 			.saturating_add(Weight::from_parts(5_000_000, 200).saturating_mul(n.into()))
 			.saturating_add(T::DbWeight::get().reads(2_u64))
