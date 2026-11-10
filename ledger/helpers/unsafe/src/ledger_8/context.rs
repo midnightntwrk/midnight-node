@@ -13,13 +13,14 @@
 
 use crate::ledger_8::{
 	ArenaKey, BindingKind, BlockContext, ContractAddress, ContractState, DB, DUST_EXPECTED_FILES,
-	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader, MidnightDataProvider,
-	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
-	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
-	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState,
-	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	Duration, DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader,
+	MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind,
+	PureGeneratorPedersen, Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable,
+	SyntheticCost, Tagged, Timestamp, Transaction, TransactionContext, TransactionResult,
+	UnshieldedSignatureScheme, Utxo, VerifiedTransaction, Wallet, WalletAddress, WalletSeed,
+	WellFormedStrictness, ZswapChainState, clamp_and_normalize, compute_overall_fullness,
+	default_storage, deserialize, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+	types::StorableSyntheticCost,
 };
 use crate::replay_stats::{FAILED_TXS, PARTIALLY_FAILED_TXS};
 use derive_where::derive_where;
@@ -35,7 +36,84 @@ use tokio::sync::Mutex as MutexTokio;
 
 pub mod builder_context;
 pub mod indexer_context;
+pub use crate::indexer_client::{IndexerClient, IndexerClientError};
 pub use builder_context::BuilderContext;
+pub use indexer_context::IndexerContext;
+
+/// `slot_duration_secs * (1 + MaxSkippedSlots)` = 6 * 2. Fixed for every chain this
+/// correction can apply to: those blocks were produced under `SLOT_DURATION = 6s` and
+/// `MaxSkippedSlots = 1`. Must stay in step with the node-side constant of the same name in
+/// `ledger/src/ledger_8/mod.rs`.
+const TBLOCK_CORRECTION_OFFSET_SECS: i128 = 12;
+
+/// The `tblock` to run `well_formed` against, mirroring `well_formed_tblock` in
+/// `ledger/src/ledger_8/mod.rs`.
+///
+/// Historical blocks can contain a *first* transaction whose `ctime` runs ahead of the block
+/// timestamp: the producing node served that transaction's `well_formed` result from the strict
+/// cache, where it had been verified during mempool ingress at
+/// `ParentTimestamp + slot_duration * (1 + MaxSkippedSlots)` (see
+/// `<pallet_midnight::Pallet as ValidateUnsigned>::validate_unsigned`). Reproduce that exact
+/// timestamp — and only for the first ledger tx in a block, the only position where that cache
+/// could hit — so those blocks still replay.
+///
+/// `skew_tblock` mirrors the node's host-function gate: true when the runtime on-chain at that
+/// height imports version 1 of `Ledger8Bridge::apply_transaction`. Decided per block by
+/// `fork_aware_context::skews_tblock`. See
+/// <https://github.com/midnightntwrk/midnight-node/issues/1924>.
+fn well_formed_tblock(
+	block_context: &BlockContext,
+	is_block_start: bool,
+	skew_tblock: bool,
+) -> Timestamp {
+	if skew_tblock && is_block_start {
+		block_context.last_block_time + Duration::from_secs(TBLOCK_CORRECTION_OFFSET_SECS)
+	} else {
+		block_context.tblock
+	}
+}
+
+#[cfg(test)]
+mod tblock_correction_tests {
+	use super::well_formed_tblock;
+	use crate::ledger_8::{BlockContext, HashOutput, Timestamp, make_block_context};
+
+	/// Preview #112450 and its parent #112449.
+	const TBLOCK: u64 = 1_784_890_542;
+	const PARENT: u64 = 1_784_890_536;
+
+	fn ctx() -> BlockContext {
+		make_block_context(
+			Timestamp::from_secs(TBLOCK),
+			HashOutput([1u8; 32]),
+			Timestamp::from_secs(PARENT),
+		)
+	}
+
+	/// The correction has to reach 1784890545 — the `DustActions.ctime` of Preview
+	/// #112450's only transaction, 3s past the block's own timestamp — or the block
+	/// replays to a different state root than the chain's.
+	#[test]
+	fn corrects_the_first_tx_when_the_gate_is_on() {
+		let corrected = well_formed_tblock(&ctx(), true, true);
+		assert_eq!(corrected, Timestamp::from_secs(PARENT + 12));
+		assert!(corrected >= Timestamp::from_secs(1_784_890_545));
+		assert!(Timestamp::from_secs(TBLOCK) < Timestamp::from_secs(1_784_890_545));
+	}
+
+	/// Post-#2002 runtimes import host-function v2 and verify against the block's own
+	/// timestamp.
+	#[test]
+	fn uncorrected_when_the_gate_is_off() {
+		assert_eq!(well_formed_tblock(&ctx(), true, false), Timestamp::from_secs(TBLOCK));
+	}
+
+	/// Only the block's *first* ledger tx could have hit the producer's warm strict cache.
+	#[test]
+	fn uncorrected_after_the_first_tx() {
+		assert_eq!(well_formed_tblock(&ctx(), false, true), Timestamp::from_secs(TBLOCK));
+	}
+}
 
 #[derive(Debug, Error)]
 pub enum LedgerContextError {
@@ -161,11 +239,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 	/// processing wallets. Also applies `post_block_update` (fee adjustments).
 	/// `root_verified` must only be true when the caller checks the resulting
 	/// state root against the chain.
+	/// `skew_tblock` mirrors the node's host-function gate; see [`well_formed_tblock`].
 	fn apply_txs_collect_events<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
 		root_verified: bool,
+		skew_tblock: bool,
 	) -> Result<Vec<Event<D>>, LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -173,19 +253,45 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut total_cost = SyntheticCost::ZERO;
 		let mut all_events: Vec<Event<D>> = Vec::new();
 		let strictness = Self::strictness_for(block_context, root_verified);
+		// Mirrors the node's `Ledger::is_block_start()`, which is `block_fullness.is_zero()`:
+		// fullness accrues in `apply_verified_transaction` / `apply_system_tx`, so a tx that
+		// never got past `well_formed` leaves the next tx still at the block start.
+		let mut is_block_start = true;
 		for tx in txs {
-			match self.update_from_tx_with_strictness(tx, block_context, strictness) {
+			let corrected = well_formed_tblock(block_context, is_block_start, skew_tblock);
+			let mut result =
+				self.update_from_tx_at_tblock(tx, block_context, strictness, corrected);
+
+			// The producer verified at whichever tblock its warm strict cache held, so a
+			// historical first tx is valid at either. Mirrors the retry in
+			// `Ledger::get_verified_transaction` (`ledger/src/ledger_8/mod.rs`); e.g. mainnet
+			// #1788980's first tx is only valid uncorrected.
+			if matches!(result, Err(LedgerContextError::InvalidTransaction(_)))
+				&& corrected != block_context.tblock
+			{
+				// The speculative attempt above already bumped `FAILED_TXS`; the retry is the
+				// authoritative outcome for this tx, so undo that before re-running.
+				FAILED_TXS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+				result = self.update_from_tx_at_tblock(
+					tx,
+					block_context,
+					strictness,
+					block_context.tblock,
+				);
+			}
+
+			match result {
 				Ok((events, cost)) => {
 					all_events.extend(events);
 					total_cost = total_cost + cost;
+					is_block_start = false;
 				},
-				// A `well_formed` rejection (e.g. `OutOfDustValidityWindow` from a dust action
-				// whose `ctime` lands a couple of seconds past the including block's `tblock`)
-				// is not evidence of an invalid block: on-chain, `pallet_midnight::send_mn_transaction`
-				// hits this same check via `LedgerApi::apply_transaction` and simply fails that
-				// one extrinsic's dispatch (storage rolled back, `ExtrinsicFailed` emitted)
-				// without affecting block validity. Already-committed, external chain history is
-				// replayed here, so mirror that instead of aborting the whole replay.
+				// A `well_formed` rejection that survives the retry above is not evidence of an
+				// invalid block: on-chain, `pallet_midnight::send_mn_transaction` hits this same
+				// check via `LedgerApi::apply_transaction` and simply fails that one extrinsic's
+				// dispatch (storage rolled back, `ExtrinsicFailed` emitted) without affecting
+				// block validity. Already-committed, external chain history is replayed here, so
+				// mirror that instead of aborting the whole replay.
 				Err(LedgerContextError::InvalidTransaction(reason)) => {
 					let hash = hex::encode(tx.transaction_hash().0.0);
 					log::warn!(
@@ -275,6 +381,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		block_context: &BlockContext,
 		state_root: Option<&Vec<u8>>,
 		state: Option<&Vec<u8>>,
+		skew_tblock: bool,
 	) -> Result<Vec<Event<D>>, LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -282,7 +389,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// With a `state` override (genesis) the root is computed over the override,
 		// not the tx effects, so the root check cannot stand in for verification.
 		let root_verified = state_root.is_some() && state.is_none();
-		let events = self.apply_txs_collect_events(txs, block_context, root_verified)?;
+		let events =
+			self.apply_txs_collect_events(txs, block_context, root_verified, skew_tblock)?;
 
 		// Genesis block: overwrite ledger state with the canonical genesis state,
 		// since constructor params aren't directly observable from genesis txs.
@@ -414,6 +522,22 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
+		self.update_from_tx_at_tblock(tx, block_context, strictness, block_context.tblock)
+	}
+
+	/// As [`Self::update_from_tx_with_strictness`], but runs `well_formed` against
+	/// `well_formed_tblock` instead of `block_context.tblock`. Only the `well_formed` check
+	/// moves: `apply` still uses the unmodified `block_context`, exactly as the node does.
+	fn update_from_tx_at_tblock<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+		&self,
+		tx: &SerdeTransaction<S, P, D>,
+		block_context: &BlockContext,
+		strictness: WellFormedStrictness,
+		well_formed_tblock: Timestamp,
+	) -> Result<(Vec<Event<D>>, SyntheticCost), LedgerContextError>
+	where
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
 		let mut ledger_state_guard = self
 			.ledger_state
 			.lock()
@@ -430,7 +554,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 				// `(): ProofKind` turns the zswap/contract proof checks into no-ops;
 				// the ledger has no strictness knob for zswap offer proofs.
 				let ref_state = &tx_context.ref_state;
-				let tblock = tx_context.block_context.tblock;
+				let tblock = well_formed_tblock;
 				let valid_tx: VerifiedTransaction<_> = if strictness.verify_native_proofs {
 					tx.well_formed(ref_state, strictness, tblock)
 				} else {

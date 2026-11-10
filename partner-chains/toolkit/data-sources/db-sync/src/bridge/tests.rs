@@ -48,6 +48,10 @@ fn block_8_hash() -> McBlockHash {
 	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000008"))
 }
 
+fn block_9_hash() -> McBlockHash {
+	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000009"))
+}
+
 fn init_ics_tx_hash() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000001"))
 }
@@ -84,6 +88,15 @@ fn invalid_transfer_1() -> BridgeTransferV1<ByteString> {
 		// invalid transfer consumes utxo from user transfer 2
 		amount: 1000 - 120,
 		mc_tx_hash: invalid_transfer_1_tx(),
+		recipient: TransferRecipient::Invalid,
+	}
+}
+
+// transfer whose metadata is nested deeper than any JSON decoder will accept
+fn deep_metadata_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 7,
+		mc_tx_hash: deep_metadata_tx(),
 		recipient: TransferRecipient::Invalid,
 	}
 }
@@ -147,6 +160,10 @@ fn complex_transfer_tx() -> McTxHash {
 
 fn reserve_and_user_transfer_tx() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000008"))
+}
+
+fn deep_metadata_tx() -> McTxHash {
+	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000009"))
 }
 
 fn main_chain_scripts() -> MainChainScripts {
@@ -440,6 +457,25 @@ with_migration_versions_and_caching! {
 		);
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
+	}
+
+	// Anyone can pay to the ICS address with metadata of their choosing. Metadata that no JSON
+	// decoder will accept must be reported as an invalid recipient like any other unusable
+	// metadata, not fail the query: a failed query stalls the bridge inherent on every node.
+	async fn metadata_nested_too_deeply_to_decode_yields_an_invalid_recipient(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Tx(reserve_and_user_transfer_tx());
+		let current_mc_block = block_9_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![deep_metadata_transfer()]);
+
+		// The undecodable transfer does not block the checkpoint from advancing past it.
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(9)))
 	}
 
 	async fn utxos_from_checkpoint_block_are_not_included_in_result(data_source: &dyn TokenBridgeDataSource<ByteString>) {

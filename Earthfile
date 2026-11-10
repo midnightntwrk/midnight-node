@@ -814,9 +814,9 @@ node-ci-image-single-platform:
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
 
     # Portability + compiler-version check (runs for both source and fetched builds;
-    # also the first run of a source bundle outside nix): compactc --version reports
-    # the bare semver with no tree-hash suffix, so compare against the version prefix.
-    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+    # also the first run of a source bundle outside nix): compactc --version leads with
+    # the bare semver (0.35.0+ appends a commit and date), so compare its first word.
+    RUN got="$(/compact-home/compactc --version | cut -d" " -f1)" && want="${COMPACTC_VERSION%%-*}" && \
         test "$got" = "$want" || \
         { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 
@@ -1331,6 +1331,9 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
+    # Optional: pin the indexer-standalone image for the indexer-backed show-wallet e2e
+    # (gated behind MN_RUN_INDEXER_E2E in the test; see util/toolkit/tests/indexer_show_wallet_e2e.rs).
+    ARG INDEXER_STANDALONE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
@@ -1341,6 +1344,9 @@ test-toolkit:
     END
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+    IF [ -n "$INDEXER_STANDALONE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE -e MN_RUN_INDEXER_E2E=1"
     END
     IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
@@ -1815,7 +1821,9 @@ fix-lock-npm:
     # is what resolves fresh versions.
     COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/.npmrc ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
-    RUN npm install
+    # Lockfile resolution needs no lifecycle scripts, and util/toolkit-js's postinstall
+    # (scripts/vendor-wasm.mjs) is not copied here, so it would fail.
+    RUN npm install --ignore-scripts
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
 
 # fix-lock-js regenerates all npm lockfiles

@@ -37,17 +37,23 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn annotates_git_dependency_with_tag_and_rev() {
-		// A git dep's tag is mutable; the locked commit SHA is the immutable build identity - both.
-		let v = find_dependency_version("mn-ledger-9").expect("mn-ledger-9 should resolve");
-		assert!(v.contains("tag:"), "expected tag annotation, got {v:?}");
-		let rev = v
-			.split("rev:")
-			.nth(1)
-			.expect("expected rev annotation")
-			.trim()
-			.trim_end_matches(')');
-		assert!(rev.len() >= 16, "rev hash too short ({} chars): {rev:?}", rev.len());
+	fn resolves_registry_dependency_to_bare_semver() {
+		// Ledger crates come from crates.io, so the locked source is the registry and the
+		// version carries no git annotation. (`build.rs::format_version` still annotates git
+		// deps with their tag and commit SHA; no workspace alias is git-pinned today.)
+		for alias in ["mn-ledger-8", "mn-ledger-9"] {
+			let v =
+				find_dependency_version(alias).unwrap_or_else(|| panic!("{alias} should resolve"));
+			assert!(
+				!v.contains("tag:") && !v.contains("rev:"),
+				"{alias}: unexpected git annotation in {v:?}"
+			);
+			let parts: Vec<&str> = v.split('.').collect();
+			assert!(
+				parts.len() == 3 && parts.iter().all(|p| p.parse::<u64>().is_ok()),
+				"{alias}: expected a bare semver, got {v:?}"
+			);
+		}
 	}
 
 	#[test]

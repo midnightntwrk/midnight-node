@@ -26,8 +26,7 @@ pub use candidates_data_source::CandidatesDataSourceImpl;
 pub use candidates_data_source::cached::CandidateDataSourceCached;
 pub use candidates_data_source::get_epoch_for_block_hash;
 pub use cnight_observation::{
-	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
-	TxPosition,
+	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl,
 };
 pub use cnight_observation_mock::CNightObservationDataSourceMock;
 pub use federated_authority_observation::FederatedAuthorityObservationDataSourceImpl;

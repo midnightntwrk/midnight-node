@@ -35,8 +35,8 @@ use midnight_ledger_unsafe_helpers::{
 		storage::default_storage,
 	},
 };
-use sha2::{Digest, Sha256};
 use std::{collections::HashMap, io};
+use storage_sha2::{Digest, Sha256};
 
 /// Minimum stack required before `stacker::maybe_grow` allocates an
 /// extension stack. Empirically ~64 KiB is enough headroom for a
