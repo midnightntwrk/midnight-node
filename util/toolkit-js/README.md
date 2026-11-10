@@ -241,6 +241,7 @@ compact-0.30.0/     → @midnight-ntwrk/compact-js* 2.5.0   (public npm)
 compact-0.31.0/     → @midnight-ntwrk/compact-js* 2.5.1   (public npm)
 compact-0.33.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.7 (public npm)
 compact-0.34.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.8 (compactc 0.34.0; public npm)
+compact-0.35.0/     → @midnight-ntwrk/compact-js* 3.0.0-rc.3 (compactc 0.35.0; public npm)
 ```
 
 The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`). At
