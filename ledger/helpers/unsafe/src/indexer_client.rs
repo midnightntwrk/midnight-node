@@ -254,11 +254,13 @@ impl IndexerClient {
 
 		let mut headers = reqwest::header::HeaderMap::new();
 		if let Some(id) = &project_id {
-			let value = id.parse().map_err(|_| {
+			let mut value: reqwest::header::HeaderValue = id.parse().map_err(|_| {
 				IndexerClientError::Decode(format!(
 					"{BLOCKFROST_PROJECT_ID_ENV} is not a valid header"
 				))
 			})?;
+			// Keeps the API key out of Debug output and client trace logs.
+			value.set_sensitive(true);
 			headers.insert("project_id", value);
 		}
 		let http = reqwest::Client::builder()
@@ -395,9 +397,10 @@ impl IndexerClient {
 			.map_err(|e| IndexerClientError::WebSocket(format!("parse subprotocol: {e}")))?;
 		request.headers_mut().insert("Sec-WebSocket-Protocol", proto);
 		if let Some(id) = &self.project_id {
-			let value = id
+			let mut value: tokio_tungstenite::tungstenite::http::HeaderValue = id
 				.parse()
 				.map_err(|e| IndexerClientError::WebSocket(format!("project_id header: {e}")))?;
+			value.set_sensitive(true);
 			request.headers_mut().insert("project_id", value);
 		}
 
