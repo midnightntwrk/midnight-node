@@ -730,7 +730,6 @@ jobs:
           # +test's `Run build` step for the full rationale and why
           # EARTHLY_GIT_BRANCH is unsafe here.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-          CI_EXECUTION: ${{ github.run_id }}-${{ github.run_attempt }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -751,8 +750,7 @@ jobs:
             --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
             +test-toolkit \
               --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
-              --CACHE_KEY="$CACHE_KEY" \
-              --CI_EXECUTION="$CI_EXECUTION"
+              --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

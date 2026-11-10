@@ -1328,7 +1328,6 @@ test-toolkit:
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
-    ARG CI_EXECUTION=""
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
 
@@ -1355,7 +1354,6 @@ test-toolkit:
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1375,7 +1373,6 @@ test-toolkit:
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1859,7 +1856,7 @@ local-env-e2e:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN --secret NODE_GIT_TOKEN E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests -- --test-threads=16 --nocapture
+    RUN --secret NODE_GIT_TOKEN with-git-creds cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -2034,12 +2031,13 @@ local-env-ci:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
+              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
             rm -f /root/.docker/config.json
     END
+
 
 # local-env-full-ci-localimg: run the full integration tests (stack → verify-finality →
 # e2e → toolkit, one nested-dockerd RUN) with NO registry permissions. It injects the
@@ -2100,7 +2098,7 @@ local-env-full-ci-localimg:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
+              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
@@ -2168,7 +2166,7 @@ local-env-oneshot:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
+              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360

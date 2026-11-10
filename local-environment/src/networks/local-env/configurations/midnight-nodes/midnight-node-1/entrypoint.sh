@@ -29,7 +29,6 @@ set -euxo pipefail
   --rpc-methods=Unsafe \
   --rpc-port="$RPC_PORT" \
   --rpc-cors=all \
-  --rpc-max-connections=1000 \
   --prometheus-port=9615 \
   --prometheus-external \
   --state-pruning=archive \

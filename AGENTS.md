@@ -32,8 +32,7 @@ earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 
 CI prepares local e2e test binaries alongside node-image builds on the existing
 self-hosted pool. Fork PRs retain inline compilation. The local environment CI
-check runs the complete suite on one chain with 16 test threads and 16 faucet
-workers. Bridge tests isolate their observations by transaction hash. See
+check retains the complete suite and its existing execution settings. See
 `docs/ci/pr-critical-path.md` for timing and coverage validation.
 
 **E2E tests (just):**
