@@ -280,7 +280,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_001_100,
+	spec_version: 002_001_200,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
@@ -673,7 +673,6 @@ impl pallet_midnight::Config for Runtime {
 	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
 	// admits, so the node cap binds first.
 	type MaxDecodedTxItems = ConstU32<4096>;
-	type MaxTransactionNodes = ConstU32<1024>;
 }
 
 /// Configure the pallet-midnight in pallets/midnight.

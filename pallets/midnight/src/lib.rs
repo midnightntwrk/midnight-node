@@ -142,17 +142,6 @@ pub mod pallet {
 		/// `get_decoded_transaction` will materialize from a transaction.
 		#[pallet::constant]
 		type MaxDecodedTxItems: Get<u32>;
-
-		/// Maximum number of DAG nodes a transaction may declare before the ledger will
-		/// deserialize it at all.
-		///
-		/// 1,024 is 3x the largest real transaction: over 47k mainnet transactions
-		/// (2026-10-02..06), declared nodes were p50 38, p99 202, max 333.
-		///
-		/// There is no on-chain figure to derive this from. That is safe because the check
-		/// lives in the versioned runtime wasm, so older blocks replay without it.
-		#[pallet::constant]
-		type MaxTransactionNodes: Get<u32>;
 	}
 
 	// The pallet's runtime storage items.
@@ -168,6 +157,9 @@ pub mod pallet {
 	///
 	/// Theoretical maximum: 40 + 1 + 1024 = 1065 bytes
 	pub type StateKeyLength = ConstU32<1065>;
+	/// Lower bound on DAG nodes per operation; ledger_9's
+	/// `byte_limited_payload_cannot_declare_unbounded_work` asserts it.
+	pub const NODES_PER_OPERATION: u32 = 4;
 	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
@@ -212,6 +204,18 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
+
+	/// 4x the largest real transaction (2,023 nodes, mainnet), and above what compactc
+	/// already generates for state-heavy calls (6,287).
+	#[pallet::type_value]
+	pub fn DefaultMaxTransactionNodes() -> u32 {
+		8192
+	}
+
+	/// Maximum number of DAG nodes a transaction may declare before the ledger will
+	/// deserialize it at all.
+	#[pallet::storage]
+	pub type MaxTransactionNodes<T> = StorageValue<_, u32, ValueQuery, DefaultMaxTransactionNodes>;
 
 	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct TxAppliedDetails {
@@ -311,6 +315,10 @@ pub mod pallet {
 		ContractNotPresent,
 		#[codec(index = 14)]
 		BeneficiaryNotFound,
+		/// The node cap would admit more operations than `MaxDecodedTxItems`, so the item
+		/// cap would refuse transactions blocks can carry.
+		#[codec(index = 15)]
+		MaxTransactionNodesExceedsItemCap,
 	}
 	// grcov-excl-stop
 
@@ -457,6 +465,18 @@ pub mod pallet {
 			ConfigurableTransactionSizeWeight::<T>::set(new_weight);
 			Ok(())
 		}
+
+		#[pallet::call_index(2)]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
+		pub fn set_max_transaction_nodes(origin: OriginFor<T>, nodes: u32) -> DispatchResult {
+			ensure_root(origin)?;
+			ensure!(
+				nodes / NODES_PER_OPERATION < T::MaxDecodedTxItems::get(),
+				Error::<T>::MaxTransactionNodesExceedsItemCap
+			);
+			MaxTransactionNodes::<T>::put(nodes);
+			Ok(())
+		}
 	}
 
 	#[pallet::validate_unsigned]
@@ -536,7 +556,7 @@ pub mod pallet {
 		/// and, via `validate_unsigned`, once per submitted extrinsic ahead of any fee.
 		fn ensure_declared_nodes_within_limit(tx: &[u8]) -> Result<(), LedgerApiError> {
 			match LedgerTypes::declared_node_count(tx) {
-				Ok(nodes) if nodes > T::MaxTransactionNodes::get() => {
+				Ok(nodes) if nodes > MaxTransactionNodes::<T>::get() => {
 					Err(LedgerApiError::Transaction(TransactionError::Malformed(
 						MalformedError::TransactionTooLarge,
 					)))
