@@ -11,5 +11,5 @@ into the ledger-9 wallet at the first ledger-9 transaction, as the block-replay 
 Tested on mainnet through Blockfrost: `show-wallet` and unshielded and shielded `generate-txs
 single-tx` sends to self, all applied with `TxApplied`.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2397
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
