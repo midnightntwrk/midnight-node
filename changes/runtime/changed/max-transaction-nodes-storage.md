@@ -9,5 +9,5 @@ than `MaxDecodedTxItems`, so the node cap always binds first.
 1,024 refused 54 transactions already accepted on preview, preprod and mainnet (largest:
 2,023 nodes) and a compactc-generated contract call declaring 6,287 nodes.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2411
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2386
