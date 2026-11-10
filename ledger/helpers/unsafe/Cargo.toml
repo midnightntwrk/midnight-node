@@ -49,3 +49,7 @@ default = []
 erase-proof = []
 test-utils = []
 fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
+
+[package.metadata.cargo-shear]
+# Not imported; depended on only to enable its `layout-v2` and `gc-v1` features.
+ignored = ["midnight-storage-core"]
