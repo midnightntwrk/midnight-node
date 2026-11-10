@@ -11,135 +11,9 @@ git_fetch(
 )
 
 git_fetch(
-    name = "midnight-ledger-4a81d777a7d3168506dfda14.git",
+    name = "midnight-ledger-4a81d777a7d3168539cfd053.git",
     repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "06dfda1434caf3d8843039e1a078075b01e1c6b8",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d3168518964db1.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "18964db1a0783cc9a2e349a7f31c5c24bc423eec",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685400e40b9.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "400e40b92550638831486cecc71861f9b4e56642",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d3168548a978d7.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "48a978d7fc4342e8f5536eb95f47139477e1a0e8",
-    sub_targets = [
-        "ledger/static/dust/spend.verifier",
-    ],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d316854a748f74.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "4a748f74c9f461e065bfebf14e27d59d6e3d4b92",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d3168565a4ab66.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "65a4ab66f4bd7b064099e9ae5900fc425ec03f66",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d3168570f195d6.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "70f195d6418dd86434cd29d50db7be576ee6f50c",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d3168583dfd6a7.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "83dfd6a71c02a7a3b238a52a16296b0faab03ea9",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685971a9960.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "971a9960b6c281c80fcd7ad873e3ec10b9476404",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685a01a1ea0.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "a01a1ea0270d2e8a1f9a58f0e3cf5ceb029283e1",
-    sub_targets = [
-        "transient-crypto/static/bls_midnight_2p14",
-    ],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685b15b1b0b.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "b15b1b0ba18180f93600d8e556c8f1574b5c8e36",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685ba7a6338.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "ba7a63380c8a1477fdd17b6401eab8e17faed7bb",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685c394427f.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "c394427f3bed798144392838aa367c538dcedc6e",
-    sub_targets = [
-        "transient-crypto/static/bls_midnight_2p14",
-    ],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685da96e33d.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "da96e33d78ee9b7d3867b15c1037510d499cd909",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-ledger-4a81d777a7d31685f861b4ec.git",
-    repo = "https://github.com/midnightntwrk/midnight-ledger",
-    rev = "f861b4ecdde7a67638366d2a19eea9cd9ff77035",
-    sub_targets = [],
-    visibility = [],
-)
-
-git_fetch(
-    name = "midnight-zkir-a6753c61e905e986e82d81d2.git",
-    repo = "https://github.com/midnightntwrk/midnight-zkir",
-    rev = "e82d81d25aabcc5f5092e2bd559083487f577914",
+    rev = "39cfd0531524b87e53198ce136777530c29646aa",
     visibility = [],
 )
 
@@ -929,6 +803,100 @@ cargo.rust_library(
     visibility = [],
 )
 
+alias(
+    name = "apollo-compiler",
+    actual = ":apollo-compiler-1",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "apollo-compiler-1.33.1.crate",
+    sha256 = "4f434213000d555645e09bb7c521283f6a0f324ac57497854345fda70a972ec9",
+    size_bytes = 351336,
+    strip_prefix = "apollo-compiler-1.33.1",
+    urls = ["https://static.crates.io/crates/apollo-compiler/1.33.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "apollo-compiler-1",
+    srcs = [":apollo-compiler-1.33.1.crate"],
+    crate = "apollo_compiler",
+    crate_root = "apollo-compiler-1.33.1.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "apollo_compiler",
+        "CARGO_CRATE_NAME": "apollo_compiler",
+        "CARGO_MANIFEST_DIR": "apollo-compiler-1.33.1.crate",
+        "CARGO_PKG_AUTHORS": "Irina Shestak <shestak.irina@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "A compiler for the GraphQL query language.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "apollo-compiler",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/apollographql/apollo-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "1.33.1",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "33",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":ahash-0.8",
+        ":apollo-parser-0.8",
+        ":ariadne-0.6",
+        ":futures-0.3",
+        ":indexmap-2",
+        ":rowan-0.16",
+        ":serde-1",
+        ":serde_json_bytes-0.2",
+        ":thiserror-2",
+        ":triomphe-0.1",
+        ":typed-arena-2",
+    ],
+)
+
+http_archive(
+    name = "apollo-parser-0.8.7.crate",
+    sha256 = "61e7b65fce383a71e165834de0bc0fb44b84c840e174f0c5b3914ab76c88ff14",
+    size_bytes = 211671,
+    strip_prefix = "apollo-parser-0.8.7",
+    urls = ["https://static.crates.io/crates/apollo-parser/0.8.7/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "apollo-parser-0.8",
+    srcs = [":apollo-parser-0.8.7.crate"],
+    crate = "apollo_parser",
+    crate_root = "apollo-parser-0.8.7.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "apollo_parser",
+        "CARGO_CRATE_NAME": "apollo_parser",
+        "CARGO_MANIFEST_DIR": "apollo-parser-0.8.7.crate",
+        "CARGO_PKG_AUTHORS": "Irina Shestak <shestak.irina@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Spec-compliant GraphQL parser.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "apollo-parser",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/apollographql/apollo-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.8.7",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "8",
+        "CARGO_PKG_VERSION_PATCH": "7",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":memchr-2",
+        ":rowan-0.16",
+        ":thiserror-2",
+    ],
+)
+
 http_archive(
     name = "approx-0.5.1.crate",
     sha256 = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6",
@@ -1152,6 +1120,50 @@ cargo.rust_library(
     features = ["triomphe"],
     visibility = [],
     deps = [":triomphe-0.1"],
+)
+
+http_archive(
+    name = "ariadne-0.6.0.crate",
+    sha256 = "8454c8a44ce2cb9cc7e7fae67fc6128465b343b92c6631e94beca3c8d1524ea5",
+    size_bytes = 35701,
+    strip_prefix = "ariadne-0.6.0",
+    urls = ["https://static.crates.io/crates/ariadne/0.6.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "ariadne-0.6",
+    srcs = [":ariadne-0.6.0.crate"],
+    crate = "ariadne",
+    crate_root = "ariadne-0.6.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "ariadne",
+        "CARGO_CRATE_NAME": "ariadne",
+        "CARGO_MANIFEST_DIR": "ariadne-0.6.0.crate",
+        "CARGO_PKG_AUTHORS": "Joshua Barretto <joshua.s.barretto@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "A fancy diagnostics & reporting crate",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "ariadne",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/zesterer/ariadne",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.6.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "auto-color",
+        "concolor",
+    ],
+    visibility = [],
+    deps = [
+        ":concolor-0.1",
+        ":unicode-width-0.2",
+        ":yansi-1",
+    ],
 )
 
 http_archive(
@@ -2620,6 +2632,42 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "base16ct-1.0.0.crate",
+    sha256 = "fd307490d624467aa6f74b0eabb77633d1f758a7b25f12bceb0b22e08d9726f6",
+    size_bytes = 10594,
+    strip_prefix = "base16ct-1.0.0",
+    urls = ["https://static.crates.io/crates/base16ct/1.0.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "base16ct-1",
+    srcs = [":base16ct-1.0.0.crate"],
+    crate = "base16ct",
+    crate_root = "base16ct-1.0.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "base16ct",
+        "CARGO_CRATE_NAME": "base16ct",
+        "CARGO_MANIFEST_DIR": "base16ct-1.0.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of Base16 a.k.a hexadecimal (RFC 4648) which avoids\nany usages of data-dependent branches/LUTs and thereby provides portable\n\"best effort\" constant-time operation and embedded-friendly no_std support\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/formats/tree/master/base16ct",
+        "CARGO_PKG_NAME": "base16ct",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/formats",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "1.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+)
+
+http_archive(
     name = "base256emoji-1.0.2.crate",
     sha256 = "b5e9430d9a245a77c92176e649af6e275f20839a48389859d1661e9a128d077c",
     size_bytes = 2742,
@@ -4060,8 +4108,12 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = ["zeroize"],
     visibility = [],
-    deps = [":hybrid-array-0.4"],
+    deps = [
+        ":hybrid-array-0.4",
+        ":zeroize-1",
+    ],
 )
 
 http_archive(
@@ -5825,6 +5877,41 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "cmov-0.5.4.crate",
+    sha256 = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a",
+    size_bytes = 27367,
+    strip_prefix = "cmov-0.5.4",
+    urls = ["https://static.crates.io/crates/cmov/0.5.4/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "cmov-0.5",
+    srcs = [":cmov-0.5.4.crate"],
+    crate = "cmov",
+    crate_root = "cmov-0.5.4.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "cmov",
+        "CARGO_CRATE_NAME": "cmov",
+        "CARGO_MANIFEST_DIR": "cmov-0.5.4.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Conditional move CPU intrinsics which are guaranteed on major platforms (ARM32/ARM64, x86/x86_64,\nRISC-V) to execute in constant-time and not be rewritten as branches by the compiler. Provides\nwrappers for the CMOV family of instructions on x86/x86_64 and CSEL on AArch64, along with a\nportable \"best-effort\" pure Rust fallback implementation.\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "cmov",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/utils",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.5.4",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "5",
+        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+http_archive(
     name = "coarsetime-0.1.37.crate",
     sha256 = "e58eb270476aa4fc7843849f8a35063e8743b4dbcdf6dd0f8ea0886980c204c2",
     size_bytes = 11116,
@@ -6139,6 +6226,99 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+http_archive(
+    name = "concolor-0.1.1.crate",
+    sha256 = "0b946244a988c390a94667ae0e3958411fa40cc46ea496a929b263d883f5f9c3",
+    size_bytes = 10093,
+    strip_prefix = "concolor-0.1.1",
+    urls = ["https://static.crates.io/crates/concolor/0.1.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "concolor-0.1",
+    srcs = [":concolor-0.1.1.crate"],
+    crate = "concolor",
+    crate_root = "concolor-0.1.1.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "concolor",
+        "CARGO_CRATE_NAME": "concolor",
+        "CARGO_MANIFEST_DIR": "concolor-0.1.1.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Control console coloring across all dependencies",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "concolor",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/rust-cli/concolor",
+        "CARGO_PKG_RUST_VERSION": "1.60.0",
+        "CARGO_PKG_VERSION": "0.1.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "auto",
+        "clicolor",
+        "core",
+        "interactive",
+        "no_color",
+        "std",
+        "term",
+        "windows",
+    ],
+    visibility = [],
+    deps = [
+        ":bitflags-1",
+        ":concolor-query-0.3",
+        ":is-terminal-0.4",
+    ],
+)
+
+http_archive(
+    name = "concolor-query-0.3.3.crate",
+    sha256 = "88d11d52c3d7ca2e6d0040212be9e4dbbcd78b6447f535b6b561f449427944cf",
+    size_bytes = 8337,
+    strip_prefix = "concolor-query-0.3.3",
+    urls = ["https://static.crates.io/crates/concolor-query/0.3.3/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "concolor-query-0.3",
+    srcs = [":concolor-query-0.3.3.crate"],
+    crate = "concolor_query",
+    crate_root = "concolor-query-0.3.3.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "concolor_query",
+        "CARGO_CRATE_NAME": "concolor_query",
+        "CARGO_MANIFEST_DIR": "concolor-query-0.3.3.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Look up colored console capabilities",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "concolor-query",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/rust-cli/concolor",
+        "CARGO_PKG_RUST_VERSION": "1.60.0",
+        "CARGO_PKG_VERSION": "0.3.3",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "3",
+        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    platform = {
+        "windows-gnu": dict(
+            deps = [":windows-sys-0.45"],
+        ),
+        "windows-msvc": dict(
+            deps = [":windows-sys-0.45"],
+        ),
     },
     visibility = [],
 )
@@ -7089,6 +7269,41 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "countme-3.0.1.crate",
+    sha256 = "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636",
+    size_bytes = 10784,
+    strip_prefix = "countme-3.0.1",
+    urls = ["https://static.crates.io/crates/countme/3.0.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "countme-3",
+    srcs = [":countme-3.0.1.crate"],
+    crate = "countme",
+    crate_root = "countme-3.0.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "countme",
+        "CARGO_CRATE_NAME": "countme",
+        "CARGO_MANIFEST_DIR": "countme-3.0.1.crate",
+        "CARGO_PKG_AUTHORS": "Aleksey Kladov <aleksey.kladov@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Counts the number of live instances of types",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "countme",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/matklad/countme",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "3.0.1",
+        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+http_archive(
     name = "cpp_demangle-0.4.5.crate",
     sha256 = "f2bb79cb74d735044c972aae58ed0aaa9a837e85b01106a54c39e42e97f62253",
     size_bytes = 81574,
@@ -7184,6 +7399,41 @@ buildscript_run(
         "std",
     ],
     version = "0.4.5",
+)
+
+http_archive(
+    name = "cpubits-0.1.1.crate",
+    sha256 = "15b85f9c39137c3a891689859392b1bd49812121d0d61c9caf00d46ed5ce06ae",
+    size_bytes = 10261,
+    strip_prefix = "cpubits-0.1.1",
+    urls = ["https://static.crates.io/crates/cpubits/0.1.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "cpubits-0.1",
+    srcs = [":cpubits-0.1.1.crate"],
+    crate = "cpubits",
+    crate_root = "cpubits-0.1.1.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "cpubits",
+        "CARGO_CRATE_NAME": "cpubits",
+        "CARGO_MANIFEST_DIR": "cpubits-0.1.1.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Compile-time detection heuristics for the optimal word size to use for the\ntarget CPU, which in some cases may differ from its address size a.k.a.\n`target_pointer_width`. Implemented as `macro_rules!`\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "cpubits",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/utils",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.1.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
 )
 
 http_archive(
@@ -8796,6 +9046,56 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "crypto-bigint-0.7.11.crate",
+    sha256 = "914c195c4d7fbc5ed7f88d14cbf85914d5c664967658d43404b263913a477e82",
+    size_bytes = 315022,
+    strip_prefix = "crypto-bigint-0.7.11",
+    urls = ["https://static.crates.io/crates/crypto-bigint/0.7.11/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "crypto-bigint-0.7",
+    srcs = [":crypto-bigint-0.7.11.crate"],
+    crate = "crypto_bigint",
+    crate_root = "crypto-bigint-0.7.11.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "crypto_bigint",
+        "CARGO_CRATE_NAME": "crypto_bigint",
+        "CARGO_MANIFEST_DIR": "crypto-bigint-0.7.11.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of a big integer library which has been designed from the ground-up for use\nin cryptographic applications. Provides constant-time, `no_std`/`no_alloc`-friendly implementations\nof modern formulas using const generics. Also includes optional support for heap-backed integers.\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "crypto-bigint",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/crypto-bigint",
+        "CARGO_PKG_RUST_VERSION": "1.87",
+        "CARGO_PKG_VERSION": "0.7.11",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "7",
+        "CARGO_PKG_VERSION_PATCH": "11",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "hybrid-array",
+        "rand_core",
+        "subtle",
+        "zeroize",
+    ],
+    visibility = [],
+    deps = [
+        ":cpubits-0.1",
+        ":ctutils-0.4",
+        ":hybrid-array-0.4",
+        ":num-traits-0.2",
+        ":rand_core-0.10",
+        ":subtle-2",
+        ":zeroize-1",
+    ],
+)
+
+http_archive(
     name = "crypto-common-0.1.7.crate",
     sha256 = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a",
     size_bytes = 9619,
@@ -8872,8 +9172,12 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = ["rand_core"],
     visibility = [],
-    deps = [":hybrid-array-0.4"],
+    deps = [
+        ":hybrid-array-0.4",
+        ":rand_core-0.10",
+    ],
 )
 
 http_archive(
@@ -9094,6 +9398,46 @@ cargo.rust_library(
     },
     visibility = [],
     deps = [":cipher-0.4"],
+)
+
+http_archive(
+    name = "ctutils-0.4.8.crate",
+    sha256 = "261af4dc7a06ea8a527a8717d8cbba3417530d6ea14e1edb3de6b67806be474f",
+    size_bytes = 37135,
+    strip_prefix = "ctutils-0.4.8",
+    urls = ["https://static.crates.io/crates/ctutils/0.4.8/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "ctutils-0.4",
+    srcs = [":ctutils-0.4.8.crate"],
+    crate = "ctutils",
+    crate_root = "ctutils-0.4.8.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "ctutils",
+        "CARGO_CRATE_NAME": "ctutils",
+        "CARGO_MANIFEST_DIR": "ctutils-0.4.8.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Constant-time utility library with selection and equality testing support targeting cryptographic\napplications. Supports `const fn` where appropriate. Built on the `cmov` crate which provides\narchitecture-specific predication intrinsics. Heavily inspired by the `subtle` crate.\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "ctutils",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/utils",
+        "CARGO_PKG_RUST_VERSION": "1.87",
+        "CARGO_PKG_VERSION": "0.4.8",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "8",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["subtle"],
+    visibility = [],
+    deps = [
+        ":cmov-0.5",
+        ":subtle-2",
+    ],
 )
 
 cargo.rust_library(
@@ -10284,6 +10628,50 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "der-0.8.3.crate",
+    sha256 = "6a996a108feb8b427a6e12fcf6af4aa83409b79d72c15337d7741368131ee004",
+    size_bytes = 126204,
+    strip_prefix = "der-0.8.3",
+    urls = ["https://static.crates.io/crates/der/0.8.3/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "der-0.8",
+    srcs = [":der-0.8.3.crate"],
+    crate = "der",
+    crate_root = "der-0.8.3.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "der",
+        "CARGO_CRATE_NAME": "der",
+        "CARGO_MANIFEST_DIR": "der-0.8.3.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust embedded-friendly implementation of the Distinguished Encoding Rules\n(DER) for Abstract Syntax Notation One (ASN.1) as described in ITU X.690 with\nfull support for heapless `no_std`/`no_alloc` targets\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/formats/tree/master/der",
+        "CARGO_PKG_NAME": "der",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/formats",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.8.3",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "8",
+        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "alloc",
+        "oid",
+        "zeroize",
+    ],
+    visibility = [],
+    deps = [
+        ":const-oid-0.10",
+        ":zeroize-1",
+    ],
+)
+
+http_archive(
     name = "der-parser-10.0.0.crate",
     sha256 = "07da5016415d5a3c4dd39b11ed26f915f52fc4e0dc197d87908bc916e51bc1a6",
     size_bytes = 66186,
@@ -11210,7 +11598,9 @@ cargo.rust_library(
         "alloc",
         "block-api",
         "default",
+        "mac",
         "oid",
+        "zeroize",
     ],
     named_deps = {
         "common": ":crypto-common-0.2",
@@ -11219,6 +11609,8 @@ cargo.rust_library(
     deps = [
         ":block-buffer-0.12",
         ":const-oid-0.10",
+        ":ctutils-0.4",
+        ":zeroize-1",
     ],
 )
 
@@ -12265,6 +12657,60 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "ecdsa-0.17.0.crate",
+    sha256 = "c0681a4fc24c767085329728d8dfba959af91228aa4610cca4f8ce317ba46ae0",
+    size_bytes = 36763,
+    strip_prefix = "ecdsa-0.17.0",
+    urls = ["https://static.crates.io/crates/ecdsa/0.17.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "ecdsa-0.17",
+    srcs = [":ecdsa-0.17.0.crate"],
+    crate = "ecdsa",
+    crate_root = "ecdsa-0.17.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "ecdsa",
+        "CARGO_CRATE_NAME": "ecdsa",
+        "CARGO_MANIFEST_DIR": "ecdsa-0.17.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of the Elliptic Curve Digital Signature Algorithm (ECDSA) as specified in\nFIPS 186-4 (Digital Signature Standard), implemented generically over elliptic curves, providing\nRFC6979 deterministic signing support as well as randomized signatures and signature verification\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/signatures/tree/master/ecdsa",
+        "CARGO_PKG_NAME": "ecdsa",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/signatures",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.17.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "17",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "algorithm",
+        "alloc",
+        "der",
+        "digest",
+        "pkcs8",
+        "serde",
+        "spki",
+    ],
+    visibility = [],
+    deps = [
+        ":der-0.8",
+        ":digest-0.11",
+        ":elliptic-curve-0.14",
+        ":rfc6979-0.6",
+        ":serdect-0.4",
+        ":signature-3",
+        ":spki-0.8",
+        ":zeroize-1",
+    ],
+)
+
+http_archive(
     name = "ed25519-2.2.3.crate",
     sha256 = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53",
     size_bytes = 17802,
@@ -12562,6 +13008,68 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "elliptic-curve-0.14.3.crate",
+    sha256 = "900f37e7e18d74a2347389af6cd69e3a30d5cc9e697f40004865679aa75e9c7c",
+    size_bytes = 51761,
+    strip_prefix = "elliptic-curve-0.14.3",
+    urls = ["https://static.crates.io/crates/elliptic-curve/0.14.3/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "elliptic-curve-0.14",
+    srcs = [":elliptic-curve-0.14.3.crate"],
+    crate = "elliptic_curve",
+    crate_root = "elliptic-curve-0.14.3.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "elliptic_curve",
+        "CARGO_CRATE_NAME": "elliptic_curve",
+        "CARGO_MANIFEST_DIR": "elliptic-curve-0.14.3.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "General purpose Elliptic Curve Cryptography (ECC) support, including traits and generic types for\nrepresenting various elliptic curve forms, scalars, points, and public/secret keys composed thereof.\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "elliptic-curve",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/traits",
+        "CARGO_PKG_RUST_VERSION": "1.87",
+        "CARGO_PKG_VERSION": "0.14.3",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "alloc",
+        "arithmetic",
+        "digest",
+        "ff",
+        "group",
+        "pkcs8",
+        "sec1",
+        "serde",
+    ],
+    named_deps = {
+        "array": ":hybrid-array-0.4",
+        "bigint": ":crypto-bigint-0.7",
+        "common": ":crypto-common-0.2",
+    },
+    visibility = [],
+    deps = [
+        ":base16ct-1",
+        ":digest-0.11",
+        ":ff-0.14",
+        ":group-0.14",
+        ":pkcs8-0.11",
+        ":rand_core-0.10",
+        ":sec1-0.8",
+        ":serdect-0.4",
+        ":subtle-2",
+        ":zeroize-1",
+    ],
+)
+
+http_archive(
     name = "encode_unicode-1.0.0.crate",
     sha256 = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0",
     size_bytes = 56986,
@@ -12831,6 +13339,83 @@ cargo.rust_library(
     deps = [
         ":quote-0.3",
         ":syn-0.11",
+    ],
+)
+
+http_archive(
+    name = "enumflags2-0.7.12.crate",
+    sha256 = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef",
+    size_bytes = 17544,
+    strip_prefix = "enumflags2-0.7.12",
+    urls = ["https://static.crates.io/crates/enumflags2/0.7.12/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "enumflags2-0.7",
+    srcs = [":enumflags2-0.7.12.crate"],
+    crate = "enumflags2",
+    crate_root = "enumflags2-0.7.12.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "enumflags2",
+        "CARGO_CRATE_NAME": "enumflags2",
+        "CARGO_MANIFEST_DIR": "enumflags2-0.7.12.crate",
+        "CARGO_PKG_AUTHORS": "maik klein <maikklein@googlemail.com>:Maja Kądziołka <maya@compilercrim.es>",
+        "CARGO_PKG_DESCRIPTION": "Enum-based bit flags",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "enumflags2",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/meithecatte/enumflags2",
+        "CARGO_PKG_RUST_VERSION": "1.56",
+        "CARGO_PKG_VERSION": "0.7.12",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "7",
+        "CARGO_PKG_VERSION_PATCH": "12",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [":enumflags2_derive-0.7"],
+)
+
+http_archive(
+    name = "enumflags2_derive-0.7.12.crate",
+    sha256 = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827",
+    size_bytes = 8573,
+    strip_prefix = "enumflags2_derive-0.7.12",
+    urls = ["https://static.crates.io/crates/enumflags2_derive/0.7.12/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "enumflags2_derive-0.7",
+    srcs = [":enumflags2_derive-0.7.12.crate"],
+    crate = "enumflags2_derive",
+    crate_root = "enumflags2_derive-0.7.12.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "enumflags2_derive",
+        "CARGO_CRATE_NAME": "enumflags2_derive",
+        "CARGO_MANIFEST_DIR": "enumflags2_derive-0.7.12.crate",
+        "CARGO_PKG_AUTHORS": "maik klein <maikklein@googlemail.com>:Maja Kądziołka <maya@compilercrim.es>",
+        "CARGO_PKG_DESCRIPTION": "Do not use directly, use the reexport in the `enumflags2` crate. This allows for better compatibility across versions.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "enumflags2_derive",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/meithecatte/enumflags2",
+        "CARGO_PKG_RUST_VERSION": "1.56",
+        "CARGO_PKG_VERSION": "0.7.12",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "7",
+        "CARGO_PKG_VERSION_PATCH": "12",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    proc_macro = True,
+    visibility = [],
+    deps = [
+        ":proc-macro2-1",
+        ":quote-1",
+        ":syn-2",
     ],
 )
 
@@ -13869,6 +14454,46 @@ cargo.rust_library(
     deps = [
         ":bitvec-1",
         ":rand_core-0.6",
+        ":subtle-2",
+    ],
+)
+
+http_archive(
+    name = "ff-0.14.0.crate",
+    sha256 = "a1f686ab92a9fb0eaf188f6c6c87b89490baa6fdb0db4544ba4dc47f7942489f",
+    size_bytes = 23241,
+    strip_prefix = "ff-0.14.0",
+    urls = ["https://static.crates.io/crates/ff/0.14.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "ff-0.14",
+    srcs = [":ff-0.14.0.crate"],
+    crate = "ff",
+    crate_root = "ff-0.14.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "ff",
+        "CARGO_CRATE_NAME": "ff",
+        "CARGO_MANIFEST_DIR": "ff-0.14.0.crate",
+        "CARGO_PKG_AUTHORS": "Sean Bowe <ewillbefull@gmail.com>:Jack Grigg <thestr4d@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Library for building and interfacing with finite fields",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/zkcrypto/ff",
+        "CARGO_PKG_NAME": "ff",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/zkcrypto/ff",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.14.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+    deps = [
+        ":rand_core-0.10",
         ":subtle-2",
     ],
 )
@@ -17264,6 +17889,217 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "graphql-introspection-query-0.3.0.crate",
+    sha256 = "e063446242093b0acecc78a2313801e6c4faafa3501277b409a2b1972eff5d85",
+    size_bytes = 3318,
+    strip_prefix = "graphql-introspection-query-0.3.0",
+    urls = ["https://static.crates.io/crates/graphql-introspection-query/0.3.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "graphql-introspection-query-0.3",
+    srcs = [":graphql-introspection-query-0.3.0.crate"],
+    crate = "graphql_introspection_query",
+    crate_root = "graphql-introspection-query-0.3.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "graphql_introspection_query",
+        "CARGO_CRATE_NAME": "graphql_introspection_query",
+        "CARGO_MANIFEST_DIR": "graphql-introspection-query-0.3.0.crate",
+        "CARGO_PKG_AUTHORS": "Tom Houlé <tom@tomhoule.com>",
+        "CARGO_PKG_DESCRIPTION": "GraphQL introspection query and response types.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "graphql-introspection-query",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/graphql-rust/graphql-client",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.3.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "3",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [":serde-1"],
+)
+
+http_archive(
+    name = "graphql-parser-0.4.1.crate",
+    sha256 = "7a818c0d883d7c0801df27be910917750932be279c7bc82dc541b8769425f409",
+    size_bytes = 36118,
+    strip_prefix = "graphql-parser-0.4.1",
+    urls = ["https://static.crates.io/crates/graphql-parser/0.4.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "graphql-parser-0.4",
+    srcs = [":graphql-parser-0.4.1.crate"],
+    crate = "graphql_parser",
+    crate_root = "graphql-parser-0.4.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "graphql_parser",
+        "CARGO_CRATE_NAME": "graphql_parser",
+        "CARGO_MANIFEST_DIR": "graphql-parser-0.4.1.crate",
+        "CARGO_PKG_AUTHORS": "Paul Colomiets <paul@colomiets.name>",
+        "CARGO_PKG_DESCRIPTION": "    A parser, AST and serializer for graphql query language and scheme\n    definition language (sometimes called IDL).\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/graphql-rust/graphql-parser",
+        "CARGO_PKG_NAME": "graphql-parser",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.4.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":combine-4",
+        ":thiserror-1.0.69",
+    ],
+)
+
+alias(
+    name = "graphql_client",
+    actual = ":graphql_client-0.16",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "graphql_client-0.16.0.crate",
+    sha256 = "b0f04840854efa7b06377d86fab117f598f5f5c95727067463417ccaf8aa7635",
+    size_bytes = 45755,
+    strip_prefix = "graphql_client-0.16.0",
+    urls = ["https://static.crates.io/crates/graphql_client/0.16.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "graphql_client-0.16",
+    srcs = [":graphql_client-0.16.0.crate"],
+    crate = "graphql_client",
+    crate_root = "graphql_client-0.16.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "graphql_client",
+        "CARGO_CRATE_NAME": "graphql_client",
+        "CARGO_MANIFEST_DIR": "graphql_client-0.16.0.crate",
+        "CARGO_PKG_AUTHORS": "Tom Houlé <tom@tomhoule.com>",
+        "CARGO_PKG_DESCRIPTION": "Typed GraphQL requests and responses",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/graphql-rust/graphql-client",
+        "CARGO_PKG_NAME": "graphql_client",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/graphql-rust/graphql-client",
+        "CARGO_PKG_RUST_VERSION": "1.66.0",
+        "CARGO_PKG_VERSION": "0.16.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "16",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "graphql_query_derive",
+    ],
+    visibility = [],
+    deps = [
+        ":graphql_query_derive-0.16",
+        ":serde-1",
+        ":serde_json-1",
+    ],
+)
+
+http_archive(
+    name = "graphql_client_codegen-0.16.0.crate",
+    sha256 = "aa0141e66c8d0302f8a586df12ad5d0cf87c0fa8c391f2f5b5dc296312dce569",
+    size_bytes = 128705,
+    strip_prefix = "graphql_client_codegen-0.16.0",
+    urls = ["https://static.crates.io/crates/graphql_client_codegen/0.16.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "graphql_client_codegen-0.16",
+    srcs = [":graphql_client_codegen-0.16.0.crate"],
+    crate = "graphql_client_codegen",
+    crate_root = "graphql_client_codegen-0.16.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "graphql_client_codegen",
+        "CARGO_CRATE_NAME": "graphql_client_codegen",
+        "CARGO_MANIFEST_DIR": "graphql_client_codegen-0.16.0.crate",
+        "CARGO_PKG_AUTHORS": "Tom Houlé <tom@tomhoule.com>",
+        "CARGO_PKG_DESCRIPTION": "Utility crate for graphql_client",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "graphql_client_codegen",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/graphql-rust/graphql-client",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.16.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "16",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":graphql-introspection-query-0.3",
+        ":graphql-parser-0.4",
+        ":heck-0.5",
+        ":proc-macro2-1",
+        ":quote-1",
+        ":serde-1",
+        ":serde_json-1",
+        ":syn-2",
+    ],
+)
+
+http_archive(
+    name = "graphql_query_derive-0.16.0.crate",
+    sha256 = "e16ecf9bb87a6760cf5227f66cbe48bad7b89505aeb002aa9439ea090e6038a3",
+    size_bytes = 5099,
+    strip_prefix = "graphql_query_derive-0.16.0",
+    urls = ["https://static.crates.io/crates/graphql_query_derive/0.16.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "graphql_query_derive-0.16",
+    srcs = [":graphql_query_derive-0.16.0.crate"],
+    crate = "graphql_query_derive",
+    crate_root = "graphql_query_derive-0.16.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "graphql_query_derive",
+        "CARGO_CRATE_NAME": "graphql_query_derive",
+        "CARGO_MANIFEST_DIR": "graphql_query_derive-0.16.0.crate",
+        "CARGO_PKG_AUTHORS": "Tom Houlé <tom@tomhoule.com>",
+        "CARGO_PKG_DESCRIPTION": "Utility crate for graphql_client",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "graphql_query_derive",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/graphql-rust/graphql-client",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.16.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "16",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    proc_macro = True,
+    visibility = [],
+    deps = [
+        ":graphql_client_codegen-0.16",
+        ":proc-macro2-1",
+        ":syn-2",
+    ],
+)
+
+http_archive(
     name = "group-0.13.0.crate",
     sha256 = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63",
     size_bytes = 16526,
@@ -17308,6 +18144,47 @@ cargo.rust_library(
         ":rand-0.8",
         ":rand_core-0.6",
         ":rand_xorshift-0.3",
+        ":subtle-2",
+    ],
+)
+
+http_archive(
+    name = "group-0.14.0.crate",
+    sha256 = "7fd1a1c7a5206c5b7a3f5a0d7ccd3ff85d0c8f5133d62a02680255b0004af5f4",
+    size_bytes = 18537,
+    strip_prefix = "group-0.14.0",
+    urls = ["https://static.crates.io/crates/group/0.14.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "group-0.14",
+    srcs = [":group-0.14.0.crate"],
+    crate = "group",
+    crate_root = "group-0.14.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "group",
+        "CARGO_CRATE_NAME": "group",
+        "CARGO_MANIFEST_DIR": "group-0.14.0.crate",
+        "CARGO_PKG_AUTHORS": "Sean Bowe <ewillbefull@gmail.com>:Jack Grigg <jack@z.cash>",
+        "CARGO_PKG_DESCRIPTION": "Elliptic curve group traits and utilities",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/zkcrypto/group",
+        "CARGO_PKG_NAME": "group",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/zkcrypto/group",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.14.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+    deps = [
+        ":ff-0.14",
+        ":rand_core-0.10",
         ":subtle-2",
     ],
 )
@@ -18777,6 +19654,42 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "hmac-0.13.0.crate",
+    sha256 = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f",
+    size_bytes = 45167,
+    strip_prefix = "hmac-0.13.0",
+    urls = ["https://static.crates.io/crates/hmac/0.13.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "hmac-0.13",
+    srcs = [":hmac-0.13.0.crate"],
+    crate = "hmac",
+    crate_root = "hmac-0.13.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "hmac",
+        "CARGO_CRATE_NAME": "hmac",
+        "CARGO_MANIFEST_DIR": "hmac-0.13.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Generic implementation of Hash-based Message Authentication Code (HMAC)",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "hmac",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/MACs",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.13.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "13",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [":digest-0.11"],
+)
+
+http_archive(
     name = "home-0.5.12.crate",
     sha256 = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d",
     size_bytes = 9445,
@@ -19236,24 +20149,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "hybrid-array-0.4.12.crate",
-    sha256 = "9155a582abd142abc056962c29e3ce5ff2ad5469f4246b537ed42c5deba857da",
-    size_bytes = 36407,
-    strip_prefix = "hybrid-array-0.4.12",
-    urls = ["https://static.crates.io/crates/hybrid-array/0.4.12/download"],
+    name = "hybrid-array-0.4.15.crate",
+    sha256 = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17",
+    size_bytes = 36801,
+    strip_prefix = "hybrid-array-0.4.15",
+    urls = ["https://static.crates.io/crates/hybrid-array/0.4.15/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "hybrid-array-0.4",
-    srcs = [":hybrid-array-0.4.12.crate"],
+    srcs = [":hybrid-array-0.4.15.crate"],
     crate = "hybrid_array",
-    crate_root = "hybrid-array-0.4.12.crate/src/lib.rs",
+    crate_root = "hybrid-array-0.4.15.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "hybrid_array",
         "CARGO_CRATE_NAME": "hybrid_array",
-        "CARGO_MANIFEST_DIR": "hybrid-array-0.4.12.crate",
+        "CARGO_MANIFEST_DIR": "hybrid-array-0.4.15.crate",
         "CARGO_PKG_AUTHORS": "RustCrypto Developers",
         "CARGO_PKG_DESCRIPTION": "Hybrid typenum-based and const generic array types designed to provide the\nflexibility of typenum-based expressions while also allowing interoperability\nand a transition path to const generics\n",
         "CARGO_PKG_HOMEPAGE": "",
@@ -19261,14 +20174,23 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/hybrid-array",
         "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "0.4.12",
+        "CARGO_PKG_VERSION": "0.4.15",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "4",
-        "CARGO_PKG_VERSION_PATCH": "12",
+        "CARGO_PKG_VERSION_PATCH": "15",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = [
+        "alloc",
+        "subtle",
+        "zeroize",
+    ],
     visibility = [],
-    deps = [":typenum-1"],
+    deps = [
+        ":subtle-2",
+        ":typenum-1",
+        ":zeroize-1",
+    ],
 )
 
 http_archive(
@@ -22028,6 +22950,48 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "jsonpath-rust-0.3.5.crate",
+    sha256 = "06cc127b7c3d270be504572364f9569761a180b981919dd0d87693a7f5fb7829",
+    size_bytes = 28872,
+    strip_prefix = "jsonpath-rust-0.3.5",
+    urls = ["https://static.crates.io/crates/jsonpath-rust/0.3.5/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "jsonpath-rust-0.3",
+    srcs = [":jsonpath-rust-0.3.5.crate"],
+    crate = "jsonpath_rust",
+    crate_root = "jsonpath-rust-0.3.5.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "jsonpath_rust",
+        "CARGO_CRATE_NAME": "jsonpath_rust",
+        "CARGO_MANIFEST_DIR": "jsonpath-rust-0.3.5.crate",
+        "CARGO_PKG_AUTHORS": "BorisZhguchev <zhguchev@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "The library provides the basic functionality to find the set of the data according to the filtering query.",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/besok/jsonpath-rust",
+        "CARGO_PKG_NAME": "jsonpath-rust",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/besok/jsonpath-rust",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.3.5",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "3",
+        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":pest-2",
+        ":pest_derive-2",
+        ":regex-1",
+        ":serde_json-1",
+        ":thiserror-1.0.69",
+    ],
+)
+
 alias(
     name = "jsonrpsee",
     actual = ":jsonrpsee-0.24",
@@ -22610,6 +23574,67 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "k256-0.14.0.crate",
+    sha256 = "93f50113171a713f4a4231ef82eb26703607139b35dcb56241f0ceab2ae1f7d8",
+    size_bytes = 109536,
+    strip_prefix = "k256-0.14.0",
+    urls = ["https://static.crates.io/crates/k256/0.14.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "k256-0.14",
+    srcs = [":k256-0.14.0.crate"],
+    crate = "k256",
+    crate_root = "k256-0.14.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "k256",
+        "CARGO_CRATE_NAME": "k256",
+        "CARGO_MANIFEST_DIR": "k256-0.14.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "secp256k1 elliptic curve library written in pure Rust with support for ECDSA\nsigning/verification/public-key recovery, Taproot Schnorr signatures (BIP340),\nElliptic Curve Diffie-Hellman (ECDH), and general-purpose secp256k1 elliptic\ncurve group operations which can be used to implement arbitrary protocols\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/elliptic-curves/tree/master/k256",
+        "CARGO_PKG_NAME": "k256",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/elliptic-curves",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.14.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "alloc",
+        "arithmetic",
+        "digest",
+        "ecdsa",
+        "ecdsa-core",
+        "pkcs8",
+        "schnorr",
+        "serde",
+        "serdect",
+        "sha2",
+        "sha256",
+        "signature",
+    ],
+    named_deps = {
+        "ecdsa_core": ":ecdsa-0.17",
+    },
+    visibility = [],
+    deps = [
+        ":cpubits-0.1",
+        ":elliptic-curve-0.14",
+        ":primeorder-0.14",
+        ":serdect-0.4",
+        ":sha2-0.11",
+        ":signature-3",
+        ":wnaf-0.14",
+    ],
+)
+
+http_archive(
     name = "keccak-0.1.6.crate",
     sha256 = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653",
     size_bytes = 13529,
@@ -22931,6 +23956,52 @@ cargo.rust_library(
 )
 
 alias(
+    name = "landlock",
+    actual = ":landlock-0.4",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "landlock-0.4.7.crate",
+    sha256 = "4cca98e95f35b29d469dade6724c6f96cec9236640f745a0e99b0334ec320ab1",
+    size_bytes = 65552,
+    strip_prefix = "landlock-0.4.7",
+    urls = ["https://static.crates.io/crates/landlock/0.4.7/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "landlock-0.4",
+    srcs = [":landlock-0.4.7.crate"],
+    crate = "landlock",
+    crate_root = "landlock-0.4.7.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "landlock",
+        "CARGO_CRATE_NAME": "landlock",
+        "CARGO_MANIFEST_DIR": "landlock-0.4.7.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Landlock LSM helpers",
+        "CARGO_PKG_HOMEPAGE": "https://landlock.io",
+        "CARGO_PKG_NAME": "landlock",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/landlock-lsm/rust-landlock",
+        "CARGO_PKG_RUST_VERSION": "1.71",
+        "CARGO_PKG_VERSION": "0.4.7",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "7",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":enumflags2-0.7",
+        ":libc-0.2",
+        ":thiserror-2",
+    ],
+)
+
+alias(
     name = "lazy_static",
     actual = ":lazy_static-1",
     visibility = ["PUBLIC"],
@@ -23012,35 +24083,35 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "libc-0.2.184.crate",
-    sha256 = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af",
-    size_bytes = 820172,
-    strip_prefix = "libc-0.2.184",
-    urls = ["https://static.crates.io/crates/libc/0.2.184/download"],
+    name = "libc-0.2.191.crate",
+    sha256 = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a",
+    size_bytes = 855401,
+    strip_prefix = "libc-0.2.191",
+    urls = ["https://static.crates.io/crates/libc/0.2.191/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "libc-0.2",
-    srcs = [":libc-0.2.184.crate"],
+    srcs = [":libc-0.2.191.crate"],
     crate = "libc",
-    crate_root = "libc-0.2.184.crate/src/lib.rs",
+    crate_root = "libc-0.2.191.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "libc",
         "CARGO_CRATE_NAME": "libc",
-        "CARGO_MANIFEST_DIR": "libc-0.2.184.crate",
-        "CARGO_PKG_AUTHORS": "The Rust Project Developers",
+        "CARGO_MANIFEST_DIR": "libc-0.2.191.crate",
+        "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Raw FFI bindings to platform libraries like libc.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "libc",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/rust-lang/libc",
         "CARGO_PKG_RUST_VERSION": "1.65",
-        "CARGO_PKG_VERSION": "0.2.184",
+        "CARGO_PKG_VERSION": "0.2.191",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "184",
+        "CARGO_PKG_VERSION_PATCH": "191",
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :libc-0.2-build-script-run[out_dir])",
     },
@@ -23068,25 +24139,25 @@ cargo.rust_library(
 
 cargo.rust_binary(
     name = "libc-0.2-build-script-build",
-    srcs = [":libc-0.2.184.crate"],
+    srcs = [":libc-0.2.191.crate"],
     crate = "build_script_build",
-    crate_root = "libc-0.2.184.crate/build.rs",
+    crate_root = "libc-0.2.191.crate/build.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "build-script-build",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "libc-0.2.184.crate",
-        "CARGO_PKG_AUTHORS": "The Rust Project Developers",
+        "CARGO_MANIFEST_DIR": "libc-0.2.191.crate",
+        "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Raw FFI bindings to platform libraries like libc.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "libc",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/rust-lang/libc",
         "CARGO_PKG_RUST_VERSION": "1.65",
-        "CARGO_PKG_VERSION": "0.2.184",
+        "CARGO_PKG_VERSION": "0.2.191",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "184",
+        "CARGO_PKG_VERSION_PATCH": "191",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -23115,7 +24186,7 @@ buildscript_run(
     package_name = "libc",
     buildscript_rule = ":libc-0.2-build-script-build",
     env = {
-        "CARGO_PKG_AUTHORS": "The Rust Project Developers",
+        "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Raw FFI bindings to platform libraries like libc.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_README": "README.md",
@@ -23123,7 +24194,7 @@ buildscript_run(
         "CARGO_PKG_RUST_VERSION": "1.65",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "184",
+        "CARGO_PKG_VERSION_PATCH": "191",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -23144,7 +24215,7 @@ buildscript_run(
             features = ["extra_traits"],
         ),
     },
-    version = "0.2.184",
+    version = "0.2.191",
 )
 
 http_archive(
@@ -26087,16 +27158,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-base-crypto-1.1.1.crate",
+    sha256 = "6dab067703b7d562c8bd7146adb18fda49622a57d0519e135e964bb6225acb5f",
+    size_bytes = 57166,
+    strip_prefix = "midnight-base-crypto-1.1.1",
+    urls = ["https://static.crates.io/crates/midnight-base-crypto/1.1.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-base-crypto-1",
-    srcs = [":midnight-ledger-4a81d777a7d3168565a4ab66.git"],
+    srcs = [":midnight-base-crypto-1.1.1.crate"],
     crate = "midnight_base_crypto",
-    crate_root = "midnight-ledger-4a81d777a7d3168565a4ab66/base-crypto/src/lib.rs",
+    crate_root = "midnight-base-crypto-1.1.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_base_crypto",
         "CARGO_CRATE_NAME": "midnight_base_crypto",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168565a4ab66/base-crypto",
+        "CARGO_MANIFEST_DIR": "midnight-base-crypto-1.1.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Provides foundational cryptographic primitives for Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26104,10 +27184,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.1.0",
+        "CARGO_PKG_VERSION": "1.1.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -26131,7 +27211,7 @@ cargo.rust_library(
         ":futures-0.3",
         ":group-0.13",
         ":indicatif-0.18",
-        ":k256-0.13",
+        ":k256-0.14",
         ":lazy_static-1",
         ":pastey-0.2",
         ":rand-0.8",
@@ -26140,23 +27220,32 @@ cargo.rust_library(
         ":serde_bytes-0.11",
         ":serde_json-1",
         ":sha2-0.11",
-        ":signature-2",
+        ":signature-3",
         ":subtle-2",
         ":tracing-0.1",
         ":zeroize-1",
     ],
 )
 
+http_archive(
+    name = "midnight-base-crypto-derive-1.1.0.crate",
+    sha256 = "30565daf666e3016d2bb72073e2c3ff61ac3ad123912eec764a72e20758082f2",
+    size_bytes = 3818,
+    strip_prefix = "midnight-base-crypto-derive-1.1.0",
+    urls = ["https://static.crates.io/crates/midnight-base-crypto-derive/1.1.0/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-base-crypto-derive-1",
-    srcs = [":midnight-ledger-4a81d777a7d316854a748f74.git"],
+    srcs = [":midnight-base-crypto-derive-1.1.0.crate"],
     crate = "midnight_base_crypto_derive",
-    crate_root = "midnight-ledger-4a81d777a7d316854a748f74/base-crypto-derive/src/lib.rs",
+    crate_root = "midnight-base-crypto-derive-1.1.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_base_crypto_derive",
         "CARGO_CRATE_NAME": "midnight_base_crypto_derive",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d316854a748f74/base-crypto-derive",
+        "CARGO_MANIFEST_DIR": "midnight-base-crypto-derive-1.1.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Derive macros for cryptographic representation traits in Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26235,24 +27324,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "midnight-circuits-7.2.4.crate",
-    sha256 = "a3040d26341a9168a3db7adeb365da9b9b8e756bc911a08c5f76a6a93d441ca7",
-    size_bytes = 453607,
-    strip_prefix = "midnight-circuits-7.2.4",
-    urls = ["https://static.crates.io/crates/midnight-circuits/7.2.4/download"],
+    name = "midnight-circuits-7.3.0.crate",
+    sha256 = "79ba23314560e105bb1da33551199ae9abaa25188589d8308caddbcd8d1f3448",
+    size_bytes = 465839,
+    strip_prefix = "midnight-circuits-7.3.0",
+    urls = ["https://static.crates.io/crates/midnight-circuits/7.3.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "midnight-circuits-7",
-    srcs = [":midnight-circuits-7.2.4.crate"],
+    srcs = [":midnight-circuits-7.3.0.crate"],
     crate = "midnight_circuits",
-    crate_root = "midnight-circuits-7.2.4.crate/src/lib.rs",
+    crate_root = "midnight-circuits-7.3.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "midnight_circuits",
         "CARGO_CRATE_NAME": "midnight_circuits",
-        "CARGO_MANIFEST_DIR": "midnight-circuits-7.2.4.crate",
+        "CARGO_MANIFEST_DIR": "midnight-circuits-7.3.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Circuit and gadget implementations for Midnight zero-knowledge proofs",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26260,10 +27349,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "7.2.4",
+        "CARGO_PKG_VERSION": "7.3.0",
         "CARGO_PKG_VERSION_MAJOR": "7",
-        "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_MINOR": "3",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -26355,16 +27444,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-coin-structure-3.0.1.crate",
+    sha256 = "55ebb800e1208f17558e886934e420e51bbb89a4e803663e004ab6029b3c6716",
+    size_bytes = 33642,
+    strip_prefix = "midnight-coin-structure-3.0.1",
+    urls = ["https://static.crates.io/crates/midnight-coin-structure/3.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-coin-structure-3",
-    srcs = [":midnight-ledger-4a81d777a7d31685ba7a6338.git"],
+    srcs = [":midnight-coin-structure-3.0.1.crate"],
     crate = "midnight_coin_structure",
-    crate_root = "midnight-ledger-4a81d777a7d31685ba7a6338/coin-structure/src/lib.rs",
+    crate_root = "midnight-coin-structure-3.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_coin_structure",
         "CARGO_CRATE_NAME": "midnight_coin_structure",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685ba7a6338/coin-structure",
+        "CARGO_MANIFEST_DIR": "midnight-coin-structure-3.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Describes low-level address format and shielded token representations for Midnight.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26372,10 +27470,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "3.0.0",
+        "CARGO_PKG_VERSION": "3.0.1",
         "CARGO_PKG_VERSION_MAJOR": "3",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
@@ -26633,16 +27731,25 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "midnight-ledger-static-10.0.0.crate",
+    sha256 = "7a8757a7febfd6a0c8e2701c7a639dee522599aad11b71854545acae5fa4c863",
+    size_bytes = 1740,
+    strip_prefix = "midnight-ledger-static-10.0.0",
+    urls = ["https://static.crates.io/crates/midnight-ledger-static/10.0.0/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-ledger-static-10",
-    srcs = [":midnight-ledger-4a81d777a7d3168548a978d7.git"],
+    srcs = [":midnight-ledger-static-10.0.0.crate"],
     crate = "midnight_ledger_static",
-    crate_root = "midnight-ledger-4a81d777a7d3168548a978d7/static/src/lib.rs",
+    crate_root = "midnight-ledger-static-10.0.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_ledger_static",
         "CARGO_CRATE_NAME": "midnight_ledger_static",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168548a978d7/static",
+        "CARGO_MANIFEST_DIR": "midnight-ledger-static-10.0.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Version identifier of static files included in Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26670,16 +27777,26 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-ledger-v9-1.0.1.crate",
+    sha256 = "7dd8a21fcae84dc92c8edf7b31d40260d7a384b26695d1179311cafb28928b83",
+    size_bytes = 4050408,
+    strip_prefix = "midnight-ledger-v9-1.0.1",
+    sub_targets = ["ledger/static/dust/spend.verifier"],
+    urls = ["https://static.crates.io/crates/midnight-ledger-v9/1.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-ledger-v9-1",
-    srcs = [":midnight-ledger-4a81d777a7d3168548a978d7.git"],
+    srcs = [":midnight-ledger-v9-1.0.1.crate"],
     crate = "midnight_ledger_v9",
-    crate_root = "midnight-ledger-4a81d777a7d3168548a978d7/ledger/src/lib.rs",
+    crate_root = "midnight-ledger-v9-1.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_ledger_v9",
         "CARGO_CRATE_NAME": "midnight_ledger_v9",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168548a978d7/ledger",
+        "CARGO_MANIFEST_DIR": "midnight-ledger-v9-1.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Provides the transaction format and semantics for Midnight.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26687,10 +27804,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.0.0",
+        "CARGO_PKG_VERSION": "1.0.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -26701,14 +27818,14 @@ cargo.rust_library(
         "test-utilities",
     ],
     mapped_srcs = {
-        ":midnight-ledger-4a81d777a7d3168548a978d7.git[ledger/static/dust/spend.verifier]": "midnight-ledger-4a81d777a7d3168548a978d7/ledger/static/dust/spend.verifier",
+        ":midnight-ledger-v9-1.0.1.crate[ledger/static/dust/spend.verifier]": "midnight-ledger-v9-1.0.1.crate/static/dust/spend.verifier",
     },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
         "coin_structure": ":midnight-coin-structure-3",
         "onchain_runtime": ":midnight-onchain-runtime-4",
         "serialize": ":midnight-serialize-1",
-        "storage": ":midnight-storage-2",
+        "storage": ":midnight-storage-3",
         "transient_crypto": ":midnight-transient-crypto-3",
         "transient_crypto_old": ":midnight-transient-crypto-2",
         "zkir_v2": ":midnight-zkir-2",
@@ -26813,16 +27930,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-onchain-runtime-4.0.1.crate",
+    sha256 = "0c46893ad14f673828699466d9a8512163bd90f3796198ec84c7ac4488d431cd",
+    size_bytes = 60890,
+    strip_prefix = "midnight-onchain-runtime-4.0.1",
+    urls = ["https://static.crates.io/crates/midnight-onchain-runtime/4.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-onchain-runtime-4",
-    srcs = [":midnight-ledger-4a81d777a7d3168570f195d6.git"],
+    srcs = [":midnight-onchain-runtime-4.0.1.crate"],
     crate = "midnight_onchain_runtime",
-    crate_root = "midnight-ledger-4a81d777a7d3168570f195d6/onchain-runtime/src/lib.rs",
+    crate_root = "midnight-onchain-runtime-4.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_onchain_runtime",
         "CARGO_CRATE_NAME": "midnight_onchain_runtime",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168570f195d6/onchain-runtime",
+        "CARGO_MANIFEST_DIR": "midnight-onchain-runtime-4.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "The full smart contract runtime for Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26830,10 +27956,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION": "4.0.1",
         "CARGO_PKG_VERSION_MAJOR": "4",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -26846,7 +27972,7 @@ cargo.rust_library(
         "onchain_runtime_state": ":midnight-onchain-state-4",
         "onchain_vm": ":midnight-onchain-vm-4",
         "serialize": ":midnight-serialize-1",
-        "storage": ":midnight-storage-2",
+        "storage": ":midnight-storage-3",
         "transient_crypto": ":midnight-transient-crypto-3",
     },
     visibility = [],
@@ -26927,16 +28053,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-onchain-state-4.0.1.crate",
+    sha256 = "d3a312d72427a0296100f3a914fdbc6c645d68eb2791cff7f4d4e23b03f63fa2",
+    size_bytes = 43166,
+    strip_prefix = "midnight-onchain-state-4.0.1",
+    urls = ["https://static.crates.io/crates/midnight-onchain-state/4.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-onchain-state-4",
-    srcs = [":midnight-ledger-4a81d777a7d31685400e40b9.git"],
+    srcs = [":midnight-onchain-state-4.0.1.crate"],
     crate = "midnight_onchain_state",
-    crate_root = "midnight-ledger-4a81d777a7d31685400e40b9/onchain-state/src/lib.rs",
+    crate_root = "midnight-onchain-state-4.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_onchain_state",
         "CARGO_CRATE_NAME": "midnight_onchain_state",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685400e40b9/onchain-state",
+        "CARGO_MANIFEST_DIR": "midnight-onchain-state-4.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Defines the state format for contract states on Midnight.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -26944,17 +28079,17 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION": "4.0.1",
         "CARGO_PKG_VERSION_MAJOR": "4",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
         "coin_structure": ":midnight-coin-structure-3",
         "serialize": ":midnight-serialize-1",
-        "storage": ":midnight-storage-2",
+        "storage": ":midnight-storage-3",
         "transient_crypto": ":midnight-transient-crypto-3",
         "transient_crypto_old": ":midnight-transient-crypto-2",
     },
@@ -27022,16 +28157,25 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "midnight-onchain-vm-4.0.1.crate",
+    sha256 = "3b4961896eb2d6c9c3bc7bd74c8490a53db46aa27023db8fbfd324de9a63438f",
+    size_bytes = 48522,
+    strip_prefix = "midnight-onchain-vm-4.0.1",
+    urls = ["https://static.crates.io/crates/midnight-onchain-vm/4.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-onchain-vm-4",
-    srcs = [":midnight-ledger-4a81d777a7d3168518964db1.git"],
+    srcs = [":midnight-onchain-vm-4.0.1.crate"],
     crate = "midnight_onchain_vm",
-    crate_root = "midnight-ledger-4a81d777a7d3168518964db1/onchain-vm/src/lib.rs",
+    crate_root = "midnight-onchain-vm-4.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_onchain_vm",
         "CARGO_CRATE_NAME": "midnight_onchain_vm",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168518964db1/onchain-vm",
+        "CARGO_MANIFEST_DIR": "midnight-onchain-vm-4.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Implements the onchain VM for Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27039,10 +28183,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION": "4.0.1",
         "CARGO_PKG_VERSION_MAJOR": "4",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
@@ -27050,7 +28194,7 @@ cargo.rust_library(
         "coin_structure": ":midnight-coin-structure-3",
         "runtime_state": ":midnight-onchain-state-4",
         "serialize": ":midnight-serialize-1",
-        "storage": ":midnight-storage-2",
+        "storage": ":midnight-storage-3",
         "transient_crypto": ":midnight-transient-crypto-3",
     },
     visibility = [],
@@ -27179,16 +28323,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-serialize-1.2.1.crate",
+    sha256 = "08c3c1c593d3f7d690a725a0f03432039bdfc7c4c386f9b1550a3409756a9d9b",
+    size_bytes = 21842,
+    strip_prefix = "midnight-serialize-1.2.1",
+    urls = ["https://static.crates.io/crates/midnight-serialize/1.2.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-serialize-1",
-    srcs = [":midnight-ledger-4a81d777a7d3168583dfd6a7.git"],
+    srcs = [":midnight-serialize-1.2.1.crate"],
     crate = "midnight_serialize",
-    crate_root = "midnight-ledger-4a81d777a7d3168583dfd6a7/serialize/src/lib.rs",
+    crate_root = "midnight-serialize-1.2.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_serialize",
         "CARGO_CRATE_NAME": "midnight_serialize",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168583dfd6a7/serialize",
+        "CARGO_MANIFEST_DIR": "midnight-serialize-1.2.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Serialization primitives for Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27196,10 +28349,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.2.0",
+        "CARGO_PKG_VERSION": "1.2.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
@@ -27262,16 +28415,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-storage-2.0.5.crate",
+    sha256 = "f9c3985a0d68d2c123dfaf37181b196251bb067c578abab020859c7cc20887b4",
+    size_bytes = 96356,
+    strip_prefix = "midnight-storage-2.0.5",
+    urls = ["https://static.crates.io/crates/midnight-storage/2.0.5/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-storage-2",
-    srcs = [":midnight-ledger-4a81d777a7d31685971a9960.git"],
+    srcs = [":midnight-storage-2.0.5.crate"],
     crate = "midnight_storage",
-    crate_root = "midnight-ledger-4a81d777a7d31685971a9960/storage/src/lib.rs",
+    crate_root = "midnight-storage-2.0.5.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_storage",
         "CARGO_CRATE_NAME": "midnight_storage",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685971a9960/storage",
+        "CARGO_MANIFEST_DIR": "midnight-storage-2.0.5.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Provides data structures and storage primitives for Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27279,10 +28441,70 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "2.0.4",
+        "CARGO_PKG_VERSION": "2.0.5",
         "CARGO_PKG_VERSION_MAJOR": "2",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "parity-db",
+        "public-internal-structure",
+    ],
+    named_deps = {
+        "base_crypto": ":midnight-base-crypto-1",
+        "serialize": ":midnight-serialize-1",
+        "storage_core": ":midnight-storage-core-1",
+    },
+    visibility = [],
+    deps = [
+        ":crypto-0.5",
+        ":derive-where-1",
+        ":parking_lot-0.12",
+        ":rand-0.8",
+        ":serde-1",
+        ":sha2-0.10",
+        ":sysinfo-0.39",
+        ":tempfile-3",
+    ],
+)
+
+alias(
+    name = "ledger-storage-ledger-9",
+    actual = ":midnight-storage-3",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "midnight-storage-3.0.0.crate",
+    sha256 = "8ed12a8b715ff879a11c9a45819f66594a3d8019f8ad9a3421b3fd3a9d6d9838",
+    size_bytes = 111228,
+    strip_prefix = "midnight-storage-3.0.0",
+    urls = ["https://static.crates.io/crates/midnight-storage/3.0.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "midnight-storage-3",
+    srcs = [":midnight-storage-3.0.0.crate"],
+    crate = "midnight_storage",
+    crate_root = "midnight-storage-3.0.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "midnight_storage",
+        "CARGO_CRATE_NAME": "midnight_storage",
+        "CARGO_MANIFEST_DIR": "midnight-storage-3.0.0.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Provides data structures and storage primitives for Midnight's ledger.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "midnight-storage",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "3.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -27299,12 +28521,11 @@ cargo.rust_library(
     deps = [
         ":crypto-0.5",
         ":derive-where-1",
-        ":digest-0.11",
         ":hashbrown-0.17",
         ":parking_lot-0.12",
         ":rand-0.8",
         ":serde-1",
-        ":sha2-0.11",
+        ":sha2-0.10",
         ":sysinfo-0.39",
         ":tempfile-3",
     ],
@@ -27316,16 +28537,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-storage-core-1.2.3.crate",
+    sha256 = "aa4923fc43b6202934516e5b897983a9390d78076ca7059a46c2d17989dbe891",
+    size_bytes = 124963,
+    strip_prefix = "midnight-storage-core-1.2.3",
+    urls = ["https://static.crates.io/crates/midnight-storage-core/1.2.3/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-storage-core-1",
-    srcs = [":midnight-ledger-4a81d777a7d3168506dfda14.git"],
+    srcs = [":midnight-storage-core-1.2.3.crate"],
     crate = "midnight_storage_core",
-    crate_root = "midnight-ledger-4a81d777a7d3168506dfda14/storage-core/src/lib.rs",
+    crate_root = "midnight-storage-core-1.2.3.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_storage_core",
         "CARGO_CRATE_NAME": "midnight_storage_core",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168506dfda14/storage-core",
+        "CARGO_MANIFEST_DIR": "midnight-storage-core-1.2.3.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Provides the low-level storage primitives for Midnight's ledger.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27333,10 +28563,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.2.2",
+        "CARGO_PKG_VERSION": "1.2.3",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -27358,7 +28588,6 @@ cargo.rust_library(
         ":archery-1",
         ":crypto-0.5",
         ":derive-where-1",
-        ":digest-0.11",
         ":fake-2",
         ":hashbrown-0.17",
         ":hex-0.4",
@@ -27369,31 +28598,31 @@ cargo.rust_library(
         ":parking_lot-0.12",
         ":rand-0.8",
         ":serde-1",
-        ":sha2-0.11",
+        ":sha2-0.10",
         ":sysinfo-0.39",
         ":tempfile-3",
     ],
 )
 
 http_archive(
-    name = "midnight-storage-macros-1.0.0.crate",
-    sha256 = "6aeb4dc8c8ea5a6495036a88943c38cce40c23fc0181e0073ca52b7124800960",
-    size_bytes = 10240,
-    strip_prefix = "midnight-storage-macros-1.0.0",
-    urls = ["https://static.crates.io/crates/midnight-storage-macros/1.0.0/download"],
+    name = "midnight-storage-macros-1.0.1.crate",
+    sha256 = "4664170f07ad92866c071806ed13d23a4c1e3ea531342cc5bfdf6aac6c7ea896",
+    size_bytes = 12899,
+    strip_prefix = "midnight-storage-macros-1.0.1",
+    urls = ["https://static.crates.io/crates/midnight-storage-macros/1.0.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "midnight-storage-macros-1",
-    srcs = [":midnight-storage-macros-1.0.0.crate"],
+    srcs = [":midnight-storage-macros-1.0.1.crate"],
     crate = "midnight_storage_macros",
-    crate_root = "midnight-storage-macros-1.0.0.crate/src/lib.rs",
+    crate_root = "midnight-storage-macros-1.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_storage_macros",
         "CARGO_CRATE_NAME": "midnight_storage_macros",
-        "CARGO_MANIFEST_DIR": "midnight-storage-macros-1.0.0.crate",
+        "CARGO_MANIFEST_DIR": "midnight-storage-macros-1.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Provides derive macros for the Midnight ledger's storage system.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27401,10 +28630,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.0.0",
+        "CARGO_PKG_VERSION": "1.0.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
@@ -27425,16 +28654,26 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-transient-crypto-2.2.0.crate",
+    sha256 = "363a7902e27e5c85ce833c0a4404cf9dfb75027e70ff54b3b4cfd4fa2c0c5ad0",
+    size_bytes = 3673249,
+    strip_prefix = "midnight-transient-crypto-2.2.0",
+    sub_targets = ["transient-crypto/static/bls_midnight_2p14"],
+    urls = ["https://static.crates.io/crates/midnight-transient-crypto/2.2.0/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-transient-crypto-2",
-    srcs = [":midnight-ledger-4a81d777a7d31685a01a1ea0.git"],
+    srcs = [":midnight-transient-crypto-2.2.0.crate"],
     crate = "midnight_transient_crypto",
-    crate_root = "midnight-ledger-4a81d777a7d31685a01a1ea0/transient-crypto/src/lib.rs",
+    crate_root = "midnight-transient-crypto-2.2.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_transient_crypto",
         "CARGO_CRATE_NAME": "midnight_transient_crypto",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685a01a1ea0/transient-crypto",
+        "CARGO_MANIFEST_DIR": "midnight-transient-crypto-2.2.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Cryptographic primitives for Midnight that may change over time.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27450,7 +28689,7 @@ cargo.rust_library(
     },
     features = ["default"],
     mapped_srcs = {
-        ":midnight-ledger-4a81d777a7d31685a01a1ea0.git[transient-crypto/static/bls_midnight_2p14]": "midnight-ledger-4a81d777a7d31685a01a1ea0/transient-crypto/static/bls_midnight_2p14",
+        ":midnight-transient-crypto-2.2.0.crate[transient-crypto/static/bls_midnight_2p14]": "midnight-transient-crypto-2.2.0.crate/static/bls_midnight_2p14",
     },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
@@ -27469,7 +28708,6 @@ cargo.rust_library(
         ":flate2-1",
         ":futures-0.3",
         ":group-0.13",
-        ":k256-0.13",
         ":lazy_static-1",
         ":lru-0.18",
         ":midnight-circuits-6",
@@ -27482,7 +28720,7 @@ cargo.rust_library(
         ":serde_bytes-0.11",
         ":serde_json-1",
         ":sha2-0.11",
-        ":signature-2",
+        ":subtle-2",
         ":tracing-0.1",
         ":zeroize-1",
     ],
@@ -27494,16 +28732,26 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-transient-crypto-3.0.1.crate",
+    sha256 = "dc5d811d8f66108b343bff0d8f5177c36911c39cb9c0565312ba2d089fe2bac2",
+    size_bytes = 3676778,
+    strip_prefix = "midnight-transient-crypto-3.0.1",
+    sub_targets = ["transient-crypto/static/bls_midnight_2p14"],
+    urls = ["https://static.crates.io/crates/midnight-transient-crypto/3.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-transient-crypto-3",
-    srcs = [":midnight-ledger-4a81d777a7d31685c394427f.git"],
+    srcs = [":midnight-transient-crypto-3.0.1.crate"],
     crate = "midnight_transient_crypto",
-    crate_root = "midnight-ledger-4a81d777a7d31685c394427f/transient-crypto/src/lib.rs",
+    crate_root = "midnight-transient-crypto-3.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_transient_crypto",
         "CARGO_CRATE_NAME": "midnight_transient_crypto",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685c394427f/transient-crypto",
+        "CARGO_MANIFEST_DIR": "midnight-transient-crypto-3.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Cryptographic primitives for Midnight that may change over time.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27511,10 +28759,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "3.0.0",
+        "CARGO_PKG_VERSION": "3.0.1",
         "CARGO_PKG_VERSION_MAJOR": "3",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -27522,7 +28770,7 @@ cargo.rust_library(
         "default",
     ],
     mapped_srcs = {
-        ":midnight-ledger-4a81d777a7d31685c394427f.git[transient-crypto/static/bls_midnight_2p14]": "midnight-ledger-4a81d777a7d31685c394427f/transient-crypto/static/bls_midnight_2p14",
+        ":midnight-transient-crypto-3.0.1.crate[transient-crypto/static/bls_midnight_2p14]": "midnight-transient-crypto-3.0.1.crate/static/bls_midnight_2p14",
     },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
@@ -27540,7 +28788,6 @@ cargo.rust_library(
         ":ff-0.13",
         ":futures-0.3",
         ":group-0.13",
-        ":k256-0.13",
         ":lazy_static-1",
         ":lru-0.18",
         ":midnight-circuits-7",
@@ -27553,7 +28800,7 @@ cargo.rust_library(
         ":serde_bytes-0.11",
         ":serde_json-1",
         ":sha2-0.11",
-        ":signature-2",
+        ":subtle-2",
         ":tracing-0.1",
         ":zeroize-1",
     ],
@@ -27615,24 +28862,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "midnight-zk-stdlib-2.3.5.crate",
-    sha256 = "01ec8ff46d47734090358ac4dbfb444f2bfeede7cecd792225fbd9333dcf7758",
-    size_bytes = 76572,
-    strip_prefix = "midnight-zk-stdlib-2.3.5",
-    urls = ["https://static.crates.io/crates/midnight-zk-stdlib/2.3.5/download"],
+    name = "midnight-zk-stdlib-2.4.0.crate",
+    sha256 = "73819f4cd779e365545109dbbd759fe0055df4ea73f6e0ddb873281c1c8014ec",
+    size_bytes = 76854,
+    strip_prefix = "midnight-zk-stdlib-2.4.0",
+    urls = ["https://static.crates.io/crates/midnight-zk-stdlib/2.4.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "midnight-zk-stdlib-2",
-    srcs = [":midnight-zk-stdlib-2.3.5.crate"],
+    srcs = [":midnight-zk-stdlib-2.4.0.crate"],
     crate = "midnight_zk_stdlib",
-    crate_root = "midnight-zk-stdlib-2.3.5.crate/src/lib.rs",
+    crate_root = "midnight-zk-stdlib-2.4.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "midnight_zk_stdlib",
         "CARGO_CRATE_NAME": "midnight_zk_stdlib",
-        "CARGO_MANIFEST_DIR": "midnight-zk-stdlib-2.3.5.crate",
+        "CARGO_MANIFEST_DIR": "midnight-zk-stdlib-2.4.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Standard library of circuits and utilities for Midnight zero-knowledge proofs",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27640,10 +28887,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "2.3.5",
+        "CARGO_PKG_VERSION": "2.4.0",
         "CARGO_PKG_VERSION_MAJOR": "2",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["default"],
@@ -27676,16 +28923,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-zkir-2.2.0.crate",
+    sha256 = "d7eb6f6e32d75ebfe0f40ca5708cd7167ffad675cc770ad41673b137ef766497",
+    size_bytes = 56881,
+    strip_prefix = "midnight-zkir-2.2.0",
+    urls = ["https://static.crates.io/crates/midnight-zkir/2.2.0/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-zkir-2",
-    srcs = [":midnight-ledger-4a81d777a7d31685b15b1b0b.git"],
+    srcs = [":midnight-zkir-2.2.0.crate"],
     crate = "midnight_zkir",
-    crate_root = "midnight-ledger-4a81d777a7d31685b15b1b0b/zkir/src/lib.rs",
+    crate_root = "midnight-zkir-2.2.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_zkir",
         "CARGO_CRATE_NAME": "midnight_zkir",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685b15b1b0b/zkir",
+        "CARGO_MANIFEST_DIR": "midnight-zkir-2.2.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Zero-knowledge intermediate representation used for Midnight.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27729,16 +28985,25 @@ cargo.rust_library(
     ],
 )
 
+http_archive(
+    name = "midnight-zkir-3.2.0.crate",
+    sha256 = "af98c3ac618f44a609df4963db4be69bed74123a3111b5475e22a81cec4ad857",
+    size_bytes = 100981,
+    strip_prefix = "midnight-zkir-3.2.0",
+    urls = ["https://static.crates.io/crates/midnight-zkir/3.2.0/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-zkir-3",
-    srcs = [":midnight-zkir-a6753c61e905e986e82d81d2.git"],
+    srcs = [":midnight-zkir-3.2.0.crate"],
     crate = "midnight_zkir",
-    crate_root = "midnight-zkir-a6753c61e905e986e82d81d2/zkir/src/lib.rs",
+    crate_root = "midnight-zkir-3.2.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_zkir",
         "CARGO_CRATE_NAME": "midnight_zkir",
-        "CARGO_MANIFEST_DIR": "midnight-zkir-a6753c61e905e986e82d81d2/zkir",
+        "CARGO_MANIFEST_DIR": "midnight-zkir-3.2.0.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Zero-knowledge intermediate representation used for Midnight.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27746,11 +29011,11 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-zkir",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "3.1.0-rc.1",
+        "CARGO_PKG_VERSION": "3.2.0",
         "CARGO_PKG_VERSION_MAJOR": "3",
-        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "2",
         "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "rc.1",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
@@ -27853,16 +29118,25 @@ alias(
     visibility = ["PUBLIC"],
 )
 
+http_archive(
+    name = "midnight-zswap-9.0.1.crate",
+    sha256 = "c3d439c89b947d0e658f88d9f13634c7717eb1cff65be8a985f2d0231c292589",
+    size_bytes = 78589,
+    strip_prefix = "midnight-zswap-9.0.1",
+    urls = ["https://static.crates.io/crates/midnight-zswap/9.0.1/download"],
+    visibility = [],
+)
+
 cargo.rust_library(
     name = "midnight-zswap-9",
-    srcs = [":midnight-ledger-4a81d777a7d31685f861b4ec.git"],
+    srcs = [":midnight-zswap-9.0.1.crate"],
     crate = "midnight_zswap",
-    crate_root = "midnight-ledger-4a81d777a7d31685f861b4ec/zswap/src/lib.rs",
+    crate_root = "midnight-zswap-9.0.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "midnight_zswap",
         "CARGO_CRATE_NAME": "midnight_zswap",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685f861b4ec/zswap",
+        "CARGO_MANIFEST_DIR": "midnight-zswap-9.0.1.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Implementation of the Zswap shielded token atomic swap mechanism.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -27870,10 +29144,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/midnightntwrk/midnight-ledger",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "9.0.0",
+        "CARGO_PKG_VERSION": "9.0.1",
         "CARGO_PKG_VERSION_MAJOR": "9",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -27884,7 +29158,7 @@ cargo.rust_library(
         "base_crypto": ":midnight-base-crypto-1",
         "coin_structure": ":midnight-coin-structure-3",
         "serialize": ":midnight-serialize-1",
-        "storage": ":midnight-storage-2",
+        "storage": ":midnight-storage-3",
         "transient_crypto": ":midnight-transient-crypto-3",
         "transient_crypto_old": ":midnight-transient-crypto-2",
         "zkir_v2": ":midnight-zkir-2",
@@ -35854,6 +37128,46 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "pkcs8-0.11.0.crate",
+    sha256 = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7",
+    size_bytes = 34863,
+    strip_prefix = "pkcs8-0.11.0",
+    urls = ["https://static.crates.io/crates/pkcs8/0.11.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "pkcs8-0.11",
+    srcs = [":pkcs8-0.11.0.crate"],
+    crate = "pkcs8",
+    crate_root = "pkcs8-0.11.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "pkcs8",
+        "CARGO_CRATE_NAME": "pkcs8",
+        "CARGO_MANIFEST_DIR": "pkcs8-0.11.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of Public-Key Cryptography Standards (PKCS) #8:\nPrivate-Key Information Syntax Specification (RFC 5208), with additional\nsupport for PKCS#8v2 asymmetric key packages (RFC 5958)\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/formats/tree/master/pkcs8",
+        "CARGO_PKG_NAME": "pkcs8",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/formats",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.11.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "11",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+    deps = [
+        ":der-0.8",
+        ":spki-0.8",
+    ],
+)
+
+http_archive(
     name = "pkg-config-0.3.32.crate",
     sha256 = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c",
     size_bytes = 21370,
@@ -37358,6 +38672,51 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "primefield-0.14.0.crate",
+    sha256 = "c555a6e4eb7d4e158fcb028c835c3b8642206ddc279b5c6b202ef9a8bdb592f4",
+    size_bytes = 21910,
+    strip_prefix = "primefield-0.14.0",
+    urls = ["https://static.crates.io/crates/primefield/0.14.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "primefield-0.14",
+    srcs = [":primefield-0.14.0.crate"],
+    crate = "primefield",
+    crate_root = "primefield-0.14.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "primefield",
+        "CARGO_CRATE_NAME": "primefield",
+        "CARGO_MANIFEST_DIR": "primefield-0.14.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Generic implementation of prime fields built on `crypto-bigint`, along with macros for writing\nfield element newtypes including ones with formally verified arithmetic using `fiat-crypto`\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/elliptic-curves/tree/master/primefield",
+        "CARGO_PKG_NAME": "primefield",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/elliptic-curves",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.14.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    named_deps = {
+        "bigint": ":crypto-bigint-0.7",
+        "common": ":crypto-common-0.2",
+    },
+    visibility = [],
+    deps = [
+        ":ff-0.14",
+        ":rand_core-0.10",
+        ":subtle-2",
+        ":zeroize-1",
+    ],
+)
+
+http_archive(
     name = "primeorder-0.13.6.crate",
     sha256 = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6",
     size_bytes = 21296,
@@ -37391,6 +38750,47 @@ cargo.rust_library(
     },
     visibility = [],
     deps = [":elliptic-curve-0.13"],
+)
+
+http_archive(
+    name = "primeorder-0.14.0.crate",
+    sha256 = "5c9f42978c78a00e3d68f69fc03e57a234debae69da4020a4fb588fcdcd07b06",
+    size_bytes = 29009,
+    strip_prefix = "primeorder-0.14.0",
+    urls = ["https://static.crates.io/crates/primeorder/0.14.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "primeorder-0.14",
+    srcs = [":primeorder-0.14.0.crate"],
+    crate = "primeorder",
+    crate_root = "primeorder-0.14.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "primeorder",
+        "CARGO_CRATE_NAME": "primeorder",
+        "CARGO_MANIFEST_DIR": "primeorder-0.14.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of complete addition formulas for prime order elliptic\ncurves (Renes-Costello-Batina 2015). Generic over field elements and curve\nequation coefficients\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder",
+        "CARGO_PKG_NAME": "primeorder",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/elliptic-curves",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.14.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+    deps = [
+        ":elliptic-curve-0.14",
+        ":primefield-0.14",
+        ":wnaf-0.14",
+    ],
 )
 
 http_archive(
@@ -40942,6 +42342,45 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "rfc6979-0.6.0.crate",
+    sha256 = "b4a459cddafb3fe76b31fd8f1108007566c40301feb64dc7b54656eb7388172b",
+    size_bytes = 15702,
+    strip_prefix = "rfc6979-0.6.0",
+    urls = ["https://static.crates.io/crates/rfc6979/0.6.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "rfc6979-0.6",
+    srcs = [":rfc6979-0.6.0.crate"],
+    crate = "rfc6979",
+    crate_root = "rfc6979-0.6.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "rfc6979",
+        "CARGO_CRATE_NAME": "rfc6979",
+        "CARGO_MANIFEST_DIR": "rfc6979-0.6.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of RFC6979: Deterministic Usage of the Digital Signature Algorithm (DSA)\nand Elliptic Curve Digital Signature Algorithm (ECDSA)\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/signatures/tree/master/rfc6979",
+        "CARGO_PKG_NAME": "rfc6979",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/signatures",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.6.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    named_deps = {
+        "bigint": ":crypto-bigint-0.7",
+    },
+    visibility = [],
+    deps = [":hmac-0.13"],
+)
+
+http_archive(
     name = "ring-0.17.14.crate",
     sha256 = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7",
     size_bytes = 1502610,
@@ -41213,6 +42652,47 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
+)
+
+http_archive(
+    name = "rowan-0.16.1.crate",
+    sha256 = "417a3a9f582e349834051b8a10c8d71ca88da4211e4093528e36b9845f6b5f21",
+    size_bytes = 41742,
+    strip_prefix = "rowan-0.16.1",
+    urls = ["https://static.crates.io/crates/rowan/0.16.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "rowan-0.16",
+    srcs = [":rowan-0.16.1.crate"],
+    crate = "rowan",
+    crate_root = "rowan-0.16.1.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "rowan",
+        "CARGO_CRATE_NAME": "rowan",
+        "CARGO_MANIFEST_DIR": "rowan-0.16.1.crate",
+        "CARGO_PKG_AUTHORS": "Aleksey Kladov <aleksey.kladov@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Library for generic lossless syntax trees",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "rowan",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/rust-analyzer/rowan",
+        "CARGO_PKG_RUST_VERSION": "1.77.0",
+        "CARGO_PKG_VERSION": "0.16.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "16",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":countme-3",
+        ":hashbrown-0.14",
+        ":rustc-hash-1",
+        ":text-size-1",
+    ],
 )
 
 http_archive(
@@ -42234,6 +43714,12 @@ buildscript_run(
         ),
     },
     version = "1.1.4",
+)
+
+alias(
+    name = "rustls",
+    actual = ":rustls-0.23",
+    visibility = ["PUBLIC"],
 )
 
 http_archive(
@@ -46926,6 +48412,60 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "sec1-0.8.1.crate",
+    sha256 = "d56d437c2f19203ce5f7122e507831de96f3d2d4d3be5af44a0b0a09d8a80e4d",
+    size_bytes = 22369,
+    strip_prefix = "sec1-0.8.1",
+    urls = ["https://static.crates.io/crates/sec1/0.8.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "sec1-0.8",
+    srcs = [":sec1-0.8.1.crate"],
+    crate = "sec1",
+    crate_root = "sec1-0.8.1.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "sec1",
+        "CARGO_CRATE_NAME": "sec1",
+        "CARGO_MANIFEST_DIR": "sec1-0.8.1.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of SEC1: Elliptic Curve Cryptography encoding formats including ASN.1 DER\nencoded private keys as well as the Elliptic-Curve-Point-to-Octet-String encoding\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/formats/tree/master/sec1",
+        "CARGO_PKG_NAME": "sec1",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/formats",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.8.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "8",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "alloc",
+        "ctutils",
+        "default",
+        "der",
+        "point",
+        "serde",
+        "subtle",
+        "zeroize",
+    ],
+    visibility = [],
+    deps = [
+        ":base16ct-1",
+        ":ctutils-0.4",
+        ":der-0.8",
+        ":hybrid-array-0.4",
+        ":serdect-0.4",
+        ":subtle-2",
+        ":zeroize-1",
+    ],
+)
+
+http_archive(
     name = "secp256k1-0.26.0.crate",
     sha256 = "4124a35fe33ae14259c490fd70fa199a32b9ce9502f2ee6bc4f81ec06fa65894",
     size_bytes = 67635,
@@ -48239,6 +49779,56 @@ buildscript_run(
 )
 
 http_archive(
+    name = "serde_json_bytes-0.2.6.crate",
+    sha256 = "56b373804afb2809c26851fc268912e12fde8fa64c231ca735edab3a6ad0e9f1",
+    size_bytes = 42606,
+    strip_prefix = "serde_json_bytes-0.2.6",
+    urls = ["https://static.crates.io/crates/serde_json_bytes/0.2.6/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "serde_json_bytes-0.2",
+    srcs = [":serde_json_bytes-0.2.6.crate"],
+    crate = "serde_json_bytes",
+    crate_root = "serde_json_bytes-0.2.6.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "serde_json_bytes",
+        "CARGO_CRATE_NAME": "serde_json_bytes",
+        "CARGO_MANIFEST_DIR": "serde_json_bytes-0.2.6.crate",
+        "CARGO_PKG_AUTHORS": "Geoffroy Couprie <geoffroy@apollographql.com>",
+        "CARGO_PKG_DESCRIPTION": "a JSON Value object with strings backed by Bytes, parsed by serde_json",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "serde_json_bytes",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/apollographql/serde_json_bytes",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.2.6",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "2",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "indexmap",
+        "preserve_order",
+        "std",
+    ],
+    visibility = [],
+    deps = [
+        ":ahash-0.8",
+        ":bytes-1",
+        ":indexmap-2",
+        ":jsonpath-rust-0.3",
+        ":regex-1",
+        ":serde-1",
+        ":serde_json-1",
+    ],
+)
+
+http_archive(
     name = "serde_qs-0.12.0.crate",
     sha256 = "0431a35568651e363364210c91983c1da5eb29404d9f0928b67d4ebcfa7d330c",
     size_bytes = 52798,
@@ -48801,6 +50391,46 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "serdect-0.4.3.crate",
+    sha256 = "66cf8fedced2fcf12406bcb34223dffb92eaf34908ede12fed414c82b7f00b3e",
+    size_bytes = 19800,
+    strip_prefix = "serdect-0.4.3",
+    urls = ["https://static.crates.io/crates/serdect/0.4.3/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "serdect-0.4",
+    srcs = [":serdect-0.4.3.crate"],
+    crate = "serdect",
+    crate_root = "serdect-0.4.3.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "serdect",
+        "CARGO_CRATE_NAME": "serdect",
+        "CARGO_MANIFEST_DIR": "serdect-0.4.3.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Constant-time serde serializer/deserializer helpers for data that potentially\ncontains secrets (e.g. cryptographic keys)\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/formats/tree/master/serdect",
+        "CARGO_PKG_NAME": "serdect",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/formats",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.4.3",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+    deps = [
+        ":base16ct-1",
+        ":serde-1",
+    ],
+)
+
+http_archive(
     name = "sha1-0.10.6.crate",
     sha256 = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba",
     size_bytes = 13517,
@@ -48890,6 +50520,12 @@ cargo.rust_library(
     ],
 )
 
+alias(
+    name = "storage-sha2",
+    actual = ":sha2-0.10",
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "sha2-0.10.9.crate",
     sha256 = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283",
@@ -48977,6 +50613,7 @@ cargo.rust_library(
         "alloc",
         "default",
         "oid",
+        "zeroize",
     ],
     visibility = [],
     deps = [
@@ -49495,6 +51132,50 @@ cargo.rust_library(
     deps = [
         ":digest-0.10",
         ":rand_core-0.6",
+    ],
+)
+
+http_archive(
+    name = "signature-3.0.0.crate",
+    sha256 = "28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5",
+    size_bytes = 15027,
+    strip_prefix = "signature-3.0.0",
+    urls = ["https://static.crates.io/crates/signature/3.0.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "signature-3",
+    srcs = [":signature-3.0.0.crate"],
+    crate = "signature",
+    crate_root = "signature-3.0.0.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "signature",
+        "CARGO_CRATE_NAME": "signature",
+        "CARGO_MANIFEST_DIR": "signature-3.0.0.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "Traits for cryptographic signature algorithms (e.g. ECDSA, Ed25519)",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "signature",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/traits",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "3.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "3",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "alloc",
+        "digest",
+        "rand_core",
+    ],
+    visibility = [],
+    deps = [
+        ":digest-0.11",
+        ":rand_core-0.10",
     ],
 )
 
@@ -52984,6 +54665,43 @@ cargo.rust_library(
     deps = [":der-0.7"],
 )
 
+http_archive(
+    name = "spki-0.8.1.crate",
+    sha256 = "7ef958a98b9d5da290cfc78946e9f3e61e1e62a18db0d92cac0b83cc161491a9",
+    size_bytes = 20374,
+    strip_prefix = "spki-0.8.1",
+    urls = ["https://static.crates.io/crates/spki/0.8.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "spki-0.8",
+    srcs = [":spki-0.8.1.crate"],
+    crate = "spki",
+    crate_root = "spki-0.8.1.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "spki",
+        "CARGO_CRATE_NAME": "spki",
+        "CARGO_MANIFEST_DIR": "spki-0.8.1.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "X.509 Subject Public Key Info (RFC5280) describing public keys as well as their\nassociated AlgorithmIdentifiers (i.e. OIDs)\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/formats/tree/master/spki",
+        "CARGO_PKG_NAME": "spki",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/formats",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.8.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "8",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["alloc"],
+    visibility = [],
+    deps = [":der-0.8"],
+)
+
 alias(
     name = "sqlx",
     actual = ":sqlx-0.8",
@@ -54914,6 +56632,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
+        "const-generics",
         "default",
         "i128",
         "std",
@@ -56881,6 +58600,41 @@ cargo.rust_library(
     deps = [":testcontainers-0.27"],
 )
 
+http_archive(
+    name = "text-size-1.1.1.crate",
+    sha256 = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233",
+    size_bytes = 12553,
+    strip_prefix = "text-size-1.1.1",
+    urls = ["https://static.crates.io/crates/text-size/1.1.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "text-size-1",
+    srcs = [":text-size-1.1.1.crate"],
+    crate = "text_size",
+    crate_root = "text-size-1.1.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "text_size",
+        "CARGO_CRATE_NAME": "text_size",
+        "CARGO_MANIFEST_DIR": "text-size-1.1.1.crate",
+        "CARGO_PKG_AUTHORS": "Aleksey Kladov <aleksey.kladov@gmail.com>:Christopher Durham (CAD97) <cad97@cad97.com>",
+        "CARGO_PKG_DESCRIPTION": "Newtypes for text offsets",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "text-size",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/rust-analyzer/text-size",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "1.1.1",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
 alias(
     name = "thiserror-1",
     actual = ":thiserror-1.0.69",
@@ -57315,6 +59069,12 @@ cargo.rust_library(
     deps = [":num_cpus-1"],
 )
 
+alias(
+    name = "tikv-jemalloc-ctl",
+    actual = ":tikv-jemalloc-ctl-0.6",
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "tikv-jemalloc-ctl-0.6.1.crate",
     sha256 = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c",
@@ -57395,9 +59155,60 @@ cargo.rust_library(
         "background_threads_runtime_support",
         "default",
         "stats",
+        "unprefixed_malloc_on_supported_platforms",
     ],
     visibility = [],
     deps = [":libc-0.2"],
+)
+
+alias(
+    name = "tikv-jemallocator",
+    actual = ":tikv-jemallocator-0.6",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "tikv-jemallocator-0.6.1.crate",
+    sha256 = "0359b4327f954e0567e69fb191cf1436617748813819c94b8cd4a431422d053a",
+    size_bytes = 14074,
+    strip_prefix = "tikv-jemallocator-0.6.1",
+    urls = ["https://static.crates.io/crates/tikv-jemallocator/0.6.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "tikv-jemallocator-0.6",
+    srcs = [":tikv-jemallocator-0.6.1.crate"],
+    crate = "tikv_jemallocator",
+    crate_root = "tikv-jemallocator-0.6.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "tikv_jemallocator",
+        "CARGO_CRATE_NAME": "tikv_jemallocator",
+        "CARGO_MANIFEST_DIR": "tikv-jemallocator-0.6.1.crate",
+        "CARGO_PKG_AUTHORS": "Alex Crichton <alex@alexcrichton.com>:Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>:Simon Sapin <simon.sapin@exyr.org>:Steven Fackler <sfackler@gmail.com>:The TiKV Project Developers",
+        "CARGO_PKG_DESCRIPTION": "A Rust allocator backed by jemalloc\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/tikv/jemallocator",
+        "CARGO_PKG_NAME": "tikv-jemallocator",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/tikv/jemallocator",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.6.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "background_threads_runtime_support",
+        "default",
+        "unprefixed_malloc_on_supported_platforms",
+    ],
+    visibility = [],
+    deps = [
+        ":libc-0.2",
+        ":tikv-jemalloc-sys-0.6",
+    ],
 )
 
 alias(
@@ -58188,6 +59999,69 @@ cargo.rust_library(
         ":tokio-1",
         ":tokio-rustls-0.26",
         ":tungstenite-0.27",
+    ],
+)
+
+alias(
+    name = "tokio-tungstenite",
+    actual = ":tokio-tungstenite-0.29",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "tokio-tungstenite-0.29.0.crate",
+    sha256 = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c",
+    size_bytes = 30226,
+    strip_prefix = "tokio-tungstenite-0.29.0",
+    urls = ["https://static.crates.io/crates/tokio-tungstenite/0.29.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "tokio-tungstenite-0.29",
+    srcs = [":tokio-tungstenite-0.29.0.crate"],
+    crate = "tokio_tungstenite",
+    crate_root = "tokio-tungstenite-0.29.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "tokio_tungstenite",
+        "CARGO_CRATE_NAME": "tokio_tungstenite",
+        "CARGO_MANIFEST_DIR": "tokio-tungstenite-0.29.0.crate",
+        "CARGO_PKG_AUTHORS": "Daniel Abramov <dabramov@snapview.de>:Alexey Galakhov <agalakhov@snapview.de>",
+        "CARGO_PKG_DESCRIPTION": "Tokio binding for Tungstenite, the Lightweight stream-based WebSocket implementation",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/snapview/tokio-tungstenite",
+        "CARGO_PKG_NAME": "tokio-tungstenite",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/snapview/tokio-tungstenite",
+        "CARGO_PKG_RUST_VERSION": "1.63",
+        "CARGO_PKG_VERSION": "0.29.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "29",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "__rustls-tls",
+        "connect",
+        "default",
+        "handshake",
+        "rustls",
+        "rustls-pki-types",
+        "rustls-tls-webpki-roots",
+        "stream",
+        "tokio-rustls",
+        "webpki-roots",
+    ],
+    visibility = [],
+    deps = [
+        ":futures-util-0.3",
+        ":log-0.4",
+        ":rustls-0.23",
+        ":rustls-pki-types-1",
+        ":tokio-1",
+        ":tokio-rustls-0.26",
+        ":tungstenite-0.29",
+        ":webpki-roots-0.26",
     ],
 )
 
@@ -59680,7 +61554,17 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "15",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = [
+        "default",
+        "serde",
+        "stable_deref_trait",
+        "std",
+    ],
     visibility = [],
+    deps = [
+        ":serde-1",
+        ":stable_deref_trait-1",
+    ],
 )
 
 http_archive(
@@ -59870,6 +61754,63 @@ cargo.rust_library(
         ":thiserror-2",
         ":url-2",
         ":utf-8-0.7",
+    ],
+)
+
+http_archive(
+    name = "tungstenite-0.29.0.crate",
+    sha256 = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8",
+    size_bytes = 72513,
+    strip_prefix = "tungstenite-0.29.0",
+    urls = ["https://static.crates.io/crates/tungstenite/0.29.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "tungstenite-0.29",
+    srcs = [":tungstenite-0.29.0.crate"],
+    crate = "tungstenite",
+    crate_root = "tungstenite-0.29.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "tungstenite",
+        "CARGO_CRATE_NAME": "tungstenite",
+        "CARGO_MANIFEST_DIR": "tungstenite-0.29.0.crate",
+        "CARGO_PKG_AUTHORS": "Alexey Galakhov:Daniel Abramov",
+        "CARGO_PKG_DESCRIPTION": "Lightweight stream-based WebSocket implementation",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/snapview/tungstenite-rs",
+        "CARGO_PKG_NAME": "tungstenite",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/snapview/tungstenite-rs",
+        "CARGO_PKG_RUST_VERSION": "1.71",
+        "CARGO_PKG_VERSION": "0.29.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "29",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "__rustls-tls",
+        "data-encoding",
+        "handshake",
+        "http",
+        "httparse",
+        "rustls",
+        "rustls-pki-types",
+        "sha1",
+    ],
+    visibility = [],
+    deps = [
+        ":bytes-1",
+        ":data-encoding-2",
+        ":http-1",
+        ":httparse-1",
+        ":log-0.4",
+        ":rand-0.9",
+        ":rustls-0.23",
+        ":rustls-pki-types-1",
+        ":sha1-0.10",
+        ":thiserror-2",
     ],
 )
 
@@ -61344,14 +63285,14 @@ alias(
 
 cargo.rust_library(
     name = "v8-to-v9-state-translation-0.1",
-    srcs = [":midnight-ledger-4a81d777a7d31685da96e33d.git"],
+    srcs = [":midnight-ledger-4a81d777a7d3168539cfd053.git"],
     crate = "v8_to_v9_state_translation",
-    crate_root = "midnight-ledger-4a81d777a7d31685da96e33d/v8-to-v9-state-translation/src/lib.rs",
+    crate_root = "midnight-ledger-4a81d777a7d3168539cfd053/v8-to-v9-state-translation/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "v8_to_v9_state_translation",
         "CARGO_CRATE_NAME": "v8_to_v9_state_translation",
-        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d31685da96e33d/v8-to-v9-state-translation",
+        "CARGO_MANIFEST_DIR": "midnight-ledger-4a81d777a7d3168539cfd053/v8-to-v9-state-translation",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_HOMEPAGE": "",
@@ -61373,6 +63314,7 @@ cargo.rust_library(
         "onchain_state_v9": ":midnight-onchain-state-4",
         "serialize": ":midnight-serialize-1",
         "storage": ":midnight-storage-2",
+        "storage_v9": ":midnight-storage-3",
     },
     visibility = [],
 )
@@ -64361,6 +66303,49 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "windows-sys-0.45.0.crate",
+    sha256 = "75283be5efb2831d37ea142365f009c02ec203cd29a3ebecbc093d52315b66d0",
+    size_bytes = 2568659,
+    strip_prefix = "windows-sys-0.45.0",
+    urls = ["https://static.crates.io/crates/windows-sys/0.45.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "windows-sys-0.45",
+    srcs = [":windows-sys-0.45.0.crate"],
+    crate = "windows_sys",
+    crate_root = "windows-sys-0.45.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "windows_sys",
+        "CARGO_CRATE_NAME": "windows_sys",
+        "CARGO_MANIFEST_DIR": "windows-sys-0.45.0.crate",
+        "CARGO_PKG_AUTHORS": "Microsoft",
+        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "windows-sys",
+        "CARGO_PKG_README": "readme.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
+        "CARGO_PKG_RUST_VERSION": "1.48",
+        "CARGO_PKG_VERSION": "0.45.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "45",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "Win32",
+        "Win32_Foundation",
+        "Win32_System",
+        "Win32_System_Console",
+        "default",
+    ],
+    visibility = [],
+    deps = [":windows-targets-0.42"],
+)
+
+http_archive(
     name = "windows-sys-0.48.0.crate",
     sha256 = "677d2418bec65e3338edb076e806bc1ec15693c5d0104683f2efe857f61056a9",
     size_bytes = 2628884,
@@ -64646,6 +66631,49 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "windows-targets-0.42.2.crate",
+    sha256 = "8e5180c00cd44c9b1c88adb3693291f1cd93605ded80c250a75d472756b4d071",
+    size_bytes = 5492,
+    strip_prefix = "windows-targets-0.42.2",
+    urls = ["https://static.crates.io/crates/windows-targets/0.42.2/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "windows-targets-0.42",
+    srcs = [":windows-targets-0.42.2.crate"],
+    crate = "windows_targets",
+    crate_root = "windows-targets-0.42.2.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "windows_targets",
+        "CARGO_CRATE_NAME": "windows_targets",
+        "CARGO_MANIFEST_DIR": "windows-targets-0.42.2.crate",
+        "CARGO_PKG_AUTHORS": "Microsoft",
+        "CARGO_PKG_DESCRIPTION": "Import libs for Windows",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "windows-targets",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.42.2",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "42",
+        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    platform = {
+        "windows-gnu": dict(
+            deps = [":windows_x86_64_gnu-0.42"],
+        ),
+        "windows-msvc": dict(
+            deps = [":windows_x86_64_msvc-0.42"],
+        ),
+    },
+    visibility = [],
+)
+
+http_archive(
     name = "windows-targets-0.48.5.crate",
     sha256 = "9a2fa6e2155d7247be68c096456083145c183cbbbc2764150dda45a87197940c",
     size_bytes = 6904,
@@ -64811,6 +66839,42 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "windows_x86_64_gnu-0.42.2.crate",
+    sha256 = "8de912b8b8feb55c064867cf047dda097f92d51efad5b491dfb98f6bbb70cb36",
+    size_bytes = 699373,
+    strip_prefix = "windows_x86_64_gnu-0.42.2",
+    urls = ["https://static.crates.io/crates/windows_x86_64_gnu/0.42.2/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "windows_x86_64_gnu-0.42",
+    srcs = [":windows_x86_64_gnu-0.42.2.crate"],
+    crate = "windows_x86_64_gnu",
+    crate_root = "windows_x86_64_gnu-0.42.2.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "windows_x86_64_gnu",
+        "CARGO_CRATE_NAME": "windows_x86_64_gnu",
+        "CARGO_MANIFEST_DIR": "windows_x86_64_gnu-0.42.2.crate",
+        "CARGO_PKG_AUTHORS": "Microsoft",
+        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "windows_x86_64_gnu",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.42.2",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "42",
+        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    target_compatible_with = ["config//os:windows"],
+    visibility = [],
+)
+
+http_archive(
     name = "windows_x86_64_gnu-0.48.5.crate",
     sha256 = "53d40abd2583d23e4718fddf1ebec84dbff8381c07cae67ff7768bbf19c6718e",
     size_bytes = 801619,
@@ -64912,6 +66976,42 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "53",
         "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    target_compatible_with = ["config//os:windows"],
+    visibility = [],
+)
+
+http_archive(
+    name = "windows_x86_64_msvc-0.42.2.crate",
+    sha256 = "9aec5da331524158c6d1a4ac0ab1541149c0b9505fde06423b02f5ef0106b9f0",
+    size_bytes = 666936,
+    strip_prefix = "windows_x86_64_msvc-0.42.2",
+    urls = ["https://static.crates.io/crates/windows_x86_64_msvc/0.42.2/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "windows_x86_64_msvc-0.42",
+    srcs = [":windows_x86_64_msvc-0.42.2.crate"],
+    crate = "windows_x86_64_msvc",
+    crate_root = "windows_x86_64_msvc-0.42.2.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "windows_x86_64_msvc",
+        "CARGO_CRATE_NAME": "windows_x86_64_msvc",
+        "CARGO_MANIFEST_DIR": "windows_x86_64_msvc-0.42.2.crate",
+        "CARGO_PKG_AUTHORS": "Microsoft",
+        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "windows_x86_64_msvc",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.42.2",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "42",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
     target_compatible_with = ["config//os:windows"],
@@ -65145,6 +67245,49 @@ cargo.rust_library(
     deps = [
         ":cfg-if-1",
         ":windows-sys-0.48",
+    ],
+)
+
+http_archive(
+    name = "wnaf-0.14.1.crate",
+    sha256 = "795ca18b3fdb5e62bf982199278341ddcf7ebf7d32e25e212ad05d496e95f6fa",
+    size_bytes = 15454,
+    strip_prefix = "wnaf-0.14.1",
+    urls = ["https://static.crates.io/crates/wnaf/0.14.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "wnaf-0.14",
+    srcs = [":wnaf-0.14.1.crate"],
+    crate = "wnaf",
+    crate_root = "wnaf-0.14.1.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "wnaf",
+        "CARGO_CRATE_NAME": "wnaf",
+        "CARGO_MANIFEST_DIR": "wnaf-0.14.1.crate",
+        "CARGO_PKG_AUTHORS": "RustCrypto Developers",
+        "CARGO_PKG_DESCRIPTION": "wNAF (w-ary non-adjacent form) variable-time scalar multiplication implemented generically\nover elliptic curve groups with full `no_alloc` support, including multiscalar multiplication using\nStraus's interleaved window method. Contains an implementation adapted from the `group` crate which\nhas been forked and enhanced but is otherwise compatible with that crate's traits, along with the\n`ff` crate's traits for finite field representations\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/RustCrypto/elliptic-curves/tree/master/wnaf",
+        "CARGO_PKG_NAME": "wnaf",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/elliptic-curves",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.14.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    named_deps = {
+        "array": ":hybrid-array-0.4",
+    },
+    visibility = [],
+    deps = [
+        ":ff-0.14",
+        ":group-0.14",
+        ":primefield-0.14",
     ],
 )
 

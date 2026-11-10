@@ -84,6 +84,7 @@ rust_test(
         "root//ledger/helpers:midnight-node-ledger-helpers",
         "root//ledger:midnight-node-ledger",
         "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
+        "root//primitives/ledger:midnight-primitives-ledger",
         "root//primitives/midnight:midnight-primitives",
         "root//res:midnight-node-res",
         "root//third-party:assert_matches",

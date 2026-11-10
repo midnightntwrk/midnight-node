@@ -20,7 +20,7 @@ rust_library(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
         "LEDGER_8_VERSION": "8.1.3",
-        "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.6, rev: 48a978d7fc4342e8f5536eb95f47139477e1a0e8)",
+        "LEDGER_9_VERSION": "1.0.1",
     },
     deps = [
         "root//third-party:anyhow",
@@ -46,6 +46,7 @@ rust_library(
         "coin_structure": "root//third-party:coin-structure",
         "coin_structure_ledger_9": "root//third-party:coin-structure-ledger-9",
         "ledger_storage_ledger_8": "root//third-party:ledger-storage-ledger-8",
+        "ledger_storage_ledger_9": "root//third-party:ledger-storage-ledger-9",
         "mn_ledger_8": "root//third-party:mn-ledger-8",
         "mn_ledger_9": "root//third-party:mn-ledger-9",
         "onchain_runtime_ledger_8": "root//third-party:onchain-runtime-ledger-8",
@@ -80,7 +81,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
         "LEDGER_8_VERSION": "8.1.3",
-        "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.6, rev: 48a978d7fc4342e8f5536eb95f47139477e1a0e8)",
+        "LEDGER_9_VERSION": "1.0.1",
         "MIDNIGHT_PP": ".zk-params",
     },
     deps = [
@@ -109,6 +110,7 @@ rust_test(
         "coin_structure": "root//third-party:coin-structure",
         "coin_structure_ledger_9": "root//third-party:coin-structure-ledger-9",
         "ledger_storage_ledger_8": "root//third-party:ledger-storage-ledger-8",
+        "ledger_storage_ledger_9": "root//third-party:ledger-storage-ledger-9",
         "mn_ledger_8": "root//third-party:mn-ledger-8",
         "mn_ledger_9": "root//third-party:mn-ledger-9",
         "onchain_runtime_ledger_8": "root//third-party:onchain-runtime-ledger-8",

@@ -58,6 +58,7 @@ rust_library(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -80,6 +81,9 @@ rust_library(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -134,6 +138,7 @@ rust_binary(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -156,6 +161,9 @@ rust_binary(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -222,6 +230,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -250,6 +259,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -309,6 +321,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -337,6 +350,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -405,6 +421,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -433,6 +450,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -490,6 +510,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -518,6 +539,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -575,6 +599,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -603,7 +628,99 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     labels = ["ci-infra"],
+    visibility = ["PUBLIC"],
+)
+
+rust_test(
+    name = "midnight-node-toolkit-indexer_show_wallet_e2e",
+    crate = "indexer_show_wallet_e2e",
+    crate_root = "util/toolkit/tests/indexer_show_wallet_e2e.rs",
+    edition = "2024",
+    mapped_srcs = dict(
+        [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
+            ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
+            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
+            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
+            ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
+            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
+        ],
+    ),
+    env = {
+        "CARGO_MANIFEST_DIR": "util/toolkit",
+        "CARGO_PKG_NAME": "midnight-node-toolkit",
+        "CARGO_PKG_VERSION": "4.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "4",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "",
+        "CARGO_PKG_REPOSITORY": "",
+        "CARGO_PKG_HOMEPAGE": "",
+    },
+    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    deps = [
+        ":midnight-node-toolkit",
+        "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
+        "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//metadata:midnight-node-metadata",
+        "root//partner-chains/toolkit/sidechain/domain:sidechain-domain",
+        "root//partner-chains/toolkit/utils/ogmios-client:ogmios-client",
+        "root//primitives/ics-observation:midnight-primitives-ics-observation",
+        "root//primitives/reserve-observation:midnight-primitives-reserve-observation",
+        "root//third-party:anyhow",
+        "root//third-party:assert_matches",
+        "root//third-party:async-channel",
+        "root//third-party:async-trait",
+        "root//third-party:backoff",
+        "root//third-party:clap",
+        "root//third-party:console",
+        "root//third-party:futures",
+        "root//third-party:hex",
+        "root//third-party:hex-literal",
+        "root//third-party:indicatif",
+        "root//third-party:log",
+        "root//third-party:parity-scale-codec",
+        "root//third-party:postcard",
+        "root//third-party:rand-0-8",
+        "root//third-party:rayon",
+        "root//third-party:redb",
+        "root//third-party:rustls",
+        "root//third-party:scale-info",
+        "root//third-party:semver",
+        "root//third-party:serde",
+        "root//third-party:serde_bytes",
+        "root//third-party:serde_json",
+        "root//third-party:serde_yaml",
+        "root//third-party:sha2",
+        "root//third-party:shellexpand",
+        "root//third-party:sp-crypto-hashing",
+        "root//third-party:sqlx",
+        "root//third-party:stacker",
+        "root//third-party:strum",
+        "root//third-party:subxt",
+        "root//third-party:subxt-signer",
+        "root//third-party:tempfile",
+        "root//third-party:test-case",
+        "root//third-party:test-log",
+        "root//third-party:testcontainers",
+        "root//third-party:thiserror",
+        "root//third-party:tokio",
+        "root//third-party:toml",
+        "root//third-party:tracing",
+        "root//third-party:tracing-subscriber",
+        "root//third-party:trycmd",
+        "root//third-party:whisky",
+        "root//third-party:zeroize",
+        "root//third-party:zstd",
+    ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -661,6 +778,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -689,6 +807,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -746,6 +867,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -774,6 +896,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     labels = ["ci-infra"],
     visibility = ["PUBLIC"],
 )
@@ -832,6 +957,7 @@ rust_test(
         "root//third-party:rand-0-8",
         "root//third-party:rayon",
         "root//third-party:redb",
+        "root//third-party:rustls",
         "root//third-party:scale-info",
         "root//third-party:semver",
         "root//third-party:serde",
@@ -860,6 +986,9 @@ rust_test(
         "root//third-party:zeroize",
         "root//third-party:zstd",
     ],
+    named_deps = {
+        "storage_sha2": "root//third-party:storage-sha2",
+    },
     labels = ["ci-infra"],
     visibility = ["PUBLIC"],
 )

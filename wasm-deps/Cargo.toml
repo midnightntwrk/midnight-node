@@ -65,7 +65,6 @@ scale-info-derive = { version = "^2.11.1", default-features = false }
 secp256k1 = { version = "^0.30.0", features = ["alloc", "hashes", "recovery"], default-features = false }
 serde = { version = "^1.0.209", features = ["alloc", "derive", "serde_derive", "std"], default-features = false }
 serde_json = { version = "^1.0.132", features = ["alloc", "arbitrary_precision", "std"], default-features = false }
-sha2 = { version = "^0.11.0", default-features = false }
 sp-api = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", features = ["frame-metadata", "sp-metadata-ir"], default-features = false }
 sp-block-builder = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", default-features = false }
 sp-consensus-aura = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", default-features = false }
@@ -90,25 +89,11 @@ sp-storage = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "
 sp-tracing = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", default-features = false }
 sp-transaction-pool = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", default-features = false }
 sp-version = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", features = ["impl-serde", "serde"], default-features = false }
+storage-sha2 = { package = "sha2", version = "^0.10.9", default-features = false }
 syn = { version = "^2", features = ["clone-impls", "derive", "extra-traits", "fold", "full", "parsing", "printing", "proc-macro", "visit", "visit-mut"], default-features = false }
 thiserror = { version = "^2.0", default-features = false }
 
 [patch."crates-io"]
-midnight-base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.4" }
-midnight-base-crypto-derive = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
-midnight-coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.2" }
-midnight-ledger-static = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.6" }
-midnight-ledger-v9 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.6" }
-midnight-onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-onchain-runtime-4.0.0-rc.5" }
-midnight-onchain-state = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-4.0.0-rc.5" }
-midnight-onchain-vm = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-rc.4" }
-midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.2" }
-midnight-storage = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-2.0.4-rc.1" }
-midnight-storage-core = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.2-rc.1" }
-midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-3.0.0-rc.3" }
-midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
-midnight-zkir = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-2.2.0-rc.4" }
-midnight-zswap = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-9.0.0-rc.5" }
 parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
 proc-macro-crate = { path = "patched/proc-macro-crate" }
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
