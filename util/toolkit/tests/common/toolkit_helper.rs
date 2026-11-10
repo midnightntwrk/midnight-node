@@ -269,15 +269,19 @@ impl ToolkitTestHelper {
 
 			// COMPACT_HOME wins in run-compactc, so its compiler must match the version
 			// the tests select the toolkit package and cache key for — otherwise we would
-			// silently compile with the wrong compiler. `compactc --version` reports the
-			// bare semver (no tree-hash suffix), so compare against major.minor.patch.
+			// silently compile with the wrong compiler. `compactc --version` leads with the
+			// bare semver (0.35.0+ appends a commit and date), so compare its first word.
 			let expected = format!(
 				"{}.{}.{}",
 				compactc_version.major, compactc_version.minor, compactc_version.patch
 			);
 			match std::process::Command::new(&compactc).arg("--version").output() {
 				Ok(out) if out.status.success() => {
-					let got = String::from_utf8_lossy(&out.stdout).trim().to_string();
+					let got = String::from_utf8_lossy(&out.stdout)
+						.split_whitespace()
+						.next()
+						.unwrap_or_default()
+						.to_string();
 					if got != expected {
 						eprintln!(
 							"Skipping contract integration tests: COMPACT_HOME compactc is {got}, \
