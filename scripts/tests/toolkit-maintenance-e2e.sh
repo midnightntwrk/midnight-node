@@ -48,9 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-wait_for_unfinalized_block http://localhost:9945 1
-# The toolkit refuses to connect until a block past genesis is finalized.
-wait_for_finalized_block http://localhost:9945 1
+wait_for_toolkit_ready http://localhost:9945
 
 # Run toolkit commands
 echo "📦 Setting up test environment..."

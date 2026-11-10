@@ -54,9 +54,7 @@ if [[ "${1-}" != "" && "${2-}" != "" ]]; then
         -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
         "$NODE_IMAGE"
 
-    wait_for_unfinalized_block http://localhost:9944 1
-    # The toolkit refuses to connect until a block past genesis is finalized.
-    wait_for_finalized_block http://localhost:9944 1
+    wait_for_toolkit_ready http://localhost:9944
 
     tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
 
