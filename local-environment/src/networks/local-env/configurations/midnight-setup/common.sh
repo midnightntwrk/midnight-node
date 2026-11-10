@@ -52,5 +52,5 @@ patch_json() {
 # The tag is version-bound: a node only deserializes the version its ledger crate
 # speaks, so logging it makes an image/genesis mismatch obvious in the job output.
 genesis_tag() {
-  head -c 64 "$1" | tr -cd '[:print:]' | sed -n 's/^\(midnight:[^:]*\):.*/\1/p'
+  head -c 64 "$1" | tr -cd ' -~' | sed -n 's/^\(midnight:[^:]*\):.*/\1/p'
 }

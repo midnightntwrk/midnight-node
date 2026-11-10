@@ -44,7 +44,6 @@ phase "Building chain-spec"
 # To force a fresh chain, drop the volume: `docker compose down -v`.
 if [ -f /shared/chain-spec.json ]; then
   echo "/shared/chain-spec.json already exists — reusing it and skipping generation."
-  check_json_validity /shared/chain-spec.json
 else
   # Most chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
   # chainspec_* paths there are relative (res/local/...) and the image workdir is /, so
@@ -76,9 +75,10 @@ else
 
   echo "Amending the chain spec..."
   echo "Configuring Epoch Length..."
-  jq '.genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = 5' chain-spec.json > tmp.json && mv tmp.json chain-spec.json
-
-  check_json_validity chain-spec.json
+  # sed, not jq: this runs in the scratch node image under busybox. slotsPerEpoch
+  # only occurs under sidechain.
+  sed -i 's/"slotsPerEpoch": [0-9]*/"slotsPerEpoch": 5/' chain-spec.json
+  grep -q '"slotsPerEpoch": 5' chain-spec.json
 
   echo "Final chain spec"
 
@@ -91,18 +91,18 @@ echo "Partnerchain configuration is complete, and will be able to start after tw
 
 phase "Awaiting activation"
 
+current_epoch() {
+  wget -qO- --header 'Content-Type: application/json' \
+    --post-data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' \
+    http://ogmios:1337 | sed -n 's/.*"result": *\([0-9]*\).*/\1/p'
+}
+
 echo "Waiting for contracts to become active at epoch $contracts_active_epoch..."
-epoch=$(curl -s --request POST \
-    --url "http://ogmios:1337" \
-    --header 'Content-Type: application/json' \
-    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
+epoch=$(current_epoch)
 echo "Current epoch: $epoch"
 while [ "$epoch" -lt "$contracts_active_epoch" ]; do
   sleep 10
-  epoch=$(curl -s --request POST \
-    --url "http://ogmios:1337" \
-    --header 'Content-Type: application/json' \
-    --data '{"jsonrpc": "2.0", "method": "queryLedgerState/epoch"}' | jq .result)
+  epoch=$(current_epoch)
   echo "Current epoch: $epoch"
 done
 echo "DParam is now active!"

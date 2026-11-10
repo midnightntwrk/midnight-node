@@ -217,16 +217,7 @@ build-node-only:
 
 # node-image-minimal creates a minimal node image for metadata extraction
 node-image-minimal:
-    ARG NATIVEARCH
-    FROM DOCKERFILE -f ./images/node/Dockerfile .
-    USER root
-
-    RUN mkdir -p /node
-    COPY --chown=appuser:appuser +build-node-only/artifacts-$NATIVEARCH/midnight-node /
-
-    # Only /node (created above as root) needs fixing: everything else is copied
-    # with --chown, so no `chown -R` rewrites it into a duplicate layer.
-    RUN chown appuser:appuser /node
+    FROM DOCKERFILE -f ./images/node/Dockerfile +node-rootfs-node-only/rootfs
     SAVE IMAGE localhost/node-minimal:latest
 
 # Grabs metadata.scale file from the latest node
@@ -598,8 +589,11 @@ rebuild-chainspec:
     ARG NETWORK
     ARG DETERMINISTIC=false
     ARG NODE_IMAGE=+node-image
-    FROM ${NODE_IMAGE}
-    USER root
+    # The node image is scratch, with no shell or jq to script build-spec, so run its
+    # binary in the image it was built in.
+    FROM +prep-no-copy
+    WORKDIR /
+    COPY (+extract-node-artifacts/midnight-node --NODE_IMAGE=$NODE_IMAGE) /midnight-node
 
     # Copy the `res` folder from local -
     # We need to do this to use the correct config if running `FROM` a pre-built node image
@@ -618,7 +612,7 @@ rebuild-chainspec:
     # If deterministic, replace the runtime code with srtool-built WASM
     IF [ "$DETERMINISTIC" = "true" ]
         # Write hex to file to avoid "Argument list too long" with large WASM blobs
-        RUN printf '0x' > /tmp/wasm-hex.txt && xxd -p /srtool-runtime.wasm | tr -d '\n' >> /tmp/wasm-hex.txt && \
+        RUN printf '0x' > /tmp/wasm-hex.txt && od -An -v -tx1 /srtool-runtime.wasm | tr -d ' \n' >> /tmp/wasm-hex.txt && \
             jq --rawfile code /tmp/wasm-hex.txt '.genesis.runtimeGenesis.code = ($code | rtrimstr("\n"))' res/$NETWORK/chain-spec.json > res/$NETWORK/chain-spec-tmp.json && \
             mv res/$NETWORK/chain-spec-tmp.json res/$NETWORK/chain-spec.json
     END
@@ -1557,44 +1551,62 @@ srtool-info:
     USER builder
     RUN /srtool/info
 
+# NODE_ROOTFS turns /rootfs, holding the node binaries, into the build context of
+# images/node/Dockerfile. Call it from the image the binaries were built in.
+NODE_ROOTFS:
+    FUNCTION
+    COPY res /rootfs/res
+    COPY scripts/node-rootfs.sh /usr/local/bin/
+    RUN node-rootfs.sh /rootfs
+    SAVE ARTIFACT /rootfs
+
+node-rootfs:
+    FROM +prep-no-copy
+    ARG NATIVEARCH
+    COPY +build/artifacts-$NATIVEARCH/midnight-node +build/artifacts-$NATIVEARCH/aiken-deployer /rootfs/
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /rootfs/artifacts-$NATIVEARCH/
+    DO +NODE_ROOTFS
+
+node-rootfs-node-only:
+    FROM +prep-no-copy
+    ARG NATIVEARCH
+    COPY +build-node-only/artifacts-$NATIVEARCH/midnight-node /rootfs/
+    DO +NODE_ROOTFS
+
+node-rootfs-benchmarks:
+    FROM +prep-no-copy
+    ARG NATIVEARCH
+    COPY +build-benchmarks/artifacts-$NATIVEARCH/midnight-node-benchmarks /rootfs/midnight-node
+    DO +NODE_ROOTFS
+
+# node-image-base is the scratch node image, untagged. Tagged by +node-image and
+# +node-image-public.
+node-image-base:
+    FROM DOCKERFILE -f ./images/node/Dockerfile +node-rootfs/rootfs
+
 # node-image creates the Midnight Substrate Node's image
 node-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
     LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
-
-    ARG NATIVEARCH
-    FROM DOCKERFILE -f ./images/node/Dockerfile .
-    USER root
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN mkdir -p node
-
-    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node /
-    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/aiken-deployer /
-    COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
-
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
-    COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
+    LET NODE_VERSION = "$(grep -m 1 version node/Cargo.toml | sed 's/version *= *"\([^\"]*\)".*/\1/')"
+    ARG NATIVEARCH
+    LET IMAGE_TAG = "$NODE_VERSION-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    LET IMAGE_TAG_DEV = "$NODE_VERSION-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    RUN echo image tag=$IMAGE_REPO:$IMAGE_TAG
 
-    ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
-    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    # Public mirror. Only the canonical upstream repo points GHCR_REGISTRY_PUBLIC somewhere
+    # else; everywhere else this is a no-op, so a fork cannot publish publicly by accident.
+    # Decided here: IF runs its test inside the current image, and scratch has no `[`.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        BUILD +node-image-public --IMAGE_TAG=$IMAGE_TAG
+    END
 
-    RUN echo image tag=$IMAGE_REPO:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    # Only /node needs fixing: the binaries are copied with --chown and the base
-    # image already owns ./bin and ./res, so no `chown -R` duplicates them.
-    RUN chown -R appuser:appuser /node
+    FROM +node-image-base
     SAVE IMAGE --push \
         $GHCR_REGISTRY/$IMAGE_REPO:latest-$NATIVEARCH \
         $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG \
         $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG_DEV
-    # Public mirror. Only the canonical upstream repo points GHCR_REGISTRY_PUBLIC somewhere
-    # else; everywhere else this is a no-op, so a fork cannot publish publicly by accident.
-    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
-        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO:$IMAGE_TAG
-    END
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1602,36 +1614,27 @@ node-image:
     COPY +build/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
+node-image-public:
+    ARG --required IMAGE_TAG
+    FROM +node-image-base
+    SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO:$IMAGE_TAG
+
 # node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
 node-benchmarks-image:
     LOCALLY
-    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
     LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
-
+    LET NODE_VERSION = "$(grep -m 1 version node/Cargo.toml | sed 's/version *= *"\([^\"]*\)".*/\1/')"
     ARG NATIVEARCH
-    FROM DOCKERFILE -f ./images/node/Dockerfile .
-    USER root
+    LET IMAGE_TAG = "$NODE_VERSION-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG
 
-    RUN mkdir -p /artifacts-$NATIVEARCH
-
-    COPY +build-benchmarks/artifacts-$NATIVEARCH/midnight-node-benchmarks /midnight-node
-
-    # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
-    COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
-
-    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
-
-    RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
+    FROM DOCKERFILE -f ./images/node/Dockerfile +node-rootfs-benchmarks/rootfs
     LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=midnight-node-benchmarks
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG
-
-    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-benchmarks-$NATIVEARCH/
 
 # toolkit-image creates an image to run the midnight toolkit
 toolkit-image:
@@ -1834,7 +1837,8 @@ fix-lock:
 run-node-mocked:
     FROM +node-image
     ENV SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e"
-    RUN CFG_PRESET=dev /entrypoint.sh
+    ENV CFG_PRESET=dev
+    RUN ["/midnight-node"]
 
 # testnet-sync-e2e tries to sync the node with the first 7000 blocks of testnet
 testnet-sync-e2e:

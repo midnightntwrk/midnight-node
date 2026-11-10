@@ -32,6 +32,7 @@ pub mod engine_digests;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
+pub mod health_cmd;
 pub mod inherent_data;
 #[cfg(target_os = "linux")]
 pub mod landlock;

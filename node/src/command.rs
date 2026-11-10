@@ -90,6 +90,8 @@ pub fn run() -> sc_cli::Result<()> {
 	let subcommand_used = first_arg_char.is_some() && first_arg_char != Some(Some('-'));
 
 	match Cli::try_parse() {
+		// Before the cfg load: a probe that runs every few seconds should not depend on it.
+		Ok(Cli { subcommand: Subcommand::Health(cmd), .. }) => cmd.run(),
 		Ok(cli) => {
 			let cfg = get_cfg(false)?;
 			run_subcommand(cli.subcommand, cfg)
@@ -693,6 +695,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.sync_run(|config| cmd.run::<Block>(&config))
 		},
+		Subcommand::Health(ref cmd) => cmd.run(),
 		Subcommand::GenerateCNightGenesis(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
