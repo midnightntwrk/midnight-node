@@ -393,8 +393,7 @@ pub struct IndexerClient {
 	http_url: String,
 	/// WebSocket endpoint, e.g. `ws://host:8088/api/v4/graphql/ws`.
 	ws_url: String,
-	/// Blockfrost `project_id`, sent as a header so the token never lands in a URL or error.
-	project_id: Option<reqwest::header::HeaderValue>,
+	project_id: Option<String>,
 }
 
 const BLOCKFROST_PROJECT_ID_ENV: &str = "BLOCKFROST_PROJECT_ID";
@@ -404,10 +403,7 @@ impl IndexerClient {
 	///
 	/// The GraphQL endpoints (`/graphql`, `/graphql/ws`) are appended automatically, and the
 	/// WebSocket scheme is derived from the HTTP scheme (`http`→`ws`, `https`→`wss`).
-	///
-	/// A Blockfrost URL (`https://midnight-<network>.blockfrost.io/api/v0`) uses Blockfrost's
-	/// layout instead (`/api/v0`, `/api/v0/ws`) and authenticates with the `project_id` header
-	/// taken from `BLOCKFROST_PROJECT_ID`.
+	/// A `*.blockfrost.io` URL needs `BLOCKFROST_PROJECT_ID`.
 	pub fn new(base_url: &str) -> IndexerResult<Self> {
 		let project_id = std::env::var(BLOCKFROST_PROJECT_ID_ENV).ok();
 		Self::with_project_id(base_url, project_id.as_deref())
@@ -434,27 +430,24 @@ impl IndexerClient {
 		};
 		let ws_url = format!("{ws_base}{ws_suffix}");
 
-		let project_id = match project_id.filter(|_| blockfrost) {
-			Some(id) => {
-				let mut v = reqwest::header::HeaderValue::from_str(id.trim()).map_err(|_| {
-					IndexerClientError::Decode(format!(
-						"{BLOCKFROST_PROJECT_ID_ENV} is not a valid header value"
-					))
-				})?;
-				v.set_sensitive(true);
-				Some(v)
-			},
-			None if blockfrost => {
+		let project_id = match project_id {
+			_ if !blockfrost => None,
+			Some(id) => Some(id.trim().to_owned()),
+			None => {
 				return Err(IndexerClientError::Decode(format!(
 					"Blockfrost indexer URL needs {BLOCKFROST_PROJECT_ID_ENV} set"
 				)));
 			},
-			None => None,
 		};
 
 		let mut headers = reqwest::header::HeaderMap::new();
 		if let Some(id) = &project_id {
-			headers.insert("project_id", id.clone());
+			let value = id.parse().map_err(|_| {
+				IndexerClientError::Decode(format!(
+					"{BLOCKFROST_PROJECT_ID_ENV} is not a valid header"
+				))
+			})?;
+			headers.insert("project_id", value);
 		}
 		let http = reqwest::Client::builder()
 			.default_headers(headers)
@@ -724,11 +717,10 @@ impl IndexerClient {
 			.map_err(|e| IndexerClientError::WebSocket(format!("parse subprotocol: {e}")))?;
 		request.headers_mut().insert("Sec-WebSocket-Protocol", proto);
 		if let Some(id) = &self.project_id {
-			let id =
-				id.to_str().ok().and_then(|s| s.parse().ok()).ok_or_else(|| {
-					IndexerClientError::WebSocket("invalid project_id header".into())
-				})?;
-			request.headers_mut().insert("project_id", id);
+			let value = id
+				.parse()
+				.map_err(|e| IndexerClientError::WebSocket(format!("project_id header: {e}")))?;
+			request.headers_mut().insert("project_id", value);
 		}
 
 		let (mut ws, _) = connect_async(request)

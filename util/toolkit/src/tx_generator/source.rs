@@ -155,8 +155,7 @@ pub struct Source {
 	/// Reconstruct wallet state from a Midnight indexer (`api/v4` base URL, e.g.
 	/// `http://127.0.0.1:8088/api/v4`) instead of replaying every block from the node.
 	/// The ledger generation is taken from the chain the indexer serves.
-	/// A Blockfrost URL (`https://midnight-<network>.blockfrost.io/api/v0`) also works and reads
-	/// its `project_id` from `BLOCKFROST_PROJECT_ID`.
+	/// Blockfrost URLs (`…blockfrost.io/api/v0`) need `BLOCKFROST_PROJECT_ID`.
 	#[arg(long, env = "MN_INDEXER_URL", global = true)]
 	pub indexer_url: Option<String>,
 	// TODO: make `--network` optional once the indexer exposes its network id (midnight-indexer#1539).
