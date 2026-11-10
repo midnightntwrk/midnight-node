@@ -16,9 +16,9 @@
 //! (see issue #1186).
 //!
 //! [`IndexerContext::init_wallets`] drains the shielded / unshielded / dust subscriptions to the
-//! chain tip, and the wallet methods serve that synced state. Block context, ledger parameters and
-//! contract state are queried from the indexer per call. [`BuilderContext::zswap_state`] is still
-//! `todo!()`.
+//! chain tip, and the wallet methods serve that synced state. Block context and ledger parameters
+//! are served from one tip snapshot (see [`IndexerContext::refresh_tip`]); contract state is
+//! queried from the indexer per call. [`BuilderContext::zswap_state`] is still `todo!()`.
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -70,6 +70,9 @@ pub struct IndexerContext<D: DB + Clone> {
 	/// Synced unshielded UTXOs per seed (created-minus-spent).
 	unshielded: Mutex<HashMap<WalletSeed, Vec<SyncedUtxo>>>,
 	resolver: Mutex<&'static Resolver>,
+	/// One build must read block context and ledger parameters from the same block, or a tx can
+	/// pair one block's time with another's parameters.
+	tip: Mutex<Option<BlockInfo>>,
 }
 
 impl<D: DB + Clone> IndexerContext<D> {
@@ -89,7 +92,24 @@ impl<D: DB + Clone> IndexerContext<D> {
 			wallets: Mutex::new(HashMap::new()),
 			unshielded: Mutex::new(HashMap::new()),
 			resolver: Mutex::new(&DEFAULT_RESOLVER),
+			tip: Mutex::new(None),
 		})
+	}
+
+	/// Re-read the chain tip that [`BuilderContext::latest_block_context`] and
+	/// [`BuilderContext::ledger_parameters`] serve. [`IndexerContext::init_wallets`] sets it too.
+	pub async fn refresh_tip(&self) -> Result<BlockInfo, IndexerClientError> {
+		let block = self.client.latest_block().await?;
+		*self.tip.lock().expect("IndexerContext tip lock poisoned") = Some(block.clone());
+		Ok(block)
+	}
+
+	async fn tip(&self) -> BlockInfo {
+		let cached = self.tip.lock().expect("IndexerContext tip lock poisoned").clone();
+		match cached {
+			Some(block) => block,
+			None => self.refresh_tip().await.expect("indexer: query latest block"),
+		}
 	}
 
 	/// Get or panic on a missing wallet within an existing lock (mirrors `LedgerContext`).
@@ -118,7 +138,7 @@ impl IndexerContext<DefaultDB> {
 		seeds: &[WalletSeed],
 		resume: &HashMap<WalletSeed, WalletSyncState>,
 	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
-		let block = self.client.latest_block().await?;
+		let block = self.refresh_tip().await?;
 		// Fall back to network defaults if the blob won't decode, so dust syncing still proceeds.
 		let params = LedgerParameters::try_from(&block).unwrap_or_else(|e| {
 			log::warn!("indexer: could not decode ledger parameters ({e}); using defaults");
@@ -631,13 +651,11 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	}
 
 	async fn latest_block_context(&self) -> BlockContext {
-		let block = self.client.latest_block().await.expect("indexer: query latest block");
-		BlockContext::from(&block)
+		BlockContext::from(&self.tip().await)
 	}
 
 	async fn ledger_parameters(&self) -> LedgerParameters {
-		let block = self.client.latest_block().await.expect("indexer: query latest block");
-		LedgerParameters::try_from(&block).expect("indexer: decode ledger parameters")
+		LedgerParameters::try_from(&self.tip().await).expect("indexer: decode ledger parameters")
 	}
 
 	async fn network_id(&self) -> String {
@@ -791,5 +809,23 @@ mod tests {
 			ctx.unshielded_utxos(WalletSeed::from([0u8; 32])).await,
 			vec![(utxo(0), Timestamp::from_secs(0)), (utxo(1), Timestamp::from_secs(0))],
 		);
+	}
+
+	/// Both reads come from the cached tip; the unroutable URL would fail any re-query.
+	#[test]
+	fn block_context_and_parameters_share_the_tip_snapshot() {
+		let ctx = IndexerContext::<DefaultDB>::new(
+			"http://127.0.0.1:1/api/v4",
+			"undeployed",
+			NonZeroUsize::MIN,
+		)
+		.unwrap();
+		let block = block_info(serialize(&INITIAL_PARAMETERS).unwrap());
+		*ctx.tip.lock().unwrap() = Some(block.clone());
+
+		futures::executor::block_on(async {
+			assert_eq!(ctx.ledger_parameters().await, INITIAL_PARAMETERS);
+			assert_eq!(ctx.latest_block_context().await.tblock, BlockContext::from(&block).tblock);
+		});
 	}
 }

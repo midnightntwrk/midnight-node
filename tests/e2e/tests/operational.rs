@@ -92,6 +92,10 @@ async fn toolkit_multi_dest_send_does_not_hang() {
                 fetch_cache: crate::fetch_cache_config(),
                 ledger_state_db: String::new(),
                 replay_checkpoint_interval: 0,
+                indexer_url: None,
+                network: "undeployed".to_string(),
+                indexer_concurrency:
+                    midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
             },
             destination: Destination {
                 dest_urls: vec![url.clone(); N_DEST_URLS],
@@ -183,6 +187,10 @@ async fn dust_balance_smoke() {
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db: String::new(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed,
@@ -263,6 +271,10 @@ async fn dust_balance_smoke_many() {
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db,
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         // These deterministic smoke-test wallets are all Schnorr NIGHT identities.
         seeds: seeds
