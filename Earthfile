@@ -574,8 +574,29 @@ rebuild-genesis-state-stagenet:
     BUILD +rebuild-genesis-state \
         --NETWORK=stagenet
 
+# rebuild-toolkit-test-genesis rebuilds the genesis that toolkit_e2e's shared node boots from: the
+# dev configs plus one funded wallet per seed in util/toolkit/test-data/genesis/toolkit-test/seeds.json.
+# The tests build their chain spec from it at run time, so no chainspec update is needed afterwards.
+rebuild-toolkit-test-genesis:
+    # Override with a pre-built registry image to skip rebuilding
+    ARG TOOLKIT_IMAGE=+toolkit-image
+    FROM ${TOOLKIT_IMAGE}
+    USER root
+    COPY res/dev /genesis-config
+    COPY util/toolkit/test-data/genesis/toolkit-test/seeds.json /seeds.json
+    RUN /midnight-node-toolkit generate-genesis \
+        --network undeployed \
+        --seeds-file /seeds.json \
+        --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+        --cnight-generates-dust-config /genesis-config/cnight-config.json \
+        --ics-config /genesis-config/ics-config.json \
+        --reserve-config /genesis-config/reserve-config.json
+    SAVE ARTIFACT out/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/toolkit-test/
+    SAVE ARTIFACT out/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/toolkit-test/
+
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
+    BUILD +rebuild-toolkit-test-genesis
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-local
     BUILD +rebuild-genesis-state-devnet
@@ -1269,17 +1290,39 @@ test-pallet-fixtures:
 
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
-# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
-build-test-toolkit:
-    ARG NATIVEARCH
+# Compiled Midnight Node Toolkit tests as a nextest archive. Needs no node image, so CI
+# builds it while the node builds and hands it to +build-test-toolkit via TOOLKIT_TEST_ARCHIVE.
+toolkit-test-archive:
     FROM +prep
     ARG TARGETARCH
+    # Selects tests at compile time (the compact-contract-tests feature).
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
     IF [ "$CI" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
+    # x86-64-v3, not target-cpu=native: in CI the archive runs on a different runner than
+    # the one that built it. MIDNIGHT_LEDGER_EXPERIMENTAL is read by the ledger's `env!`.
+    RUN --secret NODE_GIT_TOKEN \
+        if [ "$TARGETARCH" = "amd64" ]; then export RUSTFLAGS="-C target-cpu=x86-64-v3 -C debuginfo=1"; \
+        else export RUSTFLAGS="-C debuginfo=1"; fi && \
+        FEATURES="" && \
+        if [ "$RUN_COMPACT_CONTRACT_TESTS" = "true" ]; then FEATURES="--features compact-contract-tests"; fi && \
+        MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest archive \
+            --release --locked -p midnight-node-toolkit $FEATURES \
+            --archive-file /toolkit-tests.tar.zst
+    SAVE ARTIFACT /toolkit-tests.tar.zst AS LOCAL toolkit-tests.tar.zst
+
+# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
+build-test-toolkit:
+    ARG NATIVEARCH
+    FROM +prep
+    ARG TARGETARCH
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
+    # Build-context path of a prebuilt +toolkit-test-archive; empty builds one here.
+    ARG TOOLKIT_TEST_ARCHIVE
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
@@ -1306,8 +1349,6 @@ build-test-toolkit:
 
     # Test
     RUN mkdir /test-artifacts-toolkit
-    # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -1315,12 +1356,14 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
-    # inside the container, so the private git dependencies are fetched there: +test-toolkit
-    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
-    # netrc for the duration of the run (never baked into the image).
+    IF [ -n "$TOOLKIT_TEST_ARCHIVE" ]
+        COPY $TOOLKIT_TEST_ARCHIVE /toolkit-tests.tar.zst
+    ELSE
+        COPY (+toolkit-test-archive/toolkit-tests.tar.zst --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) /toolkit-tests.tar.zst
+    END
+
     COPY scripts/test-toolkit.sh /test-toolkit.sh
-    ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
+    ENTRYPOINT ["/test-toolkit.sh"]
     SAVE IMAGE
 
 test-toolkit:
@@ -1328,6 +1371,7 @@ test-toolkit:
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
+    ARG TOOLKIT_TEST_ARCHIVE
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
 
@@ -1337,9 +1381,6 @@ test-toolkit:
     END
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
-    END
-    IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
-        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
     END
 
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
@@ -1351,9 +1392,9 @@ test-toolkit:
     # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
-                --load test-toolkit:latest=+build-test-toolkit \
+                --load test-toolkit:latest=(+build-test-toolkit --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS --TOOLKIT_TEST_ARCHIVE=$TOOLKIT_TEST_ARCHIVE) \
                 --pull $NODE_IMAGE
-            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1365,14 +1406,13 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
     ELSE
-        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+        WITH DOCKER --load test-toolkit:latest=(+build-test-toolkit --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS --TOOLKIT_TEST_ARCHIVE=$TOOLKIT_TEST_ARCHIVE)
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1384,7 +1424,6 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json

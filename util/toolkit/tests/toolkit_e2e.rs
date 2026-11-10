@@ -19,19 +19,74 @@ use clap::Parser;
 #[cfg(feature = "compact-contract-tests")]
 use common::toolkit_helper::{CircuitCall, ContractSpec, ToolkitTestHelper};
 use common::{test_image, wait_for_node, wait_for_node::wait_for_finalized_block};
-#[cfg(feature = "compact-contract-tests")]
-use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
 	commands::{contract_address, show_address},
 };
-use std::{path::Path, time::Duration};
+use std::{
+	collections::BTreeMap,
+	path::Path,
+	sync::{
+		LazyLock,
+		atomic::{AtomicUsize, Ordering},
+	},
+	time::Duration,
+};
 use testcontainers::{
 	GenericImage, ImageExt,
-	core::{ContainerPort, WaitFor},
+	core::{ContainerPort, WaitFor, wait::ExitWaitStrategy},
 	runners::AsyncRunner,
 };
 use tokio::sync::OnceCell;
+
+/// Genesis of the shared node: the dev configs plus one funded wallet per seed in `seeds.json`.
+/// Rebuild with `earthly -P +rebuild-toolkit-test-genesis`.
+const GENESIS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/genesis/toolkit-test");
+
+/// A genesis-funded seed no other test in this process has been given. Seeds are never handed
+/// out twice, because a test may change its seed's DUST registration.
+fn funded_seed() -> String {
+	static SEEDS: LazyLock<Vec<String>> = LazyLock::new(|| {
+		let seeds: BTreeMap<String, String> = serde_json::from_str(include_str!(concat!(
+			env!("CARGO_MANIFEST_DIR"),
+			"/test-data/genesis/toolkit-test/seeds.json"
+		)))
+		.expect("invalid toolkit-test seeds.json");
+		seeds.into_values().collect()
+	});
+	static NEXT: AtomicUsize = AtomicUsize::new(0);
+	let i = NEXT.fetch_add(1, Ordering::Relaxed);
+	SEEDS.get(i).cloned().unwrap_or_else(|| {
+		panic!(
+			"all {} toolkit-test genesis seeds are taken: add seeds to {GENESIS_DIR}/seeds.json \
+			 and run `earthly -P +rebuild-toolkit-test-genesis`",
+			SEEDS.len()
+		)
+	})
+}
+
+/// A dev chain spec on the toolkit-test genesis, built by the node under test so it carries
+/// that node's runtime. `build-spec` without `--chain` reads genesis from CHAINSPEC_GENESIS_*;
+/// a running `--dev` node would use its compiled-in genesis instead.
+async fn toolkit_test_chainspec() -> Vec<u8> {
+	let genesis = |file: &str| {
+		std::fs::read(format!("{GENESIS_DIR}/{file}"))
+			.unwrap_or_else(|e| panic!("failed to read {GENESIS_DIR}/{file}: {e}"))
+	};
+	let (name, tag) = test_image("midnight-node");
+	let container = GenericImage::new(name, tag)
+		.with_wait_for(WaitFor::exit(ExitWaitStrategy::new().with_exit_code(0)))
+		.with_env_var("CFG_PRESET", "dev")
+		.with_env_var("CHAINSPEC_GENESIS_STATE", "/genesis/genesis_state.mn")
+		.with_env_var("CHAINSPEC_GENESIS_BLOCK", "/genesis/genesis_block.mn")
+		.with_copy_to("/genesis/genesis_state.mn", genesis("genesis_state_undeployed.mn"))
+		.with_copy_to("/genesis/genesis_block.mn", genesis("genesis_block_undeployed.mn"))
+		.with_cmd(["build-spec"])
+		.start()
+		.await
+		.expect("build-spec failed");
+	container.stdout_to_vec().await.expect("failed to read build-spec output")
+}
 
 struct SharedNode {
 	_container: testcontainers::ContainerAsync<GenericImage>,
@@ -41,13 +96,24 @@ struct SharedNode {
 static NODE: OnceCell<SharedNode> = OnceCell::const_new();
 
 async fn node_ws_url() -> &'static str {
+	// The toolkit reports why a send failed only through `log`. The test writer keeps each
+	// test's lines in its own captured output.
+	let _ = tracing_subscriber::fmt()
+		.with_env_filter(
+			tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+		)
+		.with_test_writer()
+		.try_init();
 	&NODE
 		.get_or_init(|| async {
+			let chainspec = toolkit_test_chainspec().await;
 			let (name, tag) = test_image("midnight-node");
 			let container = GenericImage::new(name, tag)
 				.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 				.with_exposed_port(ContainerPort::Tcp(9944))
 				.with_env_var("CFG_PRESET", "dev")
+				.with_env_var("CHAIN", "/chainspec/chainspec.json")
+				.with_copy_to("/chainspec/chainspec.json", chainspec)
 				// Each toolkit command opens its own RPC client, outrunning the default cap of 100.
 				.with_env_var("APPEND_ARGS", "--rpc-max-connections 1000")
 				.start()
@@ -110,7 +176,6 @@ async fn run_cli(args: &[&str]) {
 }
 
 const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
-const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000002";
 
 fn ledger_test_artifacts_ready() -> bool {
 	let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
@@ -130,6 +195,7 @@ fn ledger_test_artifacts_ready() -> bool {
 #[tokio::test]
 async fn generate_batches() {
 	let url = node_ws_url().await;
+	let seed: &str = &funded_seed();
 
 	// generate-txs batches
 	run_cli(&[
@@ -138,7 +204,7 @@ async fn generate_batches() {
 		"inmemory",
 		"batches",
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000003",
+		seed,
 		"-n",
 		"1",
 		"-b",
@@ -157,7 +223,7 @@ async fn generate_batches() {
 		"inmemory",
 		"single-tx",
 		"--source-seed",
-		"0000000000000000000000000000000000000000000000000000000000000003",
+		seed,
 		"--shielded-amount",
 		"10",
 		"--destination-address",
@@ -182,6 +248,7 @@ async fn get_version() {
 #[tokio::test]
 async fn register_dust_address() {
 	let url = node_ws_url().await;
+	let seed: &str = &funded_seed();
 
 	// 3b. Extract contract address (parse CLI to get args, then call execute directly)
 	let dust_address = {
@@ -191,7 +258,7 @@ async fn register_dust_address() {
 			"--network",
 			"undeployed",
 			"--seed",
-			SOURCE_SEED,
+			seed,
 			"--dust",
 		]);
 		match cli.command {
@@ -210,9 +277,9 @@ async fn register_dust_address() {
 		"inmemory",
 		"register-dust-address",
 		"--wallet-seed",
-		SOURCE_SEED,
+		seed,
 		"--funding-seed",
-		SOURCE_SEED,
+		seed,
 		"--destination-dust",
 		&dust_address,
 		"-s",
@@ -231,7 +298,7 @@ async fn register_dust_address() {
 		"--wallet-seed",
 		"0000000000000000000000000000000000000000000000000000000000000052",
 		"--funding-seed",
-		SOURCE_SEED,
+		seed,
 		"-s",
 		url,
 		"-d",
@@ -246,9 +313,9 @@ async fn register_dust_address() {
 		"inmemory",
 		"deregister-dust-address",
 		"--wallet-seed",
-		SOURCE_SEED,
+		seed,
 		"--funding-seed",
-		SOURCE_SEED,
+		seed,
 		"-s",
 		url,
 		"-d",
@@ -284,7 +351,7 @@ async fn register_dust_address() {
 		"inmemory",
 		"single-tx",
 		"--source-seed",
-		SOURCE_SEED,
+		seed,
 		"--unshielded-amount",
 		"2000000000000",
 		"--destination-address",
@@ -328,6 +395,7 @@ async fn contract_ops() {
 	}
 
 	let url = node_ws_url().await;
+	let seed: &str = &funded_seed();
 
 	// 3. Contract deploy + address + send + maintenance + call(store) + call(check)
 	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
@@ -343,6 +411,8 @@ async fn contract_ops() {
 		&deploy_file_str,
 		"contract-simple",
 		"deploy",
+		"--funding-seed",
+		seed,
 		"--rng-seed",
 		RNG_SEED,
 		"-s",
@@ -385,6 +455,8 @@ async fn contract_ops() {
 		"inmemory",
 		"contract-simple",
 		"maintenance",
+		"--funding-seed",
+		seed,
 		"--rng-seed",
 		RNG_SEED,
 		"--contract-address",
@@ -405,6 +477,8 @@ async fn contract_ops() {
 		"inmemory",
 		"contract-simple",
 		"call",
+		"--funding-seed",
+		seed,
 		"--call-key",
 		"store",
 		"--rng-seed",
@@ -425,6 +499,8 @@ async fn contract_ops() {
 		"inmemory",
 		"contract-simple",
 		"call",
+		"--funding-seed",
+		seed,
 		"--call-key",
 		"check",
 		"--rng-seed",
@@ -459,14 +535,15 @@ async fn contract_ops() {
 #[tokio::test]
 async fn bboard_private_witness_not_leaked() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	let secret_key = "deadbeefcafebabe1234567890abcdef1122334455667788aabbccddeeff0011";
 
 	println!("1. Generating coin-public address");
-	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+	let coin_public = helper.show_address_coin_public(seed);
 	println!("   coin-public: {coin_public}");
 
 	println!("2. Compiling bboard contract");
@@ -489,7 +566,7 @@ async fn bboard_private_witness_not_leaked() {
 		.await
 		.expect("generate deploy intent failed");
 	let deploy_tx = helper
-		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.send_intent(&deploy.intent, &compiled_dir, seed, None)
 		.await
 		.expect("send deploy intent failed");
 	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
@@ -520,7 +597,7 @@ async fn bboard_private_witness_not_leaked() {
 		.await
 		.expect("generate post intent failed");
 	let post_tx = helper
-		.send_intent(&post.intent, &compiled_dir, FUNDING_SEED, Some(&post.zswap_state))
+		.send_intent(&post.intent, &compiled_dir, seed, Some(&post.zswap_state))
 		.await
 		.expect("send post intent failed");
 	helper.submit_tx(&post_tx).await.expect("submit post tx failed");
@@ -549,7 +626,7 @@ async fn bboard_private_witness_not_leaked() {
 		.await
 		.expect("generate takeDown intent failed");
 	let takedown_tx = helper
-		.send_intent(&takedown.intent, &compiled_dir, FUNDING_SEED, Some(&takedown.zswap_state))
+		.send_intent(&takedown.intent, &compiled_dir, seed, Some(&takedown.zswap_state))
 		.await
 		.expect("send takeDown intent failed");
 	helper.submit_tx(&takedown_tx).await.expect("submit takeDown tx failed");
@@ -565,11 +642,12 @@ async fn bboard_private_witness_not_leaked() {
 #[tokio::test]
 async fn counter_increment_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
-	let coin_public_addr = helper.show_address_coin_public(FUNDING_SEED);
+	let coin_public_addr = helper.show_address_coin_public(seed);
 
 	let counter_source = helper.load_contract_file("counter/counter.compact");
 	let compiled_dir = helper
@@ -588,7 +666,7 @@ async fn counter_increment_e2e() {
 		.await
 		.expect("generate deploy intent failed");
 	let deploy_tx = helper
-		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.send_intent(&deploy.intent, &compiled_dir, seed, None)
 		.await
 		.expect("send deploy intent failed");
 	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
@@ -614,7 +692,7 @@ async fn counter_increment_e2e() {
 		.await
 		.expect("generate increment intent failed");
 	let increment_tx = helper
-		.send_intent(&increment.intent, &compiled_dir, FUNDING_SEED, Some(&increment.zswap_state))
+		.send_intent(&increment.intent, &compiled_dir, seed, Some(&increment.zswap_state))
 		.await
 		.expect("send increment intent failed");
 
@@ -629,7 +707,8 @@ async fn counter_increment_e2e() {
 #[tokio::test]
 async fn welcome_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
@@ -640,7 +719,7 @@ async fn welcome_e2e() {
 	let participant = r#""alice""#;
 	let new_participant = r#""bob""#;
 
-	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+	let coin_public = helper.show_address_coin_public(seed);
 
 	let welcome_source = helper.load_contract_file("welcome/welcome.compact");
 	let compiled_dir = helper
@@ -665,7 +744,7 @@ async fn welcome_e2e() {
 		.await
 		.expect("generate deploy intent failed");
 	let deploy_tx = helper
-		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.send_intent(&deploy.intent, &compiled_dir, seed, None)
 		.await
 		.expect("send deploy intent failed");
 	helper.assert_secret_not_in_tx(&deploy_tx, organizer_sk, "welcome deploy");
@@ -692,7 +771,7 @@ async fn welcome_e2e() {
 		.await
 		.expect("generate add_participant intent failed");
 	let add_tx = helper
-		.send_intent(&add.intent, &compiled_dir, FUNDING_SEED, Some(&add.zswap_state))
+		.send_intent(&add.intent, &compiled_dir, seed, Some(&add.zswap_state))
 		.await
 		.expect("send add_participant intent failed");
 	helper.assert_secret_not_in_tx(&add_tx, organizer_sk, "add_participant()");
@@ -716,12 +795,7 @@ async fn welcome_e2e() {
 		.await
 		.expect("generate add_organizer intent failed");
 	let add_organizer_tx = helper
-		.send_intent(
-			&add_organizer.intent,
-			&compiled_dir,
-			FUNDING_SEED,
-			Some(&add_organizer.zswap_state),
-		)
+		.send_intent(&add_organizer.intent, &compiled_dir, seed, Some(&add_organizer.zswap_state))
 		.await
 		.expect("send add_organizer intent failed");
 	helper.assert_secret_not_in_tx(&add_organizer_tx, organizer_sk, "add_organizer()");
@@ -752,7 +826,7 @@ async fn welcome_e2e() {
 		.send_intent(
 			&add_by_new_organizer.intent,
 			&compiled_dir,
-			FUNDING_SEED,
+			seed,
 			Some(&add_by_new_organizer.zswap_state),
 		)
 		.await
@@ -785,7 +859,7 @@ async fn welcome_e2e() {
 		.await
 		.expect("generate check_in intent failed");
 	let check_in_tx = helper
-		.send_intent(&check_in.intent, &compiled_dir, FUNDING_SEED, Some(&check_in.zswap_state))
+		.send_intent(&check_in.intent, &compiled_dir, seed, Some(&check_in.zswap_state))
 		.await
 		.expect("send check_in intent failed");
 	helper.submit_tx(&check_in_tx).await.expect("submit check_in tx failed");
@@ -808,7 +882,7 @@ async fn welcome_e2e() {
 		.await
 		.expect("generate verify_checked_in intent failed");
 	let verify_tx = helper
-		.send_intent(&verify.intent, &compiled_dir, FUNDING_SEED, Some(&verify.zswap_state))
+		.send_intent(&verify.intent, &compiled_dir, seed, Some(&verify.zswap_state))
 		.await
 		.expect("send verify_checked_in intent failed");
 	helper.submit_tx(&verify_tx).await.expect("submit verify_checked_in tx failed");
@@ -818,19 +892,20 @@ async fn welcome_e2e() {
 /// play a full game to a Player X win, and assert the final state via verifier circuits.
 ///
 /// `make_move` proves knowledge of the current player's private witness and compares its
-/// derived identity with the registered player key. Fees are paid by FUNDING_SEED; player
+/// derived identity with the registered player key. Fees are paid by the test's funded seed; player
 /// authorization is deliberately independent from the public fee-paying wallet.
 #[cfg(feature = "compact-contract-tests")]
 #[tokio::test]
 async fn tic_tac_toe_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	const PLAYER_X_SK: &str = "1000000000000000000000000000000000000000000000000000000000000001";
 	const PLAYER_O_SK: &str = "2000000000000000000000000000000000000000000000000000000000000002";
-	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+	let coin_public = helper.show_address_coin_public(seed);
 
 	let source = helper.load_contract_file("tic-tac-toe/tic_tac_toe.compact");
 	let compiled_dir = helper
@@ -854,7 +929,7 @@ async fn tic_tac_toe_e2e() {
 		.await
 		.expect("generate deploy intent failed");
 	let deploy_tx = helper
-		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.send_intent(&deploy.intent, &compiled_dir, seed, None)
 		.await
 		.expect("send deploy intent failed");
 	helper.assert_secret_not_in_tx(&deploy_tx, PLAYER_X_SK, "tic-tac-toe deploy");
@@ -889,7 +964,7 @@ async fn tic_tac_toe_e2e() {
 			.await
 			.unwrap_or_else(|e| panic!("generate {circuit} intent failed: {e}"));
 		let tx = helper
-			.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+			.send_intent(&out.intent, &compiled_dir, seed, Some(&out.zswap_state))
 			.await
 			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
 		if circuit == "make_move" {
@@ -909,13 +984,14 @@ async fn tic_tac_toe_e2e() {
 ///
 /// `buy_in`, `set_topic` and `vote_commit` each take a `ShieldedCoinInfo` the circuit
 /// `receiveShielded`s, so this also covers struct- and generic-typed circuit arguments. One
-/// identity is both organizer and voter; `FUNDING_SEED` pays fees, supplies the coins and is
+/// identity is both organizer and voter; the test's funded seed pays fees, supplies the coins and is
 /// the beneficiary.
 #[cfg(feature = "compact-contract-tests")]
 #[tokio::test]
 async fn dao_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
@@ -936,7 +1012,7 @@ async fn dao_e2e() {
 	const SEED_NONCE: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 	const RESEED_NONCE: &str = "5555555555555555555555555555555555555555555555555555555555555555";
 
-	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+	let coin_public = helper.show_address_coin_public(seed);
 
 	let source = helper.load_contract_file("dao/dao.compact");
 	let compiled_dir = helper
@@ -956,7 +1032,7 @@ async fn dao_e2e() {
 		.await
 		.expect("generate deploy intent failed");
 	let deploy_tx = helper
-		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.send_intent(&deploy.intent, &compiled_dir, seed, None)
 		.await
 		.expect("send deploy intent failed");
 	helper.assert_secret_not_in_tx(&deploy_tx, ORGANIZER_SK, "dao deploy");
@@ -986,7 +1062,7 @@ async fn dao_e2e() {
 				.await
 				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
 			let tx = helper
-				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.send_intent(&out.intent, &compiled_dir, seed, Some(&out.zswap_state))
 				.await
 				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
 			helper.assert_secret_not_in_tx(&tx, ORGANIZER_SK, $circuit);
@@ -1077,7 +1153,8 @@ async fn dao_e2e() {
 #[tokio::test]
 async fn battleship_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
@@ -1187,7 +1264,8 @@ async fn battleship_e2e() {
 #[tokio::test]
 async fn election_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
@@ -1308,7 +1386,8 @@ async fn election_e2e() {
 #[tokio::test]
 async fn shielded_pool_e2e() {
 	let url = node_ws_url().await;
-	let helper = ToolkitTestHelper::new(url);
+	let seed: &str = &funded_seed();
+	let helper = ToolkitTestHelper::new(url, seed);
 
 	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
@@ -1413,7 +1492,7 @@ async fn shielded_pool_e2e() {
 #[tokio::test]
 async fn ecdsa_contract_committees_e2e() {
 	// Committee members only ever sign maintenance updates, so they need no on-chain funds; fees
-	// are paid by the default (Schnorr) funding seed. Keep every seed distinct so the toolkit's
+	// are paid by the test's funded (Schnorr) seed. Keep every seed distinct so the toolkit's
 	// shared cross-scheme guard never sees one seed requested under two schemes in one invocation.
 	const ECDSA_AUTH_1: &str = "1000000000000000000000000000000000000000000000000000000000000001";
 	const SCHNORR_AUTH_2: &str = "2000000000000000000000000000000000000000000000000000000000000002";
@@ -1456,6 +1535,7 @@ async fn ecdsa_contract_committees_e2e() {
 		return;
 	}
 	let url = node_ws_url().await;
+	let seed: &str = &funded_seed();
 
 	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
 	let deploy_file = tempdir.path().join("ecdsa_contract_deploy.mn");
@@ -1476,6 +1556,8 @@ async fn ecdsa_contract_committees_e2e() {
 		&deploy_file_str,
 		"contract-simple",
 		"deploy",
+		"--funding-seed",
+		seed,
 		"--rng-seed",
 		&deploy_rng_seed,
 		"--authority-seed",
@@ -1520,6 +1602,8 @@ async fn ecdsa_contract_committees_e2e() {
 		"inmemory",
 		"contract-simple",
 		"maintenance",
+		"--funding-seed",
+		seed,
 		"--rng-seed",
 		RNG_SEED,
 		"--contract-address",
@@ -1549,6 +1633,8 @@ async fn ecdsa_contract_committees_e2e() {
 		"inmemory",
 		"contract-simple",
 		"maintenance",
+		"--funding-seed",
+		seed,
 		"--rng-seed",
 		RNG_SEED,
 		"--contract-address",
