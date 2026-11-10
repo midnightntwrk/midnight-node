@@ -497,6 +497,10 @@ async fn register_2_cardano_same_dust_address_production() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -675,6 +679,10 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -712,6 +720,10 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -857,6 +869,10 @@ async fn deregister_from_dust_production() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1453,6 +1469,10 @@ async fn register_twice_with_same_cardano_address() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1483,6 +1503,10 @@ async fn register_twice_with_same_cardano_address() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2,
@@ -1684,6 +1708,10 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -1721,6 +1749,10 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1843,6 +1875,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -1918,6 +1954,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2.clone(),
@@ -2002,6 +2042,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2.clone(),
@@ -2039,6 +2083,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2,
@@ -2137,6 +2185,10 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2212,6 +2264,10 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2394,6 +2450,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2439,6 +2499,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2611,6 +2675,10 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2656,6 +2724,10 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -3038,6 +3110,10 @@ async fn update_registration_to_new_dust_address_while_rotating_cnight_issue_212
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed,
@@ -3284,6 +3360,10 @@ async fn change_dust_address_via_deregister_and_register() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
             replay_checkpoint_interval: 0,
+            indexer_url: None,
+            network: "undeployed".to_string(),
+            indexer_concurrency:
+                midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         },
         seed: SchemeSeed {
             seed,
