@@ -24,7 +24,7 @@ export interface MockAuthoritiesConvertOptions {
   chainId: string;
   /** Number of validators to materialize. */
   numValidators: number;
-  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:47b7994). */
+  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:14cee4b). */
   image: string;
 }
 
@@ -44,10 +44,11 @@ export interface MockAuthoritiesConvertOptions {
 // number, so peers reject every new block as regressing (midnight-node#2307).
 // It is also the first build with `convert --node-dir`, used below.
 //
-// 47b7994 opens node 2.x databases with parity-db 0.5 (midnight-node-ops#127).
+// 14cee4b opens node 2.x databases with parity-db 0.5 (midnight-node-ops#127).
 // Older images cannot see a long chain's large `grandpa_voters`, so the fork
-// never finalizes. It also builds the fork block through the runtime (#110).
-const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:47b7994";
+// never finalizes. Its fork block also carries the parent's MNSV digest and an
+// empty body, without which the indexer cannot decode it.
+const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:14cee4b";
 
 export function defaultMockAuthoritiesImage(): string {
   return process.env.MOCK_AUTHORITIES_IMAGE ?? DEFAULT_IMAGE;
