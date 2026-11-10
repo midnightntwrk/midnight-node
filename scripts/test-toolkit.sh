@@ -24,7 +24,10 @@ mkdir -p "$EXTRACT_DIR"
 cargo nextest list --archive-file "$ARCHIVE" --workspace-remap / --extract-to "$EXTRACT_DIR" > /dev/null
 E2E_BIN=$(find "$EXTRACT_DIR/target/release/deps" -maxdepth 1 -type f -executable -name 'toolkit_e2e-*')
 
-cargo nextest run --profile ci --archive-file "$ARCHIVE" --workspace-remap / \
+cargo nextest run --profile ci --workspace-remap / \
+    --binaries-metadata "$EXTRACT_DIR/target/nextest/binaries-metadata.json" \
+    --cargo-metadata "$EXTRACT_DIR/target/nextest/cargo-metadata.json" \
+    --target-dir-remap "$EXTRACT_DIR/target" \
     -E 'not binary(toolkit_e2e)' &
 NEXTEST_PID=$!
 

@@ -83,7 +83,6 @@ jobs:
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             -P --strict \
-            --remote-cache="${GHCR_REGISTRY}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
               --CACHE_KEY=compact-contract-tests \
               --RUN_COMPACT_CONTRACT_TESTS=true
