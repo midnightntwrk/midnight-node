@@ -642,7 +642,7 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
         run: |
-          . ./.envrc && earth -P --strict +toolkit-test-archive --RUN_COMPACT_CONTRACT_TESTS=true
+          . ./.envrc && earth -P --strict +toolkit-test-archive
 
       - name: Upload toolkit test archive
         if: steps.guard.outputs.hit != 'true'
