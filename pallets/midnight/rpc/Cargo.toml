@@ -16,13 +16,16 @@ sp-api.workspace = true
 sp-runtime.workspace = true
 sp-blockchain.workspace = true
 pallet-midnight.workspace = true
+midnight-primitives.workspace = true
+midnight-node-ledger = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]
 std = [
     "sp-api/std",
     "sp-runtime/std",
-    "pallet-midnight/std"
+    "pallet-midnight/std",
+    "midnight-primitives/std"
 ]
 
 [lints]

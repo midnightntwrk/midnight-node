@@ -10618,6 +10618,8 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "jsonrpsee",
+ "midnight-node-ledger",
+ "midnight-primitives",
  "pallet-midnight",
  "sc-client-api",
  "schemars 0.8.22",
