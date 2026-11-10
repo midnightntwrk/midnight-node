@@ -1696,11 +1696,10 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 
 	// 4. Determine blocks to replay: everything after the restore height.
 	//
-	// Blocks already in memory are sliced with `partition_point` (O(log n)
-	// binary search; `real_blocks` is sorted by `b.number` ascending, which
-	// the rest of `replay_blocks_*` already relies on) and handed out in
-	// checkpoint-sized batches. A chain source is streamed from the fetch
-	// cache in windows instead, so the whole history is never held at once.
+	// Blocks already in memory are sliced with `partition_point`, which relies on
+	// `real_blocks` being sorted by `b.number`, and handed out in checkpoint-sized
+	// batches. A chain source is streamed from the fetch cache in windows instead,
+	// so the whole history is never held at once.
 	let interval = replay_checkpoint_interval as usize;
 	let mut batches = match &received_tx.cached {
 		Some(chain) => ReplayBatches::streamed(chain, restore_height.map_or(0, |h| h + 1)),
@@ -1739,13 +1738,11 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		};
 		let last_batch = batches.is_exhausted();
 		// Wallets cached beyond this batch's last block must be withheld:
-		// `replay_blocks` injects any leftovers of the slice it is given
-		// at the end of its block range, which would splice a
-		// future-height wallet state into an older ledger state. Wallets
-		// cached exactly at `batch_last` are injected against the same
-		// post-block ledger state either way, so `<=` matches the
-		// monolithic behavior. The last batch takes every remaining wallet,
-		// as a single-batch replay always did.
+		// `replay_blocks` injects any leftovers of its slice at the end of its block
+		// range, which would splice a future-height wallet state into an older ledger
+		// state. Wallets cached exactly at `batch_last` see the same post-block ledger
+		// state in this batch or the next, so `<=` is safe. The last batch takes every
+		// remaining wallet.
 		let cached_end = if last_batch {
 			cached.len()
 		} else {
