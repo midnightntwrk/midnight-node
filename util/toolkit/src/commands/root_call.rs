@@ -38,8 +38,8 @@ use thiserror::Error;
 
 /// Next nonce this process will use per signer (sr25519 public key), so concurrent
 /// root calls in one process can share signers.
-// ponytail: a tx dropped after submit leaves a gap that stalls that signer's later
-// txs in this process; fine while a dropped governance tx already fails the call.
+// A dropped transaction fails the call and leaves a nonce gap that can stall
+// later submissions by this signer in the same process.
 static NEXT_NONCE: tokio::sync::Mutex<BTreeMap<[u8; 32], u64>> =
 	tokio::sync::Mutex::const_new(BTreeMap::new());
 
