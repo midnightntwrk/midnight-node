@@ -308,7 +308,7 @@ impl IndexerContext<DefaultDB> {
 			(unshielded_utxos, unshielded_tx_id),
 			(dust_state, dust_event_id, dust_frontier),
 		) = tokio::try_join!(
-			self.sync_shielded(shielded, resume, progress),
+			self.sync_shielded(seed, shielded, resume, progress),
 			self.sync_unshielded(unshielded, resume, progress),
 			self.sync_dust(dust, resume, tip_time, fast_sync, progress),
 		)?;
@@ -342,6 +342,7 @@ impl IndexerContext<DefaultDB> {
 	/// (see [`IndexerContext::drain_shielded`]).
 	async fn sync_shielded(
 		&self,
+		seed: &WalletSeed,
 		shielded: &mut ShieldedWallet<DefaultDB>,
 		resume: Option<&WalletSyncState>,
 		progress: &SyncProgress,
@@ -355,7 +356,7 @@ impl IndexerContext<DefaultDB> {
 		// server-side scan. The resume cursor goes to `shielded_transactions` instead.
 		let session_id = self.client.connect(&viewing_key, None).await?;
 
-		let result = self.drain_shielded(shielded, &session_id, progress).await;
+		let result = self.drain_shielded(seed, shielded, &session_id, progress).await;
 
 		// Always release the session, even on error, to avoid leaking indexer sessions.
 		if let Err(e) = self.client.disconnect(&session_id).await {
@@ -386,10 +387,15 @@ impl IndexerContext<DefaultDB> {
 	// realign with `zswapMerkleTreeCollapsedUpdate(first_free, last_end_index - 1)`.
 	async fn drain_shielded(
 		&self,
+		seed: &WalletSeed,
 		shielded: &mut ShieldedWallet<DefaultDB>,
 		session_id: &str,
 		progress: &SyncProgress,
 	) -> Result<bool, BoxError> {
+		// A chain that forked from ledger 8 serves its pre-fork transactions in ledger-8 encoding.
+		// They go into a ledger-8 wallet whose state carries into `shielded` at the first ledger-9
+		// transaction, as `fork_context_8_to_9` does on the replay path.
+		let mut pre_fork: Option<ShieldedWallet8> = None;
 		// The cursor is the tree's own next free index, so state and cursor cannot drift.
 		let mut last_end_index = shielded.state.first_free;
 		let mut stream = self.client.shielded_transactions(session_id, last_end_index).await?;
@@ -451,17 +457,53 @@ impl IndexerContext<DefaultDB> {
 					collapsed_update,
 					..
 				} => {
-					if let Some(update_bytes) = collapsed_update {
-						let update: MerkleTreeCollapsedUpdate = deserialize(&update_bytes[..])?;
-						shielded.state = shielded
-							.state
-							.apply_collapsed_update(&update)
-							.map_err(|e| format!("apply zswap collapsed update: {e:?}"))?;
+					match deserialize::<MnTx, _>(&raw_transaction[..]) {
+						Ok(tx) => {
+							if let Some(w8) = pre_fork.take() {
+								shielded.state = shielded_state_8_to_9(&w8)?;
+							}
+							if let Some(update_bytes) = collapsed_update {
+								let update: MerkleTreeCollapsedUpdate =
+									deserialize(&update_bytes[..])?;
+								shielded.state = shielded
+									.state
+									.apply_collapsed_update(&update)
+									.map_err(|e| format!("apply zswap collapsed update: {e:?}"))?;
+							}
+							shielded.apply_offers(&relevant_offers(&tx, result));
+						},
+						Err(e9) => {
+							let tx: MnTx8 = crate::ledger_8::deserialize(&raw_transaction[..])
+								.map_err(|_| e9)?;
+							let w8 = match &mut pre_fork {
+								Some(w8) => w8,
+								None => {
+									if shielded.state.first_free > 0 {
+										return Err(
+											"ledger-8 shielded transaction after ledger-9 \
+										            state; clear the wallet cache and retry"
+												.into(),
+										);
+									}
+									pre_fork.insert(ShieldedWallet8::default(
+										crate::ledger_8::WalletSeed::try_from(seed.as_bytes())
+											.map_err(|e| {
+												format!("convert seed to ledger 8: {e:?}")
+											})?,
+									))
+								},
+							};
+							if let Some(update_bytes) = collapsed_update {
+								let update: crate::ledger_8::MerkleTreeCollapsedUpdate =
+									crate::ledger_8::deserialize(&update_bytes[..])?;
+								w8.state =
+									w8.state.apply_collapsed_update(&update).map_err(|e| {
+										format!("apply ledger-8 zswap collapsed update: {e:?}")
+									})?;
+							}
+							w8.apply_offers(&relevant_offers_8(&tx, result));
+						},
 					}
-
-					let tx: MnTx = deserialize(&raw_transaction[..])?;
-					let offers = relevant_offers(&tx, result);
-					shielded.apply_offers(&offers);
 					last_end_index = zswap_end_index;
 					catch_up.relevant(zswap_end_index)
 				},
@@ -485,6 +527,9 @@ impl IndexerContext<DefaultDB> {
 			if done {
 				break;
 			}
+		}
+		if let Some(w8) = pre_fork {
+			shielded.state = shielded_state_8_to_9(&w8)?;
 		}
 		Ok(shielded.state.first_free == last_end_index)
 	}
@@ -643,6 +688,7 @@ impl IndexerContext<DefaultDB> {
 		let mut stream = self.client.dust_ledger_events(resume_id.max(1)).await?;
 		let mut events: Vec<Event<DefaultDB>> = Vec::new();
 		let mut applied_id = resume_id;
+		let mut pre_fork_skipped = 0u64;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
 		loop {
@@ -655,8 +701,21 @@ impl IndexerContext<DefaultDB> {
 			progress.dust.advance_scanned(&mut last_scanned, item.id);
 			progress.dust.advance_target(&mut last_target, item.max_id);
 			if item.id > resume_id {
-				let event: Event<DefaultDB> = deserialize(&item.raw[..])?;
-				events.push(event);
+				match deserialize::<Event<DefaultDB>, _>(&item.raw[..]) {
+					Ok(event) => events.push(event),
+					// The 8->9 fork wipes dust state, so pre-fork (ledger-8) events don't apply.
+					Err(e9) => {
+						crate::ledger_8::deserialize::<
+							crate::ledger_8::Event<crate::ledger_8::DefaultDB>,
+							_,
+						>(&item.raw[..])
+						.map_err(|_| e9)?;
+						if !events.is_empty() {
+							return Err("ledger-8 dust event after a ledger-9 one".into());
+						}
+						pre_fork_skipped += 1;
+					},
+				}
 				applied_id = item.id;
 			}
 			// `id`/`maxId` are 1-based and `maxId` is the highest known event: stop once reached.
@@ -665,6 +724,9 @@ impl IndexerContext<DefaultDB> {
 			}
 		}
 
+		if pre_fork_skipped > 0 {
+			log::info!("indexer: skipped {pre_fork_skipped} pre-fork (ledger 8) dust events");
+		}
 		dust.replay_events(&events).map_err(|e| format!("replay dust events: {e:?}"))?;
 		// Snapshot before the TTL projection: `process_ttls` expires UTXOs against *this* tip, so
 		// persisting its output and resuming from it would expire against two different tips.
@@ -1120,6 +1182,19 @@ impl From<&BlockInfo> for BlockContext {
 
 /// The midnight transaction for this ledger generation, matching `fork::apply_block_9`.
 type MnTx = Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
+
+type ShieldedWallet8 = crate::ledger_8::ShieldedWallet<crate::ledger_8::DefaultDB>;
+use crate::ledger_8::context::indexer_context::{
+	MnTx as MnTx8, relevant_offers as relevant_offers_8,
+};
+
+/// Carry a ledger-8 zswap wallet state across the fork (same arena, see `fork_context_8_to_9`).
+fn shielded_state_8_to_9(w8: &ShieldedWallet8) -> Result<WalletState<DefaultDB>, BoxError> {
+	let sp = crate::fork::fork_8_to_9::old_to_new_sp::<_, WalletState<DefaultDB>>(
+		crate::ledger_8::Sp::new(w8.state.clone()),
+	)?;
+	Ok((*sp).clone())
+}
 
 /// Extract the zswap offers to apply for a relevant transaction, honouring its result.
 ///

@@ -1119,7 +1119,7 @@ impl From<&BlockInfo> for BlockContext {
 }
 
 /// The midnight transaction for this ledger generation, matching `fork::apply_block_8`.
-type MnTx = Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
+pub(crate) type MnTx = Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB>;
 
 /// Extract the zswap offers to apply for a relevant transaction, honouring its result.
 ///
@@ -1127,7 +1127,7 @@ type MnTx = Transaction<Signature, ProofMarker, PureGeneratorPedersen, DefaultDB
 /// fallible offers are applied; on `PartialSuccess` only the guaranteed offer is applied (the
 /// indexer's union does not carry per-segment success here, and the next transaction's collapsed
 /// update re-aligns the merkle index regardless); on `Failure` nothing is applied.
-fn relevant_offers<S, P, D>(
+pub(crate) fn relevant_offers<S, P, D>(
 	tx: &Transaction<S, P, PureGeneratorPedersen, D>,
 	result: TransactionResultKind,
 ) -> Vec<Offer<P::LatestProof, D>>
