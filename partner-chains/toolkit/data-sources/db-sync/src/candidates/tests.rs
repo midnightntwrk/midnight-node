@@ -407,8 +407,8 @@ fn leader_candidate_spo_a() -> CandidateRegistrations {
 						tx_index_within_block: McTxIndexInBlock(1),
 					},
 					tx_inputs: vec![
-						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 0),
+						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 					],
 				}
 			],
@@ -439,8 +439,8 @@ fn leader_candidate_spo_b() -> CandidateRegistrations {
 						tx_index_within_block: McTxIndexInBlock(1),
 					},
 					tx_inputs: vec![
-						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 0),
+						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 					],
 				}
 			],

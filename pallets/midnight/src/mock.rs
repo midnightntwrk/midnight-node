@@ -102,11 +102,15 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }
 
-// Build genesis storage according to the mock runtime.
+// Build genesis storage according to the mock runtime. Calls run as block execution.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
+	let mut ext: sp_io::TestExternalities =
+		frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into();
+	ext.register_extension(midnight_primitives_ledger::LedgerOnchainExt::default());
+	ext
 }
 
 pub fn midnight_events() -> Vec<super::Event> {

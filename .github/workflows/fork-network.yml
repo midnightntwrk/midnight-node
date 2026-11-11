@@ -37,9 +37,9 @@ on:
           - devnet
           - qanet
       mock_authorities_tag:
-        description: "mock-authorities image tag. Use >= f6cbf91: it writes a mock-follower main-chain hash into the fork block (older tags keep the real Cardano hash, which >=2.x nodes reject as regressing, midnight-node#2307). Older floor 4d8d772: it carries the GRANDPA client aux-storage rewrite (PR #77) required so forks of >=2.0.0 runtimes finalize (older tags such as 368fd98 rotate the voter via a ForcedChange digest that deadlocks GRANDPA and finality stalls), and it still includes the Council/Technical Committee membership rewrite needed for the runtime and full upgrade modes."
+        description: "mock-authorities image tag. Use >= f6cbf91: it writes a mock-follower main-chain hash into the fork block (older tags keep the real Cardano hash, which >=2.x nodes reject as regressing, midnight-node#2307). The default, 14cee4b, opens node 2.x databases with parity-db 0.5 (midnight-node-ops#127; older tags cannot see a long chain's grandpa_voters, so finality stalls), builds the fork block through the runtime (#110), and gives it the parent's MNSV digest and an empty body so the indexer can decode it (older tags crash chain-indexer at the fork block). Older floor 4d8d772: it carries the GRANDPA client aux-storage rewrite (PR #77) required so forks of >=2.0.0 runtimes finalize (older tags such as 368fd98 rotate the voter via a ForcedChange digest that deadlocks GRANDPA and finality stalls), and it still includes the Council/Technical Committee membership rewrite needed for the runtime and full upgrade modes."
         required: true
-        default: "f6cbf91"
+        default: "14cee4b"
       node_image:
         description: "Full Docker image reference to fork from, e.g. ghcr.io/midnight-ntwrk/midnight-node:1.0.0 or a CI tag like ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-<tree-hash>-amd64 — not a git branch/sha/URL. Must match the snapshot's runtime host fns"
         required: true

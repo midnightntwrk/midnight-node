@@ -102,6 +102,7 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }
 
 impl pallet_midnight_system::Config for Test {
@@ -150,7 +151,7 @@ impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 	type LedgerStateProvider = Midnight;
 	type LedgerBlockContextProvider = Midnight;
-	type WeightInfo = ();
+	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Test>;
 }
 
 impl mock_pallet::Config for Test {}

@@ -47,11 +47,11 @@ pub use frame_support::{
 	},
 };
 pub use frame_system::Call as SystemCall;
-use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
+use frame_system::{EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
-use midnight_primitives_cnight_observation::CardanoPosition;
+use midnight_primitives_cnight_observation::CardanoCursor;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
@@ -706,6 +706,9 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Runtime {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
+	// admits, so the node cap binds first.
+	type MaxDecodedTxItems = ConstU32<4096>;
 }
 
 /// Configure the pallet-midnight in pallets/midnight.
@@ -828,7 +831,7 @@ impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -880,7 +883,7 @@ impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime
 	type SwapOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type SwapOrigin = EnsureRoot<Self::AccountId>;
-	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	#[cfg(feature = "runtime-benchmarks")]
@@ -1930,18 +1933,6 @@ impl_runtime_apis! {
 			pallet_cnight_observation::MainChainMappingValidatorAddress::<Runtime>::get().into_inner()
 		}
 
-		fn get_next_cardano_position() -> CardanoPosition {
-			pallet_cnight_observation::NextCardanoPosition::<Runtime>::get()
-		}
-
-		fn get_utxo_capacity_per_block() -> u32 {
-			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
-		}
-
-		fn get_cardano_block_window_size() -> u32 {
-			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
-		}
-
 		fn get_cnight_token_identifier() -> (Vec<u8>, Vec<u8>) {
 			let (policy_id, asset_name) = pallet_cnight_observation::CNightIdentifier::<Runtime>::get();
 			(policy_id.into_inner(), asset_name.into_inner())
@@ -1949,6 +1940,14 @@ impl_runtime_apis! {
 
 		fn get_auth_token_asset_name() -> Vec<u8> {
 			pallet_cnight_observation::MainChainAuthTokenAssetName::<Runtime>::get().into_inner()
+		}
+
+		fn get_observation_cost_model() -> Option<midnight_primitives_cnight_observation::ObservationCostModel> {
+			CNightObservation::observation_cost_model()
+		}
+
+		fn get_next_cardano_cursor() -> CardanoCursor {
+			pallet_cnight_observation::NextCardanoCursor::<Runtime>::get()
 		}
 	}
 

@@ -200,6 +200,10 @@ fn default_source() -> Source {
 		fetch_cache: FetchCacheConfig::InMemory,
 		ledger_state_db: String::new(),
 		replay_checkpoint_interval: 0,
+		indexer_url: None,
+		network: "undeployed".to_string(),
+		indexer_concurrency:
+			midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 	}
 }
 
@@ -277,15 +281,19 @@ impl ToolkitTestHelper {
 
 			// COMPACT_HOME wins in run-compactc, so its compiler must match the version
 			// the tests select the toolkit package and cache key for — otherwise we would
-			// silently compile with the wrong compiler. `compactc --version` reports the
-			// bare semver (no tree-hash suffix), so compare against major.minor.patch.
+			// silently compile with the wrong compiler. `compactc --version` leads with the
+			// bare semver (0.35.0+ appends a commit and date), so compare its first word.
 			let expected = format!(
 				"{}.{}.{}",
 				compactc_version.major, compactc_version.minor, compactc_version.patch
 			);
 			match std::process::Command::new(&compactc).arg("--version").output() {
 				Ok(out) if out.status.success() => {
-					let got = String::from_utf8_lossy(&out.stdout).trim().to_string();
+					let got = String::from_utf8_lossy(&out.stdout)
+						.split_whitespace()
+						.next()
+						.unwrap_or_default()
+						.to_string();
 					if got != expected {
 						eprintln!(
 							"Skipping contract integration tests: COMPACT_HOME compactc is {got}, \
@@ -573,14 +581,13 @@ impl ToolkitTestHelper {
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Circuit(CircuitCommandArgs {
-				source: self.source_from_url(),
+				source: Source { network: self.network.clone(), ..self.source_from_url() },
 				wallet_seed: None,
 				toolkit_js: self.toolkit_js(),
 				circuit_call: CircuitArgs {
 					config: RelativePath(config_file.to_path_buf()),
 					contract_address: cli_parsers::contract_address_decode(contract_address)
 						.expect("invalid contract address"),
-					network: self.network.clone(),
 					coin_public: cli_parsers::coin_public_decode(coin_public)
 						.expect("invalid coin public key"),
 					input_onchain_state: RelativePath(onchain_state.to_path_buf()),
