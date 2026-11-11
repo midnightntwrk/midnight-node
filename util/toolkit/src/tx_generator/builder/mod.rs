@@ -1774,7 +1774,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	let mut since_checkpoint = 0usize;
 	let mut last_replayed: Option<u64> = None;
 	while let Some(batch) = batches
-		.next()
+		.next((checkpoint_every > 0).then(|| checkpoint_every - since_checkpoint))
 		.await
 		.unwrap_or_else(|e| panic!("failed to read blocks from the fetch cache: {e}"))
 	{
@@ -2111,13 +2111,19 @@ impl<'a> ReplayBatches<'a> {
 		}
 	}
 
-	async fn next(&mut self) -> Result<Option<Cow<'a, [RawBlockData]>>, FetchError> {
+	/// The next batch, at most `limit` blocks long, so a checkpoint lands exactly on
+	/// the requested interval.
+	async fn next(
+		&mut self,
+		limit: Option<usize>,
+	) -> Result<Option<Cow<'a, [RawBlockData]>>, FetchError> {
+		let limit = limit.unwrap_or(usize::MAX).max(1);
 		match self {
 			Self::Loaded { blocks, batch, pos } => {
 				if *pos >= blocks.len() {
 					return Ok(None);
 				}
-				let end = usize::min(*pos + *batch, blocks.len());
+				let end = usize::min(*pos + usize::min(*batch, limit), blocks.len());
 				let chunk = &blocks[*pos..end];
 				*pos = end;
 				Ok(Some(Cow::Borrowed(chunk)))
@@ -2126,8 +2132,8 @@ impl<'a> ReplayBatches<'a> {
 				if *next > chain.tip_height {
 					return Ok(None);
 				}
-				let to =
-					next.saturating_add(crate::fetcher::CACHE_READ_CHUNK - 1).min(chain.tip_height);
+				let len = u64::min(crate::fetcher::CACHE_READ_CHUNK, limit as u64);
+				let to = next.saturating_add(len - 1).min(chain.tip_height);
 				let window = chain.load_range(*next, to).await?;
 				*next = to + 1;
 				Ok(Some(Cow::Owned(window)))
@@ -2166,7 +2172,7 @@ async fn build_fork_aware_context_uncached(
 	let mut batches = ReplayBatches::streamed(chain, 0);
 	let mut progress = ReplayProgress::new(batches.total());
 	while let Some(batch) = batches
-		.next()
+		.next(None)
 		.await
 		.unwrap_or_else(|e| panic!("failed to read blocks from the fetch cache: {e}"))
 	{
@@ -2382,6 +2388,19 @@ mod tests {
 			state_root: None,
 			state: None,
 		}
+	}
+
+	/// A batch never runs past the next checkpoint, so checkpoints land on the interval.
+	#[tokio::test]
+	async fn batches_stop_at_the_next_checkpoint() {
+		let blocks = chain(0, 25);
+		let mut batches = ReplayBatches::loaded(&blocks, 10);
+		let mut lens = Vec::new();
+		for limit in [Some(4), Some(10), None, None] {
+			lens.push(batches.next(limit).await.unwrap().unwrap().len());
+		}
+		assert_eq!(lens, [4, 10, 10, 1]);
+		assert!(batches.next(None).await.unwrap().is_none());
 	}
 
 	/// `l8` ledger-8 blocks from genesis, then `l9` ledger-9 blocks.

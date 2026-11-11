@@ -95,8 +95,9 @@ preprod run below it dropped 6 such left-over references.
 Restoring reads the root key and opens it with `Arena::get_lazy`: only the top node is
 read; the rest load when touched, through a bounded read cache (200,000 nodes).
 
-During a long replay with the on-disk arena, a checkpoint is saved every 10,000 blocks
-(`--replay-checkpoint-interval 0` keeps its meaning for in-memory runs). A checkpoint
+During a long replay with the on-disk arena, a checkpoint is saved every
+`--replay-checkpoint-interval` blocks, or every 10,000 blocks when it is 0 (in memory, 0
+still means no mid-replay checkpoint). A checkpoint
 writes only the nodes changed since the previous one and then drops the state from
 memory, so the replay's memory no longer grows with the chain, and an interrupted replay
 resumes from the last checkpoint.
