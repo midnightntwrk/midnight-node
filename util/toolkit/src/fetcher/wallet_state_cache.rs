@@ -494,7 +494,8 @@ pub fn create_root_snapshot_8(
 /// Release the arena root a [`SnapshotStorage::ArenaRoot`] snapshot holds; a no-op for
 /// an inline snapshot.
 pub fn release_snapshot_root(snapshot: &LedgerSnapshot) {
-	if snapshot.storage != SnapshotStorage::ArenaRoot {
+	// The in-memory arena never persisted the root, so it has nothing to release.
+	if snapshot.storage != SnapshotStorage::ArenaRoot || !super::ledger_arena::is_persistent() {
 		return;
 	}
 	if let Err(e) = super::ledger_arena::release_root(&snapshot.ledger_state_bytes) {
