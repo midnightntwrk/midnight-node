@@ -216,7 +216,7 @@ services:
           memory: ${MEM_POSTGRES:-}
 
   chain-indexer:
-    profiles: ["withindexer"]
+    profiles: ["withindexer", "withfaucet"]
     container_name: chain-indexer
     platform: ${ARCHITECTURE}
     depends_on:
@@ -245,7 +245,7 @@ services:
       retries: 2
 
   wallet-indexer:
-    profiles: ["withindexer"]
+    profiles: ["withindexer", "withfaucet"]
     container_name: wallet-indexer
     platform: ${ARCHITECTURE}
     depends_on:
@@ -272,7 +272,7 @@ services:
       retries: 2
 
   indexer-api:
-    profiles: ["withindexer"]
+    profiles: ["withindexer", "withfaucet"]
     container_name: indexer-api
     platform: ${ARCHITECTURE}
     depends_on:
@@ -304,7 +304,7 @@ services:
       retries: 2
 
   postgres-indexer:
-    profiles: ["withindexer"]
+    profiles: ["withindexer", "withfaucet"]
     container_name: postgres-indexer
     platform: ${ARCHITECTURE}
     image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
@@ -324,7 +324,7 @@ services:
       - no-new-privileges:true
 
   nats:
-    profiles: ["withindexer"]
+    profiles: ["withindexer", "withfaucet"]
     container_name: nats
     image: "nats:2.11.8@sha256:e7ecc3cf81f4ccada9d24f8466d157ff472c20a12a5f8dddaeb26d71e7b42ee1"
     restart: "always"
@@ -334,6 +334,75 @@ services:
       - "4222:4222"
     volumes:
       - nats-data:/tmp/nats
+    security_opt:
+      - no-new-privileges:true
+
+  # Faucet (`-p withfaucet`): dispenses from the dev wallet 0x..01 that
+  # init-mnight-faucet funds and DUST-registers. Pulls in the indexer services too.
+  faucet-postgres:
+    profiles: ["withfaucet"]
+    container_name: faucet-postgres
+    platform: ${ARCHITECTURE}
+    image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
+    restart: "always"
+    volumes:
+      - faucet-postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: "faucet"
+      POSTGRES_DB: "faucet"
+      POSTGRES_PASSWORD: "${FAUCET_DB_PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faucet"]
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+    security_opt:
+      - no-new-privileges:true
+
+  proof-server:
+    profiles: ["withfaucet"]
+    container_name: proof-server
+    platform: ${ARCHITECTURE}
+    image: ${PROOF_SERVER_IMAGE}
+    restart: "always"
+    ports:
+      - "6300:6300"
+    # No healthcheck: the image ships no shell or curl to probe with.
+    security_opt:
+      - no-new-privileges:true
+
+  faucet:
+    profiles: ["withfaucet"]
+    container_name: faucet
+    platform: ${ARCHITECTURE}
+    image: ${FAUCET_IMAGE}
+    restart: "always"
+    depends_on:
+      init-mnight-faucet:
+        condition: service_completed_successfully
+      indexer-api:
+        condition: service_healthy
+      proof-server:
+        condition: service_started
+      faucet-postgres:
+        condition: service_healthy
+    ports:
+      - "5300:5300"
+      - "9696:9696"
+    environment:
+      NODE_URL: "ws://midnight-node-1:9933"
+      INDEXER_URL: "http://indexer-api:8088/api/v4/graphql"
+      PROVING_SERVER_URL: "http://proof-server:6300"
+      NETWORK_ID: "local"
+      WALLET_SEED: "0000000000000000000000000000000000000000000000000000000000000001"
+      DB_HOST: "faucet-postgres"
+      DB_PASSWORD: "${FAUCET_DB_PASSWORD}"
+      ENCRYPTION_KEY: "${FAUCET_ENCRYPTION_KEY}"
+      JWT_SIGN_SECRET: "${FAUCET_JWT_SIGN_SECRET}"
+      # Key for the scripted /v1 API; a local fixture, not a real credential.
+      THIRD_PARTY_API_KEY: "${FAUCET_THIRD_PARTY_API_KEY:-local-env}"
+      LOG_FORMAT: "pretty"
+      LOG_LEVEL: "${FAUCET_LOG_LEVEL:-info}"
     security_opt:
       - no-new-privileges:true
 
@@ -697,6 +766,7 @@ volumes:
   midnight-node-6-data: {}
   nats-data: {}
   postgres-indexer-data: {}
+  faucet-postgres-data: {}
   ogmios-data: {}
   kupo-data: {}
   ipc: {}
