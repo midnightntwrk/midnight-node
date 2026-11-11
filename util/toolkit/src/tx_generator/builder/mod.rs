@@ -1369,10 +1369,7 @@ fn log_replay_perf(version: LedgerVersion, stage: &str) {
 		return;
 	}
 	let phases = Phases::snapshot();
-	let arena = match version {
-		LedgerVersion::Ledger8 => replay_stats::arena_stats_8(),
-		LedgerVersion::Ledger9 => replay_stats::arena_stats_9(),
-	};
+	let arena = replay_stats::arena_stats();
 	let (rss, peak) = process_rss_mib().unwrap_or((0, 0));
 	log::debug!(
 		"[perf] replay {stage}: {phases}; arena ({version:?}): {arena}; rss {rss} MiB (peak {peak} MiB)"

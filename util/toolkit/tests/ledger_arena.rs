@@ -124,12 +124,12 @@ async fn snapshot_roots_survive_gc_and_released_roots_do_not_leak() {
 }
 
 /// Full GC of an existing arena, for sizing the GC threshold:
-/// `MN_LEDGER_STATE_DB=<dir> cargo test --release --test ledger_arena -- --ignored --nocapture`.
+/// `MN_LEDGER_CACHE_DB=<dir> cargo test --release --test ledger_arena -- --ignored --nocapture`.
 /// Needs exclusive use of the directory, like any toolkit command.
 #[test]
 #[ignore]
 fn gc_an_existing_arena() {
-	let dir = std::env::var("MN_LEDGER_STATE_DB").expect("set MN_LEDGER_STATE_DB");
+	let dir = std::env::var("MN_LEDGER_CACHE_DB").expect("set MN_LEDGER_CACHE_DB");
 	let t = std::time::Instant::now();
 	ledger_arena::open(std::path::Path::new(&dir)).unwrap();
 	println!("open: {:?}", t.elapsed());
@@ -142,7 +142,7 @@ fn gc_an_existing_arena() {
 #[test]
 #[ignore]
 fn list_roots_of_an_existing_arena() {
-	let dir = std::env::var("MN_LEDGER_STATE_DB").expect("set MN_LEDGER_STATE_DB");
+	let dir = std::env::var("MN_LEDGER_CACHE_DB").expect("set MN_LEDGER_CACHE_DB");
 	ledger_arena::open(std::path::Path::new(&dir)).unwrap();
 	let roots = arena_db::try_default_storage().unwrap().arena.with_backend(|b| b.get_roots());
 	for (k, c) in &roots {

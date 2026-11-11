@@ -45,8 +45,6 @@ const LOCK_FILE: &str = "ledger-arena.lock";
 const GC_STATE_FILE: &str = "ledger-arena.gc";
 
 /// Run a full mark-and-sweep once this many nodes were written since the last one.
-/// A full preprod replay to block 600,000 writes about 770k nodes, of which a GC
-/// then removes about 250k in 35 s, so this collects about once per such replay.
 const GC_THRESHOLD_NODES: u64 = 1_000_000;
 
 /// Seconds to wait for another toolkit process holding the arena; 0 waits forever.
@@ -198,7 +196,7 @@ fn reconcile_roots(ledger_state_db: &Path) {
 }
 
 fn acquire_lock(path: &Path) -> Result<File, ArenaError> {
-	use fs2::FileExt;
+	use std::fs::TryLockError;
 	let io_err = |source| ArenaError::Io { path: path.to_path_buf(), source };
 	let mut file = std::fs::OpenOptions::new()
 		.read(true)
@@ -214,7 +212,12 @@ fn acquire_lock(path: &Path) -> Result<File, ArenaError> {
 		.map(Duration::from_secs);
 	let start = Instant::now();
 	let mut last_log: Option<Instant> = None;
-	while file.try_lock_exclusive().is_err() {
+	loop {
+		match file.try_lock() {
+			Ok(()) => break,
+			Err(TryLockError::WouldBlock) => {},
+			Err(TryLockError::Error(e)) => return Err(io_err(e)),
+		}
 		let holder = std::fs::read_to_string(path).unwrap_or_default().trim().to_string();
 		if timeout.is_some_and(|t| start.elapsed() >= t) {
 			return Err(ArenaError::Locked {

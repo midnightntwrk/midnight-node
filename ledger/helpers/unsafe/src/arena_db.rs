@@ -56,10 +56,6 @@ impl ToolkitDB {
 		let handle = owned.0.clone();
 		Ok(Self::Disk(ParityDb::from_existing_db(owned), handle))
 	}
-
-	pub fn is_persistent(&self) -> bool {
-		matches!(self, Self::Disk(..))
-	}
 }
 
 impl Default for ToolkitDB {

@@ -151,7 +151,8 @@ pub async fn read_block_window(
 	let mut blocks: Vec<RawBlockData> = Vec::with_capacity(total as usize);
 	let mut chunk_start = first;
 	while chunk_start <= to {
-		let chunk_end = chunk_start.saturating_add(CACHE_READ_CHUNK).min(to + 1);
+		// One more than a window, so a window plus its predecessor block is one read.
+		let chunk_end = chunk_start.saturating_add(CACHE_READ_CHUNK + 1).min(to + 1);
 		let chunk = reader.read_block_range(chain_id, chunk_start, chunk_end).await;
 		for (i, block) in chunk.into_iter().enumerate() {
 			blocks.push(block.ok_or(FetchError::BlockMissing(chunk_start + i as u64))?);

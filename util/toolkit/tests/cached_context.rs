@@ -61,7 +61,9 @@ fn setup_arena() {
 		return;
 	}
 	ARENA_DIR.get_or_init(|| {
-		let dir = tempfile::TempDir::new().expect("arena temp dir");
+		// Statics are never dropped, so keep the directory under the target dir rather
+		// than leaving one in the system temp dir per test process.
+		let dir = tempfile::TempDir::new_in(env!("CARGO_TARGET_TMPDIR")).expect("arena temp dir");
 		ledger_arena::open(dir.path()).expect("open ledger arena");
 		dir
 	});

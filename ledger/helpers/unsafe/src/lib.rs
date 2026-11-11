@@ -144,45 +144,28 @@ pub mod replay_stats {
 		}
 	}
 
-	/// Occupancy of the in-memory storage arena that backs the ledger state.
+	/// Occupancy of the storage arena that backs the ledger state (both generations
+	/// share one arena).
 	#[derive(Clone, Copy, Debug, Default)]
 	pub struct ArenaStats {
 		/// Nodes tracked by the arena (every live hashed object).
 		pub nodes: usize,
-		/// Objects pending in the backend's unbounded write cache.
+		/// Objects pending in the backend's write cache.
 		pub write_cache_objs: usize,
-		/// Serialized bytes held by those write-cache objects.
-		pub write_cache_bytes: usize,
 	}
 
 	impl fmt::Display for ArenaStats {
 		fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-			write!(
-				f,
-				"{} nodes, write cache {} objs / {:.1} MiB",
-				self.nodes,
-				self.write_cache_objs,
-				self.write_cache_bytes as f64 / (1024.0 * 1024.0)
-			)
+			write!(f, "{} nodes, write cache {} objs", self.nodes, self.write_cache_objs)
 		}
 	}
 
-	pub fn arena_stats_8() -> ArenaStats {
-		let storage = crate::ledger_8::default_storage::<crate::ledger_8::DefaultDB>();
+	/// Cheap enough for the replay heartbeat: neither count walks the cache.
+	pub fn arena_stats() -> ArenaStats {
+		let storage = crate::arena_db::try_default_storage().expect("installed at start-up");
 		let nodes = storage.arena.size();
-		let (write_cache_objs, write_cache_bytes) = storage
-			.arena
-			.with_backend(|b| (b.get_write_cache_len(), b.get_write_cache_obj_bytes()));
-		ArenaStats { nodes, write_cache_objs, write_cache_bytes }
-	}
-
-	pub fn arena_stats_9() -> ArenaStats {
-		let storage = crate::ledger_9::default_storage::<crate::ledger_9::DefaultDB>();
-		let nodes = storage.arena.size();
-		let (write_cache_objs, write_cache_bytes) = storage
-			.arena
-			.with_backend(|b| (b.get_write_cache_len(), b.get_write_cache_obj_bytes()));
-		ArenaStats { nodes, write_cache_objs, write_cache_bytes }
+		let write_cache_objs = storage.arena.with_backend(|b| b.get_write_cache_len());
+		ArenaStats { nodes, write_cache_objs }
 	}
 }
 
