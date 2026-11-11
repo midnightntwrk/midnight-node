@@ -13,6 +13,7 @@
     "run:mainnet": "ts-node src/index.ts run mainnet",
     "run:local-env": "ts-node src/index.ts run local-env",
     "run:local-env-with-indexer": "ts-node src/index.ts run local-env -p withindexer",
+    "run:local-env-with-faucet": "ts-node src/index.ts run local-env -p withfaucet",
     "image-upgrade:qanet": "ts-node src/index.ts image-upgrade qanet",
     "image-upgrade:devnet": "ts-node src/index.ts image-upgrade devnet",
     "image-upgrade:govnet": "ts-node src/index.ts image-upgrade govnet",
@@ -29,6 +30,7 @@
     "stop:mainnet": "ts-node src/index.ts stop mainnet",
     "stop:local-env": "ts-node src/index.ts stop local-env",
     "stop:local-env-with-indexer": "ts-node src/index.ts stop local-env -p withindexer",
+    "stop:local-env-with-faucet": "ts-node src/index.ts stop local-env -p withfaucet",
     "verify-finality:local-env": "ts-node src/index.ts verify-finality local-env",
     "governance-runtime-upgrade:qanet": "ts-node src/index.ts governance-runtime-upgrade qanet",
     "governance-runtime-upgrade:devnet": "ts-node src/index.ts governance-runtime-upgrade devnet",
@@ -68,7 +70,7 @@
     "commander": "^14.0.0",
     "dotenv": "^16.5.0",
     "eslint": "^10.8.1",
-    "glob": "^11.1.0",
+    "glob": "^14.0.4",
     "globals": "^17.11.0",
     "prettier": "3.5.3",
     "typescript-eslint": "^8.67.0",
@@ -81,6 +83,6 @@
   },
   "packageManager": "pnpm@11.11.0+sha512-RGP2X9gO2A1pvB1L8WPulPYFxzgPwxi7Wy6+FfjNEtScUaTVnpUbQB52TTtsp1HL9RvFDtcAGmvLSTXmhMNIgg",
   "overrides": {
-    "minimatch": "11.0.1"
+    "minimatch": "^11.0.5"
   }
 }

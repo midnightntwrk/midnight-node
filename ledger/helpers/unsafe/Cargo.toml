@@ -18,6 +18,8 @@ transient-crypto = { workspace = true }
 mn-ledger-8 = { workspace = true, features = ["proving"] }
 
 mn-ledger-9 = { workspace = true, features = ["proving"] }
+zkir-v3 = { workspace = true }
+anyhow = { workspace = true }
 ledger-storage-ledger-9 = { workspace = true }
 
 # v8->v9 state translation table, used by the fork boundary (`fork::fork_8_to_9`).
