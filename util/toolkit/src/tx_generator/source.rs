@@ -198,6 +198,23 @@ pub enum SourceError {
 		"toolkit only supports a single .json transaction as input - use `--to-bytes` and `.mn` format for multiple txs"
 	)]
 	TooManyJsonInputs,
+	#[error("`{0}` does not support --indexer-url: {1}")]
+	IndexerUnsupported(&'static str, &'static str),
+}
+
+impl Source {
+	/// Fail if `--indexer-url` is set on a command that cannot honour it, rather than silently
+	/// replaying blocks instead.
+	pub fn reject_indexer(
+		&self,
+		command: &'static str,
+		reason: &'static str,
+	) -> Result<(), SourceError> {
+		match self.indexer_url {
+			Some(_) => Err(SourceError::IndexerUnsupported(command, reason)),
+			None => Ok(()),
+		}
+	}
 }
 
 #[async_trait]

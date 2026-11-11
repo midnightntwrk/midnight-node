@@ -40,9 +40,9 @@ use crate::ledger_9::{
 	DustWallet, Event, HashOutput, IntentHash, IntoWalletAddress, LedgerParameters, LedgerState,
 	MerkleTreeCollapsedUpdate, Offer, PedersenDowngradeable, ProofKind, ProofMarker,
 	PureGeneratorPedersen, Resolver, Serializable, ShieldedWallet, Signature, SignatureKind, Sp,
-	Storable, Tagged, Timestamp, Transaction, UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet,
-	WalletSeed, WalletState, ZswapChainState, deserialize, deserialize_untagged,
-	make_block_context, serialize_untagged,
+	Storable, Tagged, Timestamp, Transaction, UnshieldedSignatureScheme, UnshieldedTokenType,
+	UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState, deserialize,
+	deserialize_untagged, make_block_context, serialize_untagged,
 };
 use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
@@ -118,7 +118,8 @@ impl<D: DB + Clone> IndexerContext<D> {
 }
 
 impl IndexerContext<DefaultDB> {
-	/// Connect to the indexer and sync each seed's wallet to the chain tip.
+	/// Connect to the indexer and sync each seed's wallet, under its unshielded signature scheme, to
+	/// the chain tip.
 	///
 	/// Seeds sync `wallet_sync_concurrency` at a time, and each seed's shielded / unshielded / dust
 	/// subscriptions drain concurrently, each on its own WebSocket.
@@ -129,7 +130,7 @@ impl IndexerContext<DefaultDB> {
 	/// self-identify, so the caller's cache key must guarantee it.
 	pub async fn init_wallets(
 		&self,
-		seeds: &[WalletSeed],
+		seeds: &[(WalletSeed, UnshieldedSignatureScheme)],
 		resume: &HashMap<WalletSeed, WalletSyncState>,
 	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
 		let block = self.refresh_tip().await?;
@@ -145,8 +146,8 @@ impl IndexerContext<DefaultDB> {
 		// `log_until_done` loops forever; it is dropped the moment the work arm resolves, so the
 		// `select!` yields the work's result.
 		let synced = {
-			let work = stream::iter(seeds.iter().map(|seed| {
-				self.sync_wallet(seed, resume.get(seed), &params, tip_time, &progress)
+			let work = stream::iter(seeds.iter().map(|(seed, scheme)| {
+				self.sync_wallet(seed, *scheme, resume.get(seed), &params, tip_time, &progress)
 			}))
 			.buffer_unordered(self.wallet_sync_concurrency.get())
 			.try_collect::<Vec<_>>();
@@ -177,6 +178,7 @@ impl IndexerContext<DefaultDB> {
 	async fn sync_wallet(
 		&self,
 		seed: &WalletSeed,
+		scheme: UnshieldedSignatureScheme,
 		resume: Option<&WalletSyncState>,
 		params: &LedgerParameters,
 		tip_time: Timestamp,
@@ -186,7 +188,7 @@ impl IndexerContext<DefaultDB> {
 		let mut wallet = Wallet {
 			root_seed: Some(seed.clone()),
 			shielded: ShieldedWallet::default(seed.clone()),
-			unshielded: UnshieldedWallet::default(seed.clone()),
+			unshielded: UnshieldedWallet::new(seed.clone(), scheme),
 			dust: DustWallet::default(seed.clone(), Some(params)),
 		};
 
