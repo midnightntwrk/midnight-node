@@ -715,16 +715,35 @@ fn declared_node_count_is_capped() {
 fn the_node_cap_binds_before_the_item_cap() {
 	use sp_core::Get;
 
-	// Lower bound on nodes per operation; ledger_9's
-	// `byte_limited_payload_cannot_declare_unbounded_work` asserts at least 4.
-	const NODES_PER_OPERATION: u32 = 4;
-	let nodes = <<Test as crate::Config>::MaxTransactionNodes as Get<u32>>::get();
-	let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
-	let operations_admitted = nodes / NODES_PER_OPERATION;
+	mock::new_test_ext().execute_with(|| {
+		let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
+		assert!(crate::MaxTransactionNodes::<Test>::get() / crate::NODES_PER_OPERATION < items);
 
-	assert!(
-		items > operations_admitted,
-		"MaxDecodedTxItems ({items}) binds before MaxTransactionNodes admits \
-		 {operations_admitted} operations",
-	);
+		let too_many = items * crate::NODES_PER_OPERATION;
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many),
+			crate::Error::<Test>::MaxTransactionNodesExceedsItemCap
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many - 1));
+	});
+}
+
+#[test]
+fn governance_can_lower_the_node_cap() {
+	mock::new_test_ext().execute_with(|| {
+		let mut tx = b"midnight:transaction[v12](proof):".to_vec();
+		tx.extend(((100u16 << 2) | 0b01).to_le_bytes());
+
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RuntimeOrigin::none(), 99),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), 99));
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&tx),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+	});
 }

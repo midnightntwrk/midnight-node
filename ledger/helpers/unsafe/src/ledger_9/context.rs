@@ -36,7 +36,9 @@ use tokio::sync::Mutex as MutexTokio;
 
 pub mod builder_context;
 pub mod indexer_context;
+pub use crate::indexer_client::{IndexerClient, IndexerClientError};
 pub use builder_context::BuilderContext;
+pub use indexer_context::IndexerContext;
 
 #[derive(Debug, Error)]
 pub enum LedgerContextError {

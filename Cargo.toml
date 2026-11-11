@@ -83,6 +83,8 @@ transient-crypto = { version = "^2.0.0", package = "midnight-transient-crypto" }
 # crate is gone: rc.3 dropped the separate 2.x zkir, and its frozen `Zkir` impl can't satisfy
 # transient-crypto 2.2.0's new tagged-IR trait methods.
 zkir = { version = "^2.2.0", package = "midnight-zkir" }
+# ZKIR v3 (compactc 0.36+ emits only v3). Keep in step with `mn-ledger-9`'s own zkir 3.x dep so they unify.
+zkir-v3 = { version = "=3.2.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto (2.x) and zkir are shared above so reuse those entries.
@@ -310,6 +312,9 @@ log = { default-features = false, version = "0.4.29" }
 tracing = { default-features = false, version = "0.1.44" }
 tracing-subscriber = { version = "=0.3.19", features = ["json", "env-filter"] }
 tokio = { version = "1.52.2", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
+tokio-tungstenite = { version = "0.29" }
+graphql_client = { version = "0.16" }
+apollo-compiler = { version = "1.33" }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3", features = ["alloc"] }
 hex-literal = { version = "1.1.0", default-features = false }
@@ -347,6 +352,10 @@ test-log = "0.2"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"] }
 prost = { version = "0.13.5", default-features = false}
 reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-tls", "blocking", "json" ] }
+# Used only to pin the process-wide rustls default CryptoProvider to `ring` in binary `main()`s.
+# Both `ring` (via sqlx) and `aws-lc-rs` (via reqwest) are compiled in, so rustls cannot
+# auto-select a default and panics on the first default-provider TLS use.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 stacker = "0.1.24"
 strum = { version = "0.28.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }

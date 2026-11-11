@@ -2041,7 +2041,7 @@ mod tests {
 			ops_at_limit <= 50_000.0,
 			"a payload at the byte limit decodes to ~{ops_at_limit:.0} operations",
 		);
-		// pallet-midnight's `the_node_cap_binds_before_the_item_cap` assumes this ratio.
+		// pallet-midnight's `NODES_PER_OPERATION` assumes this ratio.
 		assert!(
 			nodes_per_op >= 4.0,
 			"an operation costs only {nodes_per_op:.2} nodes, so `MaxTransactionNodes` admits \

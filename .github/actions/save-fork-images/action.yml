@@ -1,0 +1,36 @@
+name: Save fork PR images
+description: >-
+  Hand images built on a fork PR to downstream jobs as a workflow artifact. Fork PRs get no
+  registry credentials, so they cannot push to GHCR the way internal builds do; the consumer
+  side is ./.github/actions/load-fork-images.
+
+inputs:
+  artifact-name:
+    description: Name of the artifact to upload
+    required: true
+  images:
+    description: Newline-separated image refs to save, as already tagged in the local daemon
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Save images
+      shell: bash
+      env:
+        IMAGES: ${{ inputs.images }}
+      run: |
+        mapfile -t refs < <(printf '%s\n' "$IMAGES" | sed '/^[[:space:]]*$/d')
+        mkdir -p "$RUNNER_TEMP/fork-images"
+        docker save "${refs[@]}" | zstd -T0 -3 -o "$RUNNER_TEMP/fork-images/images.tar.zst"
+        ls -lh "$RUNNER_TEMP/fork-images"
+
+    - name: Upload images
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/fork-images/images.tar.zst
+        # Already zstd-compressed.
+        compression-level: 0
+        retention-days: 1
+        if-no-files-found: error
