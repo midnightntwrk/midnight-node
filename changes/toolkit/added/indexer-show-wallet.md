@@ -24,7 +24,7 @@ Indexers 4.3 (4.3.3 onwards) and 4.4 are supported. Their GraphQL schemas are ve
 `ledger/helpers/unsafe/graphql/schema/`: the client is typed against the newest, and a unit test
 checks every query document against all of them.
 
-An end-to-end test (`util/toolkit/tests/indexer_show_wallet_e2e.rs`) spins up a node plus
+An end-to-end test (`util/toolkit/tests/indexer_e2e.rs`) spins up a node plus
 `indexer-standalone` on a shared Docker network and asserts the synced wallet reports the funded
 genesis balances. It is gated behind `MN_RUN_INDEXER_E2E=1` until the `indexer-standalone` image is
 published and pinned in CI (set `--INDEXER_STANDALONE_IMAGE` on the `+test-toolkit` Earthly target,

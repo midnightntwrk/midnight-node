@@ -1327,8 +1327,8 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
-    # Optional: pin the indexer-standalone image for the indexer-backed show-wallet e2e
-    # (gated behind MN_RUN_INDEXER_E2E in the test; see util/toolkit/tests/indexer_show_wallet_e2e.rs).
+    # Optional: pin the indexer-standalone image for the indexer e2e
+    # (gated behind MN_RUN_INDEXER_E2E in the test; see util/toolkit/tests/indexer_e2e.rs).
     ARG INDEXER_STANDALONE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
