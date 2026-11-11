@@ -55,6 +55,7 @@ fragment UnshieldedUtxoFields on UnshieldedUtxo {
   intentHash
   outputIndex
   ctime
+  registeredForDustGeneration
 }
 
 subscription UnshieldedTransactions($address: UnshieldedAddress!, $transactionId: Int) {
