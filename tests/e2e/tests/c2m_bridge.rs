@@ -322,6 +322,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         destination: Destination {
             dest_urls: vec![],
