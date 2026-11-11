@@ -607,6 +607,33 @@ async fn snapshot_format_follows_the_arena() {
 	assert_eq!(snapshot_format_version(tmp.path(), chain_id, tip), expected);
 }
 
+/// A file cache holding `snapshot` and a wallet entry per seed, all at `tip`.
+async fn plant_tip_cache(
+	raw: &LedgerContext<DefaultDB>,
+	chain_id: H256,
+	tip: u64,
+	seeds: &[WalletSeed],
+	snapshot: wallet_state_cache::LedgerSnapshot,
+) -> (tempfile::TempDir, FileBackend) {
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+	backend.set_ledger_snapshot(chain_id, snapshot).await;
+	let wallets: Vec<_> = seeds
+		.iter()
+		.map(|seed| {
+			wallet_state_cache::create_wallet_snapshot(
+				raw,
+				seed,
+				UnshieldedSignatureScheme::Schnorr,
+				tip,
+			)
+			.unwrap()
+		})
+		.collect();
+	backend.set_wallet_states(chain_id, &wallets).await;
+	(tmp, backend)
+}
+
 /// An inline snapshot written before the on-disk arena existed is restored once and
 /// saved back as an arena root, with the same result as a replay from genesis.
 #[tokio::test]
@@ -622,23 +649,8 @@ async fn inline_snapshot_is_imported_into_the_arena() {
 	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
 
 	// What an older toolkit left behind: an inline snapshot and wallet entries at the tip.
-	let tmp = tempfile::TempDir::new().unwrap();
-	let backend = FileBackend::new(tmp.path());
 	let inline = wallet_state_cache::create_ledger_snapshot(&raw, tip).unwrap();
-	backend.set_ledger_snapshot(chain_id, inline).await;
-	let wallets: Vec<_> = seeds
-		.iter()
-		.map(|seed| {
-			wallet_state_cache::create_wallet_snapshot(
-				&raw,
-				seed,
-				UnshieldedSignatureScheme::Schnorr,
-				tip,
-			)
-			.unwrap()
-		})
-		.collect();
-	backend.set_wallet_states(chain_id, &wallets).await;
+	let (tmp, backend) = plant_tip_cache(&raw, chain_id, tip, &seeds, inline).await;
 	assert_eq!(
 		snapshot_format_version(tmp.path(), chain_id, tip),
 		wallet_state_cache::SNAPSHOT_FORMAT_VERSION
@@ -673,24 +685,9 @@ async fn unrestorable_snapshot_replays_from_genesis() {
 	let seeds = vec![wallet_seed(0x08)];
 	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
 
-	let tmp = tempfile::TempDir::new().unwrap();
-	let backend = FileBackend::new(tmp.path());
 	let mut damaged = wallet_state_cache::create_ledger_snapshot(&raw, tip).unwrap();
 	damaged.ledger_state_bytes.truncate(damaged.ledger_state_bytes.len() / 2);
-	backend.set_ledger_snapshot(chain_id, damaged).await;
-	let wallets: Vec<_> = seeds
-		.iter()
-		.map(|seed| {
-			wallet_state_cache::create_wallet_snapshot(
-				&raw,
-				seed,
-				UnshieldedSignatureScheme::Schnorr,
-				tip,
-			)
-			.unwrap()
-		})
-		.collect();
-	backend.set_wallet_states(chain_id, &wallets).await;
+	let (_tmp, backend) = plant_tip_cache(&raw, chain_id, tip, &seeds, damaged).await;
 
 	let replayed = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0)
 		.await

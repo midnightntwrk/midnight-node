@@ -1218,32 +1218,43 @@ async fn initialize_context(
 	}
 }
 
-/// The ledger snapshot a warm start restores from, or `None` to replay from genesis
-/// (logged) when it is missing or its arena root cannot be opened in this process.
+/// The ledger snapshot a warm start restores from, or why it cannot be used: it is
+/// missing or its arena root cannot be opened in this process.
 async fn usable_snapshot(
 	storage: &dyn WalletStateCaching,
 	chain_id: H256,
 	height: u64,
-) -> Option<LedgerSnapshot> {
+) -> Result<LedgerSnapshot, &'static str> {
 	let snapshot =
 		timed!("storage.get_ledger_snapshot", storage.get_ledger_snapshot(chain_id, height).await);
-	let reason = match &snapshot {
-		None => "it is missing",
+	match snapshot {
+		None => Err("it is missing"),
 		Some(s) if s.storage == SnapshotStorage::ArenaRoot && !ledger_arena::is_persistent() => {
-			"it is kept in the on-disk ledger arena, which this run does not use"
+			Err("it is kept in the on-disk ledger arena, which this run does not use")
 		},
 		Some(s)
 			if s.storage == SnapshotStorage::ArenaRoot
 				&& !ledger_arena::has_root(&s.ledger_state_bytes) =>
 		{
-			"its state is not in the ledger arena"
+			Err("its state is not in the ledger arena")
 		},
-		Some(_) => return snapshot,
-	};
+		Some(s) => Ok(s),
+	}
+}
+
+/// Give up the warm start at `height`: every cached seed is replayed from genesis.
+fn fall_back_to_genesis(
+	height: u64,
+	reason: &str,
+	restore_height: &mut Option<u64>,
+	uncached_seeds: &mut Vec<WalletSeed>,
+	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
+) {
 	log::warn!(
 		"ledger snapshot at block {height} cannot be restored ({reason}); replaying from genesis"
 	);
-	None
+	*restore_height = None;
+	uncached_seeds.extend(cached.drain(..).map(|(seed, _)| seed));
 }
 
 /// The one place deciding which cache entries a replay can consume; the rest are
@@ -1363,7 +1374,7 @@ fn process_rss_mib() -> Option<(u64, u64)> {
 
 /// Where the replay's time has gone so far and the memory it holds: the cumulative
 /// phase timers from `replay_stats`, the storage arena occupancy and the process RSS.
-fn log_replay_perf(version: LedgerVersion, stage: &str) {
+fn log_replay_perf(stage: &str) {
 	use midnight_ledger_unsafe_helpers::replay_stats::{self, Phases};
 	if !log::log_enabled!(log::Level::Debug) {
 		return;
@@ -1371,9 +1382,7 @@ fn log_replay_perf(version: LedgerVersion, stage: &str) {
 	let phases = Phases::snapshot();
 	let arena = replay_stats::arena_stats();
 	let (rss, peak) = process_rss_mib().unwrap_or((0, 0));
-	log::debug!(
-		"[perf] replay {stage}: {phases}; arena ({version:?}): {arena}; rss {rss} MiB (peak {peak} MiB)"
-	);
+	log::debug!("[perf] replay {stage}: {phases}; arena: {arena}; rss {rss} MiB (peak {peak} MiB)");
 }
 
 /// Progress of one replay across all of its batches, driving the heartbeat that
@@ -1391,11 +1400,11 @@ impl ReplayProgress {
 
 	/// One more block replayed. Evaluated for every block, not only when dust
 	/// events flush, so sparse chains still get a signal at the 30 s cadence.
-	fn tick(&mut self, version: LedgerVersion) {
+	fn tick(&mut self) {
 		self.done += 1;
 		if self.last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
 			log_replay_progress(self.done, self.total);
-			log_replay_perf(version, "progress");
+			log_replay_perf("progress");
 			self.last_info_at = std::time::Instant::now();
 		}
 	}
@@ -1434,7 +1443,7 @@ fn replay_blocks_8(
 				log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
 			}
 
-			progress.tick(LedgerVersion::Ledger8);
+			progress.tick();
 		}
 	}
 
@@ -1486,7 +1495,7 @@ fn replay_blocks_9(
 				log::debug!("[perf] replay_blocks_9 progress: {}/{} blocks", i + 1, total);
 			}
 
-			progress.tick(LedgerVersion::Ledger9);
+			progress.tick();
 		}
 	}
 
@@ -1578,7 +1587,7 @@ pub(crate) fn replay_blocks_tracked(
 	};
 
 	log::debug!("[perf] block replay: {} blocks in {:?}", blocks.len(), t_replay.elapsed());
-	log_replay_perf(result.version(), "batch done");
+	log_replay_perf("batch done");
 	let (partial, failed) = replay_tx_failures();
 	if partial + failed > 0 {
 		log::info!(
@@ -1705,21 +1714,27 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	};
 
 	let snapshot = match restore_height {
-		Some(height) => usable_snapshot(storage, chain_id, height).await,
+		Some(height) => match usable_snapshot(storage, chain_id, height).await {
+			Ok(snapshot) => Some(snapshot),
+			Err(reason) => {
+				fall_back_to_genesis(
+					height,
+					reason,
+					&mut restore_height,
+					&mut uncached_seeds,
+					&mut cached,
+				);
+				None
+			},
+		},
 		None => None,
 	};
-	if restore_height.is_some() && snapshot.is_none() {
-		restore_height = None;
-		uncached_seeds.extend(cached.drain(..).map(|(seed, _)| seed));
-	}
-	// An inline snapshot restored into the on-disk arena is saved back as an arena root
-	// even when there is nothing to replay, so the next run opens it lazily.
-	let mut import_legacy_snapshot = ledger_arena::is_persistent()
-		&& snapshot.as_ref().is_some_and(|s| s.storage == SnapshotStorage::Inline);
+	let snapshot_is_inline =
+		snapshot.as_ref().is_some_and(|s| s.storage == SnapshotStorage::Inline);
 
 	// 3. Initialize context (cold genesis or warm snapshot restore). A snapshot that
 	//    fails to restore is treated like a missing one: replay from genesis.
-	let fork_ctx = match initialize_context(
+	let mut fork_ctx = match initialize_context(
 		received_tx,
 		&uncached_seeds,
 		snapshot,
@@ -1730,18 +1745,22 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	{
 		Ok(ctx) => ctx,
 		Err(reason) => {
-			log::warn!(
-				"ledger snapshot at block {} cannot be restored ({reason}); replaying from genesis",
-				restore_height.unwrap_or_default()
+			fall_back_to_genesis(
+				restore_height.unwrap_or_default(),
+				&reason,
+				&mut restore_height,
+				&mut uncached_seeds,
+				&mut cached,
 			);
-			restore_height = None;
-			import_legacy_snapshot = false;
-			uncached_seeds.extend(cached.drain(..).map(|(seed, _)| seed));
 			initialize_context(received_tx, &uncached_seeds, None, schemes, &mut cached)
 				.await
 				.expect("a cold start has no snapshot to fail on")
 		},
 	};
+	// An inline snapshot restored into the on-disk arena is saved back as an arena root
+	// even when there is nothing to replay, so the next run opens it lazily.
+	let import_legacy_snapshot =
+		snapshot_is_inline && restore_height.is_some() && ledger_arena::is_persistent();
 	let keyed_at_fork =
 		ecdsa_seeds_keyed_at_fork(&uncached_seeds, schemes, received_tx.ledger_version());
 
@@ -1757,7 +1776,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		None => {
 			let skip = restore_height
 				.map_or(0, |height| real_blocks.partition_point(|b| b.number <= height));
-			ReplayBatches::loaded(&real_blocks[skip..], interval)
+			ReplayBatches::loaded(&real_blocks[skip..])
 		},
 	};
 	let total = batches.total();
@@ -1774,7 +1793,6 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	// 5. Replay with mid-replay wallet injection, optionally saving
 	// checkpoints so an interrupted long replay resumes from the last
 	// checkpoint instead of starting over.
-	let mut fork_ctx = fork_ctx;
 	let mut cached_cursor = 0usize;
 	let mut replayed = 0usize;
 	let mut since_checkpoint = 0usize;
@@ -2079,15 +2097,23 @@ pub struct ContextNotLedger9Error(pub LedgerVersion);
 /// windows read from the fetch cache as they are needed, so a chain source never
 /// holds its whole history at once.
 enum ReplayBatches<'a> {
-	Loaded { blocks: &'a [RawBlockData], batch: usize, pos: usize },
-	Streamed { chain: &'a CachedBlocks, next: u64, total: usize },
+	Loaded {
+		blocks: &'a [RawBlockData],
+		pos: usize,
+	},
+	/// `window` holds the rest of the last window read, so a short batch does not
+	/// shrink the next read.
+	Streamed {
+		chain: &'a CachedBlocks,
+		next: u64,
+		total: usize,
+		window: Vec<RawBlockData>,
+	},
 }
 
 impl<'a> ReplayBatches<'a> {
-	/// Hand out `blocks` in batches of `batch` (0: all at once).
-	fn loaded(blocks: &'a [RawBlockData], batch: usize) -> Self {
-		let batch = if batch == 0 { blocks.len().max(1) } else { batch };
-		Self::Loaded { blocks, batch, pos: 0 }
+	fn loaded(blocks: &'a [RawBlockData]) -> Self {
+		Self::Loaded { blocks, pos: 0 }
 	}
 
 	/// Stream blocks `from..=tip` of `chain` in [`crate::fetcher::CACHE_READ_CHUNK`] windows.
@@ -2100,7 +2126,7 @@ impl<'a> ReplayBatches<'a> {
 				crate::fetcher::CACHE_READ_CHUNK
 			);
 		}
-		Self::Streamed { chain, next: from, total }
+		Self::Streamed { chain, next: from, total, window: Vec::new() }
 	}
 
 	fn total(&self) -> usize {
@@ -2113,36 +2139,46 @@ impl<'a> ReplayBatches<'a> {
 	fn is_exhausted(&self) -> bool {
 		match self {
 			Self::Loaded { blocks, pos, .. } => *pos >= blocks.len(),
-			Self::Streamed { chain, next, .. } => *next > chain.tip_height,
+			Self::Streamed { chain, next, window, .. } => {
+				window.is_empty() && *next > chain.tip_height
+			},
 		}
 	}
 
-	/// The next batch, at most `limit` blocks long, so a checkpoint lands exactly on
-	/// the requested interval.
+	/// The next batch, at most `limit` blocks long (`None`: the rest of the blocks, or
+	/// of the current window), so a checkpoint lands exactly on the requested interval.
 	async fn next(
 		&mut self,
 		limit: Option<usize>,
 	) -> Result<Option<Cow<'a, [RawBlockData]>>, FetchError> {
 		let limit = limit.unwrap_or(usize::MAX).max(1);
 		match self {
-			Self::Loaded { blocks, batch, pos } => {
+			Self::Loaded { blocks, pos } => {
 				if *pos >= blocks.len() {
 					return Ok(None);
 				}
-				let end = usize::min(*pos + usize::min(*batch, limit), blocks.len());
+				let end = pos.saturating_add(limit).min(blocks.len());
 				let chunk = &blocks[*pos..end];
 				*pos = end;
 				Ok(Some(Cow::Borrowed(chunk)))
 			},
-			Self::Streamed { chain, next, .. } => {
-				if *next > chain.tip_height {
-					return Ok(None);
+			Self::Streamed { chain, next, window, .. } => {
+				if window.is_empty() {
+					if *next > chain.tip_height {
+						return Ok(None);
+					}
+					let to = next
+						.saturating_add(crate::fetcher::CACHE_READ_CHUNK - 1)
+						.min(chain.tip_height);
+					*window = chain.load_range(*next, to).await?;
+					*next = to + 1;
 				}
-				let len = u64::min(crate::fetcher::CACHE_READ_CHUNK, limit as u64);
-				let to = next.saturating_add(len - 1).min(chain.tip_height);
-				let window = chain.load_range(*next, to).await?;
-				*next = to + 1;
-				Ok(Some(Cow::Owned(window)))
+				let batch = if limit >= window.len() {
+					std::mem::take(window)
+				} else {
+					window.drain(..limit).collect()
+				};
+				Ok(Some(Cow::Owned(batch)))
 			},
 		}
 	}
@@ -2400,9 +2436,9 @@ mod tests {
 	#[tokio::test]
 	async fn batches_stop_at_the_next_checkpoint() {
 		let blocks = chain(0, 25);
-		let mut batches = ReplayBatches::loaded(&blocks, 10);
+		let mut batches = ReplayBatches::loaded(&blocks);
 		let mut lens = Vec::new();
-		for limit in [Some(4), Some(10), None, None] {
+		for limit in [Some(4), Some(10), Some(10), Some(10)] {
 			lens.push(batches.next(limit).await.unwrap().unwrap().len());
 		}
 		assert_eq!(lens, [4, 10, 10, 1]);

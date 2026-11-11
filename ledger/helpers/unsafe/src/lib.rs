@@ -162,7 +162,7 @@ pub mod replay_stats {
 
 	/// Cheap enough for the replay heartbeat: neither count walks the cache.
 	pub fn arena_stats() -> ArenaStats {
-		let storage = crate::arena_db::try_default_storage().expect("installed at start-up");
+		let storage = crate::arena_db::storage();
 		let nodes = storage.arena.size();
 		let write_cache_objs = storage.arena.with_backend(|b| b.get_write_cache_len());
 		ArenaStats { nodes, write_cache_objs }

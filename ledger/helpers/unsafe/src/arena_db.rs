@@ -24,7 +24,7 @@ use ledger_storage_ledger_8::{
 	arena::ArenaHash,
 	backend::OnDiskObject,
 	db::{DB, DummyArbitrary, InMemoryDB, ParityDb, Update, paritydb::OwnedDb},
-	storage::{set_default_storage, try_get_default_storage},
+	storage::{default_storage, set_default_storage, try_get_default_storage},
 };
 use std::{
 	collections::HashMap,
@@ -197,11 +197,10 @@ pub fn try_default_storage() -> Option<Arc<Storage<ToolkitDB>>> {
 	try_get_default_storage::<ToolkitDB>()
 }
 
-/// Install the in-memory arena unless an arena is already installed.
-pub fn ensure_default_storage() {
-	if try_default_storage().is_none() {
-		let _ = set_default_storage(Storage::<ToolkitDB>::default);
-	}
+/// The process-wide arena. One is installed from start-up on; this panics only
+/// inside [`install_persistent_storage`]'s swap.
+pub fn storage() -> Arc<Storage<ToolkitDB>> {
+	default_storage::<ToolkitDB>()
 }
 
 // The storage crate only creates a default storage on demand for its own `InMemoryDB`;
@@ -209,7 +208,7 @@ pub fn ensure_default_storage() {
 // every test) means no entry point can forget to.
 #[ctor::ctor]
 fn install_in_memory_storage_at_startup() {
-	ensure_default_storage();
+	let _ = set_default_storage(Storage::<ToolkitDB>::default);
 }
 
 /// Roots taken only to keep nodes reachable until they are on disk (see
@@ -266,8 +265,9 @@ pub fn install_persistent_storage(dir: &Path) -> Result<Arc<Storage<ToolkitDB>>,
 	let _guard = SWAP.lock().unwrap_or_else(|e| e.into_inner());
 	// Objects up to the storage crate's small-object limit are stored inline in their
 	// parent and carry their own data; only larger ones are tracked by the arena.
-	if is_persistent() || try_default_storage().is_some_and(|s| s.arena.size() > 0) {
-		return Err(InstallError::AlreadyInstalled { persistent: is_persistent() });
+	let persistent = is_persistent();
+	if persistent || try_default_storage().is_some_and(|s| s.arena.size() > 0) {
+		return Err(InstallError::AlreadyInstalled { persistent });
 	}
 	// Open before dropping the in-memory arena, so a failed open leaves it in place.
 	let db = ToolkitDB::open_disk(dir)?;

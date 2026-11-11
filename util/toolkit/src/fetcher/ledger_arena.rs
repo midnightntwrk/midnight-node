@@ -164,7 +164,7 @@ fn reconcile_roots(ledger_state_db: &Path) {
 			},
 		}
 	}
-	let storage = arena_db::try_default_storage().expect("ledger arena not installed");
+	let storage = arena_db::storage();
 	let (dropped, missing) = storage.arena.with_backend(|b| {
 		let mut dropped = 0u64;
 		let roots = b.get_roots();
@@ -259,8 +259,12 @@ pub fn persist_root<T: Storable<DefaultDB>>(sp: &Sp<T, DefaultDB>) -> io::Result
 /// Drop one GC-root reference taken by [`persist_root`]. The nodes stay on disk
 /// until a GC finds them unreachable.
 pub fn release_root(key_bytes: &[u8]) -> io::Result<()> {
+	// The in-memory arena never persisted the root.
+	if !is_persistent() {
+		return Ok(());
+	}
 	let key = decode_key(key_bytes)?;
-	let storage = arena_db::try_default_storage().expect("ledger arena not installed");
+	let storage = arena_db::storage();
 	storage
 		.arena
 		.with_backend(|b| key.refs().into_iter().for_each(|h| b.unpersist(h)));
@@ -282,7 +286,7 @@ pub fn load_root<T: Storable<DefaultDB> + Tagged>(
 	key_bytes: &[u8],
 ) -> io::Result<Sp<T, DefaultDB>> {
 	let key = decode_key(key_bytes)?;
-	let storage = arena_db::try_default_storage().expect("ledger arena not installed");
+	let storage = arena_db::storage();
 	let missing = storage
 		.arena
 		.with_backend(|b| key.refs().into_iter().find(|h| b.get(h).is_none()).cloned());
@@ -321,7 +325,7 @@ pub fn finish_save() {
 	let Some(open) = OPEN.get() else { return };
 	let flushed = FLUSHED_SINCE_GC.load(Ordering::Relaxed);
 	if flushed >= GC_THRESHOLD_NODES {
-		let storage = arena_db::try_default_storage().expect("ledger arena not installed");
+		let storage = arena_db::storage();
 		let t = Instant::now();
 		log::info!("ledger arena: collecting garbage ({flushed} nodes written since the last GC)");
 		// One unbounded call runs the whole mark and sweep.
