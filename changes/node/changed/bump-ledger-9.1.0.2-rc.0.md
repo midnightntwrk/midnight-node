@@ -31,4 +31,4 @@ published from (`git merge-base --is-ancestor`), and a `diff -r` of each crate's
 against the previous registry crate shows no fix removed - the one guard touched, the trie
 extension-chain check, is kept unless the client-only flag is set.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2425
