@@ -118,6 +118,7 @@ impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
+	type MaxTransactionNodes = frame_support::traits::ConstU32<1024>;
 }
 
 /*

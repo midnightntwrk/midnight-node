@@ -29,7 +29,6 @@ pub enum RuntimeVersion {
 	V2_0_0,
 	V2_1_0,
 	V2_1_100,
-	V2_1_200,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -46,7 +45,6 @@ impl TryFrom<u32> for RuntimeVersion {
 			002_000_000 => Ok(Self::V2_0_0),
 			002_001_000 => Ok(Self::V2_1_0),
 			002_001_100 => Ok(Self::V2_1_100),
-			002_001_200 => Ok(Self::V2_1_200),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -63,7 +61,6 @@ impl RuntimeVersion {
 			Self::V2_0_0 => 002_000_000,
 			Self::V2_1_0 => 002_001_000,
 			Self::V2_1_100 => 002_001_100,
-			Self::V2_1_200 => 002_001_200,
 		}
 	}
 
@@ -190,10 +187,4 @@ impl_midnight_metadata!(
 	MidnightMetadata2_1_100,
 	mn_meta_2_1_100,
 	midnight_node_metadata::midnight_metadata_2_1_100
-);
-
-impl_midnight_metadata!(
-	MidnightMetadata2_1_200,
-	mn_meta_2_1_200,
-	midnight_node_metadata::midnight_metadata_2_1_200
 );
