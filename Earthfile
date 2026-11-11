@@ -1278,7 +1278,7 @@ test-pallet-fixtures:
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Compiled Midnight Node Toolkit tests as a nextest archive. Needs no node image, so CI
-# builds it while the node builds and hands it to +build-test-toolkit via TOOLKIT_TEST_ARCHIVE.
+# builds it while the node builds; +test-toolkit then gets it from the shared BuildKit cache.
 toolkit-test-archive:
     FROM +prep
     ARG TARGETARCH
@@ -1300,7 +1300,7 @@ toolkit-test-archive:
         MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest archive \
             --release --locked -p midnight-node-toolkit $FEATURES \
             --archive-file /toolkit-tests.tar.zst
-    SAVE ARTIFACT /toolkit-tests.tar.zst AS LOCAL toolkit-tests.tar.zst
+    SAVE ARTIFACT /toolkit-tests.tar.zst
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 build-test-toolkit:
@@ -1349,8 +1349,6 @@ test-toolkit:
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS=false
-    # Build-context path of a prebuilt +toolkit-test-archive; empty builds one here.
-    ARG TOOLKIT_TEST_ARCHIVE
     # Optional: pin the indexer-standalone image for the indexer-backed show-wallet e2e
     # (gated behind MN_RUN_INDEXER_E2E in the test; see util/toolkit/tests/indexer_show_wallet_e2e.rs).
     ARG INDEXER_STANDALONE_IMAGE
@@ -1358,11 +1356,7 @@ test-toolkit:
     RUN mkdir -p /artifacts
 
     # Mounted with -v, not baked into test-toolkit:latest, so the per-commit archive isn't loaded into DinD.
-    IF [ -n "$TOOLKIT_TEST_ARCHIVE" ]
-        COPY $TOOLKIT_TEST_ARCHIVE /toolkit-tests.tar.zst
-    ELSE
-        COPY (+toolkit-test-archive/toolkit-tests.tar.zst --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) /toolkit-tests.tar.zst
-    END
+    COPY (+toolkit-test-archive/toolkit-tests.tar.zst --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) /toolkit-tests.tar.zst
 
     LET EXTRA_DOCKER_ENV=""
     IF [ -n "$NODE_IMAGE" ]
