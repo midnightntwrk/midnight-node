@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "3.0.0"
+version = "4.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -161,10 +161,17 @@ derive-new.workspace = true
 
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
+rustls.workspace = true
 blake2b_simd = "1.0"
 
 # FilteringTransactionPool feature dependency
 sp-transaction-pool.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux binaries use jemalloc as the global allocator, as polkadot does.
+tikv-jemallocator.workspace = true
+tikv-jemalloc-ctl.workspace = true
+landlock.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
@@ -192,3 +199,6 @@ try-runtime = [
     "pallet-staking/try-runtime",
 ]
 experimental = []
+# Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled
+# at run time through `MALLOC_CONF`; see docs/operations/heap-profiling.md.
+jemalloc-profiling = ["tikv-jemallocator/profiling"]

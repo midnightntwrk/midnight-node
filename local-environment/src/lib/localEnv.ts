@@ -26,6 +26,8 @@ export const requiredImageVars = [
   "KUPO_IMAGE",
   "YACI_STORE_IMAGE",
   "YACI_VIEWER_IMAGE",
+  "FAUCET_IMAGE",
+  "PROOF_SERVER_IMAGE",
   "ARCHITECTURE",
 ];
 
@@ -38,6 +40,9 @@ export function generateSecretsIfMissing() {
     ["localenv_pubsub.password", 32],
     ["localenv_ledger_state_storage.password", 32],
     ["localenv_app_infra_secret.password", 32],
+    ["localenv_faucet_postgres.password", 16],
+    ["localenv_faucet_encryption_key.password", 32],
+    ["localenv_faucet_jwt.password", 32],
   ];
 
   for (const [filename, size] of secrets) {
@@ -75,6 +80,24 @@ export function getLocalEnvSecretVars(): Record<string, string> {
   if (!process.env.APP__INFRA__SECRET) {
     result.APP__INFRA__SECRET = fs
       .readFileSync("localenv_app_infra_secret.password", "utf-8")
+      .trim();
+  }
+
+  if (!process.env.FAUCET_DB_PASSWORD) {
+    result.FAUCET_DB_PASSWORD = fs
+      .readFileSync("localenv_faucet_postgres.password", "utf-8")
+      .trim();
+  }
+
+  if (!process.env.FAUCET_ENCRYPTION_KEY) {
+    result.FAUCET_ENCRYPTION_KEY = fs
+      .readFileSync("localenv_faucet_encryption_key.password", "utf-8")
+      .trim();
+  }
+
+  if (!process.env.FAUCET_JWT_SIGN_SECRET) {
+    result.FAUCET_JWT_SIGN_SECRET = fs
+      .readFileSync("localenv_faucet_jwt.password", "utf-8")
       .trim();
   }
 

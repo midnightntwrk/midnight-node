@@ -1,0 +1,1124 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! A GraphQL client for the Midnight indexer's `api/v4` interface.
+//!
+//! Operations are typed at compile time via [`graphql_client`] against the newest vendored indexer
+//! schema (`graphql/schema/`). A test checks every query document against every vendored schema,
+//! since an indexer rejects a whole document if any one of its operations is invalid.
+//!
+//! It speaks GraphQL over HTTP (queries/mutations) and over the `graphql-transport-ws` WebSocket
+//! sub-protocol (subscriptions) — the WS framing mirrors the indexer's own reference client in
+//! `indexer/indexer-tests/src/graphql_ws_client.rs`. The `HexEncoded` scalar is decoded to raw
+//! bytes here; turning them into ledger types is each version's `IndexerContext`.
+//!
+//! Only the operations the indexer-backed `BuilderContext` needs are defined (issue #1186).
+//!
+//! The version-independent stream-drain policy also lives here: idle timeouts, the wallet fan-out
+//! ceiling, and the [`SyncProgress`] counters.
+
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use futures::{SinkExt, StreamExt};
+use graphql_client::GraphQLQuery;
+use serde_json::{Value, json};
+use thiserror::Error;
+use tokio::net::TcpStream;
+use tokio_tungstenite::{
+	MaybeTlsStream, WebSocketStream, connect_async,
+	tungstenite::{Message, client::IntoClientRequest},
+};
+
+use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
+
+// Custom GraphQL scalars, resolved by name from this module scope by the `GraphQLQuery` derives
+// below. `HexEncoded` blobs are kept as hex strings and decoded to bytes here; `Unit` is the
+// indexer's void scalar (JSON `null`).
+#[allow(non_camel_case_types)]
+type HexEncoded = String;
+#[allow(non_camel_case_types)]
+type ViewingKey = String;
+#[allow(non_camel_case_types)]
+type UnshieldedAddress = String;
+#[allow(non_camel_case_types)]
+type Unit = Option<bool>;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct LatestBlock;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct BlockAtHeight;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct Connect;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct Disconnect;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct ShieldedTransactions;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct UnshieldedTransactions;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct DustLedgerEvents;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct ContractActionState;
+
+#[derive(Debug, Error)]
+pub enum IndexerClientError {
+	#[error("http transport error: {0}")]
+	Http(#[from] reqwest::Error),
+	#[error("websocket error: {0}")]
+	WebSocket(String),
+	#[error("graphql error: {0}")]
+	GraphQl(String),
+	#[error("malformed response: {0}")]
+	Malformed(String),
+	#[error("decode error: {0}")]
+	Decode(String),
+}
+
+pub type IndexerResult<T> = Result<T, IndexerClientError>;
+
+/// Status of a transaction as reported by the indexer (`TransactionResultStatus`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionResultKind {
+	Success,
+	PartialSuccess,
+	Failure,
+}
+
+/// The latest block as seen by the indexer; used to detect catch-up and to read ledger params.
+#[derive(Debug, Clone)]
+pub struct BlockInfo {
+	pub height: u64,
+	/// Node spec version (e.g. `1_000_000`). The indexer serves each chain in its own encodings,
+	/// so map it via `LedgerVersion::from_spec_version` to pick the matching `IndexerContext`.
+	pub protocol_version: u32,
+	/// Block timestamp in unix seconds.
+	pub timestamp: u64,
+	/// Parent block hash; zero at genesis.
+	pub parent_hash: [u8; 32],
+	/// Parent block timestamp in unix seconds; the block's own at genesis, as in the replay path.
+	pub last_block_time: u64,
+	/// Exclusive end index into the global zswap merkle tree at this block.
+	pub zswap_end_index: u64,
+	/// Tagged-serialized `LedgerParameters` blob.
+	pub ledger_parameters: Vec<u8>,
+}
+
+/// An item from the `shieldedTransactions` subscription.
+#[derive(Debug, Clone)]
+pub enum ShieldedEvent {
+	/// A wallet-relevant transaction, with the gap-filling merkle update that precedes it.
+	Relevant {
+		/// Tagged-serialized `Transaction` blob (`RegularTransaction.raw`).
+		raw_transaction: Vec<u8>,
+		result: TransactionResultKind,
+		/// Inclusive start index of this transaction's outputs in the global zswap tree.
+		zswap_start_index: u64,
+		/// Exclusive end index of this transaction's outputs in the global zswap tree.
+		zswap_end_index: u64,
+		/// Serialized `MerkleTreeCollapsedUpdate` filling the gap before `zswap_start_index`.
+		collapsed_update: Option<Vec<u8>>,
+	},
+	/// A progress sentinel describing how far the indexer has scanned for this wallet.
+	Progress {
+		highest_end_index: u64,
+		highest_checked_end_index: u64,
+		highest_relevant_end_index: u64,
+	},
+}
+
+/// A single unshielded UTXO as reported by the indexer.
+#[derive(Debug, Clone)]
+pub struct UnshieldedUtxoData {
+	/// Serialized token type (32-byte hash).
+	pub token_type: Vec<u8>,
+	pub value: u128,
+	/// Serialized intent hash (32-byte hash).
+	pub intent_hash: Vec<u8>,
+	pub output_index: u32,
+	/// Creation time in unix seconds (absent for some genesis UTXOs).
+	pub ctime: Option<u64>,
+}
+
+/// An item from the `unshieldedTransactions` subscription.
+#[derive(Debug, Clone)]
+pub enum UnshieldedEvent {
+	Transaction {
+		/// Same id space as `Progress::highest_transaction_id`, which it is compared against to
+		/// detect catch-up.
+		transaction_id: u64,
+		created: Vec<UnshieldedUtxoData>,
+		spent: Vec<UnshieldedUtxoData>,
+	},
+	Progress {
+		highest_transaction_id: u64,
+	},
+}
+
+/// An item from the `dustLedgerEvents` subscription.
+#[derive(Debug, Clone)]
+pub struct DustLedgerEventData {
+	pub id: u64,
+	pub max_id: u64,
+	/// Tagged-serialized ledger `Event` blob (`DustLedgerEvent.raw`).
+	pub raw: Vec<u8>,
+}
+
+/// Per-seed resume point for `IndexerContext::init_wallets`: what a sync run consumed, and what
+/// the next one can therefore skip.
+///
+/// Plain bytes and integers only: the toolkit owns the cache, and ledger-helpers cannot depend on
+/// its `CachedWalletState`. Blobs are this chain's native *untagged* ledger encodings, so the
+/// caller must key them by chain and ledger generation; nothing here self-identifies.
+#[derive(Debug, Clone, Default)]
+pub struct WalletSyncState {
+	/// zswap `WalletState`. Its `first_free` *is* the shielded resume cursor — the two are stored
+	/// as one value so they cannot drift apart.
+	pub shielded_state: Option<ZswapWalletStateRaw>,
+	/// Reconciled UTXO set. `Utxo`/`Timestamp` have no serde impls, and the
+	/// `(intent_hash, output_no)` reconciliation key rebuilds from the `Utxo` itself.
+	pub unshielded_utxos: Vec<UnshieldedUtxoRaw>,
+	/// Highest applied `transactionId`; resume is `+ 1` (the subscription's cursor is inclusive).
+	pub unshielded_tx_id: u64,
+	/// `DustLocalState` *before* `process_ttls`, which is a projection against the tip and is
+	/// re-applied on every load rather than persisted.
+	pub dust_state: Option<DustLocalStateRaw>,
+	/// Last applied dust ledger-event `id`; resume is `+ 1`.
+	pub dust_event_id: u64,
+}
+
+/// A GraphQL client targeting one indexer `api/v4` base URL.
+pub struct IndexerClient {
+	http: reqwest::Client,
+	/// HTTP endpoint, e.g. `http://host:8088/api/v4/graphql`.
+	http_url: String,
+	/// WebSocket endpoint, e.g. `ws://host:8088/api/v4/graphql/ws`.
+	ws_url: String,
+	project_id: Option<String>,
+}
+
+const BLOCKFROST_PROJECT_ID_ENV: &str = "BLOCKFROST_PROJECT_ID";
+
+impl IndexerClient {
+	/// Build a client from an `api/v4` base URL, e.g. `http://127.0.0.1:8088/api/v4`.
+	///
+	/// The GraphQL endpoints (`/graphql`, `/graphql/ws`) are appended automatically, and the
+	/// WebSocket scheme is derived from the HTTP scheme (`http`→`ws`, `https`→`wss`).
+	/// A `*.blockfrost.io` URL needs `BLOCKFROST_PROJECT_ID`.
+	pub fn new(base_url: &str) -> IndexerResult<Self> {
+		let project_id = std::env::var(BLOCKFROST_PROJECT_ID_ENV).ok();
+		Self::with_project_id(base_url, project_id.as_deref())
+	}
+
+	fn with_project_id(base_url: &str, project_id: Option<&str>) -> IndexerResult<Self> {
+		let base = base_url.trim_end_matches('/');
+		let blockfrost = reqwest::Url::parse(base)
+			.ok()
+			.and_then(|u| u.host_str().map(|h| h.ends_with(".blockfrost.io")))
+			.unwrap_or(false);
+		let (http_suffix, ws_suffix) =
+			if blockfrost { ("", "/ws") } else { ("/graphql", "/graphql/ws") };
+		let http_url = format!("{base}{http_suffix}");
+
+		let ws_base = if let Some(rest) = base.strip_prefix("https://") {
+			format!("wss://{rest}")
+		} else if let Some(rest) = base.strip_prefix("http://") {
+			format!("ws://{rest}")
+		} else {
+			return Err(IndexerClientError::Decode(format!(
+				"indexer url must start with http:// or https://, got {base_url}"
+			)));
+		};
+		let ws_url = format!("{ws_base}{ws_suffix}");
+
+		let project_id = match project_id {
+			_ if !blockfrost => None,
+			Some(id) => Some(id.trim().to_owned()),
+			None => {
+				return Err(IndexerClientError::Decode(format!(
+					"Blockfrost indexer URL needs {BLOCKFROST_PROJECT_ID_ENV} set"
+				)));
+			},
+		};
+
+		let mut headers = reqwest::header::HeaderMap::new();
+		if let Some(id) = &project_id {
+			let mut value: reqwest::header::HeaderValue = id.parse().map_err(|_| {
+				IndexerClientError::Decode(format!(
+					"{BLOCKFROST_PROJECT_ID_ENV} is not a valid header"
+				))
+			})?;
+			// Keeps the API key out of Debug output and client trace logs.
+			value.set_sensitive(true);
+			headers.insert("project_id", value);
+		}
+		let http = reqwest::Client::builder()
+			.default_headers(headers)
+			.build()
+			.map_err(|e| IndexerClientError::Decode(format!("build http client: {e}")))?;
+
+		Ok(Self { http, http_url, ws_url, project_id })
+	}
+
+	/// POST a typed GraphQL query/mutation and return its (validated) response data.
+	async fn run_query<Q: GraphQLQuery>(
+		&self,
+		variables: Q::Variables,
+	) -> IndexerResult<Q::ResponseData> {
+		let body = Q::build_query(variables);
+		let resp = self.http.post(&self.http_url).json(&body).send().await?;
+		let resp: graphql_client::Response<Q::ResponseData> =
+			resp.error_for_status()?.json().await?;
+
+		if let Some(errors) = resp.errors.filter(|e| !e.is_empty()) {
+			let msg = errors.iter().map(|e| e.message.clone()).collect::<Vec<_>>().join(", ");
+			return Err(IndexerClientError::GraphQl(msg));
+		}
+		resp.data
+			.ok_or_else(|| IndexerClientError::Malformed("missing `data` in response".into()))
+	}
+
+	/// `connect(viewingKey, options)` — establish a wallet session, returns the session id.
+	pub async fn connect(
+		&self,
+		viewing_key: &str,
+		start_index: Option<u64>,
+	) -> IndexerResult<String> {
+		let variables = connect::Variables {
+			viewing_key: viewing_key.to_owned(),
+			options: Some(connect::ConnectOptions { start_index: start_index.map(|i| i as i64) }),
+		};
+		Ok(self.run_query::<Connect>(variables).await?.connect)
+	}
+
+	/// `disconnect(sessionId)` — release a wallet session. Best-effort; errors are surfaced.
+	pub async fn disconnect(&self, session_id: &str) -> IndexerResult<()> {
+		let variables = disconnect::Variables { session_id: session_id.to_owned() };
+		self.run_query::<Disconnect>(variables).await?;
+		Ok(())
+	}
+
+	/// `block` (no offset) — the latest indexed block.
+	pub async fn latest_block(&self) -> IndexerResult<BlockInfo> {
+		let data = self.run_query::<LatestBlock>(latest_block::Variables {}).await?;
+		let block = data
+			.block
+			.ok_or_else(|| IndexerClientError::Malformed("no block returned".into()))?;
+		map_latest_block(block)
+	}
+
+	/// `contractAction(address) { state }` — the contract's latest tagged `ContractState` blob,
+	/// or `None` if it has no action. `address` is the untagged `ContractAddress` encoding.
+	pub async fn contract_state(&self, address: &[u8]) -> IndexerResult<Option<Vec<u8>>> {
+		let variables = contract_action_state::Variables { address: hex::encode(address) };
+		let data = self.run_query::<ContractActionState>(variables).await?;
+		data.contract_action.map(|action| decode_hex(&action.state)).transpose()
+	}
+
+	/// `block(offset: {height})` — that block's hash, or `None` if the indexer has not indexed it.
+	///
+	/// Block 1's hash is the chain identity the wallet cache keys on; `None` there means "cannot
+	/// identify this chain", which callers must treat as "do not cache".
+	pub async fn block_hash_at(&self, height: u64) -> IndexerResult<Option<[u8; 32]>> {
+		let variables = block_at_height::Variables { height: height as i64 };
+		let Some(block) = self.run_query::<BlockAtHeight>(variables).await?.block else {
+			return Ok(None);
+		};
+		Ok(Some(decode_hash(&block.hash)?))
+	}
+
+	/// Open the `shieldedTransactions` subscription starting at zswap `index`.
+	pub async fn shielded_transactions(
+		&self,
+		session_id: &str,
+		index: u64,
+	) -> IndexerResult<ShieldedStream> {
+		let variables = shielded_transactions::Variables {
+			session_id: session_id.to_owned(),
+			index: Some(index as i64),
+		};
+		Ok(ShieldedStream(self.open_subscription::<ShieldedTransactions>(variables).await?))
+	}
+
+	/// Take one fresh progress tick for `session_id` from a short-lived extra subscription, which
+	/// the server answers with an immediate tick. `index` should be at or past the chain's highest
+	/// end index so the extra subscription streams no backlog. `None` if it closes first.
+	pub async fn shielded_progress(
+		&self,
+		session_id: &str,
+		index: u64,
+	) -> IndexerResult<Option<ShieldedEvent>> {
+		let mut stream = self.shielded_transactions(session_id, index).await?;
+		while let Some(event) = stream.next().await {
+			if let event @ ShieldedEvent::Progress { .. } = event? {
+				return Ok(Some(event));
+			}
+		}
+		Ok(None)
+	}
+
+	/// Open the `unshieldedTransactions` subscription for `address`.
+	pub async fn unshielded_transactions(
+		&self,
+		address: &str,
+		transaction_id: u64,
+	) -> IndexerResult<UnshieldedStream> {
+		let variables = unshielded_transactions::Variables {
+			address: address.to_owned(),
+			transaction_id: Some(transaction_id as i64),
+		};
+		Ok(UnshieldedStream(self.open_subscription::<UnshieldedTransactions>(variables).await?))
+	}
+
+	/// Open the `dustLedgerEvents` subscription starting at ledger-event `id`.
+	pub async fn dust_ledger_events(&self, id: u64) -> IndexerResult<DustStream> {
+		let variables = dust_ledger_events::Variables { id: Some(id as i64) };
+		Ok(DustStream(self.open_subscription::<DustLedgerEvents>(variables).await?))
+	}
+
+	/// Open a `graphql-transport-ws` subscription for a typed operation: connect, perform the init
+	/// handshake, and send the `subscribe` message built from the typed query.
+	async fn open_subscription<Q: GraphQLQuery>(
+		&self,
+		variables: Q::Variables,
+	) -> IndexerResult<SubscriptionStream> {
+		let body = Q::build_query(variables);
+		let payload = json!({
+			"operationName": body.operation_name,
+			"query": body.query,
+			"variables": body.variables,
+		});
+
+		let mut request = self
+			.ws_url
+			.as_str()
+			.into_client_request()
+			.map_err(|e| IndexerClientError::WebSocket(format!("build ws request: {e}")))?;
+		let proto = "graphql-transport-ws"
+			.parse()
+			.map_err(|e| IndexerClientError::WebSocket(format!("parse subprotocol: {e}")))?;
+		request.headers_mut().insert("Sec-WebSocket-Protocol", proto);
+		if let Some(id) = &self.project_id {
+			let mut value: tokio_tungstenite::tungstenite::http::HeaderValue = id
+				.parse()
+				.map_err(|e| IndexerClientError::WebSocket(format!("project_id header: {e}")))?;
+			value.set_sensitive(true);
+			request.headers_mut().insert("project_id", value);
+		}
+
+		let (mut ws, _) = connect_async(request)
+			.await
+			.map_err(|e| IndexerClientError::WebSocket(format!("connect: {e}")))?;
+
+		// connection_init → connection_ack handshake.
+		ws.send(Message::text(json!({ "type": "connection_init" }).to_string()))
+			.await
+			.map_err(|e| IndexerClientError::WebSocket(format!("send connection_init: {e}")))?;
+		loop {
+			match ws.next().await {
+				Some(Ok(Message::Text(text))) => {
+					let msg: Value = serde_json::from_str(&text).map_err(|e| {
+						IndexerClientError::Malformed(format!("ack json: {e}: {text}"))
+					})?;
+					match msg.get("type").and_then(Value::as_str) {
+						Some("connection_ack") => break,
+						Some(other) => {
+							return Err(IndexerClientError::WebSocket(format!(
+								"expected connection_ack, got {other}"
+							)));
+						},
+						None => {
+							return Err(IndexerClientError::Malformed(
+								"ack message without `type`".into(),
+							));
+						},
+					}
+				},
+				Some(Ok(_)) => continue,
+				Some(Err(e)) => {
+					return Err(IndexerClientError::WebSocket(format!("awaiting ack: {e}")));
+				},
+				None => {
+					return Err(IndexerClientError::WebSocket(
+						"connection closed before connection_ack".into(),
+					));
+				},
+			}
+		}
+
+		let subscribe = json!({ "type": "subscribe", "id": "1", "payload": payload });
+		ws.send(Message::text(subscribe.to_string()))
+			.await
+			.map_err(|e| IndexerClientError::WebSocket(format!("send subscribe: {e}")))?;
+
+		Ok(SubscriptionStream { ws })
+	}
+}
+
+/// A live `graphql-transport-ws` subscription. Yields the GraphQL `data` object per `next`
+/// message and ends (`None`) on `complete`. Dropping it closes the socket.
+pub struct SubscriptionStream {
+	ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
+}
+
+impl SubscriptionStream {
+	/// Read the next `data` payload, or `None` once the server sends `complete`/closes.
+	async fn next_data(&mut self) -> Option<IndexerResult<Value>> {
+		loop {
+			match self.ws.next().await {
+				Some(Ok(Message::Text(text))) => {
+					let msg: Value = match serde_json::from_str(&text) {
+						Ok(v) => v,
+						Err(e) => {
+							return Some(Err(IndexerClientError::Malformed(format!(
+								"server message json: {e}: {text}"
+							))));
+						},
+					};
+					match msg.get("type").and_then(Value::as_str) {
+						Some("next") => {
+							let payload = &msg["payload"];
+							if let Some(errors) = payload.get("errors").filter(|e| !e.is_null()) {
+								return Some(Err(IndexerClientError::GraphQl(errors.to_string())));
+							}
+							match payload.get("data") {
+								Some(data) if !data.is_null() => return Some(Ok(data.clone())),
+								_ => {
+									return Some(Err(IndexerClientError::Malformed(
+										"`next` without data".into(),
+									)));
+								},
+							}
+						},
+						Some("complete") => return None,
+						Some("error") => {
+							return Some(Err(IndexerClientError::GraphQl(
+								msg["payload"].to_string(),
+							)));
+						},
+						// ping/pong and other control messages: keep reading.
+						_ => continue,
+					}
+				},
+				// tungstenite answers control frames internally; ignore non-text data frames.
+				Some(Ok(_)) => continue,
+				Some(Err(e)) => return Some(Err(IndexerClientError::WebSocket(e.to_string()))),
+				None => return None,
+			}
+		}
+	}
+}
+
+/// Typed view over the `shieldedTransactions` subscription.
+pub struct ShieldedStream(SubscriptionStream);
+
+impl ShieldedStream {
+	pub async fn next(&mut self) -> Option<IndexerResult<ShieldedEvent>> {
+		let data = self.0.next_data().await?;
+		Some(data.and_then(|v| {
+			let resp: shielded_transactions::ResponseData = serde_json::from_value(v)
+				.map_err(|e| IndexerClientError::Malformed(format!("shieldedTransactions: {e}")))?;
+			map_shielded(resp.shielded_transactions)
+		}))
+	}
+}
+
+/// Typed view over the `unshieldedTransactions` subscription.
+pub struct UnshieldedStream(SubscriptionStream);
+
+impl UnshieldedStream {
+	pub async fn next(&mut self) -> Option<IndexerResult<UnshieldedEvent>> {
+		let data = self.0.next_data().await?;
+		Some(data.and_then(|v| {
+			let resp: unshielded_transactions::ResponseData =
+				serde_json::from_value(v).map_err(|e| {
+					IndexerClientError::Malformed(format!("unshieldedTransactions: {e}"))
+				})?;
+			map_unshielded(resp.unshielded_transactions)
+		}))
+	}
+}
+
+/// Typed view over the `dustLedgerEvents` subscription.
+pub struct DustStream(SubscriptionStream);
+
+impl DustStream {
+	pub async fn next(&mut self) -> Option<IndexerResult<DustLedgerEventData>> {
+		let data = self.0.next_data().await?;
+		Some(data.and_then(|v| {
+			let resp: dust_ledger_events::ResponseData = serde_json::from_value(v)
+				.map_err(|e| IndexerClientError::Malformed(format!("dustLedgerEvents: {e}")))?;
+			let e = resp.dust_ledger_events;
+			Ok(DustLedgerEventData {
+				id: e.id as u64,
+				max_id: e.max_id as u64,
+				raw: decode_hex(&e.raw)?,
+			})
+		}))
+	}
+}
+
+fn map_latest_block(block: latest_block::LatestBlockBlock) -> IndexerResult<BlockInfo> {
+	// The indexer serves the raw `pallet_timestamp` value, which is milliseconds.
+	let timestamp = block.timestamp as u64 / 1000;
+	let (parent_hash, last_block_time) = match block.parent {
+		Some(parent) => (decode_hash(&parent.hash)?, parent.timestamp as u64 / 1000),
+		None => ([0; 32], timestamp),
+	};
+	Ok(BlockInfo {
+		height: block.height as u64,
+		protocol_version: block.protocol_version as u32,
+		timestamp,
+		parent_hash,
+		last_block_time,
+		zswap_end_index: block.zswap_end_index as u64,
+		ledger_parameters: decode_hex(&block.ledger_parameters)?,
+	})
+}
+
+fn map_shielded(
+	node: shielded_transactions::ShieldedTransactionsShieldedTransactions,
+) -> IndexerResult<ShieldedEvent> {
+	use shielded_transactions::ShieldedTransactionsShieldedTransactions as Node;
+	use shielded_transactions::TransactionResultStatus as Status;
+	match node {
+		Node::RelevantTransaction(rt) => {
+			let tx = rt.transaction;
+			let result = match tx.transaction_result.status {
+				Status::SUCCESS => TransactionResultKind::Success,
+				Status::PARTIAL_SUCCESS => TransactionResultKind::PartialSuccess,
+				// FAILURE and any future/unknown status → apply nothing.
+				_ => TransactionResultKind::Failure,
+			};
+			Ok(ShieldedEvent::Relevant {
+				raw_transaction: decode_hex(&tx.raw)?,
+				result,
+				zswap_start_index: tx.zswap_start_index as u64,
+				zswap_end_index: tx.zswap_end_index as u64,
+				collapsed_update: rt
+					.zswap_collapsed_update
+					.map(|u| decode_hex(&u.update))
+					.transpose()?,
+			})
+		},
+		Node::ShieldedTransactionsProgress(p) => Ok(ShieldedEvent::Progress {
+			highest_end_index: p.highest_zswap_end_index as u64,
+			highest_checked_end_index: p.highest_checked_zswap_end_index as u64,
+			highest_relevant_end_index: p.highest_relevant_zswap_end_index as u64,
+		}),
+	}
+}
+
+fn map_unshielded(
+	node: unshielded_transactions::UnshieldedTransactionsUnshieldedTransactions,
+) -> IndexerResult<UnshieldedEvent> {
+	use unshielded_transactions::UnshieldedTransactionsUnshieldedTransactions as Node;
+	match node {
+		Node::UnshieldedTransaction(t) => Ok(UnshieldedEvent::Transaction {
+			transaction_id: t.transaction.id as u64,
+			created: t
+				.created_utxos
+				.into_iter()
+				.map(map_unshielded_utxo)
+				.collect::<IndexerResult<_>>()?,
+			spent: t
+				.spent_utxos
+				.into_iter()
+				.map(map_unshielded_utxo)
+				.collect::<IndexerResult<_>>()?,
+		}),
+		Node::UnshieldedTransactionsProgress(p) => Ok(UnshieldedEvent::Progress {
+			highest_transaction_id: p.highest_transaction_id as u64,
+		}),
+	}
+}
+
+fn map_unshielded_utxo(
+	u: unshielded_transactions::UnshieldedTransactionsUnshieldedTransactionsOnUnshieldedTransactionCreatedUtxos,
+) -> IndexerResult<UnshieldedUtxoData> {
+	Ok(UnshieldedUtxoData {
+		token_type: decode_hex(&u.token_type)?,
+		value: u
+			.value
+			.parse::<u128>()
+			.map_err(|e| IndexerClientError::Decode(format!("utxo value: {e}")))?,
+		intent_hash: decode_hex(&u.intent_hash)?,
+		output_index: u.output_index as u32,
+		ctime: u.ctime.map(|c| c as u64),
+	})
+}
+
+/// Decode a `HexEncoded` scalar, tolerating an optional `0x`/`0X` prefix.
+fn decode_hex(s: &str) -> IndexerResult<Vec<u8>> {
+	let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+	hex::decode(s).map_err(|e| IndexerClientError::Decode(format!("hex: {e}")))
+}
+
+fn decode_hash(s: &str) -> IndexerResult<[u8; 32]> {
+	let bytes = decode_hex(s)?;
+	bytes.as_slice().try_into().map_err(|_| {
+		IndexerClientError::Decode(format!("block hash: expected 32 bytes, got {}", bytes.len()))
+	})
+}
+
+/// Dead-connection backstop for the progress-bearing subscriptions (shielded, unshielded).
+///
+/// These streams heartbeat progress every 30s (the indexer's `progress_update_interval`), even for
+/// a wallet with no relevant transactions. Keep this comfortably above 30s: at equal values the
+/// local timer beats the heartbeat across the network and a sparse-but-live wallet reads drained.
+pub const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// How long [`ShieldedCatchUp`] waits after a progress tick before probing for a fresh one.
+///
+/// Must exceed the indexer's progress-cache TTL (`progress_cache.time_to_live`, 5s), so a probe
+/// always misses the cache, and its per-session subscription refill (10/min, one per 6s), so
+/// probing can continue indefinitely.
+pub const SHIELDED_PROGRESS_PROBE_INTERVAL: Duration = Duration::from_secs(7);
+
+/// Decides when a `shieldedTransactions` drain has received every relevant transaction.
+///
+/// The indexer's progress tick cannot be trusted on its own:
+/// - it is emitted immediately on subscribe, so it can precede the backlog of relevant
+///   transactions it counts;
+/// - `highestCheckedZswapEndIndex` is the maximum over *all* wallets, not this one;
+/// - it is served from a progress cache keyed by wallet (TTL 5s) that survives reconnects, so the
+///   first tick of a session can be a previous session's, taken before this wallet was indexed
+///   (`highestRelevantZswapEndIndex: 0` although relevant transactions exist).
+///
+/// So the drain is done once a tick says checking reached the first tick's `highestZswapEndIndex`,
+/// every transaction up to its `highestRelevantZswapEndIndex` has been received, and that tick
+/// is either past the cache TTL ("fresh") or reports a relevant transaction. A possibly cached
+/// `relevant > 0` misses at most what was indexed within the TTL. Correct whenever this wallet is
+/// the indexer's furthest-checked wallet; a first-time wallet on an indexer where another wallet
+/// is further ahead is only correct if it is fully indexed by the tick the drain stops on.
+#[derive(Debug)]
+pub struct ShieldedCatchUp {
+	target: Option<u64>,
+	received_end_index: u64,
+	tick: Option<(u64, u64, bool)>,
+}
+
+impl ShieldedCatchUp {
+	/// `start_index` is the index the subscription was opened at.
+	pub fn new(start_index: u64) -> Self {
+		Self { target: None, received_end_index: start_index, tick: None }
+	}
+
+	/// Record a progress tick; `fresh` means it was queried after the progress-cache TTL. Returns
+	/// whether the drain is done.
+	pub fn progress(&mut self, highest: u64, checked: u64, relevant: u64, fresh: bool) -> bool {
+		self.target.get_or_insert(highest);
+		self.tick = Some((checked, relevant, fresh));
+		self.done()
+	}
+
+	/// Record a received relevant transaction. Returns whether the drain is done.
+	pub fn relevant(&mut self, zswap_end_index: u64) -> bool {
+		self.received_end_index = self.received_end_index.max(zswap_end_index);
+		self.done()
+	}
+
+	fn done(&self) -> bool {
+		let (Some(target), Some((checked, relevant, fresh))) = (self.target, self.tick) else {
+			return false;
+		};
+		checked >= target && self.received_end_index >= relevant && (fresh || relevant > 0)
+	}
+}
+
+/// Idle timeout for the dust ledger-events subscription, which has no progress heartbeat: here
+/// silence genuinely means "no more events", so it needs no margin over the server's interval.
+pub const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How often [`SyncProgress::log_until_done`] emits a one-line sync-progress heartbeat while a
+/// sync run drains the subscriptions.
+const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Default ceiling on wallets drained at once by one sync run.
+///
+/// Each wallet holds three concurrent subscriptions, so the indexer sees up to three times this
+/// many open WebSockets, and as many server-side scans, from a single run.
+///
+/// [`NonZeroUsize`] because the value reaches `StreamExt::buffer_unordered`, which polls nothing
+/// and hangs on a limit of zero rather than rejecting it.
+pub const DEFAULT_WALLET_SYNC_CONCURRENCY: NonZeroUsize = NonZeroUsize::new(4).unwrap();
+
+/// Shared, thread-safe sync-progress counters for one wallet-sync run.
+///
+/// Every stream folds its own monotonically-increasing frontier into these totals, so they sum
+/// across all concurrent seeds without any per-wallet bookkeeping.
+#[derive(Default)]
+pub struct SyncProgress {
+	/// Number of wallets (seeds) being synced; `3 * wallets` is the total stream count.
+	pub wallets: usize,
+	pub shielded: StreamProgress,
+	pub unshielded: StreamProgress,
+	pub dust: StreamProgress,
+}
+
+/// Aggregated frontier for one stream kind (shielded / unshielded / dust) across all seeds.
+#[derive(Default)]
+pub struct StreamProgress {
+	/// Sum of each seed's latest scanned frontier.
+	scanned: AtomicU64,
+	/// Sum of each seed's latest reported target (0 for a stream until the indexer reports one).
+	target: AtomicU64,
+	/// Number of this stream's seeds that have finished draining.
+	done: AtomicU64,
+}
+
+impl StreamProgress {
+	/// Fold a newly-observed scanned frontier into the shared total.
+	///
+	/// `last` is this stream's previously-contributed value; only the positive delta `now - *last`
+	/// is added, so repeated reports and concurrent seeds never double-count.
+	pub fn advance_scanned(&self, last: &mut u64, now: u64) {
+		if now > *last {
+			self.scanned.fetch_add(now - *last, Ordering::Relaxed);
+			*last = now;
+		}
+	}
+
+	/// As [`advance_scanned`](Self::advance_scanned), but for the target frontier.
+	pub fn advance_target(&self, last: &mut u64, now: u64) {
+		if now > *last {
+			self.target.fetch_add(now - *last, Ordering::Relaxed);
+			*last = now;
+		}
+	}
+
+	/// Mark one seed's stream of this kind as fully drained.
+	pub fn finish(&self) {
+		self.done.fetch_add(1, Ordering::Relaxed);
+	}
+
+	/// Render `scanned/target`, showing `…` for the target until the indexer reports one.
+	fn display(&self) -> String {
+		let scanned = self.scanned.load(Ordering::Relaxed);
+		let target = self.target.load(Ordering::Relaxed);
+		if target == 0 { format!("{scanned}/…") } else { format!("{scanned}/{target}") }
+	}
+}
+
+impl SyncProgress {
+	/// Log a one-line progress heartbeat every [`PROGRESS_LOG_INTERVAL`] until the future is
+	/// dropped. Loops forever by design — the caller races it against the sync work in a `select!`
+	/// and drops it once the work finishes.
+	pub async fn log_until_done(&self) {
+		let mut ticker = tokio::time::interval(PROGRESS_LOG_INTERVAL);
+		// The first `interval` tick is immediate; skip it so the first line lands one interval in
+		// (and fast syncs that finish under `PROGRESS_LOG_INTERVAL` log nothing at all).
+		ticker.tick().await;
+		loop {
+			ticker.tick().await;
+			let n = self.wallets;
+			let streams = 3 * n;
+			let done = self.shielded.done.load(Ordering::Relaxed)
+				+ self.unshielded.done.load(Ordering::Relaxed)
+				+ self.dust.done.load(Ordering::Relaxed);
+			// The default toolkit filter is `midnight_node_toolkit=info` but `warn` elsewhere, so
+			// this target keeps the heartbeat visible without misreporting it as a warning.
+			log::info!(
+				target: "midnight_node_toolkit::indexer",
+				"indexer: syncing {n} wallet(s) — shielded {}, unshielded {}, dust {} \
+				 ({done}/{streams} streams caught up)",
+				self.shielded.display(),
+				self.unshielded.display(),
+				self.dust.display(),
+			);
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn new_derives_graphql_and_ws_urls() {
+		let c = IndexerClient::new("http://127.0.0.1:8088/api/v4").unwrap();
+		assert_eq!(c.http_url, "http://127.0.0.1:8088/api/v4/graphql");
+		assert_eq!(c.ws_url, "ws://127.0.0.1:8088/api/v4/graphql/ws");
+	}
+
+	#[test]
+	fn new_handles_trailing_slash_and_https() {
+		let c = IndexerClient::new("https://indexer.example/api/v4/").unwrap();
+		assert_eq!(c.http_url, "https://indexer.example/api/v4/graphql");
+		assert_eq!(c.ws_url, "wss://indexer.example/api/v4/graphql/ws");
+	}
+
+	#[test]
+	fn blockfrost_url_uses_its_layout_and_requires_project_id() {
+		let base = "https://midnight-mainnet.blockfrost.io/api/v0";
+		let c = IndexerClient::with_project_id(base, Some("nightmainnetX")).unwrap();
+		assert_eq!(c.http_url, base);
+		assert_eq!(c.ws_url, "wss://midnight-mainnet.blockfrost.io/api/v0/ws");
+		assert!(c.project_id.is_some());
+		assert!(IndexerClient::with_project_id(base, None).is_err());
+		let plain = IndexerClient::with_project_id("http://h/api/v4", Some("x")).unwrap();
+		assert!(plain.project_id.is_none());
+	}
+
+	#[test]
+	fn new_rejects_non_http_scheme() {
+		assert!(IndexerClient::new("ftp://nope/api/v4").is_err());
+	}
+
+	#[test]
+	fn decode_hex_tolerates_prefix() {
+		assert_eq!(decode_hex("0x0102").unwrap(), vec![1, 2]);
+		assert_eq!(decode_hex("0102").unwrap(), vec![1, 2]);
+	}
+
+	/// The schema path the derives compile against must exist (the indexer submodule must be
+	/// checked out). This makes the requirement explicit rather than only a derive-macro error.
+	#[test]
+	fn schema_path_exists() {
+		let path = concat!(env!("CARGO_MANIFEST_DIR"), "/graphql/schema/indexer-4.4.graphql");
+		assert!(
+			std::path::Path::new(path).exists(),
+			"indexer schema not found at {path} — is the `indexer` submodule checked out?"
+		);
+	}
+
+	/// Pins `protocolVersion` in the `LatestBlock` query: `show-wallet` reads it to pick the
+	/// ledger generation, and dropping it from the query would silently lose that dispatch.
+	#[test]
+	fn latest_block_carries_protocol_version() {
+		let v = json!({
+			"block": {
+				"height": 42,
+				"protocolVersion": 1_000_000,
+				"timestamp": 1700000000,
+				"zswapEndIndex": 7,
+				"ledgerParameters": "00",
+			}
+		});
+		let resp: latest_block::ResponseData = serde_json::from_value(v).unwrap();
+		let block = resp.block.expect("block");
+		// 1_000_000 is a ledger-8 chain; the mapping itself lives in `LedgerVersion::from_spec_version`.
+		assert_eq!(block.protocol_version, 1_000_000);
+	}
+
+	#[test]
+	fn map_latest_block_converts_ms_and_reads_parent() {
+		let v = json!({
+			"block": {
+				"height": 2,
+				"protocolVersion": 3_000_000,
+				"timestamp": 1_700_000_006_500u64,
+				"zswapEndIndex": 7,
+				"ledgerParameters": "0x00",
+				"parent": { "hash": "11".repeat(32), "timestamp": 1_700_000_000_000u64 },
+			}
+		});
+		let resp: latest_block::ResponseData = serde_json::from_value(v).unwrap();
+		let block = map_latest_block(resp.block.unwrap()).unwrap();
+		assert_eq!(block.timestamp, 1_700_000_006);
+		assert_eq!(block.last_block_time, 1_700_000_000);
+		assert_eq!(block.parent_hash, [0x11; 32]);
+	}
+
+	#[test]
+	fn map_latest_block_genesis_has_no_parent() {
+		let v = json!({
+			"block": {
+				"height": 0,
+				"protocolVersion": 3_000_000,
+				"timestamp": 1_700_000_000_000u64,
+				"zswapEndIndex": 0,
+				"ledgerParameters": "00",
+				"parent": null,
+			}
+		});
+		let resp: latest_block::ResponseData = serde_json::from_value(v).unwrap();
+		let block = map_latest_block(resp.block.unwrap()).unwrap();
+		assert_eq!(block.parent_hash, [0; 32]);
+		assert_eq!(block.last_block_time, block.timestamp);
+	}
+
+	#[test]
+	fn contract_action_state_absent_is_none() {
+		let resp: contract_action_state::ResponseData =
+			serde_json::from_value(json!({ "contractAction": null })).unwrap();
+		assert!(resp.contract_action.is_none());
+		let resp: contract_action_state::ResponseData = serde_json::from_value(json!({
+			"contractAction": { "__typename": "ContractCall", "state": "0102" }
+		}))
+		.unwrap();
+		assert_eq!(decode_hex(&resp.contract_action.unwrap().state).unwrap(), vec![1, 2]);
+	}
+
+	/// Maps a `ShieldedTransactionsProgress` JSON payload through the generated types, pinning the
+	/// query field names against the schema.
+	#[test]
+	fn map_shielded_progress_from_json() {
+		let v = json!({
+			"shieldedTransactions": {
+				"__typename": "ShieldedTransactionsProgress",
+				"highestZswapEndIndex": 10,
+				"highestCheckedZswapEndIndex": 10,
+				"highestRelevantZswapEndIndex": 4,
+			}
+		});
+		let resp: shielded_transactions::ResponseData = serde_json::from_value(v).unwrap();
+		match map_shielded(resp.shielded_transactions).unwrap() {
+			ShieldedEvent::Progress { highest_end_index, highest_relevant_end_index, .. } => {
+				assert_eq!(highest_end_index, 10);
+				assert_eq!(highest_relevant_end_index, 4);
+			},
+			_ => panic!("expected progress"),
+		}
+	}
+
+	#[test]
+	fn catch_up_waits_for_backlog_after_early_progress() {
+		let mut c = ShieldedCatchUp::new(0);
+		assert!(!c.progress(28, 28, 28, false), "tick arrived before the transaction it counts");
+		assert!(!c.relevant(12));
+		assert!(c.relevant(28));
+	}
+
+	#[test]
+	fn catch_up_distrusts_unfresh_zero_relevant() {
+		let mut c = ShieldedCatchUp::new(0);
+		assert!(!c.progress(28, 28, 0, false), "may be a cached pre-index tick");
+		assert!(!c.relevant(28));
+		assert!(c.progress(28, 28, 28, true));
+
+		let mut empty = ShieldedCatchUp::new(0);
+		assert!(!empty.progress(28, 28, 0, false));
+		assert!(empty.progress(28, 28, 0, true), "a fresh tick settles a wallet with no txs");
+	}
+
+	#[test]
+	fn catch_up_waits_for_checking_to_reach_first_target() {
+		let mut c = ShieldedCatchUp::new(0);
+		assert!(!c.progress(28, 0, 0, false));
+		assert!(!c.progress(40, 20, 0, true), "checking has not reached the first target");
+		assert!(!c.relevant(20));
+		assert!(c.progress(40, 28, 20, true), "the target stays at the first tick's highest");
+	}
+
+	#[test]
+	fn catch_up_counts_from_the_start_index() {
+		let mut c = ShieldedCatchUp::new(30);
+		assert!(c.progress(40, 40, 28, false));
+	}
+
+	#[test]
+	fn map_unshielded_transaction_from_json() {
+		let v = json!({
+			"unshieldedTransactions": {
+				"__typename": "UnshieldedTransaction",
+				"transaction": { "__typename": "RegularTransaction", "id": 7 },
+				"createdUtxos": [{
+					"tokenType": "00",
+					"value": "1000",
+					"intentHash": "11",
+					"outputIndex": 0,
+					"ctime": 123,
+				}],
+				"spentUtxos": [],
+			}
+		});
+		let resp: unshielded_transactions::ResponseData = serde_json::from_value(v).unwrap();
+		match map_unshielded(resp.unshielded_transactions).unwrap() {
+			UnshieldedEvent::Transaction { transaction_id, created, spent } => {
+				assert_eq!(transaction_id, 7);
+				assert_eq!(created.len(), 1);
+				assert_eq!(created[0].value, 1000);
+				assert_eq!(created[0].ctime, Some(123));
+				assert!(spent.is_empty());
+			},
+			_ => panic!("expected transaction"),
+		}
+	}
+
+	/// Vendored indexer schemas (`graphql/schema/`), i.e. the indexer versions this client supports.
+	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
+
+	#[test]
+	fn documents_validate_against_every_vendored_schema() {
+		use apollo_compiler::{ExecutableDocument, Schema};
+		use std::{fs, path::Path};
+
+		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
+		for name in SCHEMAS {
+			let path = dir.join("schema").join(name);
+			let schema = Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
+				.unwrap_or_else(|e| panic!("{name}: {}", e.errors));
+			for doc in fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()) {
+				if doc.extension().is_none_or(|ext| ext != "graphql") {
+					continue;
+				}
+				if let Err(e) = ExecutableDocument::parse_and_validate(
+					&schema,
+					fs::read_to_string(&doc).unwrap(),
+					&doc,
+				) {
+					panic!("{} is invalid against {name}:\n{}", doc.display(), e.errors);
+				}
+			}
+		}
+	}
+}

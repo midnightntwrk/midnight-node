@@ -21,7 +21,7 @@
 #[cfg(feature = "std")]
 pub(crate) use {
 	base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
-	ledger_storage_ledger_8 as ledger_storage_local,
+	ledger_storage_ledger_9 as ledger_storage_local,
 	midnight_node_ledger_helpers::ledger_9 as helpers_local,
 	midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
 	onchain_runtime_ledger_9 as onchain_runtime_local,
@@ -36,7 +36,6 @@ pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
 mod block_context;
 pub use block_context::*;
 
-mod error_ext;
 mod guaranteed_validation;
 mod post_block_update;
 mod system_tx;
@@ -44,7 +43,7 @@ mod system_tx;
 #[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
-use sha2::digest::{OutputSizeUser, consts::U32};
+use storage_sha2::digest::{OutputSizeUser, consts::U32};
 #[cfg(feature = "std")]
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
@@ -96,6 +95,7 @@ use {
 	},
 	std::{
 		any::Any,
+		collections::BTreeMap,
 		sync::Arc,
 		time::{Duration, Instant},
 	},
@@ -107,16 +107,51 @@ use crate::boundary::types::{
 };
 
 #[cfg(feature = "std")]
-use {lazy_static::lazy_static, moka::sync::Cache};
+use {crate::boundary::types::split_tag, lazy_static::lazy_static, moka::sync::Cache};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
+
+/// `INITIAL_LIMITS.transaction_byte_limit`, for v1 host functions: old runtimes bind v1
+/// forever, and the on-chain limit equals this at every historic block. Pinned by
+/// `default_tx_byte_limit_matches_ledger_initial_limits`.
+pub const DEFAULT_TX_BYTE_LIMIT: u64 = 1 << 20;
+
+/// Cap on decoded operations/identifiers for v1 `get_decoded_transaction`; the v2 value comes
+/// from the runtime (`pallet_midnight::Config::MaxDecodedTxItems`).
+pub const DEFAULT_MAX_DECODED_ITEMS: u32 = 4096;
+
+/// Measures the body alone, as `well_formed` does: it limits the untagged `serialized_size`,
+/// which equals the body's length because deserialization insists on normal form. Old runtimes
+/// reach this on block import, so counting the tag too would refuse transactions consensus
+/// accepts and split old and new nodes. An untagged payload is measured whole; it cannot
+/// deserialize anyway.
+#[cfg(feature = "std")]
+fn ensure_within_tx_byte_limit(limit: u64, bytes: &[u8]) -> Result<(), LedgerApiError> {
+	let body = split_tag(bytes).map_or(bytes, |(_, body)| body);
+	if body.len() as u64 > limit {
+		return Err(LedgerApiError::Transaction(types::TransactionError::Malformed(
+			types::MalformedError::TransactionTooLarge,
+		)));
+	}
+	Ok(())
+}
 
 #[cfg(feature = "std")]
 #[derive(PartialEq, Eq, Hash, Clone)]
 struct TxValidationKey {
 	runtime_version: u32,
 	tx_hash: Hash,
+	/// The storage the cached `VerifiedTransaction` lives in. Entries are downcast to the
+	/// caller's `VerifiedTransaction<D>`, so storages must not share or replace each other's.
+	storage: core::any::TypeId,
+}
+
+#[cfg(feature = "std")]
+impl TxValidationKey {
+	fn new<D: DB>(runtime_version: u32, tx_hash: Hash) -> Self {
+		Self { runtime_version, tx_hash, storage: core::any::TypeId::of::<D>() }
+	}
 }
 
 #[cfg(feature = "std")]
@@ -228,8 +263,11 @@ where
 			match &storage.db {
 				LedgerStorageDb::UnifiedDb(db) => {
 					let res = set_default_storage(|| {
-						let db =
-                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
+						let db = ParityDb::<
+							storage_sha2::Sha256,
+							_,
+							{ LedgerStorageExt::COLUMN_OFFSET },
+						>::from_existing_db(OwnedDb(db.clone()));
 						Storage::new(storage.cache_size, db)
 					});
 					if res.is_err() {
@@ -241,7 +279,7 @@ where
 				},
 				LedgerStorageDb::SeparateDb(db_path) => {
 					let res = set_default_storage(|| {
-						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
+						let db = ParityDb::<storage_sha2::Sha256>::open(db_path.as_path());
 						Storage::new(storage.0.cache_size, db)
 					});
 					if res.is_err() {
@@ -280,6 +318,9 @@ where
 	}
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
+		if !crate::ephemeral::is_onchain(externalities) {
+			return;
+		}
 		let now = std::time::Instant::now();
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 		let elapsed = now.elapsed().as_secs_f64();
@@ -291,7 +332,7 @@ where
 	}
 
 	pub fn post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
@@ -314,7 +355,7 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
+		let ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
@@ -334,7 +375,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &state_root, ledger);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -349,15 +390,15 @@ where
 	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
 	/// remain fallible — those represent genuine bugs rather than block-content conditions.
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
-		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &state_root, ledger);
 		Ok(state_root)
 	}
 
@@ -365,12 +406,17 @@ where
 		crate::utils::find_crate_version(CRATE_NAME).unwrap_or(b"unknown".into())
 	}
 
+	/// `net_intra_tx_utxos` nets out UTXOs created and spent within the tx before the
+	/// integrity check. It is consensus state, chosen by host-fn version: earlier runtimes
+	/// recorded such txs as failed and must replay that way.
+	#[allow(clippy::too_many_arguments)]
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
-		should_skip_failed_segments: bool,
+		filter_only_failed_segments: bool,
+		net_intra_tx_utxos: bool,
 		runtime_version: u32,
 		skew_tblock: bool,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
@@ -409,7 +455,7 @@ where
 		let initial_utxos_size = ledger.state.utxo.utxos.size();
 
 		// Use cached VerifiedTransaction if available
-		let cache_key = TxValidationKey { runtime_version, tx_hash };
+		let cache_key = TxValidationKey::new::<D>(runtime_version, tx_hash);
 		let (verified_tx, cache_outcome) =
 			Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key, skew_tblock)?;
 		log::trace!(
@@ -424,7 +470,7 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let (mut new_ledger, applied_stage) =
+		let (new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -445,7 +491,7 @@ where
 			if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
 				// Remove from `utxos` the `segments` that failed
 				utxos.remove_failed_segments(&segments);
-				Some(segments.keys().copied().collect())
+				Some(segments_to_exclude(&segments, filter_only_failed_segments))
 			} else {
 				None
 			};
@@ -456,21 +502,23 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let operations =
-			tx.calls_and_deploys(should_skip_failed_segments.then_some(failed_segments).flatten());
+		let operations = tx.calls_and_deploys(failed_segments);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ops built (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
+		if net_intra_tx_utxos {
+			utxos.net_intra_tx_utxos();
+		}
 		// Capture segment counts before flattening — the HashMap→BTreeMap fix
 		// only changes ordering between segments, not within a single segment.
 		let output_segments = utxos.outputs.len();
 		let input_segments = utxos.inputs.len();
 
 		let (mut utxo_outputs, mut utxo_inputs) =
-			utxos.check_utxos_response_integrity(initial_utxos_size, &new_ledger)?;
+			utxos.check_utxos_response_integrity(initial_utxos_size, &new_ledger.state)?;
 
 		// Apply ordering override for old blocks produced with HashMap ordering.
 		// Only reorder lists that span multiple segments.
@@ -554,7 +602,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		new_ledger.persist();
+		crate::ephemeral::retain(externalities, &event.state_root, new_ledger);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -601,7 +649,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -611,7 +659,7 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &event.state_root, ledger);
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -655,7 +703,7 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		let ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
@@ -665,7 +713,7 @@ where
 		};
 
 		// Only update state after no errors
-		ledger.persist();
+		crate::ephemeral::retain(externalities, &event.state_root, ledger);
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -735,6 +783,8 @@ where
 		)
 	}
 
+	/// Mempool validation. `check_utxos` adds [`Self::check_guaranteed_utxos`].
+	#[allow(clippy::too_many_arguments)]
 	pub fn validate_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -744,20 +794,27 @@ where
 		// The runtime's max weight as of now
 		max_weight: u64,
 		get_tx_details: bool,
+		check_utxos: bool,
 	) -> Result<(Hash, Option<TransactionDetails>), LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_validation_time = Instant::now();
 
 		let api = api::new();
-		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
+		// Ledger first, so its `transaction_byte_limit` bounds the payload before deserializing.
+		// Semantically inert: `well_formed` enforces the same limit, measured the same way, later.
 		let ledger = Self::get_ledger(&api, state_key)?;
+		ensure_within_tx_byte_limit(
+			ledger.state.parameters.limits.transaction_byte_limit,
+			tx_serialized,
+		)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 
-		let cache_key = TxValidationKey { runtime_version, tx_hash: tx.hash() };
+		let cache_key = TxValidationKey::new::<D>(runtime_version, tx.hash());
 
 		// No `tblock` correction on the mempool path: `validate_unsigned` already skews the
 		// block context it passes here by `slot_duration * (1 + MaxSkippedSlots)`.
 		let cache_outcome =
-			Self::do_validate_transaction(&ledger, &tx, &block_context, &cache_key)?;
+			Self::do_validate_transaction(&ledger, &tx, &block_context, &cache_key, check_utxos)?;
 
 		let tx_details = if get_tx_details {
 			let tx_gas_cost =
@@ -784,6 +841,8 @@ where
 	///
 	/// Used by `pre_dispatch` to reject transactions whose application
 	/// would fail - this keeps the block free of failed transactions.
+	/// `check_utxos` adds [`Self::check_guaranteed_utxos`]; a `pre_dispatch` rejection
+	/// decides block validity, so like netting it is chosen by host-fn version.
 	///
 	/// This function checks the cache for a cached `VerifiedTransaction`
 	/// (populated by `validate_unsigned(strict=true)`) to avoid redundant ZK
@@ -795,15 +854,20 @@ where
 		block_context: BlockContext,
 		runtime_version: u32,
 		skew_tblock: bool,
+		check_utxos: bool,
 	) -> Result<(), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let api = api::new();
-		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
+		ensure_within_tx_byte_limit(
+			ledger.state.parameters.limits.transaction_byte_limit,
+			tx_serialized,
+		)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
 
-		let cache_key = TxValidationKey { runtime_version, tx_hash: tx.hash() };
+		let cache_key = TxValidationKey::new::<D>(runtime_version, tx.hash());
 
 		// Perform dry-run validation with caching
 		let cache_outcome = Self::do_validate_guaranteed_execution(
@@ -812,6 +876,7 @@ where
 			&block_context,
 			&cache_key,
 			skew_tblock,
+			check_utxos,
 		)?;
 
 		// Write Prometheus metrics
@@ -823,11 +888,44 @@ where
 		Ok(())
 	}
 
-	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
+	/// For v1 host functions, which old runtimes bind forever.
+	pub fn get_decoded_transaction_v1(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
+		ensure_within_tx_byte_limit(DEFAULT_TX_BYTE_LIMIT, transaction_bytes)?;
+		Self::decode_transaction_inner(transaction_bytes, DEFAULT_MAX_DECODED_ITEMS)
+	}
+
+	pub fn get_decoded_transaction(
+		state_key: &[u8],
+		transaction_bytes: &[u8],
+		max_items: u32,
+	) -> Result<Tx, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		ensure_within_tx_byte_limit(
+			ledger.state.parameters.limits.transaction_byte_limit,
+			transaction_bytes,
+		)?;
+		Self::decode_transaction_inner(transaction_bytes, max_items)
+	}
+
+	/// `max_items` caps operations and identifiers independently — it bounds output
+	/// materialization and response size, not the (already byte-limited) parse.
+	fn decode_transaction_inner(
+		transaction_bytes: &[u8],
+		max_items: u32,
+	) -> Result<Tx, LedgerApiError> {
+		let too_many_items = || {
+			LedgerApiError::Transaction(types::TransactionError::Malformed(
+				types::MalformedError::TransactionTooLarge,
+			))
+		};
 		let api = api::new();
 		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(transaction_bytes)?;
 		let hash = tx.hash();
 		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
+			if acc.len() >= max_items as usize {
+				return Err(too_many_items());
+			}
 			let a = match cd {
 				TransactionOperation::Call { address, entry_point } => {
 					Op::Call { address: api.tagged_serialize(&address)?, entry_point }
@@ -848,6 +946,9 @@ where
 		})?;
 
 		let identifiers = tx.identifiers().try_fold(Vec::new(), |mut acc, i| {
+			if acc.len() >= max_items as usize {
+				return Err(too_many_items());
+			}
 			acc.push(api.tagged_serialize(&i)?);
 			Ok::<_, LedgerApiError>(acc)
 		})?;
@@ -912,6 +1013,24 @@ where
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ledger_state = default_storage::<D>().arena.alloc(ledger.state.clone());
 		api.serialize(&ledger_state.as_typed_key())
+	}
+
+	/// Whether the `Ledger` at `state_key` has accrued no `block_fullness`, as it must at the end
+	/// of every block.
+	#[cfg(feature = "test-utils")]
+	pub fn is_block_start(state_key: &[u8]) -> Result<bool, LedgerApiError> {
+		let api = api::new();
+		Ok(Self::get_ledger(&api, state_key)?.is_block_start())
+	}
+
+	/// Recomputes `state_key` the way external consumers such as the indexer do: as the tagged
+	/// arena key of `Ledger { state, block_fullness: 0 }` for the ledger state it points to.
+	#[cfg(feature = "test-utils")]
+	pub fn block_start_state_key(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let rebuilt = default_storage::<D>().arena.alloc(Ledger::new(ledger.state.clone()));
+		api.tagged_serialize(&rebuilt.as_typed_key())
 	}
 
 	/// Collection sizes held at the `LedgerState` root (`midnight_ledgerStats`).
@@ -1086,6 +1205,17 @@ where
 		Ok(gas_cost)
 	}
 
+	/// For v1 host functions, which old runtimes bind forever.
+	pub fn get_transaction_cost_v1(
+		state_key: &[u8],
+		tx: &[u8],
+		block_context: &BlockContext,
+		max_weight: u64,
+	) -> Result<GasCost, LedgerApiError> {
+		ensure_within_tx_byte_limit(DEFAULT_TX_BYTE_LIMIT, tx)?;
+		Self::get_transaction_cost(state_key, tx, block_context, max_weight)
+	}
+
 	/// The cost of either a `Transaction` or a [`SystemTransaction`], dispatched on
 	/// the serialized header tag.
 	///
@@ -1097,6 +1227,11 @@ where
 		block_context: &BlockContext,
 		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
+		// Caller-controlled bytes, via `state_call` and the mempool's filtering pool: bound them
+		// before either arm deserializes.
+		let ledger = Self::get_ledger(&api::new(), state_key)?;
+		ensure_within_tx_byte_limit(ledger.state.parameters.limits.transaction_byte_limit, tx)?;
+
 		if is_system_transaction(tx) {
 			Self::get_system_transaction_cost(state_key, tx, max_weight)
 		} else {
@@ -1139,10 +1274,17 @@ where
 
 	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
-		default_storage().arena.get_lazy(&key).map_err(|e| {
-			log::error!(target: LOG_TARGET, "Error loading Ledger State: {e:?}");
-			LedgerApiError::NoLedgerState
-		})
+		let arena = &default_storage().arena;
+		// `get_lazy` reads nothing, so an absent root would only surface as a host panic on
+		// first deref. Read the root node here instead: one level, children stay unread, and
+		// the backend caches it for that deref. A missing descendant can still panic later.
+		if let ArenaKey::Ref(root) = &key.key
+			&& arena.with_backend(|backend| backend.get(root).is_none())
+		{
+			log::error!(target: LOG_TARGET, "Ledger state root {root:?} not in storage");
+			return Err(LedgerApiError::NoLedgerState);
+		}
+		arena.get_lazy(&key).map_err(|_| LedgerApiError::NoLedgerState)
 	}
 
 	fn get_transaction_details(
@@ -1333,15 +1475,30 @@ where
 		})
 	}
 
+	/// The UTXO integrity check `apply_transaction` runs, applied to the guaranteed dry run
+	/// so a transaction it would reject after apply never enters a block.
+	fn check_guaranteed_utxos(
+		ledger: &Ledger<D>,
+		tx: &Transaction<S, D>,
+		after: &LedgerState<D>,
+	) -> Result<(), LedgerApiError> {
+		let initial_utxos_size = ledger.state.utxo.utxos.size();
+		tx.unshielded_utxos().check_guaranteed_integrity(initial_utxos_size, after)
+	}
+
 	/// Validates a transaction for the mempool.
 	///
 	/// Uses the cache for revalidation of transactions already in the pool.
+	/// With `check_utxos`, [`Self::check_guaranteed_utxos`] must also pass. The key omits the
+	/// flag: a runtime binds one host-fn version, and the key holds its `spec_version`.
+	///
 	/// Returns the cache outcome indicating how validation was resolved.
 	fn do_validate_transaction(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		key: &TxValidationKey,
+		check_utxos: bool,
 	) -> Result<TxValidationCacheOutcome, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1375,7 +1532,10 @@ where
 
 		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)
 		{
-			Ok(()) => {
+			Ok(applied) => {
+				if check_utxos {
+					Self::check_guaranteed_utxos(ledger, tx, &applied)?;
+				}
 				log::info!(
 					target: LOG_TARGET,
 					"📋 Validated transaction {} for mempool",
@@ -1398,7 +1558,8 @@ where
 	///
 	/// Uses `get_verified_transaction` to get a cached or freshly computed
 	/// `VerifiedTransaction`, then dry-runs guaranteed execution (via the
-	/// version-specific `guaranteed_validation` module) to validate that the
+	/// version-specific `guaranteed_validation` module), then, with `check_utxos`,
+	/// [`Self::check_guaranteed_utxos`] on the resulting state, to validate that the
 	/// transaction can enter a block.
 	///
 	/// Returns the cache outcome indicating how validation was resolved.
@@ -1408,6 +1569,7 @@ where
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		skew_tblock: bool,
+		check_utxos: bool,
 	) -> Result<TxValidationCacheOutcome, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1419,7 +1581,12 @@ where
 
 		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)
 		{
-			Ok(()) => Ok(cache_outcome),
+			Ok(applied) => {
+				if check_utxos {
+					Self::check_guaranteed_utxos(ledger, tx, &applied)?;
+				}
+				Ok(cache_outcome)
+			},
 			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
@@ -1623,6 +1790,19 @@ fn well_formed_tblock<D: DB>(
 	}
 }
 
+/// Segments whose contract actions are withheld from the emitted event.
+///
+/// `only_failed = false` is the v1 `apply_transaction` behaviour, kept for replaying old blocks:
+/// every attempted segment is excluded, succeeding ones included.
+#[cfg(feature = "std")]
+fn segments_to_exclude<E>(segments: &BTreeMap<u16, Result<(), E>>, only_failed: bool) -> Vec<u16> {
+	segments
+		.iter()
+		.filter(|(_, result)| !only_failed || result.is_err())
+		.map(|(segment_id, _)| *segment_id)
+		.collect()
+}
+
 #[cfg(feature = "std")]
 fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> GasCost {
 	let max_fp = *[
@@ -1642,10 +1822,32 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use base_crypto_local::cost_model::{FixedPoint, SyntheticCost};
-	use coin_structure_local::coin::{ShieldedTokenType, UnshieldedTokenType};
-	use ledger_storage_local::DefaultDB;
-	use mn_ledger_local::structure::LedgerState;
+	use base_crypto_local::{
+		cost_model::{FixedPoint, SyntheticCost},
+		rng::SplittableRng,
+		schnorr,
+	};
+	use coin_structure_local::coin::{NIGHT, ShieldedTokenType, UnshieldedTokenType};
+	use helpers_local::{Rng, SeedableRng, StdRng};
+	use ledger_storage_local::{DefaultDB, storage::HashMap as StorageHashMap};
+	use mn_ledger_local::structure::{
+		INITIAL_PARAMETERS, Intent, MAX_SUPPLY, SigningKey, StandardTransaction, UnshieldedOffer,
+		UtxoOutput, UtxoSpend,
+	};
+	use transient_crypto_local::commitment::PedersenRandomness;
+
+	/// The undeployed genesis `StateKey` (see `storage.rs`) with its last hash byte changed:
+	/// well-formed, but naming a root that was never stored.
+	const ABSENT_ROOT_STATE_KEY: &str = "6d69646e696768743a73746f726167652d6b6579286c65646765722d73746174655b7631385d293a0067100cb9fcfc392a863e7b22751c6baf4602e96deef27c4e5339205586ab4400";
+
+	/// A node whose ledger DB lost the root its block state names must get an error back, not
+	/// a host panic on first deref that wedges block authoring.
+	#[test]
+	fn absent_ledger_root_is_no_ledger_state_not_a_panic() {
+		let state_key = hex::decode(ABSENT_ROOT_STATE_KEY).expect("valid hex");
+		let result = Bridge::<TransactionSignature, DefaultDB>::get_ledger_parameters(&state_key);
+		assert!(matches!(result, Err(LedgerApiError::NoLedgerState)), "got {result:?}");
+	}
 
 	/// Preview #128537, the block whose first transaction motivated the correction.
 	const BLOCK_TBLOCK: u64 = 1784987076;
@@ -1700,6 +1902,164 @@ mod tests {
 		assert_eq!(
 			well_formed_tblock(&ledger_mid_block(), &bc, true),
 			Timestamp::from_secs(BLOCK_TBLOCK),
+		);
+	}
+
+	fn transaction_too_large() -> LedgerApiError {
+		LedgerApiError::Transaction(types::TransactionError::Malformed(
+			types::MalformedError::TransactionTooLarge,
+		))
+	}
+
+	/// A ledger bump that changes `INITIAL_LIMITS` must fail loudly: the v1 host
+	/// functions hardcode this value as the byte limit for historic blocks.
+	#[test]
+	fn default_tx_byte_limit_matches_ledger_initial_limits() {
+		assert_eq!(
+			DEFAULT_TX_BYTE_LIMIT,
+			mn_ledger_local::structure::INITIAL_LIMITS.transaction_byte_limit
+		);
+	}
+
+	/// The v1 byte check precedes deserialization and state loading, so junk bytes
+	/// and a junk state key are fine — nothing else may run first.
+	#[test]
+	fn v1_query_paths_reject_oversized_transactions() {
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let oversized = tagged_zeros(DEFAULT_TX_BYTE_LIMIT as usize + 1);
+		assert_eq!(
+			TestBridge::get_decoded_transaction_v1(&oversized).unwrap_err(),
+			transaction_too_large()
+		);
+		assert_eq!(
+			TestBridge::get_transaction_cost_v1(&[], &oversized, &block_context(), 1_000)
+				.unwrap_err(),
+			transaction_too_large()
+		);
+	}
+
+	/// The tag prefix plus `body_len` zero bytes. `well_formed` measures only the body.
+	fn tagged_zeros(body_len: usize) -> Vec<u8> {
+		let tag = <Transaction<TransactionSignature, DefaultDB> as Tagged>::tag();
+		let mut bytes = format!("{}{tag}:", midnight_serialize_local::GLOBAL_TAG).into_bytes();
+		bytes.resize(bytes.len() + body_len, 0);
+		bytes
+	}
+
+	/// The byte check must never be stricter than `well_formed`, which ignores the tag
+	/// prefix: refusing a body it accepts splits old and new nodes on block import.
+	/// `split_tag` ends the tag at its second colon, so a tag holding one would have the byte
+	/// check count part of the tag as body and refuse transactions consensus accepts.
+	#[test]
+	fn split_tag_finds_the_real_tags() {
+		let tags = [
+			<Transaction<TransactionSignature, DefaultDB> as Tagged>::tag(),
+			<SystemTransaction as Tagged>::tag(),
+		];
+		for tag in tags {
+			assert!(!tag.contains(':'), "tag `{tag}` holds a colon");
+		}
+		assert_eq!(split_tag(&tagged_zeros(5)).map(|(_, body)| body.len()), Some(5));
+	}
+
+	#[test]
+	fn v1_query_paths_admit_a_body_at_the_limit() {
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let at_limit = tagged_zeros(DEFAULT_TX_BYTE_LIMIT as usize);
+		assert_ne!(
+			TestBridge::get_decoded_transaction_v1(&at_limit).unwrap_err(),
+			transaction_too_large()
+		);
+		assert_ne!(
+			TestBridge::get_transaction_cost_v1(&[], &at_limit, &block_context(), 1_000)
+				.unwrap_err(),
+			transaction_too_large()
+		);
+	}
+
+	#[test]
+	fn decoded_items_are_capped() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			// The fixture transaction is latest-ledger format.
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let (tx, _) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(
+			midnight_node_res::undeployed::transactions::DEPLOY_TX,
+		);
+		assert_eq!(
+			TestBridge::decode_transaction_inner(&tx, 0).unwrap_err(),
+			transaction_too_large()
+		);
+		assert!(TestBridge::decode_transaction_inner(&tx, DEFAULT_MAX_DECODED_ITEMS).is_ok());
+	}
+
+	/// `DEPLOY_TX` with its intent repeated under `extra` more segment ids.
+	fn deploy_tx_with_repeated_intent(extra: u16) -> Vec<u8> {
+		let api = api::new();
+		let (base, _) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(
+			midnight_node_res::undeployed::transactions::DEPLOY_TX,
+		);
+		let base = api
+			.tagged_deserialize::<Transaction<TransactionSignature, DefaultDB>>(&base)
+			.expect("DEPLOY_TX deserializes");
+		let LedgerTransaction::Standard(standard) = base.0 else {
+			panic!("DEPLOY_TX is a standard transaction");
+		};
+		let intent = standard.intents.clone().into_iter().next().expect("one intent").1;
+		let mut tx = standard;
+		for segment in 10_000..10_000 + extra {
+			tx.intents = tx.intents.clone().insert(segment, intent.clone());
+		}
+		api.tagged_serialize(&LedgerTransaction::Standard(tx))
+			.expect("the transaction serializes")
+	}
+
+	/// Assert consequences rather than the encoding, so a tighter encoding (say, varint
+	/// `TopoSortedNode::child_indices`) only fails this when it actually matters.
+	#[test]
+	fn byte_limited_payload_cannot_declare_unbounded_work() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let measure = |extra: u16| {
+			let bytes = deploy_tx_with_repeated_intent(extra);
+			let ops = TestBridge::decode_transaction_inner(&bytes, u32::MAX)
+				.expect("the transaction decodes")
+				.operations
+				.len();
+			assert_eq!(
+				ops,
+				usize::from(extra) + 1,
+				"each extra segment must decode to one operation"
+			);
+			let nodes = crate::boundary::types::declared_node_count(&bytes).unwrap();
+			(bytes.len() as f64, f64::from(nodes))
+		};
+		let (small_bytes, small_nodes) = measure(64);
+		let (large_bytes, large_nodes) = measure(1024);
+		let bytes_per_op = (large_bytes - small_bytes) / 960.0;
+		let nodes_per_op = (large_nodes - small_nodes) / 960.0;
+		// Bytes per segment grow with the segment count, so this overestimates.
+		let ops_at_limit = DEFAULT_TX_BYTE_LIMIT as f64 / bytes_per_op;
+
+		assert!(
+			ops_at_limit <= 50_000.0,
+			"a payload at the byte limit decodes to ~{ops_at_limit:.0} operations",
+		);
+		// pallet-midnight's `NODES_PER_OPERATION` assumes this ratio.
+		assert!(
+			nodes_per_op >= 4.0,
+			"an operation costs only {nodes_per_op:.2} nodes, so `MaxTransactionNodes` admits \
+			 more operations than pallet-midnight's NODES_PER_OPERATION assumes",
 		);
 	}
 
@@ -1878,5 +2238,233 @@ mod tests {
 		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	#[test]
+	fn segments_to_exclude_v2_withholds_only_failed_segments() {
+		let segments: BTreeMap<u16, Result<(), ()>> =
+			[(0, Ok(())), (1, Err(())), (2, Ok(()))].into_iter().collect();
+
+		// v2: the guaranteed segment and the succeeding fallible segment keep their events.
+		assert_eq!(segments_to_exclude(&segments, true), vec![1]);
+
+		// v1 (historical replay): everything attempted is withheld.
+		assert_eq!(segments_to_exclude(&segments, false), vec![0, 1, 2]);
+	}
+
+	/// `validate_unsigned` and `pre_dispatch` reach these with caller bytes ahead of any fee,
+	/// and before `CheckWeight` can reject a bare extrinsic on length.
+	#[test]
+	fn validation_paths_reject_oversized_payloads_before_deserializing() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+		let genesis = midnight_node_res::networks::MidnightNetwork::genesis_state(
+			&midnight_node_res::networks::UndeployedNetwork,
+		);
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+
+		let limit = ledger.state.parameters.limits.transaction_byte_limit;
+		let oversized = tagged_zeros(limit as usize + 1);
+
+		let is_too_large = |err: &LedgerApiError| {
+			matches!(
+				err,
+				LedgerApiError::Transaction(types::TransactionError::Malformed(
+					types::MalformedError::TransactionTooLarge
+				))
+			)
+		};
+
+		let mut test_ext = sp_io::TestExternalities::default();
+		let mut ext = test_ext.ext();
+
+		let validate = TestBridge::validate_transaction(
+			&mut ext,
+			&state_key,
+			&oversized,
+			BlockContext::default(),
+			1,
+			1,
+			false,
+			true,
+		)
+		.unwrap_err();
+		assert!(is_too_large(&validate), "validate_transaction returned {validate:?}");
+
+		let guaranteed = TestBridge::validate_guaranteed_execution(
+			&mut ext,
+			&state_key,
+			&oversized,
+			BlockContext::default(),
+			1,
+			false,
+			true,
+		)
+		.unwrap_err();
+		assert!(is_too_large(&guaranteed), "validate_guaranteed_execution returned {guaranteed:?}");
+	}
+
+	/// As `v1_query_paths_admit_a_body_at_the_limit`, for the stateful paths, block import's
+	/// among them.
+	#[test]
+	fn stateful_paths_admit_a_body_at_the_limit() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+		let genesis = midnight_node_res::networks::MidnightNetwork::genesis_state(
+			&midnight_node_res::networks::UndeployedNetwork,
+		);
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+
+		let at_limit = tagged_zeros(ledger.state.parameters.limits.transaction_byte_limit as usize);
+
+		let mut test_ext = sp_io::TestExternalities::default();
+		let mut ext = test_ext.ext();
+
+		let validate = TestBridge::validate_transaction(
+			&mut ext,
+			&state_key,
+			&at_limit,
+			BlockContext::default(),
+			1,
+			1,
+			false,
+			true,
+		)
+		.unwrap_err();
+		assert_ne!(validate, transaction_too_large());
+
+		let guaranteed = TestBridge::validate_guaranteed_execution(
+			&mut ext,
+			&state_key,
+			&at_limit,
+			BlockContext::default(),
+			1,
+			false,
+			true,
+		)
+		.unwrap_err();
+		assert_ne!(guaranteed, transaction_too_large());
+
+		let cost =
+			TestBridge::get_any_transaction_cost(&state_key, &at_limit, &block_context(), 1_000)
+				.unwrap_err();
+		assert_ne!(cost, transaction_too_large());
+
+		let decoded =
+			TestBridge::get_decoded_transaction(&state_key, &at_limit, DEFAULT_MAX_DECODED_ITEMS)
+				.unwrap_err();
+		assert_ne!(decoded, transaction_too_large());
+	}
+
+	/// End to end: intent 1 creates an unshielded UTXO in its guaranteed section and intent 2
+	/// spends it in its own; the ledger applies that in segment order. Through the host-fn
+	/// versions that net (`apply_transaction` v3, `validate_transaction` and
+	/// `validate_guaranteed_execution` v2), mempool validation, `pre_dispatch` and apply all
+	/// accept it, and the UTXO is reported as neither created nor spent. Through the older
+	/// versions the old verdict stands: validation admits it and apply rejects it, so the tx
+	/// sits in a block without paying.
+	#[test]
+	fn a_tx_spending_a_utxo_it_created_passes_validation_and_apply() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+		type TestIntent = Intent<TransactionSignature, ProofMarker, PedersenRandomness, DefaultDB>;
+		const NETWORK: &str = "undeployed";
+		const VALUE: u128 = 1_000_000;
+
+		// Zero fee prices: the fee-less transaction then balances under default strictness.
+		let mut params = INITIAL_PARAMETERS;
+		params.fee_prices.overall_price = FixedPoint::ZERO;
+		let state = LedgerState::with_genesis_settings(NETWORK, params, 0, MAX_SUPPLY, 0).unwrap();
+
+		let mut rng = StdRng::seed_from_u64(0x4e35_3200);
+		let sk = SigningKey::Schnorr(schnorr::SigningKey::sample(&mut rng));
+		let vk = sk.verifying_key();
+		let (r1, r2) = (rng.r#gen(), rng.r#gen());
+		let offer = |inputs: Vec<UtxoSpend>, outputs: Vec<UtxoOutput>| {
+			let (inputs, outputs, signatures) = (inputs.into(), outputs.into(), vec![].into());
+			Some(Sp::new(UnshieldedOffer { inputs, outputs, signatures }))
+		};
+		let intent = |binding_commitment, guaranteed_unshielded_offer| TestIntent {
+			guaranteed_unshielded_offer,
+			fallible_unshielded_offer: None,
+			actions: vec![].into(),
+			dust_actions: None,
+			ttl: Timestamp::from_secs(0),
+			binding_commitment,
+		};
+
+		let output = UtxoOutput { owner: vk.clone().into(), type_: NIGHT, value: VALUE };
+		let create = intent(r1, offer(vec![], vec![output]));
+		let y = UtxoSpend {
+			intent_hash: create.erase_proofs().erase_signatures().intent_hash(0),
+			output_no: 0,
+			owner: vk,
+			type_: NIGHT,
+			value: VALUE,
+		};
+		let spend = intent(r2, offer(vec![y], vec![])).sign(&mut rng, 2, &[sk], &[], &[]).unwrap();
+		let tx = LedgerTransaction::Standard(StandardTransaction {
+			network_id: NETWORK.into(),
+			intents: [(1, create), (2, spend)].into_iter().collect(),
+			guaranteed_coins: None,
+			fallible_coins: StorageHashMap::new(),
+			binding_randomness: r1 + r2,
+		})
+		.seal(rng.split());
+
+		let api = api::new();
+		let tx = api.tagged_serialize(&tx).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+		let mut test_ext = sp_io::TestExternalities::default();
+		let mut ext = test_ext.ext();
+		let bc = BlockContext::default;
+
+		// Mempool, `pre_dispatch` and apply, through the new host-fn versions or the old.
+		// A runtime binds one version and its `spec_version` keys the validation caches,
+		// so each arm runs under its own `runtime_version`.
+		let mut run = |new: bool| {
+			let (ext, rv) = (&mut ext, u32::from(new));
+			(
+				TestBridge::validate_transaction(ext, &key, &tx, bc(), rv, 1, false, new),
+				TestBridge::validate_guaranteed_execution(ext, &key, &tx, bc(), rv, false, new),
+				TestBridge::apply_transaction(ext, &key, &tx, bc(), true, new, rv, false),
+			)
+		};
+
+		let (validated, dispatched, applied) = run(true);
+		validated.expect("mempool validation accepts it");
+		dispatched.expect("pre_dispatch accepts it");
+		let applied = applied.expect("apply accepts it");
+		assert!(applied.all_applied);
+		assert!(applied.unshielded_utxos_created.is_empty(), "netted: not reported as created");
+		assert!(applied.unshielded_utxos_spent.is_empty(), "netted: not reported as spent");
+
+		let (validated, dispatched, applied) = run(false);
+		validated.expect("old versions do not check at validation");
+		dispatched.expect("old versions do not check at pre_dispatch");
+		assert_eq!(applied.err(), Some(LedgerApiError::HostApiError), "old verdict replays");
 	}
 }

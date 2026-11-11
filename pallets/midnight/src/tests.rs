@@ -420,6 +420,57 @@ fn test_get_mn_transaction_fee() {
 }
 
 #[test]
+fn test_get_decoded_transaction() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context.into());
+
+		let decoded = mock::Midnight::get_decoded_transaction(&tx).unwrap();
+
+		assert!(!decoded.operations.is_empty());
+	});
+}
+
+/// A real transaction whose untagged body is padded one byte past `transaction_byte_limit`.
+/// Genuine leading bytes pass the node-count check, so the byte limit is what rejects it.
+fn oversized_tx() -> Vec<u8> {
+	let (mut tx, _) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let (tag, _) = midnight_node_ledger::types::split_tag(&tx).expect("DEPLOY_TX is tagged");
+	tx.resize(tag.len() + (1 << 20) + 1, 0);
+	tx
+}
+
+#[test]
+fn test_get_decoded_transaction_rejects_oversized_tx() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_eq!(
+			mock::Midnight::get_decoded_transaction(&oversized_tx()).unwrap_err(),
+			LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			))
+		);
+	});
+}
+
+#[test]
+fn test_get_transaction_cost_rejects_oversized_tx() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_eq!(
+			mock::Midnight::get_transaction_cost(&oversized_tx()).unwrap_err(),
+			LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			))
+		);
+	});
+}
+
+#[test]
 fn test_get_ledger_parameters() {
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
@@ -744,4 +795,159 @@ fn with_cache_test_env(f: impl FnOnce(&mock::MetricsHandle)) {
 		f(&metrics);
 	});
 }
+
+/// Asserts the contract external consumers such as the indexer rely on: `StateKey` points at a
+/// `Ledger` with zero `block_fullness`, so it can be recomputed from the ledger state alone.
+fn assert_state_key_is_block_start() {
+	let state_key = StateKey::<Test>::get();
+	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(true));
+	assert_eq!(midnight_node_ledger::block_start_state_key(false, &state_key), Ok(state_key));
+}
+
+/// Guards the assertion above against passing vacuously: inside a block the fullness is non-zero.
+fn assert_state_key_is_mid_block() {
+	let state_key = StateKey::<Test>::get();
+	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(false));
+}
+
+type ApplySystemTransactionFn =
+	fn(
+		&[u8],
+		&[u8],
+		BlockContext,
+		u32,
+	) -> Result<midnight_node_ledger::types::SystemTransactionAppliedStateRoot, LedgerApiError>;
+
+/// Applies a system transaction the way `pallet-midnight-system` does for cNIGHT and the bridge.
+fn apply_system_transaction(apply: ApplySystemTransactionFn, tx: Vec<u8>) {
+	<mock::Midnight as LedgerStateProviderMut>::mut_ledger_state(|state_key| {
+		let block_context =
+			<mock::Midnight as midnight_primitives::LedgerBlockContextProvider>::get_block_context(
+			);
+		let runtime_version = <frame_system::Pallet<Test>>::runtime_version().spec_version;
+		apply(&state_key, &tx, block_context, runtime_version).map(|result| (result.state_root, ()))
+	})
+	.unwrap_or_else(|err| panic!("system transaction failed: {err:?}"));
+}
+
+#[test]
+fn state_key_is_block_start_at_genesis() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+		assert_state_key_is_block_start();
+	})
+}
+
+#[test]
+fn state_key_is_block_start_after_a_block_with_a_transaction() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		assert_ok!(send_mn_transaction(tx));
+		assert_state_key_is_mid_block();
+
+		mock::Midnight::on_finalize(1);
+		assert_state_key_is_block_start();
+	})
+}
+
+#[test]
+fn state_key_is_block_start_after_a_block_with_system_transactions() {
+	use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
+	use midnight_node_ledger_helpers::{DustPublicKey, Fr, serialize_untagged};
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let owner = serialize_untagged(&DustPublicKey(Fr::from(7u64))).unwrap();
+		let event =
+			LedgerApi::construct_cnight_generates_dust_event(1_000, &owner, 0, 0, [0u8; 32])
+				.unwrap();
+		let cnight_tx = LedgerApi::construct_cnight_generates_dust_system_tx(vec![event]).unwrap();
+		apply_system_transaction(LedgerApi::apply_cnight_system_transaction, cnight_tx);
+		assert_state_key_is_mid_block();
+
+		let bridge_txs = [
+			LedgerApi::construct_unlock_to_treasury_system_tx(0).unwrap(),
+			LedgerApi::construct_distribute_reserve_system_tx(0).unwrap(),
+			LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+				0, &[0u8; 32], [0u8; 32],
+			)
+			.unwrap(),
+		];
+		for tx in bridge_txs {
+			apply_system_transaction(LedgerApi::apply_bridge_system_transaction, tx);
+		}
+		assert_state_key_is_mid_block();
+
+		mock::Midnight::on_finalize(1);
+		assert_state_key_is_block_start();
+	})
+}
 // grcov-excl-stop
+
+/// A payload far inside the byte limit is still refused when it declares too many nodes.
+#[test]
+fn declared_node_count_is_capped() {
+	mock::new_test_ext().execute_with(|| {
+		// Declares 20,000 nodes in a few dozen bytes, so only the node cap can reject it.
+		let mut dense = b"midnight:transaction[v12](proof):".to_vec();
+		dense.extend(((20_000u32 << 2) | 0b10).to_le_bytes());
+
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&dense),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+
+		// A realistic count gets past the cap and fails on content instead.
+		let mut sparse = b"midnight:transaction[v12](proof):".to_vec();
+		sparse.extend(((43u32 << 2) | 0b10).to_le_bytes());
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&sparse),
+			Err(LedgerApiError::Deserialization(_))
+		);
+	});
+}
+
+/// The node cap must bind first, or the item cap would refuse transactions the ledger accepts
+/// and blocks can carry.
+#[test]
+fn the_node_cap_binds_before_the_item_cap() {
+	use sp_core::Get;
+
+	mock::new_test_ext().execute_with(|| {
+		let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
+		assert!(crate::MaxTransactionNodes::<Test>::get() / crate::NODES_PER_OPERATION < items);
+
+		let too_many = items * crate::NODES_PER_OPERATION;
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many),
+			crate::Error::<Test>::MaxTransactionNodesExceedsItemCap
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many - 1));
+	});
+}
+
+#[test]
+fn governance_can_lower_the_node_cap() {
+	mock::new_test_ext().execute_with(|| {
+		let mut tx = b"midnight:transaction[v12](proof):".to_vec();
+		tx.extend(((100u16 << 2) | 0b01).to_le_bytes());
+
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RuntimeOrigin::none(), 99),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), 99));
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&tx),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+	});
+}
