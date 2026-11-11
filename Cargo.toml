@@ -101,17 +101,17 @@ zswap-ledger-8 = { version = "=8.1.3", package = "midnight-zswap" }
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
 # storage, coin-structure and transient-crypto went semver-major in L9 so get their own
 # entries. The workspace `zkir` (midnight-zkir 2.2.0) serves both L8 and L9.
-mn-ledger-9 = { version = "=1.0.1", package = "midnight-ledger-v9" }
+mn-ledger-9 = { version = "=1.0.2", package = "midnight-ledger-v9" }
 onchain-runtime-ledger-9 = { version = "=4.0.1", package = "midnight-onchain-runtime" }
 # v9 side of the state translation table (matches `mn-ledger-9`'s `ContractState`
 # via onchain-runtime 4.0.1).
 onchain-state-ledger-9 = { version = "=4.0.1", package = "midnight-onchain-state" }
 # `state-translation` hosts the v8->v9 translation machinery (`TypedTranslationState`); the
 # v8 source side is read through `ledger-storage-ledger-8` above.
-ledger-storage-ledger-9 = { version = "=3.0.0", package = "midnight-storage", features = ["parity-db", "state-translation"] }
+ledger-storage-ledger-9 = { version = "=3.1.0", package = "midnight-storage", features = ["parity-db", "state-translation"] }
 zswap-ledger-9 = { version = "=9.0.1", package = "midnight-zswap" }
 coin-structure-ledger-9 = { version = "=3.0.1", package = "midnight-coin-structure" }
-transient-crypto-ledger-9 = { version = "=3.0.1", package = "midnight-transient-crypto" }
+transient-crypto-ledger-9 = { version = "=3.1.0", package = "midnight-transient-crypto" }
 
 # v8->v9 state translation table, maintained by the ledger team. Unpublished, so it is pinned
 # by git tag; the tag (commit 39cfd05) keeps the commit reachable whatever becomes of the PR
@@ -469,6 +469,15 @@ zeroize = { opt-level = 3 }
 [patch.crates-io]
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
 parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
+# Ledger 9.1.0.2-rc.0: the three crates it moves are not on crates.io yet, so each is pinned
+# to its per-crate `isolate` tag (path deps rewritten to version deps; a workspace tag is
+# mutable and drags the whole checkout along). Everything else in the ledger family stays on
+# crates.io and unifies onto these through its caret requirements. The 3.1.0 entries only
+# reach the ledger-9 side: ledger 8's 2.x requirements do not match and resolve to crates.io.
+# Drop these once 1.0.2 / 3.1.0 are published.
+midnight-ledger-v9        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.2-rc.0" }
+midnight-storage          = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-3.1.0-rc.0" }
+midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-3.1.0-rc.0" }
 
 [workspace.metadata.cargo-shear]
 ignored = []

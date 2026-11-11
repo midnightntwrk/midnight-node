@@ -37,22 +37,27 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn resolves_registry_dependency_to_bare_semver() {
-		// Ledger crates come from crates.io, so the locked source is the registry and the
-		// version carries no git annotation. (`build.rs::format_version` still annotates git
-		// deps with their tag and commit SHA; no workspace alias is git-pinned today.)
+	fn resolves_dependency_to_semver_with_git_identity_when_pinned() {
+		// A ledger alias flips between crates.io and a git tag from release to release (rc tags
+		// are git-pinned until published). A registry dep is a bare semver; a git dep also
+		// carries its tag and the locked commit SHA, because the tag is mutable and the SHA is
+		// the build identity.
 		for alias in ["mn-ledger-8", "mn-ledger-9"] {
 			let v =
 				find_dependency_version(alias).unwrap_or_else(|| panic!("{alias} should resolve"));
-			assert!(
-				!v.contains("tag:") && !v.contains("rev:"),
-				"{alias}: unexpected git annotation in {v:?}"
-			);
-			let parts: Vec<&str> = v.split('.').collect();
+			let semver = v.split_whitespace().next().unwrap_or_default();
+			let parts: Vec<&str> = semver.split('.').collect();
 			assert!(
 				parts.len() == 3 && parts.iter().all(|p| p.parse::<u64>().is_ok()),
-				"{alias}: expected a bare semver, got {v:?}"
+				"{alias}: expected a leading semver, got {v:?}"
 			);
+			if v == semver {
+				continue;
+			}
+			assert!(v.contains("tag:"), "{alias}: git dep without a tag annotation: {v:?}");
+			let rev = v.split("rev:").nth(1).map(|r| r.trim().trim_end_matches(')'));
+			let rev = rev.unwrap_or_else(|| panic!("{alias}: git dep without a rev: {v:?}"));
+			assert!(rev.len() >= 16, "{alias}: rev hash too short: {rev:?}");
 		}
 	}
 
