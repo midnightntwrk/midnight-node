@@ -1517,17 +1517,9 @@ where
 				},
 			};
 
-		// A strict hit means the previous dry-run ran against this exact state and tblock, so its
-		// result still holds. A revalidation hit does not: `well_formed` never checks
-		// applicability — no double-spend, balance or dust-fee check, that is
-		// `apply_guaranteed_only`'s job — so a transaction whose inputs the last block spent
-		// would otherwise survive in the pool until the producing node's `pre_dispatch` rejected
-		// it.
-		if matches!(cache_outcome, TxValidationCacheOutcome::StrictCacheHit) {
-			return Ok(cache_outcome);
-		}
-
-		// Dry-run the guaranteed segment against the current state.
+		// Dry-run even on a strict hit. A hit only vouches for `well_formed`, which never checks
+		// applicability (double-spends, balances, dust fees), and the entry is written before
+		// this dry-run, so it may belong to a transaction that failed it.
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
 		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)

@@ -689,6 +689,30 @@ fn test_revalidation_hit_still_dry_runs_guaranteed_execution() {
 	});
 }
 
+/// A strict hit must not short-circuit the dry-run either: the cache entry is written before the
+/// dry-run, so a rejected transaction resubmitted at the same state and tblock hits it strictly.
+#[test]
+fn test_strict_hit_still_dry_runs_guaranteed_execution() {
+	with_cache_test_env(|_metrics| {
+		let (deploy_tx, block_context_deploy) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context_deploy.into());
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: deploy_tx.clone() };
+		let validate = || {
+			<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+				TransactionSource::External,
+				&call,
+			)
+		};
+
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
+		assert!(validate().is_err(), "an applied transaction must be rejected");
+		assert!(validate().is_err(), "a rejected transaction must stay rejected on resubmission");
+	});
+}
+
 #[test]
 fn test_validation_cache_miss_after_runtime_version_change() {
 	with_cache_test_env(|metrics| {
