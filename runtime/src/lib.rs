@@ -709,7 +709,6 @@ impl pallet_midnight::Config for Runtime {
 	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
 	// admits, so the node cap binds first.
 	type MaxDecodedTxItems = ConstU32<4096>;
-	type MaxTransactionNodes = ConstU32<1024>;
 }
 
 /// Configure the pallet-midnight in pallets/midnight.
