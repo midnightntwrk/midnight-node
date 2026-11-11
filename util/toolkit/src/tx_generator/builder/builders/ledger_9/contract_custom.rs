@@ -620,7 +620,8 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 				let fallback_address = contract_intent
 					.find_contract_address()
 					.expect("Contract address should be set");
-				let chain_zswap_state = context.zswap_state().await;
+				// Per owner: each state holds only that contract's coins.
+				let mut chain_zswap_states = HashMap::new();
 				for encoded_input in zswap_state.inputs {
 					let coin_info: CoinInfo = (&encoded_input).into();
 					let (owner, nullifier) =
@@ -648,6 +649,10 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 							}),
 						);
 					} else {
+						if !chain_zswap_states.contains_key(&owner) {
+							chain_zswap_states
+								.insert(owner, context.contract_zswap_state(owner).await);
+						}
 						let segment =
 							shielded_segment(&effects, |e| claims_nullifier(e, nullifier));
 						offers.entry(segment).or_insert_with(empty_offer).inputs.push(Box::new(
@@ -655,7 +660,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 								encoded_qualified_info: encoded_input,
 								segment,
 								contract_address: owner,
-								chain_zswap_state: chain_zswap_state.clone(),
+								chain_zswap_state: chain_zswap_states[&owner].clone(),
 							},
 						));
 					}

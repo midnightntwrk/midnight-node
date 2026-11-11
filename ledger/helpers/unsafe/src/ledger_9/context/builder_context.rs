@@ -59,8 +59,11 @@ pub trait BuilderContext<D: DB + Clone>: Send + Sync + 'static {
 	/// retroactive DUST towards a self-funded DUST address registration fee.
 	async fn backs_dust_generation(&self, utxo: &Utxo) -> bool;
 
-	/// The global shielded (zswap) chain state.
-	async fn zswap_state(&self) -> ZswapChainState<D>;
+	/// The zswap chain state filtered to the coins owned by `address`
+	/// (`ZswapChainState::filter`); only `coin_coms` is populated. Filtering collapses the
+	/// other leaves without changing hashes, so the root and the contract's coin paths match
+	/// the full tree.
+	async fn contract_zswap_state(&self, address: ContractAddress) -> ZswapChainState<D>;
 
 	/// The on-chain state of the contract at `address`, if it exists.
 	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>>;

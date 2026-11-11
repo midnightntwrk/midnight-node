@@ -17,9 +17,9 @@
 //!
 //! [`IndexerContext::init_wallets`] drains the shielded / unshielded / dust subscriptions to the
 //! chain tip, and the wallet methods serve that synced state. Block context and ledger parameters
-//! are served from one tip snapshot (see [`IndexerContext::refresh_tip`]); contract state is
-//! queried from the indexer per call. [`BuilderContext::zswap_state`] and
-//! [`BuilderContext::backs_dust_generation`] are still `todo!()`.
+//! are served from one tip snapshot (see [`IndexerContext::refresh_tip`]); contract (zswap) state
+//! is queried from the indexer per call. [`BuilderContext::backs_dust_generation`] is still
+//! `todo!()`.
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -662,10 +662,16 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		todo!("indexer: dust generation status (ozgb-toolkit-indexer-dust-gen-flag)")
 	}
 
-	async fn zswap_state(&self) -> ZswapChainState<D> {
-		// The indexer can't serve the chain-wide zswap state; the only caller needs one contract's,
-		// so `ozgb-toolkit-indexer-contract-zswap` replaces this with `contract_zswap_state`.
-		todo!("indexer: no chain-wide zswap state")
+	async fn contract_zswap_state(&self, address: ContractAddress) -> ZswapChainState<D> {
+		let address_bytes = serialize_untagged(&address).expect("serialize contract address");
+		let state = self
+			.client
+			.contract_zswap_state(&address_bytes)
+			.await
+			.unwrap_or_else(|e| panic!("indexer: query contract zswap state for {address:?}: {e}"))
+			.unwrap_or_else(|| panic!("indexer: contract {address:?} not found at latest block"));
+		deserialize(&state[..])
+			.unwrap_or_else(|e| panic!("indexer: decode contract zswap state for {address:?}: {e}"))
 	}
 
 	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {
