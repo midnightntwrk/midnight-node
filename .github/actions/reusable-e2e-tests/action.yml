@@ -40,6 +40,15 @@ runs:
       with:
         artifact-pattern: ${{ inputs.images-artifact }}
 
+    - name: Pull test images
+      if: inputs.images-artifact == ''
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        NODE_IMAGE: ${{ inputs.node-image }}
+        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
+      run: bash "$ACTION_PATH/pull-images.sh" "$NODE_IMAGE" "$TOOLKIT_IMAGE"
+      shell: bash
+
     - name: Run JUST command
       env:
         JUST_COMMAND: ${{ inputs.just-command }}
