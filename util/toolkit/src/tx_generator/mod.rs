@@ -101,9 +101,7 @@ impl TxGenerator {
 	}
 
 	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
-		if dry_run {
-			midnight_ledger_unsafe_helpers::arena_db::ensure_default_storage();
-		} else {
+		if !dry_run {
 			crate::fetcher::ledger_arena::init_async(&src.ledger_state_db, &src.fetch_cache)
 				.await?;
 		}

@@ -58,7 +58,6 @@ fn persistent_arena() -> bool {
 fn setup_arena() {
 	static ARENA_DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
 	if !persistent_arena() {
-		midnight_ledger_unsafe_helpers::arena_db::ensure_default_storage();
 		return;
 	}
 	ARENA_DIR.get_or_init(|| {

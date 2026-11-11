@@ -140,23 +140,6 @@ pub struct Cli {
 }
 
 pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	// Commands reading a chain choose their ledger arena (on disk with a ledger state
-	// cache) when they build their source; the rest keep ledger objects in memory.
-	let reads_chain = matches!(
-		cmd,
-		Commands::GenerateTxs(_)
-			| Commands::GenerateIntent(_)
-			| Commands::GenerateSampleIntent(_)
-			| Commands::SendIntent(_)
-			| Commands::DustBalance(_)
-			| Commands::ShowWallet(_)
-			| Commands::ShowNightPools(_)
-			| Commands::ContractState(_)
-			| Commands::Fetch(_)
-	);
-	if !reads_chain {
-		midnight_ledger_unsafe_helpers::arena_db::ensure_default_storage();
-	}
 	match cmd {
 		Commands::GenerateTxs(args) => {
 			generate_txs::execute(args).await?;

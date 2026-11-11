@@ -91,17 +91,15 @@ static INIT: Mutex<()> = Mutex::new(());
 
 /// Choose this process's ledger arena: on disk under `ledger_state_db` when
 /// `PARITYDB_MODE` is on and the ledger state cache is enabled (same rule as
-/// `create_file_wallet_cache`), in memory otherwise. A no-op once an arena is installed.
+/// `create_file_wallet_cache`); otherwise the in-memory arena installed at start-up
+/// stays. A no-op once the on-disk arena is open.
 pub fn init(ledger_state_db: &str, fetch_cache: &FetchCacheConfig) -> Result<(), ArenaError> {
 	let _guard = INIT.lock().unwrap_or_else(|e| e.into_inner());
-	if arena_db::try_default_storage().is_some() {
-		return Ok(());
-	}
-	if !parity_db_mode()
+	if arena_db::is_persistent()
+		|| !parity_db_mode()
 		|| ledger_state_db.is_empty()
 		|| matches!(fetch_cache, FetchCacheConfig::InMemory)
 	{
-		arena_db::ensure_default_storage();
 		return Ok(());
 	}
 	open(Path::new(ledger_state_db))

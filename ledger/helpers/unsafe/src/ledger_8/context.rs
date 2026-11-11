@@ -187,7 +187,6 @@ impl<D: DB> Tagged for StorableLedgerState<D> {
 
 impl<D: DB + Clone> LedgerContext<D> {
 	pub fn new(network_id: impl Into<String>) -> Self {
-		crate::arena_db::ensure_default_storage();
 		Self {
 			ledger_state: Mutex::new(Sp::new(LedgerState::new(network_id))),
 			wallets: Mutex::new(HashMap::new()),

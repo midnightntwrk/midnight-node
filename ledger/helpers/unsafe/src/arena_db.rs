@@ -15,10 +15,9 @@
 //!
 //! [`ToolkitDB`] is the `DefaultDB` of both ledger generations in this crate. It is
 //! either in memory (the default, the same as the storage crate's `InMemoryDB`) or a
-//! ParityDB on disk, chosen once per process by whoever installs the default storage
-//! first: [`install_persistent_storage`] for a toolkit run with a ledger state cache,
-//! [`ensure_default_storage`] otherwise. A ledger object built before either call
-//! panics with the storage crate's "default storage is not set" message.
+//! ParityDB on disk. The in-memory arena is installed when the process starts, so any
+//! code can build ledger objects without setup; [`install_persistent_storage`] swaps
+//! it for the on-disk one, but only while it is still empty.
 
 use ledger_storage_ledger_8::{
 	DefaultHasher, Storage,
@@ -202,12 +201,19 @@ pub fn try_default_storage() -> Option<Arc<Storage<ToolkitDB>>> {
 	try_get_default_storage::<ToolkitDB>()
 }
 
-/// Install the in-memory arena unless an arena is already installed. Cheap to call
-/// repeatedly; every entry point that may build a ledger object first calls it.
+/// Install the in-memory arena unless an arena is already installed.
 pub fn ensure_default_storage() {
 	if try_default_storage().is_none() {
 		let _ = set_default_storage(Storage::<ToolkitDB>::default);
 	}
+}
+
+// The storage crate only creates a default storage on demand for its own `InMemoryDB`;
+// for any other `DB` an unset default panics. Installing it before `main` (and before
+// every test) means no entry point can forget to.
+#[ctor::ctor]
+fn install_in_memory_storage_at_startup() {
+	ensure_default_storage();
 }
 
 /// Roots taken only to keep nodes reachable until they are on disk (see
@@ -255,13 +261,21 @@ pub enum InstallError {
 	Open(#[from] std::io::Error),
 }
 
-/// Install a ParityDB in `dir` as the process-wide arena. Fails if an arena is
-/// already installed, since every ledger object built so far lives in that one.
+/// Install a ParityDB in `dir` as the process-wide arena, replacing the start-up
+/// in-memory one. Fails once the installed arena holds any object (or is already on
+/// disk): objects keep a handle to the arena they were built in, and mixing them into
+/// the on-disk state would leave nodes that never reach the database.
 pub fn install_persistent_storage(dir: &Path) -> Result<Arc<Storage<ToolkitDB>>, InstallError> {
-	if try_default_storage().is_some() {
+	static SWAP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+	let _guard = SWAP.lock().unwrap_or_else(|e| e.into_inner());
+	// Objects up to the storage crate's small-object limit are stored inline in their
+	// parent and carry their own data; only larger ones are tracked by the arena.
+	if is_persistent() || try_default_storage().is_some_and(|s| s.arena.size() > 0) {
 		return Err(InstallError::AlreadyInstalled { persistent: is_persistent() });
 	}
+	// Open before dropping the in-memory arena, so a failed open leaves it in place.
 	let db = ToolkitDB::open_disk(dir)?;
+	ledger_storage_ledger_8::storage::unsafe_drop_default_storage::<ToolkitDB>();
 	let storage = set_default_storage(|| Storage::new(PERSISTENT_CACHE_SIZE, db))
 		.map_err(|_| InstallError::AlreadyInstalled { persistent: is_persistent() })?;
 	PERSISTENT.store(true, Ordering::SeqCst);

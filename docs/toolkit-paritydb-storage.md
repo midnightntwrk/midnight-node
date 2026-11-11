@@ -46,18 +46,21 @@ not depend on the layout.
 
 The storage crate keeps one default storage per DB type per process. It creates an
 `InMemoryDB` one on first use, but panics for any other type that was not installed.
-So the arena is chosen once, before the first ledger object is built:
+So `midnight-ledger-unsafe-helpers` installs an in-memory `ToolkitDB` arena when the
+process starts (a `ctor`), before `main` and before any test. Every binary that links the
+crate, including tests and the e2e suite, can build ledger objects without setup.
 
-* `TxGenerator::source` (every command that reads a chain) and `fetch` call
-  `ledger_arena::init`. With `PARITYDB_MODE=true` (off by default) and a ledger state
-  cache (`--ledger-state-db` set and a fetch cache that is not `inmemory`, the same rule
-  as before) it installs a ParityDB in `<ledger-state-db>/ledger-arena`; otherwise the
-  in-memory arena, and cached states are saved as snapshot files as before.
-* `run_command` installs the in-memory arena for every other command.
-* `LedgerContext::new` (both generations) installs the in-memory arena if nothing is
-  installed yet, which covers library users and tests.
+`TxGenerator::source` (every command that reads a chain) and `fetch` call
+`ledger_arena::init`. With `PARITYDB_MODE=true` (off by default) and a ledger state cache
+(`--ledger-state-db` set and a fetch cache that is not `inmemory`, the same rule as
+before) it swaps the start-up arena for a ParityDB in `<ledger-state-db>/ledger-arena`;
+otherwise the in-memory arena stays, and cached states are saved as snapshot files as
+before.
 
-Installing a second arena fails; the first choice wins for the life of the process.
+The swap only happens while the in-memory arena is still empty. Ledger objects keep a
+handle to the arena they were built in, so an object built before the swap would never
+reach the database. If the arena already holds objects, or the on-disk arena is already
+open, `init` returns an error instead of silently staying in memory.
 
 ### Persisting roots and collecting garbage
 
