@@ -20,4 +20,7 @@ pub mod midnight_metadata_2_1_0 {}
 #[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_2.1.100.scale")]
 pub mod midnight_metadata_2_1_100 {}
 
-pub use midnight_metadata_2_1_100 as midnight_metadata_latest;
+#[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_2.1.200.scale")]
+pub mod midnight_metadata_2_1_200 {}
+
+pub use midnight_metadata_2_1_200 as midnight_metadata_latest;
