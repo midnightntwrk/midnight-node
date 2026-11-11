@@ -659,3 +659,40 @@ async fn inline_snapshot_is_imported_into_the_arena() {
 		.unwrap();
 	assert_contexts_equal("reopened", &reopened, &raw, &seeds);
 }
+
+/// A snapshot whose state cannot be restored is treated like a missing one: the run
+/// replays from genesis and ends with the same wallets as an uncached replay.
+#[tokio::test]
+async fn unrestorable_snapshot_replays_from_genesis() {
+	setup_arena();
+	let source = load_genesis_source();
+	let chain_id = source.chain_id().unwrap();
+	let tip = source.blocks.last().unwrap().number;
+	let seeds = vec![wallet_seed(0x08)];
+	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
+
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+	let mut damaged = wallet_state_cache::create_ledger_snapshot(&raw, tip).unwrap();
+	damaged.ledger_state_bytes.truncate(damaged.ledger_state_bytes.len() / 2);
+	backend.set_ledger_snapshot(chain_id, damaged).await;
+	let wallets: Vec<_> = seeds
+		.iter()
+		.map(|seed| {
+			wallet_state_cache::create_wallet_snapshot(
+				&raw,
+				seed,
+				UnshieldedSignatureScheme::Schnorr,
+				tip,
+			)
+			.unwrap()
+		})
+		.collect();
+	backend.set_wallet_states(chain_id, &wallets).await;
+
+	let replayed = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0)
+		.await
+		.into_ledger9()
+		.unwrap();
+	assert_contexts_equal("replayed", &replayed, &raw, &seeds);
+}

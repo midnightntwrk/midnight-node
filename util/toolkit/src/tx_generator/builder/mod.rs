@@ -1158,26 +1158,27 @@ fn inject_cached_wallets(
 
 /// Create the initial fork-aware context, either cold (genesis) or warm (snapshot restore).
 /// A ledger-8 restore injects and drains `cached` here (no mid-replay injection on ledger 8).
+/// A failed restore returns the reason; the caller falls back to a replay from genesis.
 async fn initialize_context(
 	received_tx: &SourceTransactions,
 	uncached_seeds: &[WalletSeed],
 	snapshot: Option<LedgerSnapshot>,
 	schemes: &WalletSchemes,
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
-) -> ForkAwareLedgerContext {
+) -> Result<ForkAwareLedgerContext, String> {
 	let Some(snapshot) = snapshot else {
 		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
 			.iter()
 			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
 			.collect();
-		return timed!(
+		return Ok(timed!(
 			"new_from_wallet_seeds (cold)",
 			ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
 				received_tx.ledger_version(),
 				&received_tx.network_id,
 				&seeds_with_schemes,
 			)
-		);
+		));
 	};
 
 	let start_height = snapshot.block_height;
@@ -1192,41 +1193,27 @@ async fn initialize_context(
 				"restore_context_from_ledger_snapshot_8",
 				wallet_state_cache::restore_context_from_ledger_snapshot_8(&snapshot)
 			)
-			.unwrap_or_else(|e| {
-				panic!(
-					"failed to restore ledger snapshot at height {}: {} — clear caches and retry",
-					start_height, e
-				)
-			});
-			for (seed, state) in cached.drain(..) {
+			.map_err(|e| format!("failed to restore the ledger snapshot: {e}"))?;
+			for (seed, state) in cached.iter() {
 				wallet_state_cache::inject_wallet_from_cache_8(
 					&ctx,
-					&state,
-					&seed,
-					scheme_of(schemes, &seed),
+					state,
+					seed,
+					scheme_of(schemes, seed),
 					&ledger_state,
 				)
-				.unwrap_or_else(|e| {
-					panic!(
-						"failed to inject wallet at height {}: {} — clear caches and retry",
-						start_height, e
-					)
-				});
+				.map_err(|e| format!("failed to inject a cached wallet: {e}"))?;
 			}
-			ForkAwareLedgerContext::Ledger8(ctx)
+			cached.clear();
+			Ok(ForkAwareLedgerContext::Ledger8(ctx))
 		},
 		LedgerVersion::Ledger9 => {
 			let (ctx, _, _) = timed!(
 				"restore_context_from_ledger_snapshot",
 				wallet_state_cache::restore_context_from_ledger_snapshot(&snapshot)
 			)
-			.unwrap_or_else(|e| {
-				panic!(
-					"failed to restore ledger snapshot at height {}: {} — clear caches and retry",
-					start_height, e
-				)
-			});
-			ForkAwareLedgerContext::Ledger9(ctx)
+			.map_err(|e| format!("failed to restore the ledger snapshot: {e}"))?;
+			Ok(ForkAwareLedgerContext::Ledger9(ctx))
 		},
 	}
 }
@@ -1730,14 +1717,36 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	}
 	// An inline snapshot restored into the on-disk arena is saved back as an arena root
 	// even when there is nothing to replay, so the next run opens it lazily.
-	let import_legacy_snapshot = ledger_arena::is_persistent()
+	let mut import_legacy_snapshot = ledger_arena::is_persistent()
 		&& snapshot.as_ref().is_some_and(|s| s.storage == SnapshotStorage::Inline);
 
-	// 3. Initialize context (cold genesis or warm snapshot restore).
+	// 3. Initialize context (cold genesis or warm snapshot restore). A snapshot that
+	//    fails to restore is treated like a missing one: replay from genesis.
+	let fork_ctx = match initialize_context(
+		received_tx,
+		&uncached_seeds,
+		snapshot,
+		schemes,
+		&mut cached,
+	)
+	.await
+	{
+		Ok(ctx) => ctx,
+		Err(reason) => {
+			log::warn!(
+				"ledger snapshot at block {} cannot be restored ({reason}); replaying from genesis",
+				restore_height.unwrap_or_default()
+			);
+			restore_height = None;
+			import_legacy_snapshot = false;
+			uncached_seeds.extend(cached.drain(..).map(|(seed, _)| seed));
+			initialize_context(received_tx, &uncached_seeds, None, schemes, &mut cached)
+				.await
+				.expect("a cold start has no snapshot to fail on")
+		},
+	};
 	let keyed_at_fork =
 		ecdsa_seeds_keyed_at_fork(&uncached_seeds, schemes, received_tx.ledger_version());
-	let fork_ctx =
-		initialize_context(received_tx, &uncached_seeds, snapshot, schemes, &mut cached).await;
 
 	// 4. Determine blocks to replay: everything after the restore height.
 	//
