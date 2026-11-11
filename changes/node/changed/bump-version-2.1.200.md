@@ -7,4 +7,4 @@ runtime release: the wasm changes in 2.1.200, so the runtime and metadata crates
 move with the node this time. The toolkit block fetcher gains a `2.1.200`
 runtime with its own subxt metadata and keeps decoding `2.1.100` blocks.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2421
