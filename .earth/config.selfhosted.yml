@@ -3,8 +3,8 @@
 # hash differs from the running daemon's restarts that daemon and cancels every
 # other job on it. The global block is a byte-for-byte copy of midnight-node's
 # .earthly/config.selfhosted.yml global block, the pool's main tenant, so the
-# v0.8.19 earth-buildkitd this job runs on is shared, not fought over. Change it
-# only in lockstep with that file. Mirrors midnightntwrk/season, the other tenant.
+# earth-buildkitd this job runs on is shared, not fought over. Change it only in
+# lockstep with that file, and pin the same earth version those jobs use (v0.8.18).
 global:
     buildkit_additional_args: ["-m", "180Gb"]
     tls_enabled: false
@@ -12,6 +12,6 @@ global:
     buildkit_max_parallelism: 16
     cache_size_pct: 20
     # The registry earth publishes for image export. "earth" and "earthly" both
-    # default to 127.0.0.1:8371, so earth-buildkitd (v0.8.19) cannot start beside
+    # default to 127.0.0.1:8371, so earth-buildkitd (v0.8.18) cannot start beside
     # the v0.8.16 earthly-buildkitd ("port is already allocated"). Move it.
     local_registry_host: "tcp://127.0.0.1:8381"
