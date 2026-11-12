@@ -501,6 +501,7 @@ async fn register_2_cardano_same_dust_address_production() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -683,6 +684,7 @@ async fn cnight_produces_dust() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -724,6 +726,7 @@ async fn cnight_produces_dust() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -873,6 +876,7 @@ async fn deregister_from_dust_production() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1473,6 +1477,7 @@ async fn register_twice_with_same_cardano_address() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1507,6 +1512,7 @@ async fn register_twice_with_same_cardano_address() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2,
@@ -1712,6 +1718,7 @@ async fn deregister_with_valid_cnight_utxo() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -1753,6 +1760,7 @@ async fn deregister_with_valid_cnight_utxo() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1879,6 +1887,7 @@ async fn deregister_first_mapping() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -1958,6 +1967,7 @@ async fn deregister_first_mapping() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2.clone(),
@@ -2046,6 +2056,7 @@ async fn deregister_first_mapping() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2.clone(),
@@ -2087,6 +2098,7 @@ async fn deregister_first_mapping() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2,
@@ -2189,6 +2201,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2268,6 +2281,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2454,6 +2468,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2503,6 +2518,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2679,6 +2695,7 @@ async fn spend_cnight_producing_dust() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2728,6 +2745,7 @@ async fn spend_cnight_producing_dust() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -3114,6 +3132,7 @@ async fn update_registration_to_new_dust_address_while_rotating_cnight_issue_212
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed,
@@ -3364,6 +3383,7 @@ async fn change_dust_address_via_deregister_and_register() {
             network: "undeployed".to_string(),
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+            no_fast_sync: false,
         },
         seed: SchemeSeed {
             seed,
