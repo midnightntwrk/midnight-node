@@ -29,7 +29,7 @@ use midnight_ledger_unsafe_helpers::{
 	DefaultDB, Sp, Storable,
 	mn_ledger_serialize::{Deserializable, GLOBAL_TAG, Serializable, Tagged},
 	mn_ledger_storage::{
-		arena::{ArenaHash, ArenaKey, TopoSortedNodes},
+		arena::{ArenaHash, ArenaKey, TopoSortedNode, TopoSortedNodes},
 		db::DB,
 		storable::{Loader, SMALL_OBJECT_LIMIT},
 		storage::default_storage,
@@ -99,12 +99,18 @@ fn compute_hash<'a>(
 	ArenaHash(hasher.finalize())
 }
 
+/// Nodes referenced by hash, resolved to their position in the serialized node list plus
+/// their child keys. Nodes small enough for a `Direct` key carry their own data and
+/// children, so they are never looked up and are left out.
+type RefNodes = HashMap<ArenaHash<Sha256>, (usize, Vec<ArenaKey<Sha256>>)>;
+
 /// A Loader that trusts the input data, skipping invariant checks.
 ///
 /// Used for reconstructing arena objects from our own cache where the data
 /// has already been validated at serialization time.
 struct TrustedCacheLoader<'a> {
-	node_map: &'a HashMap<ArenaHash<Sha256>, (Vec<u8>, Vec<ArenaKey<Sha256>>)>,
+	nodes: &'a [TopoSortedNode],
+	ref_nodes: &'a RefNodes,
 }
 
 impl Loader<DefaultDB> for TrustedCacheLoader<'_> {
@@ -123,23 +129,21 @@ impl Loader<DefaultDB> for TrustedCacheLoader<'_> {
 		// continue on. Same pattern rustc / regex / syn / swc use.
 		stacker::maybe_grow(STACKER_RED_ZONE, STACKER_GROW_SIZE, || match key {
 			ArenaKey::Direct(node) => {
-				let child_loader = TrustedCacheLoader { node_map: self.node_map };
 				let value = T::from_binary_repr(
 					&mut &node.data[..],
 					&mut node.children.iter().cloned(),
-					&child_loader,
+					self,
 				)?;
 				Ok(default_storage::<DefaultDB>().arena.alloc(value))
 			},
 			ArenaKey::Ref(hash) => {
-				let (data, children) = self.node_map.get(hash).ok_or_else(|| {
+				let (index, children) = self.ref_nodes.get(hash).ok_or_else(|| {
 					io::Error::new(io::ErrorKind::NotFound, "hash not found in trusted cache")
 				})?;
-				let child_loader = TrustedCacheLoader { node_map: self.node_map };
 				let value = T::from_binary_repr(
-					&mut data.as_slice(),
+					&mut self.nodes[*index].data.as_slice(),
 					&mut children.iter().cloned(),
-					&child_loader,
+					self,
 				)?;
 				Ok(default_storage::<DefaultDB>().arena.alloc(value))
 			},
@@ -182,7 +186,7 @@ pub fn trusted_deserialize_tagged<T: Storable<DefaultDB> + Deserializable + Tagg
 	let nodes: TopoSortedNodes = Deserializable::deserialize(&mut reader, 0)?;
 	log::debug!("Trusted deserialize: parsed {} nodes in {:?}", nodes.nodes.len(), start.elapsed());
 
-	// Step 3: Single-pass bottom-up ArenaKey computation + node_map construction.
+	// Step 3: Single-pass bottom-up ArenaKey computation.
 	// TopoSortedNodes are ordered so children precede parents, meaning we can
 	// resolve all keys in one forward pass (mirrors IrLoader's key_to_child_repr).
 	//
@@ -193,30 +197,43 @@ pub fn trusted_deserialize_tagged<T: Storable<DefaultDB> + Deserializable + Tagg
 	// `serialize_to_node_list_bounded` uses ArenaKey (not ArenaHash) as a map key
 	// for incoming_vertices. If the same logical node appears as both Ref(h) and
 	// Direct(d) with d.hash == h, the topological sort panics.
+	//
+	// Only `Ref` nodes are indexed, by position rather than by a copy of their
+	// data: a real snapshot has millions of nodes, nearly all of them small enough
+	// to travel as `Direct` keys that already carry their data and children.
 	let mut node_repr: Vec<ArenaKey<Sha256>> = Vec::with_capacity(nodes.nodes.len());
-	let mut node_map: HashMap<ArenaHash<Sha256>, (Vec<u8>, Vec<ArenaKey<Sha256>>)> =
-		HashMap::with_capacity(nodes.nodes.len());
+	let mut ref_nodes: RefNodes = HashMap::new();
 
-	for node in &nodes.nodes {
+	let last = nodes
+		.nodes
+		.len()
+		.checked_sub(1)
+		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty node list"))?;
+	for (index, node) in nodes.nodes.iter().enumerate() {
 		let child_keys: Vec<ArenaKey<Sha256>> =
 			node.child_indices.iter().map(|&i| node_repr[i as usize].clone()).collect();
 
 		let repr = child_from_reimpl(&node.data, &child_keys);
-		node_map.insert(repr.hash().clone(), (node.data.clone(), child_keys));
+		// The root is always fetched by hash, whatever its size.
+		if matches!(repr, ArenaKey::Ref(_)) || index == last {
+			ref_nodes.insert(repr.hash().clone(), (index, child_keys));
+		}
 		node_repr.push(repr);
 	}
 
-	log::debug!("Trusted deserialize: hashed {} nodes in {:?}", node_repr.len(), start.elapsed());
+	log::debug!(
+		"Trusted deserialize: hashed {} nodes ({} referenced by hash) in {:?}",
+		node_repr.len(),
+		ref_nodes.len(),
+		start.elapsed()
+	);
 
-	// Step 4: Reconstruct root using TrustedCacheLoader
-	let root_hash = node_repr
-		.last()
-		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "empty node list"))?
-		.hash()
-		.clone();
-	let root_key = ArenaKey::Ref(root_hash);
+	// Step 4: Reconstruct root using TrustedCacheLoader. The per-node keys are no
+	// longer needed: `Direct` keys live inside their parents, `Ref` keys in `ref_nodes`.
+	let root_key = ArenaKey::Ref(node_repr[last].hash().clone());
+	drop(node_repr);
 
-	let loader = TrustedCacheLoader { node_map: &node_map };
+	let loader = TrustedCacheLoader { nodes: &nodes.nodes, ref_nodes: &ref_nodes };
 	let sp: Sp<T, DefaultDB> = loader.get(&root_key)?;
 
 	log::info!(

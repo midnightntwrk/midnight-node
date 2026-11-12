@@ -21,13 +21,13 @@ use crate::ledger_9::{
 	WellFormedStrictness, ZswapChainState, clamp_and_normalize, compute_overall_fullness,
 	default_storage, deserialize,
 };
-use crate::replay_stats::{FAILED_TXS, PARTIALLY_FAILED_TXS};
+use crate::replay_stats::{self, FAILED_TXS, PARTIALLY_FAILED_TXS};
 use hex::encode as hex_encode;
 use lazy_static::lazy_static;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Mutex,
-	time::{SystemTime, UNIX_EPOCH},
+	time::{Instant, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
@@ -183,6 +183,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			}
 		}
 
+		let t_post_block = Instant::now();
 		let mut latest_ledger_state = self
 			.ledger_state
 			.lock()
@@ -196,6 +197,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
 				.map_err(|e| LedgerContextError::BlockUpdate(format!("{e:?}")))?,
 		);
+		replay_stats::record(&replay_stats::POST_BLOCK_NS, t_post_block);
+		replay_stats::BLOCKS_APPLIED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
 		Ok(all_events)
 	}
@@ -212,6 +215,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			events.len(),
 			self.wallets.lock().expect("lock").len(),
 		);
+		let t = Instant::now();
 		self.wallets
 			.lock()
 			.expect("Error locking `LedgerContext` wallets")
@@ -221,6 +225,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 					.update_dust_from_tx(events)
 					.unwrap_or_else(|e| panic!("failed to replay dust events: {e}"));
 			});
+		replay_stats::record(&replay_stats::DUST_EVENTS_NS, t);
 	}
 
 	pub fn update_dust_from_block(&self, block_context: &BlockContext)
@@ -313,7 +318,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 			.lock()
 			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		if let Some(expected_root) = state_root {
-			match Self::compute_state_root(&*latest_ledger_state) {
+			let t = Instant::now();
+			let actual_root = Self::compute_state_root(&*latest_ledger_state);
+			replay_stats::record(&replay_stats::STATE_ROOT_NS, t);
+			match actual_root {
 				Some(actual_root) if actual_root != *expected_root => {
 					return Err(LedgerContextError::StateRootMismatch {
 						expected: hex_encode(expected_root),
@@ -417,6 +425,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 				// the ledger has no strictness knob for zswap offer proofs.
 				let ref_state = &tx_context.ref_state;
 				let tblock = tx_context.block_context.tblock;
+				let t = Instant::now();
 				let valid_tx: VerifiedTransaction<_> = if strictness.verify_native_proofs {
 					tx.well_formed(ref_state, strictness, tblock)
 				} else {
@@ -429,8 +438,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
 					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
+				replay_stats::record(&replay_stats::TX_WELL_FORMED_NS, t);
 
+				let t = Instant::now();
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
+				replay_stats::record(&replay_stats::TX_APPLY_NS, t);
 				let offers = Self::successful_shielded_offers(tx, &result);
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
@@ -454,7 +466,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 			},
 			SerdeTransaction::System(tx) => {
 				let cost = tx.cost(&tx_context.ref_state.parameters);
-				match tx_context.ref_state.apply_system_tx(tx, block_context.tblock) {
+				let t = Instant::now();
+				let applied = tx_context.ref_state.apply_system_tx(tx, block_context.tblock);
+				replay_stats::record(&replay_stats::TX_APPLY_NS, t);
+				match applied {
 					Ok((new_state, events)) => (new_state, vec![], events, cost),
 					Err(err) => {
 						let hash = hex::encode(tx.transaction_hash().0.0);
@@ -467,8 +482,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 			},
 		};
 
-		{
+		// Most replayed transactions carry no shielded offer (system transactions,
+		// unshielded transfers); dispatching every wallet onto the thread pool for
+		// nothing is a measurable share of replay time.
+		if !offers.is_empty() {
 			use rayon::prelude::*;
+			let t = Instant::now();
 			self.wallets
 				.lock()
 				.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e:?}")))?
@@ -476,9 +495,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 				.for_each(|(_, wallet)| {
 					wallet.update_state_from_offers(&offers);
 				});
+			replay_stats::record(&replay_stats::WALLET_OFFERS_NS, t);
 		}
 
+		let t = Instant::now();
 		*ledger_state_guard = Sp::new(new_ledger_state);
+		replay_stats::record(&replay_stats::STATE_ALLOC_NS, t);
+		replay_stats::TXS_APPLIED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 		Ok((events, cost))
 	}
 

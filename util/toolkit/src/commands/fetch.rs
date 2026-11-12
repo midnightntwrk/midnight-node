@@ -39,6 +39,10 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 
 	let ledger_state_db = src.ledger_state_db.clone();
 	let fetch_cache = src.fetch_cache.clone();
+	// Only a seeded fetch builds ledger state, so only it opens (and locks) the arena.
+	if seeds.is_some() {
+		crate::fetcher::ledger_arena::init_async(&ledger_state_db, &fetch_cache).await?;
+	}
 	let replay_checkpoint_interval = src.replay_checkpoint_interval;
 
 	let start = std::time::Instant::now();
@@ -53,7 +57,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 	)
 	.get_txs()
 	.await?;
-	log::info!("fetched {} blocks in {:.3} s", txs.blocks.len(), start.elapsed().as_secs_f32());
+	log::info!("fetched {} blocks in {:.3} s", txs.block_count(), start.elapsed().as_secs_f32());
 
 	if let Some(seeds) = seeds {
 		let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);

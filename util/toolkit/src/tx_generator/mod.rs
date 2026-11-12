@@ -101,6 +101,10 @@ impl TxGenerator {
 	}
 
 	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
+		if !dry_run {
+			crate::fetcher::ledger_arena::init_async(&src.ledger_state_db, &src.fetch_cache)
+				.await?;
+		}
 		let base: Box<dyn GetTxs> = if let Some(ref src_files) = src.src_files {
 			if dry_run {
 				log::info!("Dry-run: Source transactions from file(s): {:?}", &src_files);

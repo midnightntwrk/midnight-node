@@ -147,7 +147,8 @@ pub struct Source {
 	/// Save a wallet-cache checkpoint every N replayed blocks during long ledger
 	/// replays, so an interrupted run resumes from the last checkpoint instead of
 	/// starting over (a full replay of a long chain can take tens of minutes).
-	/// 0 disables checkpointing. Requires the wallet state cache
+	/// 0 disables checkpointing, except with `PARITYDB_MODE=true`, where it means a
+	/// checkpoint every 10,000 blocks. Requires the wallet state cache
 	/// (`--ledger-state-db`) to be enabled.
 	#[arg(long, global = true, default_value = "0", env = "MN_REPLAY_CHECKPOINT_INTERVAL")]
 	pub replay_checkpoint_interval: u64,
@@ -198,6 +199,8 @@ pub enum SourceError {
 	NetworkIdFetchError(#[from] subxt::Error),
 	#[error("invalid source args")]
 	InvalidSourceArgs(Source),
+	#[error("failed to open the ledger state db: {0}")]
+	LedgerArena(#[from] crate::fetcher::ledger_arena::ArenaError),
 	#[error(
 		"toolkit only supports a single .json transaction as input - use `--to-bytes` and `.mn` format for multiple txs"
 	)]
@@ -322,7 +325,7 @@ impl GetTxs for GetTxsFromUrl {
 		&self,
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let t = std::time::Instant::now();
-		let blocks = match &self.fetch_cache_config {
+		let cached = match &self.fetch_cache_config {
 			FetchCacheConfig::InMemory => {
 				fetch_all(
 					&self.rpc_url,
@@ -361,9 +364,6 @@ impl GetTxs for GetTxsFromUrl {
 		let network_id = client.get_network_id().await?;
 		log::debug!("[perf] get_network_id took {:?}", t.elapsed());
 
-		let t = std::time::Instant::now();
-		let source_txs = SourceTransactions::from_blocks(blocks, self.dust_warp, Some(network_id));
-		log::debug!("[perf] SourceTransactions::from_blocks took {:?}", t.elapsed());
-		Ok(source_txs)
+		Ok(SourceTransactions::from_cache(cached, self.dust_warp, network_id))
 	}
 }

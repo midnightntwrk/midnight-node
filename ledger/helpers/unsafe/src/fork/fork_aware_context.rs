@@ -216,11 +216,27 @@ pub fn skews_tblock(spec_version: u32) -> bool {
 	(FIRST_LEDGER_8..FIRST_UNCORRECTED).contains(&spec_version)
 }
 
-/// Deserialize raw transactions and apply to a Ledger8 context, returning dust events.
-pub fn apply_block_8(
-	ctx: &crate::ledger_8::context::LedgerContext<Db8>,
-	block: &RawBlockData,
-) -> Vec<crate::ledger_8::Event<Db8>> {
+/// A block's transactions decoded for a ledger-8 context.
+pub type DecodedTxs8 = Vec<
+	crate::ledger_8::SerdeTransaction<
+		crate::ledger_8::Signature,
+		crate::ledger_8::ProofMarker,
+		Db8,
+	>,
+>;
+
+/// A block's transactions decoded for a ledger-9 context.
+pub type DecodedTxs9 = Vec<
+	crate::ledger_9::SerdeTransaction<
+		crate::ledger_9::Signature,
+		crate::ledger_9::ProofMarker,
+		Db9,
+	>,
+>;
+
+/// Decode a block's raw transactions as ledger 8. Independent of ledger state, so
+/// blocks can be decoded in parallel ahead of a sequential replay; callers time it.
+pub fn decode_block_8(block: &RawBlockData) -> DecodedTxs8 {
 	use crate::ledger_8::{
 		SerdeTransaction, SystemTransaction, midnight_serialize::tagged_deserialize,
 	};
@@ -231,41 +247,27 @@ pub fn apply_block_8(
 		crate::ledger_8::PureGeneratorPedersen,
 		Db8,
 	>;
-	type SerdeTx8 = SerdeTransaction<crate::ledger_8::Signature, crate::ledger_8::ProofMarker, Db8>;
 
-	let mut transactions: Vec<SerdeTx8> = Vec::new();
+	let mut transactions = Vec::with_capacity(block.transactions.len());
 	for raw_tx in &block.transactions {
 		match raw_tx {
 			RawTransaction::Midnight(bytes) => {
 				let tx: MnTx8 = tagged_deserialize(&mut bytes.as_slice())
 					.expect("failed to deserialize ledger 8 midnight transaction");
-				transactions.push(SerdeTx8::Midnight(tx));
+				transactions.push(SerdeTransaction::Midnight(tx));
 			},
 			RawTransaction::System(bytes) => {
 				let tx: SystemTransaction = tagged_deserialize(&mut bytes.as_slice())
 					.expect("failed to deserialize ledger 8 system transaction");
-				transactions.push(SerdeTx8::System(tx));
+				transactions.push(SerdeTransaction::System(tx));
 			},
 		}
 	}
-
-	let block_context = block_context_from_raw_8(block);
-
-	ctx.update_from_block(
-		&transactions,
-		&block_context,
-		block.state_root.as_ref(),
-		block.state.as_ref(),
-		skews_tblock(block.spec_version),
-	)
-	.expect("failed to update ledger 8 context from block")
+	transactions
 }
 
-/// Deserialize raw transactions and apply to a Ledger9 context, returning dust events.
-pub fn apply_block_9(
-	ctx: &crate::ledger_9::context::LedgerContext<Db9>,
-	block: &RawBlockData,
-) -> Vec<crate::ledger_9::Event<Db9>> {
+/// Decode a block's raw transactions as ledger 9; see [`decode_block_8`].
+pub fn decode_block_9(block: &RawBlockData) -> DecodedTxs9 {
 	use crate::ledger_9::{
 		SerdeTransaction, SystemTransaction, midnight_serialize::tagged_deserialize,
 	};
@@ -276,35 +278,82 @@ pub fn apply_block_9(
 		crate::ledger_9::PureGeneratorPedersen,
 		Db9,
 	>;
-	type SerdeTx9 = SerdeTransaction<crate::ledger_9::Signature, crate::ledger_9::ProofMarker, Db9>;
 
-	let mut transactions: Vec<SerdeTx9> = Vec::new();
+	let mut transactions = Vec::with_capacity(block.transactions.len());
 	for raw_tx in &block.transactions {
 		match raw_tx {
 			RawTransaction::Midnight(bytes) => {
 				let tx: MnTx9 = tagged_deserialize(&mut bytes.as_slice())
 					.expect("failed to deserialize ledger 9 midnight transaction");
-				transactions.push(SerdeTx9::Midnight(tx));
+				transactions.push(SerdeTransaction::Midnight(tx));
 			},
 			RawTransaction::System(bytes) => {
 				let tx: SystemTransaction = tagged_deserialize(&mut bytes.as_slice())
 					.expect("failed to deserialize ledger 9 system transaction");
-				transactions.push(SerdeTx9::System(tx));
+				transactions.push(SerdeTransaction::System(tx));
 			},
 		}
 	}
+	transactions
+}
 
+/// Apply a block's already decoded transactions to a Ledger8 context, returning dust events.
+pub fn apply_decoded_block_8(
+	ctx: &crate::ledger_8::context::LedgerContext<Db8>,
+	block: &RawBlockData,
+	transactions: &DecodedTxs8,
+) -> Vec<crate::ledger_8::Event<Db8>> {
+	let block_context = block_context_from_raw_8(block);
+
+	ctx.update_from_block(
+		transactions,
+		&block_context,
+		block.state_root.as_ref(),
+		block.state.as_ref(),
+		skews_tblock(block.spec_version),
+	)
+	.expect("failed to update ledger 8 context from block")
+}
+
+/// Apply a block's already decoded transactions to a Ledger9 context, returning dust events.
+pub fn apply_decoded_block_9(
+	ctx: &crate::ledger_9::context::LedgerContext<Db9>,
+	block: &RawBlockData,
+	transactions: &DecodedTxs9,
+) -> Vec<crate::ledger_9::Event<Db9>> {
 	let block_context = block_context_from_raw_9(block);
 
 	// No `skew_tblock` counterpart here: `Ledger9Bridge`'s host functions never skew, because
 	// every ledger-9 block was produced after the upgrade that closed the loophole.
 	ctx.update_from_block(
-		&transactions,
+		transactions,
 		&block_context,
 		block.state_root.as_ref(),
 		block.state.as_ref(),
 	)
 	.expect("failed to update ledger 9 context from block")
+}
+
+/// Deserialize raw transactions and apply to a Ledger8 context, returning dust events.
+pub fn apply_block_8(
+	ctx: &crate::ledger_8::context::LedgerContext<Db8>,
+	block: &RawBlockData,
+) -> Vec<crate::ledger_8::Event<Db8>> {
+	let t = std::time::Instant::now();
+	let transactions = decode_block_8(block);
+	crate::replay_stats::record(&crate::replay_stats::TX_DESERIALIZE_NS, t);
+	apply_decoded_block_8(ctx, block, &transactions)
+}
+
+/// Deserialize raw transactions and apply to a Ledger9 context, returning dust events.
+pub fn apply_block_9(
+	ctx: &crate::ledger_9::context::LedgerContext<Db9>,
+	block: &RawBlockData,
+) -> Vec<crate::ledger_9::Event<Db9>> {
+	let t = std::time::Instant::now();
+	let transactions = decode_block_9(block);
+	crate::replay_stats::record(&crate::replay_stats::TX_DESERIALIZE_NS, t);
+	apply_decoded_block_9(ctx, block, &transactions)
 }
 
 #[cfg(test)]
