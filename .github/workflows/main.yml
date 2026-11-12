@@ -90,6 +90,7 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: ${{ runner.environment == 'self-hosted' }}
           ref: ${{ needs.plan-amd64.outputs.sha }}
 
@@ -115,6 +116,7 @@ jobs:
       - name: Checkout node repo (for install-season action)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           path: ./midnight-node-ci
 
       - name: Install Season
@@ -335,6 +337,7 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
           ref: ${{ github.event.inputs.branch }}
 
@@ -600,6 +603,7 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.event.inputs.branch }}
           submodules: true
 

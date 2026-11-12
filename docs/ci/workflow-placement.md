@@ -75,3 +75,15 @@ preflight success does not prove the multi-hour observation suite will pass.
 Set `CI_CACHE_TRUSTED=false` to restore clean compiler directories. Revert a runner
 expression independently if a hosted workload proves too large. Preparation can be
 removed without changing test coverage: its consumer compiles inline.
+
+## Security review
+
+Checkout credentials are removed after fetching in the changed PR/release/bot
+workflows. Rebuild bots pass branch names as environment data to GitHub's commit
+API, rather than interpolating them into JavaScript. Metadata RPC connects only to
+an explicit `127.0.0.1` HTTP port and does not follow redirects.
+
+GitHub's recommended `$/` self-repository action references require a compatible
+workflow validator. Actionlint 1.7.12 rejects that syntax as a missing action ref;
+retain workspace-relative references until the validator supports the migration.
+This recommendation remains open rather than disabling the validation check.

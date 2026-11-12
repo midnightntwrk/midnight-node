@@ -3,10 +3,11 @@
 # Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 
+import http.client
 import json
 from pathlib import Path
 import sys
-import urllib.request
+from urllib.parse import urlsplit
 
 
 def compact(data):
@@ -35,11 +36,22 @@ def decode_metadata(data, version):
 
 
 def rpc(url, method, data):
-    request = urllib.request.Request(url, json.dumps({
-        'jsonrpc': '2.0', 'id': 1, 'method': 'state_call', 'params': [method, data],
-    }).encode(), {'Content-Type': 'application/json'})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    endpoint = urlsplit(url)
+    if (endpoint.scheme != 'http' or endpoint.hostname != '127.0.0.1'
+            or endpoint.username or endpoint.password or endpoint.path not in ('', '/')
+            or endpoint.query or endpoint.fragment or endpoint.port is None):
+        raise ValueError('Metadata RPC requires an explicit loopback HTTP port')
+    connection = http.client.HTTPConnection('127.0.0.1', endpoint.port, timeout=30)
+    try:
+        connection.request('POST', '/', json.dumps({
+            'jsonrpc': '2.0', 'id': 1, 'method': 'state_call', 'params': [method, data],
+        }), {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ValueError(f'Metadata RPC returned HTTP {response.status}')
         result = json.load(response)
+    finally:
+        connection.close()
     value = result.get('result')
     if not isinstance(value, str) or not value.startswith('0x'):
         raise ValueError(f'{method} did not return encoded data')

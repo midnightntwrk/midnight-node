@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -156,6 +157,27 @@ class CompilerCacheTests(unittest.TestCase):
 
 
 class MetadataTests(unittest.TestCase):
+    def test_rpc_rejects_non_loopback_urls_before_connecting(self):
+        for url in ['file:///etc/passwd', 'https://127.0.0.1:1234', 'http://example.com:1234',
+                    'http://127.0.0.1', 'http://user@127.0.0.1:1234',
+                    'http://127.0.0.1:1234/path', 'http://127.0.0.1:1234?url=file:///x']:
+            with self.subTest(url=url), patch.object(fetch_metadata.http.client, 'HTTPConnection') as connection:
+                with self.assertRaises(ValueError):
+                    fetch_metadata.rpc(url, 'method', '0x')
+                connection.assert_not_called()
+
+    def test_rpc_loopback_response_and_redirect_rejection(self):
+        with patch.object(fetch_metadata.http.client, 'HTTPConnection') as connection:
+            response = io.BytesIO(b'{"result":"0x1234"}')
+            response.status = 200
+            connection.return_value.getresponse.return_value = response
+            self.assertEqual(fetch_metadata.rpc('http://127.0.0.1:1234', 'method', '0x'), b'\x12\x34')
+            connection.assert_called_once_with('127.0.0.1', 1234, timeout=30)
+            response.status = 302
+            with self.assertRaises(ValueError):
+                fetch_metadata.rpc('http://127.0.0.1:1234', 'method', '0x')
+            self.assertEqual(connection.return_value.close.call_count, 2)
+
     def test_versioned_payload_and_length_validation(self):
         self.assertEqual(fetch_metadata.decode_metadata(bytes.fromhex('01146d65746110'), 16), b'meta\x10')
         for encoded in ['00', '01', '01146d6574610e', '01146d6574611000']:

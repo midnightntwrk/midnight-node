@@ -87,6 +87,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
           ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -120,6 +121,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ needs.plan.outputs.sha }}
           submodules: ${{ runner.environment == 'self-hosted' }}
           fetch-depth: 0
@@ -159,6 +161,8 @@ jobs:
       - name: Commit and push changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: commit
+        env:
+          PR_BRANCH: ${{ needs.plan.outputs.ref }}
         with:
           script: |
             const fs = require('fs');
@@ -210,8 +214,8 @@ jobs:
             `, {
               input: {
                 branch: {
-                  repositoryNameWithOwner: '${{ github.repository }}',
-                  branchName: '${{ needs.plan.outputs.ref }}'
+                  repositoryNameWithOwner: process.env.GITHUB_REPOSITORY,
+                  branchName: process.env.PR_BRANCH
                 },
                 message: {
                   headline: 'chore: rebuild metadata'

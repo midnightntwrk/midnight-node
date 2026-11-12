@@ -203,6 +203,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - name: Get current commit SHA
@@ -472,6 +473,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - name: Login to GHCR
@@ -564,6 +566,8 @@ jobs:
       - name: Checkout node repository
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Login to GHCR
         if: needs.scope.outputs.product == 'true'
@@ -652,6 +656,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - id: guard
@@ -698,6 +703,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - id: guard
@@ -778,6 +784,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - id: guard
@@ -831,6 +838,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - id: guard
@@ -957,6 +965,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -991,6 +1000,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1025,6 +1035,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1059,6 +1070,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1093,6 +1105,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1127,6 +1140,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1250,6 +1264,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1284,6 +1299,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1315,6 +1331,8 @@ jobs:
       - name: Checkout
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Login to GHCR
         if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
@@ -1351,6 +1369,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
       - id: guard
         if: needs.scope.outputs.product == 'true'
@@ -1391,6 +1410,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - id: indexer-tests
@@ -1573,6 +1593,7 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - id: guard
