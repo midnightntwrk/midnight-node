@@ -147,7 +147,8 @@ pub struct Source {
 	/// Save a wallet-cache checkpoint every N replayed blocks during long ledger
 	/// replays, so an interrupted run resumes from the last checkpoint instead of
 	/// starting over (a full replay of a long chain can take tens of minutes).
-	/// 0 disables checkpointing. Requires the wallet state cache
+	/// 0 disables checkpointing, except with `PARITYDB_MODE=true`, where it means a
+	/// checkpoint every 10,000 blocks. Requires the wallet state cache
 	/// (`--ledger-state-db`) to be enabled.
 	#[arg(long, global = true, default_value = "0", env = "MN_REPLAY_CHECKPOINT_INTERVAL")]
 	pub replay_checkpoint_interval: u64,

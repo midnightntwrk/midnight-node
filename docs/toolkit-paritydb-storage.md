@@ -50,8 +50,9 @@ So `midnight-ledger-unsafe-helpers` installs an in-memory `ToolkitDB` arena when
 process starts (a `ctor`), before `main` and before any test. Every binary that links the
 crate, including tests and the e2e suite, can build ledger objects without setup.
 
-`TxGenerator::source` (every command that reads a chain) and `fetch` call
-`ledger_arena::init`. With `PARITYDB_MODE=true` (off by default) and a ledger state cache
+`TxGenerator::source` (every command that reads a chain) and a `fetch` with seeds
+call `ledger_arena::init`; a `fetch` without seeds builds no ledger state, so it
+neither opens nor locks the arena. With `PARITYDB_MODE=true` (off by default) and a ledger state cache
 (`--ledger-state-db` set and a fetch cache that is not `inmemory`, the same rule as
 before) it swaps the start-up arena for a ParityDB in `<ledger-state-db>/ledger-arena`;
 otherwise the in-memory arena stays, and cached states are saved as snapshot files as
@@ -91,7 +92,8 @@ memory.
 
 Not every root count comes from a snapshot: the storage crate's `ChildRef` (used inside
 ledger state) takes a root reference while it is alive in memory and drops it when it is
-dropped. References alive at a process's last flush are never dropped on disk. So when a
+dropped, and the 8->9 fork persists its translated state without ever releasing it.
+References alive at a process's last flush are never dropped on disk. So when a
 process opens the arena (holding the lock, before it loads anything) it reconciles: every
 root count is set to the number of version-3 snapshot files that name it, across all
 chains in the directory. This also cleans up after a crash between steps 1 and 2. On the
