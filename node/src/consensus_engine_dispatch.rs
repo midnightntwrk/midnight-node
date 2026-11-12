@@ -104,8 +104,7 @@ fn route<Block: BlockT>(header: &Block::Header) -> ActiveEngine {
 /// Called by [`EngineDispatchVerifier`] right before a block is handed to the BABE verifier (see the
 /// module docs). Implementations must be idempotent, cheap when the tree already covers `parent`,
 /// and must refuse to seed at a block whose state has not flipped to BABE — the parent is taken from
-/// a peer-supplied header, so this is what stops a peer from resetting the tree at an arbitrary
-/// block.
+/// a peer-supplied header, so this is what stops a peer from adding epochs at an arbitrary block.
 pub trait EpochSeeder<Block: BlockT>: Send + Sync {
 	/// Best-effort: `parent` is not imported when the child is imported with its state.
 	fn ensure_seeded_for_child_of(&self, parent: Block::Hash);
