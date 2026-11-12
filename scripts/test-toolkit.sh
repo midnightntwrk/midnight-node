@@ -27,6 +27,7 @@ if [ "${RUN_COMPACT_CONTRACT_TESTS:-false}" = "true" ]; then
 fi
 
 if [ -f /opt/toolkit-tests.tar.zst ]; then
+    mkdir -p /tmp/toolkit-tests
     MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest run --profile ci \
         --archive-file /opt/toolkit-tests.tar.zst --workspace-remap "$PWD" \
         --extract-to /tmp/toolkit-tests

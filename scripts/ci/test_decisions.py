@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import scope
+import fetch_metadata
 import trusted_cache
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -152,3 +153,24 @@ class CompilerCacheTests(unittest.TestCase):
     def test_untrusted_and_hosted_jobs_do_not_get_compiler_mounts(self):
         self.assertEqual(self.cache_args(CI_CACHE_TRUSTED='false'), 'CI=true')
         self.assertEqual(self.cache_args(RUNNER_ENVIRONMENT='github-hosted'), 'CI=true')
+
+
+class MetadataTests(unittest.TestCase):
+    def test_versioned_payload_and_length_validation(self):
+        self.assertEqual(fetch_metadata.decode_metadata(bytes.fromhex('01146d65746110'), 16), b'meta\x10')
+        for encoded in ['00', '01', '01146d6574610e', '01146d6574611000']:
+            with self.subTest(encoded=encoded), self.assertRaises(ValueError):
+                fetch_metadata.decode_metadata(bytes.fromhex(encoded), 16)
+
+    def test_compact_length_modes(self):
+        for encoded, expected in [('fc', 63), ('1901', 70), ('02000100', 16384), ('0300000040', 1073741824)]:
+            self.assertEqual(fetch_metadata.compact(bytes.fromhex(encoded)), (expected, b''))
+        with self.assertRaises(ValueError):
+            fetch_metadata.compact(bytes.fromhex('02'))
+
+    def test_latest_stable_version_matches_subxt(self):
+        with patch.object(fetch_metadata, 'rpc', side_effect=[
+            bytes.fromhex('0c0e00000010000000ffffffff'), bytes.fromhex('01146d65746110'),
+        ]) as rpc:
+            self.assertEqual(fetch_metadata.fetch('http://node'), b'meta\x10')
+        self.assertEqual(rpc.call_args.args, ('http://node', 'Metadata_metadata_at_version', '0x10000000'))

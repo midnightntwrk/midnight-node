@@ -9,16 +9,14 @@ output=${2:-metadata/static}
 [[ "$image" =~ @sha256:[a-f0-9]{64}$ ]] || { echo 'Expected a digest-pinned image' >&2; exit 1; }
 docker pull "$image"
 cid=$(docker run -d -e CFG_PRESET=dev -p 127.0.0.1::9944 "$image")
-result=$(mktemp)
-trap 'docker rm -f "$cid" >/dev/null; rm -f "$result"' EXIT
+trap 'docker rm -f "$cid" >/dev/null' EXIT
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 port=$(docker port "$cid" 9944/tcp | head -1)
 for _attempt in $(seq 1 60); do
-    if curl -fsS --max-time 5 -H 'Content-Type: application/json' \
-        -d '{"jsonrpc":"2.0","id":1,"method":"state_getMetadata","params":[]}' \
-        "http://$port" > "$result" && jq -e '.result | test("^0x[0-9a-fA-F]+$")' "$result" >/dev/null; then
+    if curl -fsS --max-time 5 "http://$port/health" >/dev/null; then
         version=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' node/Cargo.toml | head -1)
         mkdir -p "$output"
-        jq -r .result "$result" | cut -c3- | xxd -r -p > "$output/midnight_metadata.scale"
+        python3 "$script_dir/fetch_metadata.py" "http://$port" "$output/midnight_metadata.scale"
         cp "$output/midnight_metadata.scale" "$output/midnight_metadata_$version.scale"
         exit 0
     fi
