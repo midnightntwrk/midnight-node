@@ -56,6 +56,7 @@ use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use crate::consensus_engine_dispatch::{
 	AuraWeightBlockImport, EngineDispatchBlockImport, EngineDispatchVerifier, in_block_gap,
+	parent_header_lookup,
 };
 use crate::engine_digests::EngineSlotExtractor;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
@@ -572,6 +573,7 @@ pub fn new_partial(
 				client.clone(),
 				babe_link.clone(),
 			)),
+			parent_header_lookup(client.clone()),
 			aura_verifier,
 			babe_verifier,
 		),

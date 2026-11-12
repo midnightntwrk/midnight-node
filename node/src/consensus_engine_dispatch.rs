@@ -59,6 +59,13 @@
 //! handing the block to the BABE verifier. The seeder must be idempotent and cheap once the tree
 //! covers the parent, since this runs for every BABE block.
 //!
+//! # Parent of a BABE block
+//!
+//! A BABE-routed block must follow its parent by number, and the parent must carry a BABE
+//! pre-runtime digest. [`check_babe_parent`] checks both before the BABE verifier runs. A block
+//! whose parent is not imported is rejected, unless it is imported with its state (a warp-sync
+//! target), which has no imported parent.
+//!
 //! # BABE chain weight of AURA blocks
 //!
 //! BABE's fork choice compares cumulative chain weights. [`AuraWeightBlockImport`] records weight
@@ -72,7 +79,9 @@
 //! Justifications are finality (GRANDPA) and engine-agnostic; the GRANDPA justification import is
 //! registered on the queue directly and is not part of this dispatch.
 
-use crate::engine_digests::{authoring_engine, has_authoritative_babe_pre_digest};
+use crate::engine_digests::{
+	authoring_engine, babe_pre_digest_is_authoritative, has_authoritative_babe_pre_digest,
+};
 use async_trait::async_trait;
 use midnight_primitives_consensus_engine::ActiveEngine;
 use parity_scale_codec::Encode;
@@ -80,7 +89,7 @@ use sc_consensus::{BlockCheckParams, BlockImport, BlockImportParams, ImportResul
 use sc_consensus_babe::{BabeBlockWeight, aux_schema::block_weight_key};
 use sp_blockchain::HeaderBackend;
 use sp_consensus::{BlockOrigin, Error as ConsensusError};
-use sp_runtime::traits::{Block as BlockT, Header as _, NumberFor};
+use sp_runtime::traits::{Block as BlockT, Header as _, NumberFor, One};
 use std::{marker::PhantomData, sync::Arc};
 
 /// The pipeline a block is routed to: the engine that authored it. A header without an AURA/BABE
@@ -98,8 +107,7 @@ fn route<Block: BlockT>(header: &Block::Header) -> ActiveEngine {
 /// a peer-supplied header, so this is what stops a peer from resetting the tree at an arbitrary
 /// block.
 pub trait EpochSeeder<Block: BlockT>: Send + Sync {
-	/// Best-effort: `parent` may not be imported (the BABE block import then rejects the child with
-	/// `UnknownParent` and sync re-offers it later).
+	/// Best-effort: `parent` is not imported when the child is imported with its state.
 	fn ensure_seeded_for_child_of(&self, parent: Block::Hash);
 }
 
@@ -109,12 +117,61 @@ pub struct EngineDispatchVerifier<Block: BlockT, Aura, Babe> {
 	aura: Aura,
 	babe: Babe,
 	seeder: Arc<dyn EpochSeeder<Block>>,
+	parent_header: ParentHeaderLookup<Block>,
+}
+
+/// Looks an imported header up by hash; an error when it is not imported or cannot be read.
+pub type ParentHeaderLookup<Block> =
+	Box<dyn Fn(<Block as BlockT>::Hash) -> Result<<Block as BlockT>::Header, String> + Send + Sync>;
+
+/// [`ParentHeaderLookup`] answered from the client's header backend.
+pub fn parent_header_lookup<Block, C>(client: Arc<C>) -> ParentHeaderLookup<Block>
+where
+	Block: BlockT,
+	C: HeaderBackend<Block> + Send + Sync + 'static,
+{
+	Box::new(move |hash| match client.header(hash) {
+		Ok(Some(header)) => Ok(header),
+		Ok(None) => Err(format!("parent {hash:?} of a BABE block is not imported")),
+		Err(err) => Err(format!("parent {hash:?} of a BABE block cannot be read: {err}")),
+	})
 }
 
 impl<Block: BlockT, Aura, Babe> EngineDispatchVerifier<Block, Aura, Babe> {
-	pub fn new(seeder: Arc<dyn EpochSeeder<Block>>, aura: Aura, babe: Babe) -> Self {
-		Self { aura, babe, seeder }
+	pub fn new(
+		seeder: Arc<dyn EpochSeeder<Block>>,
+		parent_header: ParentHeaderLookup<Block>,
+		aura: Aura,
+		babe: Babe,
+	) -> Self {
+		Self { aura, babe, seeder, parent_header }
 	}
+}
+
+/// Checks that a BABE-routed block follows its parent by number and that the parent carries a
+/// readable BABE pre-runtime digest. Genesis is accepted as a parent.
+fn check_babe_parent<Block: BlockT>(
+	parent: &Block::Header,
+	header: &Block::Header,
+) -> Result<(), String> {
+	if *header.number() != *parent.number() + One::one() {
+		return Err(format!(
+			"BABE block claims number {:?} but its parent {:?} is #{:?}",
+			header.number(),
+			header.parent_hash(),
+			parent.number(),
+		));
+	}
+	if !babe_pre_digest_is_authoritative::<Block>(parent)
+		|| sc_consensus_babe::find_pre_digest::<Block>(parent).is_err()
+	{
+		return Err(format!(
+			"parent {:?} (#{:?}) of a BABE block has no readable BABE pre-runtime digest",
+			header.parent_hash(),
+			parent.number(),
+		));
+	}
+	Ok(())
 }
 
 #[async_trait]
@@ -131,6 +188,13 @@ where
 		match route::<Block>(&block.header) {
 			ActiveEngine::Aura => self.aura.verify(block).await,
 			ActiveEngine::Babe => {
+				// A block imported with its state (a warp-sync target) has no imported parent. Any
+				// other block reaches the verifier only after the queue found its parent, so the
+				// lookup failing here is a safeguard.
+				if !block.with_state() {
+					let parent = (self.parent_header)(*block.header.parent_hash())?;
+					check_babe_parent::<Block>(&parent, &block.header)?;
+				}
 				self.seeder.ensure_seeded_for_child_of(*block.header.parent_hash());
 				self.babe.verify(block).await
 			},
@@ -332,6 +396,7 @@ mod tests {
 			Self {
 				verifier: EngineDispatchVerifier::new(
 					Arc::new(seeder.clone()),
+					Box::new(|hash| Ok(babe_parent_stub(hash))),
 					aura.clone(),
 					babe.clone(),
 				),
@@ -516,6 +581,7 @@ mod tests {
 		}
 		let verifier = EngineDispatchVerifier::<Block, _, _>::new(
 			Arc::new(SeedRecorder::default()),
+			Box::new(|hash| Ok(babe_parent_stub(hash))),
 			Recorder::default(),
 			Failing,
 		);
@@ -523,6 +589,132 @@ mod tests {
 			block_on(verifier.verify(params(babe_block(5)))).err(),
 			Some("bad seal".to_string())
 		);
+	}
+
+	/// A decodable BABE `SecondaryPlain` pre-runtime digest for `slot`.
+	fn babe_slot(slot: u64) -> DigestItem {
+		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
+		DigestItem::PreRuntime(
+			BABE_ENGINE_ID,
+			PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+				authority_index: 0,
+				slot: slot.into(),
+			})
+			.encode(),
+		)
+	}
+
+	/// A parent that passes the BABE parent check for the harness headers, whose parent hash
+	/// starts with the parent's number.
+	fn babe_parent_stub(hash: H256) -> Header {
+		let number = hash.as_ref()[0] as u32;
+		let mut header = Header::new(
+			number,
+			Default::default(),
+			Default::default(),
+			Default::default(),
+			Default::default(),
+		);
+		header.digest_mut().push(version_digest(ACTIVATION_SPEC_VERSION));
+		header.digest_mut().push(babe_slot(1));
+		header
+	}
+
+	/// Verifier whose parent lookup knows exactly `parent`.
+	fn verifier_knowing(
+		parent: Header,
+	) -> (EngineDispatchVerifier<Block, Recorder, Recorder>, Recorder, SeedRecorder) {
+		let (babe, seeder) = (Recorder::default(), SeedRecorder::default());
+		let parent_hash = parent.hash();
+		let verifier = EngineDispatchVerifier::new(
+			Arc::new(seeder.clone()),
+			Box::new(move |hash| {
+				(hash == parent_hash).then(|| parent.clone()).ok_or("not imported".to_string())
+			}),
+			Recorder::default(),
+			babe.clone(),
+		);
+		(verifier, babe, seeder)
+	}
+
+	/// A BABE block claiming `number` on top of `parent`.
+	fn babe_child_of(parent: &Header, number: u32) -> Header {
+		let mut header = Header::new(
+			number,
+			Default::default(),
+			Default::default(),
+			parent.hash(),
+			Default::default(),
+		);
+		header.digest_mut().push(version_digest(ACTIVATION_SPEC_VERSION));
+		header.digest_mut().push(babe_slot(100));
+		header
+	}
+
+	#[test]
+	fn verifier_accepts_a_babe_block_on_a_flip_block_or_genesis_parent() {
+		let flip_block = header_with(97, vec![pre_runtime(AURA_ENGINE_ID), babe_slot(99)]);
+		// A chain that is BABE from its first block: genesis carries no digest at all.
+		let genesis = Header::new(
+			0,
+			Default::default(),
+			Default::default(),
+			Default::default(),
+			Default::default(),
+		);
+		for parent in [flip_block, genesis] {
+			let (verifier, babe, seeder) = verifier_knowing(parent.clone());
+			let child = babe_child_of(&parent, parent.number + 1);
+			block_on(verifier.verify(params(child))).unwrap();
+			assert_eq!(babe.seen(), vec![parent.number + 1]);
+			assert_eq!(seeder.parents().len(), 1);
+		}
+	}
+
+	#[test]
+	fn verifier_rejects_a_babe_block_that_does_not_fit_its_parent() {
+		let good_parent = header_with(97, vec![pre_runtime(AURA_ENGINE_ID), babe_slot(99)]);
+		let bad_parents = [
+			// Pallet-era block from a pre-migration author: AURA digest only.
+			header_with(97, vec![pre_runtime(AURA_ENGINE_ID)]),
+			// Pre-pallet block: its BABE digest, if any, is not authoritative.
+			pre_activation_header_with(97, vec![pre_runtime(AURA_ENGINE_ID), babe_slot(99)]),
+			// Pallet-era block whose BABE item does not decode.
+			header_with(97, vec![pre_runtime(AURA_ENGINE_ID), pre_runtime(BABE_ENGINE_ID)]),
+			// Two decodable BABE items.
+			header_with(97, vec![pre_runtime(AURA_ENGINE_ID), babe_slot(99), babe_slot(99)]),
+		];
+		let cases = bad_parents
+			.into_iter()
+			.map(|parent| {
+				(parent.clone(), babe_child_of(&parent, 98), "no readable BABE pre-runtime digest")
+			})
+			.chain([
+				(good_parent.clone(), babe_child_of(&good_parent, 1), "claims number"),
+				(good_parent, babe_block(50), "not imported"),
+			]);
+		for (parent, child, expected) in cases {
+			let (verifier, babe, seeder) = verifier_knowing(parent);
+			let err = block_on(verifier.verify(params(child))).err().unwrap();
+			assert!(err.contains(expected), "{err}");
+			assert!(babe.seen().is_empty());
+			assert!(seeder.parents().is_empty());
+		}
+	}
+
+	#[test]
+	fn verifier_skips_the_parent_check_for_a_block_imported_with_its_state() {
+		let known = header_with(97, vec![pre_runtime(AURA_ENGINE_ID), babe_slot(99)]);
+		let (verifier, babe, _) = verifier_knowing(known);
+		let mut block = params(babe_block(50));
+		block.state_action = sc_consensus::StateAction::ApplyChanges(
+			sc_consensus::StorageChanges::Import(sc_consensus::ImportedState {
+				block: block.header.hash(),
+				state: sp_state_machine::KeyValueStates(vec![]),
+			}),
+		);
+		block_on(verifier.verify(block)).unwrap();
+		assert_eq!(babe.seen(), vec![50]);
 	}
 
 	/// Block import that records the auxiliary entries of the blocks handed to it.
