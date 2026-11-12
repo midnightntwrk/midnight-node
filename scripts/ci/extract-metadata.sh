@@ -5,6 +5,7 @@
 
 set -euo pipefail
 image=${1:?immutable node image}
+output=${2:-metadata/static}
 [[ "$image" =~ @sha256:[a-f0-9]{64}$ ]] || { echo 'Expected a digest-pinned image' >&2; exit 1; }
 docker pull "$image"
 cid=$(docker run -d -e CFG_PRESET=dev -p 127.0.0.1::9944 "$image")
@@ -16,9 +17,9 @@ for _attempt in $(seq 1 60); do
         -d '{"jsonrpc":"2.0","id":1,"method":"state_getMetadata","params":[]}' \
         "http://$port" > "$result" && jq -e '.result | test("^0x[0-9a-fA-F]+$")' "$result" >/dev/null; then
         version=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' node/Cargo.toml | head -1)
-        mkdir -p metadata/static
-        jq -r .result "$result" | cut -c3- | xxd -r -p > metadata/static/midnight_metadata.scale
-        cp metadata/static/midnight_metadata.scale "metadata/static/midnight_metadata_$version.scale"
+        mkdir -p "$output"
+        jq -r .result "$result" | cut -c3- | xxd -r -p > "$output/midnight_metadata.scale"
+        cp "$output/midnight_metadata.scale" "$output/midnight_metadata_$version.scale"
         exit 0
     fi
     sleep 2

@@ -773,7 +773,7 @@ jobs:
     # The fixture tests compile midnight-node-ledger with both ledger generations (and both
     # storage lines) in one crate; rustc is SIGKILLed on the 16 GB ubuntu-latest runner.
     # Same routing as Test Toolkit: self-hosted large for in-repo branches, GitHub-hosted for forks.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ needs.scope.outputs.product == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-24.04"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -1159,7 +1159,7 @@ jobs:
         with:
           hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true')
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
@@ -1186,9 +1186,18 @@ jobs:
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
-          . ./.envrc && earth --ci -P \
-            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
-            +check-metadata
+          if [ "$IS_FORK_PR" = "true" ]; then
+            . ./.envrc && earth --ci -P \
+              --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
+              +check-metadata
+          else
+            plan=$(mktemp)
+            GITHUB_OUTPUT="$plan" bash scripts/ci/image-plan.sh main
+            grep -Fx 'runner=["ubuntu-24.04"]' "$plan"
+            image=$(sed -n 's/^node_image=//p' "$plan")
+            bash scripts/ci/extract-metadata.sh "$image" "$RUNNER_TEMP/metadata"
+            cmp metadata/static/midnight_metadata.scale "$RUNNER_TEMP/metadata/midnight_metadata.scale"
+          fi
       - uses: ./.github/actions/tree-cache-guard/save
         if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:

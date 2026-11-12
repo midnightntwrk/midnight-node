@@ -11,9 +11,10 @@ use standard GitHub-hosted runners, so they do not compete for that pool.
 | `prs.yml` | Remove | The version reminder never exports its decision; it duplicates release/version policy without providing a useful check. |
 | `nightly-build-check.yml` | Weekly and manual clean build on hosted | Keep an uncached build as a cache-correctness check without repeating a locked build every night. |
 | `continuous-integration-checks.yml` | Move trusted Clippy to Hetzner; independent hosted formatting | Clippy compiles the workspace and can reuse scoped compiler artifacts. Formatting provides quick feedback. Forks remain hosted. |
-| `continuous-integration.yml` | Move fixture tests to hosted | The fixture job can run alongside image-dependent E2E checks without occupying a persistent compiler slot. |
+| `continuous-integration.yml` | Retain fixture tests on Hetzner | The dual-ledger fixture crate has documented out-of-memory failures on 16 GB hosted runners. Documentation-only checks and forks remain hosted. |
 | `continuous-integration.yml` | Prepare toolkit tests alongside node builds on Hetzner | Compile only the toolkit package into a nextest archive. Consume the prepared layer when images finish; rebuild inline if the shared cache is absent. |
 | `continuous-integration.yml` | Run dependency check without the image dependency | Cargo-shear needs source, not a node image. Use the tool already installed in the CI image. |
+| `continuous-integration.yml` | Reuse node RPC for metadata checking | Verify the new hosted image-selection and metadata-extraction paths against the PR images, without an Earthly toolchain on trusted PRs. |
 | `continuous-integration.yml` | Repair indexer test caching | Existing images only skip image builds. Tests need their own authenticated success marker; publish new images only after tests pass. Restore Rust artifacts before testing. |
 | `continuous-integration-test.yml` | Keep core tests on Hetzner | Compilation dominates execution. Reuse isolated compiler directories and upload the actual JUnit report instead of nonexistent coverage artifacts. |
 | `main.yml` | Hosted AMD64 image-reuse path; Hetzner for builds | Probe on hosted first. Reuse immutable image digests and extract artifacts without a Rust toolchain. |
