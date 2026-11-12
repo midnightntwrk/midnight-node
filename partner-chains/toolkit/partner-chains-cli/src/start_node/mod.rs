@@ -82,7 +82,15 @@ fn load_chain_config<C: IOContext>(context: &C) -> anyhow::Result<Option<StartNo
 		context.eprint(&format!("⚠️ Chain config file {chain_config_file_path} does not exists. Run prepare-configuration wizard first."));
 		return Ok(None);
 	};
-	let chain_config = match serde_json::from_str::<StartNodeChainConfig>(&chain_config_file) {
+	let chain_config = match serde_json::from_str::<StartNodeChainConfig>(&chain_config_file)
+		.map_err(anyhow::Error::from)
+		.and_then(|chain_config| {
+			chain_config
+				.bootnodes
+				.iter()
+				.try_for_each(|bootnode| validate_bootnode(bootnode))?;
+			Ok(chain_config)
+		}) {
 		Ok(chain_config) => chain_config,
 		Err(err) => {
 			context.eprint(&format!("⚠️ Chain config file {chain_config_file_path} is invalid: {err}. Run prepare-configuration wizard or fix errors manually."));
@@ -90,6 +98,24 @@ fn load_chain_config<C: IOContext>(context: &C) -> anyhow::Result<Option<StartNo
 		},
 	};
 	Ok(Some(chain_config))
+}
+
+/// Accepts a multiaddress ending in `/p2p/<peer id>`, the form `--bootnodes` expects.
+fn validate_bootnode(bootnode: &str) -> anyhow::Result<()> {
+	let invalid = || {
+		anyhow!("invalid bootnode {bootnode:?}, expected a multiaddress ending in /p2p/<peer id>")
+	};
+	let segments = bootnode.strip_prefix('/').ok_or_else(invalid)?.split('/').collect::<Vec<_>>();
+	let [protocols @ .., "p2p", peer_id] = segments.as_slice() else { return Err(invalid()) };
+	let well_formed = !protocols.is_empty()
+		&& segments.iter().all(|segment| {
+			!segment.is_empty()
+				&& segment.chars().all(|c| c.is_ascii_alphanumeric() || ".-_:".contains(c))
+		});
+	if !well_formed || peer_id.parse::<libp2p_identity::PeerId>().is_err() {
+		return Err(invalid());
+	}
+	Ok(())
 }
 
 #[rustfmt::skip]
@@ -176,25 +202,21 @@ pub fn start_node<C: IOContext, T: PartnerChainRuntime>(
 	context: &C,
 ) -> anyhow::Result<()> {
 	let executable = context.current_executable()?;
-	let environment_prefix = format!(
-		"CARDANO_SECURITY_PARAMETER='{security_parameter}' \\
-         CARDANO_ACTIVE_SLOTS_COEFF='{active_slots_coeff}' \\
-         DB_SYNC_POSTGRES_CONNECTION_STRING='{db_connection_string}' \\
-         CARDANO_DATA_SOURCE='{data_source}' \\
-         MC__FIRST_EPOCH_TIMESTAMP_MILLIS='{first_epoch_timestamp_millis}' \\
-         MC__EPOCH_DURATION_MILLIS='{epoch_duration_millis}' \\
-         MC__SLOT_DURATION_MILLIS='{slot_duration_millis}' \\
-         MC__FIRST_EPOCH_NUMBER='{first_epoch_number}' \\
-         MC__FIRST_SLOT_NUMBER='{first_slot_number}' \\
-         BLOCK_STABILITY_MARGIN='0' \\
-"
-	);
-
-	let bootnodes = bootnodes
-		.iter()
-		.map(|bootnode| format!("--bootnodes {}", bootnode))
-		.collect::<Vec<String>>()
-		.join(" ");
+	let env_vars = [
+		("CARDANO_SECURITY_PARAMETER", security_parameter.to_string()),
+		("CARDANO_ACTIVE_SLOTS_COEFF", active_slots_coeff.to_string()),
+		("DB_SYNC_POSTGRES_CONNECTION_STRING", db_connection_string.to_string()),
+		("CARDANO_DATA_SOURCE", data_source.to_string()),
+		("MC__FIRST_EPOCH_TIMESTAMP_MILLIS", first_epoch_timestamp_millis.to_string()),
+		("MC__EPOCH_DURATION_MILLIS", epoch_duration_millis.to_string()),
+		("MC__SLOT_DURATION_MILLIS", slot_duration_millis.to_string()),
+		("MC__FIRST_EPOCH_NUMBER", first_epoch_number.to_string()),
+		("MC__FIRST_SLOT_NUMBER", first_slot_number.to_string()),
+		("BLOCK_STABILITY_MARGIN", "0".to_string()),
+	];
+	for (key, value) in &env_vars {
+		context.set_env_var(key, value);
+	}
 
 	let ws_port = NODE_P2P_PORT.save_if_empty(
 		NODE_P2P_PORT
@@ -204,11 +226,26 @@ pub fn start_node<C: IOContext, T: PartnerChainRuntime>(
 			.map_err(|_| anyhow!("Default NODE_WS_PORT should be valid u16"))?,
 		context,
 	);
+	let ws_port = ws_port.to_string();
 	let keystore_path = keystore_path(&substrate_node_base_path);
 	let network_key_path = network_key_path(&substrate_node_base_path);
-	context.run_command(&format!(
-		"{environment_prefix} {executable} --validator --chain {CHAIN_SPEC_PATH} --base-path {substrate_node_base_path} --keystore-path {keystore_path} --node-key-file {network_key_path} --port {ws_port} {bootnodes}",
-	))?;
+	let mut args = vec![
+		"--validator",
+		"--chain",
+		CHAIN_SPEC_PATH,
+		"--base-path",
+		&substrate_node_base_path,
+		"--keystore-path",
+		&keystore_path,
+		"--node-key-file",
+		&network_key_path,
+		"--port",
+		&ws_port,
+	];
+	for bootnode in &bootnodes {
+		args.extend(["--bootnodes", bootnode.as_str()]);
+	}
+	context.run_command(&executable, &args)?;
 
 	Ok(())
 }
