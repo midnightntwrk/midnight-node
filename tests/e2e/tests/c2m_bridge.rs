@@ -24,16 +24,17 @@ use midnight_node_e2e::api::midnight::{C2MBridgePalletCalls, MidnightClient};
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
-use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::TransferRecipient;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::{
+    BridgeTransferV1, TransferRecipient,
+};
 use midnight_node_toolkit::cli_parsers::SchemeSeed;
 use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
 use midnight_node_toolkit::tx_generator::builder::{Builder, ClaimKindArg, ClaimRewardsArgs};
 use midnight_node_toolkit::tx_generator::destination::Destination;
 use midnight_node_toolkit::tx_generator::source::Source;
-use std::sync::LazyLock;
 use std::time::Duration;
 use subxt::dynamic::Value as DynValue;
-use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
 
 use crate::global_faucet_manager;
 
@@ -41,21 +42,18 @@ use crate::global_faucet_manager;
 const CLAIM_FUNDING_SEED_HEX: &str =
     "0000000000000000000000000000000000000000000000000000000000000001";
 
-// Tests in this module both mutate and read shared chain state,
-// so can't run in parallel.
-static C2M_BRIDGE_SERIAL: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
-
-async fn lock_c2m_bridge_serial() -> MutexGuard<'static, ()> {
-    C2M_BRIDGE_SERIAL.lock().await
-}
-
 /// Arbitrary recipient address bytes used as the bridge target on Midnight.
 const RECIPIENT_ADDRESS: [u8; 32] = [7u8; 32];
 
 /// Recipient one byte short of a Midnight address.
 const SHORT_RECIPIENT_ADDRESS: [u8; 31] = [9u8; 31];
 
+// Distinct per test: these tests run concurrently and can share a block, and
+// `UnlockToTreasury` carries only the amount.
 const BRIDGE_AMOUNT_STARS: u64 = 49_000_000;
+const INVALID_RECIPIENT_AMOUNT_STARS: u64 = 48_000_000;
+const SHORT_RECIPIENT_AMOUNT_STARS: u64 = 47_000_000;
+const UNAPPROVED_AMOUNT_STARS: u64 = 46_000_000;
 
 /// Upper bound on how long the test waits for the bridge transfer to be observed
 /// by midnight and produce the user-transfer system tx.
@@ -83,8 +81,6 @@ async fn indexer_client_ready() -> IndexerClient {
 
 #[e2e_test]
 async fn bridge_transfer_cnight_to_midnight_address() {
-    let _serial = lock_c2m_bridge_serial().await;
-
     let claim_seed = WalletSeed::try_from_hex_str(CLAIM_FUNDING_SEED_HEX).expect("seed parses");
     let recipient_address: [u8; 32] = UnshieldedWallet::default(claim_seed).user_address.0.0;
 
@@ -96,7 +92,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     let bridge_tx = prepared.tx_id;
     tracing::info!(bridge_tx = %hex::encode(&bridge_tx), "bridge transfer signed (not yet submitted)");
 
-    approve_mc_tx_hash_via_governance(&midnight_client, bridge_tx)
+    approve_mc_tx_hashes_via_governance(&midnight_client, &[bridge_tx])
         .await
         .expect("Failed to pre-approve bridge tx hash via governance");
     tracing::info!("bridge tx hash pre-approved on Midnight");
@@ -112,18 +108,11 @@ async fn bridge_transfer_cnight_to_midnight_address() {
         .expect("Failed to submit bridge transfer transaction to Cardano");
     tracing::info!(bridge_tx = %hex::encode(&bridge_tx), min_midnight_block, "bridge transfer submitted on Cardano");
 
-    let c2m_bridge_calls = wait_for_bridge_calls(&midnight_client, min_midnight_block).await;
+    let c2m_bridge_calls =
+        wait_for_bridge_transfer(&midnight_client, min_midnight_block, bridge_tx).await;
 
     // ----- BridgeTransferV1 argument -----
-    let transfer = c2m_bridge_calls
-        .transfers
-        .first()
-        .expect("Expected at least one BridgeTransferV1 in the handle_transfers call");
-
-    assert_eq!(
-        transfer.mc_tx_hash.0, bridge_tx,
-        "BridgeTransferV1.mc_tx_hash should match the Cardano tx id"
-    );
+    let transfer = own_transfer(&c2m_bridge_calls, bridge_tx);
     assert_eq!(
         transfer.amount, BRIDGE_AMOUNT_STARS,
         "BridgeTransferV1.amount should equal the STAR amount transferred"
@@ -147,20 +136,17 @@ async fn bridge_transfer_cnight_to_midnight_address() {
             deserialize(sta.0.serialized_system_transaction.as_slice()).ok()?;
         match sys_tx {
             SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, output_instructions) => {
-                output_instructions.first().cloned()
+                output_instructions
+                    .into_iter()
+                    .find(|i| i.target_address == UserAddress(HashOutput(recipient_address)))
             }
             _ => None,
         }
-    }).unwrap_or_else(||panic!("Expected SystemTransaction::DistributeNight(CardanoBridge, [instr]) for an valid bridge transfer"));
+    }).unwrap_or_else(||panic!("Expected SystemTransaction::DistributeNight(CardanoBridge, [instr]) targeting the bridge recipient"));
 
     assert_eq!(
         instr.amount, BRIDGE_AMOUNT_STARS as u128,
         "DistributeNight amount should equal BRIDGE_AMOUNT_STARS"
-    );
-    assert_eq!(
-        instr.target_address,
-        UserAddress(HashOutput(recipient_address)),
-        "DistributeNight should target the bridge recipient address"
     );
 
     // ----- C2MBridge::Event::UserTransfer -----
@@ -173,7 +159,9 @@ async fn bridge_transfer_cnight_to_midnight_address() {
                 amount,
                 recipient,
                 midnight_tx_hash,
-            } => Some((mc_tx_hash, *amount, recipient, midnight_tx_hash)),
+            } if mc_tx_hash.0 == bridge_tx => {
+                Some((mc_tx_hash, *amount, recipient, midnight_tx_hash))
+            }
             _ => None,
         })
         .expect(
@@ -444,15 +432,15 @@ async fn bridge_transfer_cnight_to_midnight_address() {
 /// Bridge transfer whose Cardano-side metadatum is not valid Midnight address bytes.
 #[e2e_test]
 async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
-    let _serial = lock_c2m_bridge_serial().await;
-
-    let (cardano_client, midnight_client, prepared) =
-        setup_and_prepare_bridge_transfer(BridgeTransferRecipient::Invalid, BRIDGE_AMOUNT_STARS)
-            .await;
+    let (cardano_client, midnight_client, prepared) = setup_and_prepare_bridge_transfer(
+        BridgeTransferRecipient::Invalid,
+        INVALID_RECIPIENT_AMOUNT_STARS,
+    )
+    .await;
     let bridge_tx = prepared.tx_id;
     tracing::info!(bridge_tx = %hex::encode(&bridge_tx), "invalid bridge transfer signed (not yet submitted)");
 
-    approve_mc_tx_hash_via_governance(&midnight_client, bridge_tx)
+    approve_mc_tx_hashes_via_governance(&midnight_client, &[bridge_tx])
         .await
         .expect("Failed to pre-approve bridge tx hash via governance");
     tracing::info!("bridge tx hash pre-approved on Midnight");
@@ -467,19 +455,13 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
         .expect("Failed to submit invalid bridge transfer transaction to Cardano");
     tracing::info!(bridge_tx = %hex::encode(&bridge_tx), min_midnight_block, "invalid bridge transfer submitted on Cardano");
 
-    let c2m_bridge_calls = wait_for_bridge_calls(&midnight_client, min_midnight_block).await;
+    let c2m_bridge_calls =
+        wait_for_bridge_transfer(&midnight_client, min_midnight_block, bridge_tx).await;
 
     // ----- BridgeTransferV1 argument -----
-    let transfer = c2m_bridge_calls
-        .transfers
-        .first()
-        .expect("Expected at least one BridgeTransferV1 in the handle_transfers call");
+    let transfer = own_transfer(&c2m_bridge_calls, bridge_tx);
     assert_eq!(
-        transfer.mc_tx_hash.0, bridge_tx,
-        "BridgeTransferV1.mc_tx_hash should match the Cardano tx id"
-    );
-    assert_eq!(
-        transfer.amount, BRIDGE_AMOUNT_STARS,
+        transfer.amount, INVALID_RECIPIENT_AMOUNT_STARS,
         "BridgeTransferV1.amount should equal the STAR amount transferred"
     );
     assert!(
@@ -493,7 +475,7 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
         let sys_tx: SystemTransaction =
             deserialize(sta.0.serialized_system_transaction.as_slice()).ok()?;
         match sys_tx {
-            SystemTransaction::UnlockToTreasury { amount } if amount == BRIDGE_AMOUNT_STARS as u128 => {
+            SystemTransaction::UnlockToTreasury { amount } if amount == INVALID_RECIPIENT_AMOUNT_STARS as u128 => {
                 Some(amount)
             }
             _ => None,
@@ -509,7 +491,7 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
                 mc_tx_hash,
                 amount,
                 midnight_tx_hash,
-            } => Some((mc_tx_hash, *amount, midnight_tx_hash)),
+            } if mc_tx_hash.0 == bridge_tx => Some((mc_tx_hash, *amount, midnight_tx_hash)),
             _ => None,
         })
         .unwrap_or_else(|| {
@@ -519,7 +501,7 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
                  `execute_system_transaction` returned Err — most likely the ledger rejected \
                  `UnlockToTreasury {{ amount: {} }}` (check node logs for c2m-bridge errors). \
                  c2m_bridge_events observed: {:?}",
-                BRIDGE_AMOUNT_STARS, c2m_bridge_calls.c2m_bridge_events
+                INVALID_RECIPIENT_AMOUNT_STARS, c2m_bridge_calls.c2m_bridge_events
             )
         });
 
@@ -529,7 +511,7 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
         "InvalidTransfer.mc_tx_hash should match the Cardano tx id"
     );
     assert_eq!(
-        amount, BRIDGE_AMOUNT_STARS,
+        amount, INVALID_RECIPIENT_AMOUNT_STARS,
         "InvalidTransfer.amount should equal the STAR amount transferred"
     );
 
@@ -553,7 +535,7 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
                 ..
             } => {
                 assert_eq!(
-                    amount, BRIDGE_AMOUNT_STARS as u128,
+                    amount, INVALID_RECIPIENT_AMOUNT_STARS as u128,
                     "indexer BridgeInvalidTransfer.amount should equal the bridged STAR amount"
                 );
                 assert_eq!(
@@ -572,12 +554,10 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
 
 #[e2e_test]
 async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
-    let _serial = lock_c2m_bridge_serial().await;
-
     // ----- Phase 1: approved deposit with a 31-byte recipient -----
     let (cardano_client, midnight_client, prepared) = setup_and_prepare_bridge_transfer(
         BridgeTransferRecipient::Address(SHORT_RECIPIENT_ADDRESS.to_vec()),
-        BRIDGE_AMOUNT_STARS,
+        SHORT_RECIPIENT_AMOUNT_STARS,
     )
     .await;
     let bridge_tx = prepared.tx_id;
@@ -587,13 +567,22 @@ async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
         "short-recipient bridge transfer signed (not yet submitted)"
     );
 
+    // Signed now but submitted only after the short-recipient deposit resolves,
+    // so one governance round approves both.
+    let (follow_up_cardano_client, _, follow_up_prepared) = setup_and_prepare_bridge_transfer(
+        BridgeTransferRecipient::Address(RECIPIENT_ADDRESS.into()),
+        BRIDGE_AMOUNT_STARS,
+    )
+    .await;
+    let follow_up_tx = follow_up_prepared.tx_id;
+
     // Approved by governance: without this the deposit would be diverted to the
     // treasury as unapproved, which is a different path and would not exercise
     // the recipient decoding at all.
-    approve_mc_tx_hash_via_governance(&midnight_client, bridge_tx)
+    approve_mc_tx_hashes_via_governance(&midnight_client, &[bridge_tx, follow_up_tx])
         .await
-        .expect("Failed to pre-approve bridge tx hash via governance");
-    tracing::info!("bridge tx hash pre-approved on Midnight");
+        .expect("Failed to pre-approve bridge tx hashes via governance");
+    tracing::info!("bridge tx hashes pre-approved on Midnight");
 
     let min_midnight_block = midnight_client
         .get_finalized_block_number()
@@ -625,7 +614,7 @@ async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
         .find(|t| t.mc_tx_hash.0 == bridge_tx)
         .expect("Expected the short-recipient transfer in the handle_transfers call");
     assert_eq!(
-        transfer.amount, BRIDGE_AMOUNT_STARS,
+        transfer.amount, SHORT_RECIPIENT_AMOUNT_STARS,
         "BridgeTransferV1.amount should equal the STAR amount transferred"
     );
     assert!(
@@ -645,7 +634,7 @@ async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
                 deserialize(sta.0.serialized_system_transaction.as_slice()).ok()?;
             match sys_tx {
                 SystemTransaction::UnlockToTreasury { amount }
-                    if amount == BRIDGE_AMOUNT_STARS as u128 =>
+                    if amount == SHORT_RECIPIENT_AMOUNT_STARS as u128 =>
                 {
                     Some(amount)
                 }
@@ -656,7 +645,7 @@ async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
             panic!(
                 "Expected SystemTransaction::UnlockToTreasury {{ amount: {} }} for the \
                  short-recipient deposit",
-                BRIDGE_AMOUNT_STARS
+                SHORT_RECIPIENT_AMOUNT_STARS
             )
         });
 
@@ -679,28 +668,17 @@ async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
             )
         });
     assert_eq!(
-        amount, BRIDGE_AMOUNT_STARS,
+        amount, SHORT_RECIPIENT_AMOUNT_STARS,
         "InvalidTransfer.amount should equal the STAR amount transferred"
     );
 
     // ----- Phase 2: the bridge must still process later deposits -----
-    let (cardano_client, midnight_client, prepared) = setup_and_prepare_bridge_transfer(
-        BridgeTransferRecipient::Address(RECIPIENT_ADDRESS.into()),
-        BRIDGE_AMOUNT_STARS,
-    )
-    .await;
-    let follow_up_tx = prepared.tx_id;
-
-    approve_mc_tx_hash_via_governance(&midnight_client, follow_up_tx)
-        .await
-        .expect("Failed to pre-approve the follow-up bridge tx hash via governance");
-
     let min_midnight_block = midnight_client
         .get_finalized_block_number()
         .await
         .expect("Failed to read finalized head before submitting the follow-up Cardano tx");
-    cardano_client
-        .submit_tx(prepared.signed_tx_bytes)
+    follow_up_cardano_client
+        .submit_tx(follow_up_prepared.signed_tx_bytes)
         .await
         .expect("Failed to submit the follow-up bridge transfer transaction to Cardano");
     tracing::info!(bridge_tx = %hex::encode(&follow_up_tx), "follow-up bridge transfer submitted on Cardano");
@@ -736,11 +714,9 @@ async fn approved_bridge_transfer_with_short_recipient_keeps_the_bridge_live() {
 /// Unapproved Cardano Tx is accounted as transfer to Midnight Trasury
 #[e2e_test]
 async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
-    let _serial = lock_c2m_bridge_serial().await;
-
     let (cardano_client, midnight_client, prepared) = setup_and_prepare_bridge_transfer(
         BridgeTransferRecipient::Address(RECIPIENT_ADDRESS.into()),
-        BRIDGE_AMOUNT_STARS,
+        UNAPPROVED_AMOUNT_STARS,
     )
     .await;
     let bridge_tx = prepared.tx_id;
@@ -756,19 +732,13 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
         .expect("Failed to submit invalid bridge transfer transaction to Cardano");
     tracing::info!(bridge_tx = %hex::encode(&bridge_tx), min_midnight_block, "invalid bridge transfer submitted on Cardano");
 
-    let c2m_bridge_calls = wait_for_bridge_calls(&midnight_client, min_midnight_block).await;
+    let c2m_bridge_calls =
+        wait_for_bridge_transfer(&midnight_client, min_midnight_block, bridge_tx).await;
 
     // ----- BridgeTransferV1 argument -----
-    let transfer = c2m_bridge_calls
-        .transfers
-        .first()
-        .expect("Expected at least one BridgeTransferV1 in the handle_transfers call");
+    let transfer = own_transfer(&c2m_bridge_calls, bridge_tx);
     assert_eq!(
-        transfer.mc_tx_hash.0, bridge_tx,
-        "BridgeTransferV1.mc_tx_hash should match the Cardano tx id"
-    );
-    assert_eq!(
-        transfer.amount, BRIDGE_AMOUNT_STARS,
+        transfer.amount, UNAPPROVED_AMOUNT_STARS,
         "BridgeTransferV1.amount should equal the STAR amount transferred"
     );
     let recipient_bytes = match &transfer.recipient {
@@ -792,7 +762,9 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
                 amount,
                 recipient,
                 midnight_tx_hash,
-            } => Some((mc_tx_hash, recipient, *amount, midnight_tx_hash)),
+            } if mc_tx_hash.0 == bridge_tx => {
+                Some((mc_tx_hash, recipient, *amount, midnight_tx_hash))
+            }
             _ => None,
         })
         .unwrap_or_else(|| {
@@ -802,7 +774,7 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
                  `execute_system_transaction` returned Err — most likely the ledger rejected \
                  `UnlockToTreasury {{ amount: {} }}` (check node logs for c2m-bridge errors). \
                  c2m_bridge_events observed: {:?}",
-                BRIDGE_AMOUNT_STARS, c2m_bridge_calls.c2m_bridge_events
+                UNAPPROVED_AMOUNT_STARS, c2m_bridge_calls.c2m_bridge_events
             )
         });
 
@@ -811,7 +783,7 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
         let sys_tx: SystemTransaction =
             deserialize(sta.0.serialized_system_transaction.as_slice()).ok()?;
         match sys_tx {
-            SystemTransaction::UnlockToTreasury { amount } if amount == BRIDGE_AMOUNT_STARS as u128 => {
+            SystemTransaction::UnlockToTreasury { amount } if amount == UNAPPROVED_AMOUNT_STARS as u128 => {
                 Some(amount)
             }
             _ => None,
@@ -829,7 +801,7 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
         "UserTransfer.recipient should carry the original 32-byte recipient"
     );
     assert_eq!(
-        amount, BRIDGE_AMOUNT_STARS,
+        amount, UNAPPROVED_AMOUNT_STARS,
         "InvalidTransfer.amount should equal the STAR amount transferred"
     );
 
@@ -853,7 +825,7 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
                 ..
             } => {
                 assert_eq!(
-                    amount, BRIDGE_AMOUNT_STARS as u128,
+                    amount, UNAPPROVED_AMOUNT_STARS as u128,
                     "indexer BridgeUnapprovedTransfer.amount should equal the bridged STAR amount"
                 );
                 assert_eq!(
@@ -877,8 +849,6 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
 /// and resets the accumulator.
 #[e2e_test]
 async fn subminimal_transfers_accumulate_and_flush_on_threshold_breach() {
-    let _serial = lock_c2m_bridge_serial().await;
-
     /// Each individual transfer (< `c_to_m_bridge_min_amount=1000` STARS).
     const SUBMINIMAL_AMOUNT_STARS: u64 = 999;
     /// Flush threshold (STARS). Must satisfy
@@ -926,19 +896,21 @@ async fn subminimal_transfers_accumulate_and_flush_on_threshold_breach() {
             .await
             .expect("Failed to submit subminimal bridge transfer to Cardano");
 
-        let calls = wait_for_bridge_calls(&midnight_client, min_midnight_block).await;
+        let calls =
+            wait_for_bridge_transfer(&midnight_client, min_midnight_block, prepared.tx_id).await;
 
-        // The handle_transfers extrinsic for this Cardano tx must be observed.
-        assert!(
-            calls
-                .transfers
-                .iter()
-                .any(|t| t.mc_tx_hash.0 == prepared.tx_id),
-            "Expected to observe BridgeTransferV1 for subminimal #{} (mc_tx_hash {})",
-            i,
-            hex::encode(prepared.tx_id)
-        );
-
+        // Only this test's transfers are subminimal, so any other test's unlock
+        // sharing the block is far above the subminimal total.
+        let unlock_amount = calls.system_transactions_applied.iter().find_map(|sta| {
+            match deserialize(sta.0.serialized_system_transaction.as_slice()).ok()? {
+                SystemTransaction::UnlockToTreasury { amount }
+                    if amount <= EXPECTED_TOTAL_STARS =>
+                {
+                    Some(amount)
+                }
+                _ => None,
+            }
+        });
         let flush_event = calls.c2m_bridge_events.iter().find_map(|ev| match ev {
             mn_meta::c2m_bridge::Event::SubminimalFlushTransfer {
                 amount,
@@ -946,14 +918,6 @@ async fn subminimal_transfers_accumulate_and_flush_on_threshold_breach() {
                 midnight_tx_hash,
             } => Some((*amount, *count, midnight_tx_hash)),
             _ => None,
-        });
-        let unlock_amount = calls.system_transactions_applied.iter().find_map(|sta| {
-            let sys_tx: SystemTransaction =
-                deserialize(sta.0.serialized_system_transaction.as_slice()).ok()?;
-            match sys_tx {
-                SystemTransaction::UnlockToTreasury { amount } => Some(amount),
-                _ => None,
-            }
         });
 
         if i < 3 {
@@ -1091,16 +1055,34 @@ async fn setup_and_prepare_bridge_transfer(
     (cardano_client, midnight_client, prepared)
 }
 
-/// Wait until midnight's cnight observer picks up a bridge transfer, ignoring
-/// any block at or before `min_block_number`.
-async fn wait_for_bridge_calls(
+/// Wait for the block whose `handle_transfers` call carries `mc_tx_hash`.
+async fn wait_for_bridge_transfer(
     midnight_client: &MidnightClient,
     min_block_number: u64,
+    mc_tx_hash: [u8; 32],
 ) -> C2MBridgePalletCalls {
     midnight_client
-        .subscribe_to_c2m_bridge_transfers(BRIDGE_OBSERVATION_TIMEOUT, min_block_number)
+        .subscribe_to_c2m_bridge_transfers(BRIDGE_OBSERVATION_TIMEOUT, min_block_number, |calls| {
+            calls.transfers.iter().any(|t| t.mc_tx_hash.0 == mc_tx_hash)
+        })
         .await
-        .expect("Failed to observe bridge transfer handler calls")
+        .unwrap_or_else(|e| {
+            panic!(
+                "Cardano tx {} never reached handle_transfers: {e}",
+                hex::encode(mc_tx_hash)
+            )
+        })
+}
+
+fn own_transfer(
+    calls: &C2MBridgePalletCalls,
+    mc_tx_hash: [u8; 32],
+) -> &BridgeTransferV1<BridgeRecipient> {
+    calls
+        .transfers
+        .iter()
+        .find(|t| t.mc_tx_hash.0 == mc_tx_hash)
+        .expect("Expected this test's BridgeTransferV1 in the handle_transfers call")
 }
 
 /// The Cardano tx hash a `C2MBridge` event refers to.
@@ -1120,30 +1102,15 @@ async fn await_bridge_calls_resolving(
     min_block_number: u64,
     mc_tx_hash: [u8; 32],
 ) -> Option<C2MBridgePalletCalls> {
-    let deadline = tokio::time::Instant::now() + BRIDGE_OBSERVATION_TIMEOUT;
-    let mut min_block_number = min_block_number;
-    loop {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            return None;
-        }
-        // Each call returns the next block carrying a `handle_transfers` call, or
-        // errors once `remaining` elapses without one.
-        let Ok(calls) = midnight_client
-            .subscribe_to_c2m_bridge_transfers(remaining, min_block_number)
-            .await
-        else {
-            return None;
-        };
-        if calls
-            .c2m_bridge_events
-            .iter()
-            .any(|ev| event_mc_tx_hash(ev) == Some(mc_tx_hash))
-        {
-            return Some(calls);
-        }
-        min_block_number = calls.block_number;
-    }
+    midnight_client
+        .subscribe_to_c2m_bridge_transfers(BRIDGE_OBSERVATION_TIMEOUT, min_block_number, |calls| {
+            calls
+                .c2m_bridge_events
+                .iter()
+                .any(|ev| event_mc_tx_hash(ev) == Some(mc_tx_hash))
+        })
+        .await
+        .ok()
 }
 
 const LOCAL_ENV_COUNCIL_KEYS: [&str; 3] = ["//Four", "//Five", "//Six"];
@@ -1178,16 +1145,19 @@ async fn submit_via_governance(
     .await
 }
 
-/// Pre-approve a single Cardano tx hash via `C2MBridge.add_approved_mc_tx_hashes`.
-async fn approve_mc_tx_hash_via_governance(
+/// Pre-approve Cardano tx hashes in one `C2MBridge.add_approved_mc_tx_hashes` call.
+async fn approve_mc_tx_hashes_via_governance(
     midnight: &MidnightClient,
-    mc_tx_hash: [u8; 32],
+    mc_tx_hashes: &[[u8; 32]],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // BoundedVec<McTxHash, _> SCALE-encodes identically to Vec<McTxHash>;
     // McTxHash is a single-field tuple struct around `[u8; 32]`.
-    let hashes_value = DynValue::unnamed_composite(vec![DynValue::unnamed_composite(vec![
-        DynValue::from_bytes(mc_tx_hash.as_slice()),
-    ])]);
+    let hashes_value = DynValue::unnamed_composite(
+        mc_tx_hashes
+            .iter()
+            .map(|h| DynValue::unnamed_composite(vec![DynValue::from_bytes(h.as_slice())]))
+            .collect::<Vec<_>>(),
+    );
     submit_via_governance(
         midnight,
         "C2MBridge",

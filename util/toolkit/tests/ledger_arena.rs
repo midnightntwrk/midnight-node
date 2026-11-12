@@ -54,6 +54,11 @@ fn synthetic_source(l8: u64, l9: u64) -> SourceTransactions {
 	SourceTransactions::new(blocks, "undeployed")
 }
 
+/// The 8 -> 9 fork persists its translated state (#2431), a root no snapshot file owns.
+/// Every replay here translates the same ledger-8 state, so it is one root; the arena's
+/// reconcile drops it the next time a process opens the arena.
+const FORK_ROOTS: usize = 1;
+
 fn root_count() -> usize {
 	arena_db::try_default_storage()
 		.unwrap()
@@ -82,11 +87,11 @@ async fn snapshot_roots_survive_gc_and_released_roots_do_not_leak() {
 		.unwrap()
 		.count();
 	assert!(snapshots >= 2, "checkpoints and the tip each leave a snapshot");
-	assert_eq!(root_count(), snapshots, "one arena root per snapshot file, none left by the fork");
+	assert_eq!(root_count(), snapshots + FORK_ROOTS, "one arena root per snapshot file");
 
 	// Saving the tip again replaces its snapshot, and its root, in place.
 	let _ = build_fork_aware_context_cached(&seeds, &source, Some(&backend), 0).await;
-	assert_eq!(root_count(), snapshots);
+	assert_eq!(root_count(), snapshots + FORK_ROOTS);
 
 	// Nothing but the roots matters to a GC; what they reach must survive it.
 	let removed = arena_db::try_default_storage()
@@ -108,7 +113,7 @@ async fn snapshot_roots_survive_gc_and_released_roots_do_not_leak() {
 		wallet_state_cache::release_snapshot_root(snapshot);
 	}
 	ledger_arena::flush();
-	assert_eq!(root_count(), snapshots - released.len());
+	assert_eq!(root_count(), snapshots + FORK_ROOTS - released.len());
 	// Age every snapshot past the grace period, then let a longer chain's checkpoints
 	// delete them: each deleted snapshot's root must go with it.
 	let ledger_dir = files.path().join(hex::encode(chain_id.0)).join("ledger");
@@ -120,7 +125,11 @@ async fn snapshot_roots_survive_gc_and_released_roots_do_not_leak() {
 	}
 	let longer = synthetic_source(6, 20);
 	let _ = build_fork_aware_context_cached(&seeds, &longer, Some(&backend), 2).await;
-	assert_eq!(root_count(), snapshot_files(), "deleted snapshots released their roots");
+	assert_eq!(
+		root_count(),
+		snapshot_files() + FORK_ROOTS,
+		"deleted snapshots released their roots"
+	);
 }
 
 /// Full GC of an existing arena, for sizing the GC threshold:

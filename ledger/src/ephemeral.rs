@@ -21,7 +21,9 @@
 //! shared storage would write those allocations to disk.
 //!
 //! A call counts as block execution when [`LedgerOnchainExt`] is registered, which the node's
-//! executor does for `CallContext::Onchain` only.
+//! executor does for `CallContext::Onchain` only. During block execution only the post-block
+//! tip is persisted; intra-block states are held in [`LedgerStatesExt`] until the post-block
+//! update releases them.
 
 use ledger_storage_ledger_8::{
 	Storage,
@@ -30,7 +32,9 @@ use ledger_storage_ledger_8::{
 	db::{DB, DummyArbitrary, Update},
 	storage::{DEFAULT_CACHE_SIZE, default_storage, set_default_storage, try_get_default_storage},
 };
-use midnight_primitives_ledger::{LedgerEphemeralExt, LedgerOnchainExt, LedgerStorageExt};
+use midnight_primitives_ledger::{
+	LedgerEphemeralExt, LedgerOnchainExt, LedgerStatesExt, LedgerStorageExt,
+};
 use sp_externalities::{Externalities, ExternalitiesExt};
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
@@ -118,9 +122,13 @@ pub fn ensure_storage<D: DB>(mut ext: &mut dyn Externalities) -> Arc<Storage<Eph
 		.unwrap_or_else(|storage| storage)
 }
 
-/// Keep a newly produced ledger state: persist it during block execution, otherwise hold it for
+/// Keep a newly produced post-block ledger state (the block's tip): persist it during block
+/// execution and drop every intermediate state held in [`LedgerStatesExt`], otherwise hold it for
 /// the rest of the execution. `state_root` must be its serialized key, taken before this call.
-pub fn retain<T, D>(mut ext: &mut dyn Externalities, state_root: &[u8], mut state: Sp<T, D>)
+///
+/// The released intermediates include this block's input state, so the following storage flush
+/// `uncache`s them instead of writing them to disk.
+pub fn retain<T, D>(ext: &mut dyn Externalities, state_root: &[u8], mut state: Sp<T, D>)
 where
 	T: ledger_storage_ledger_8::Storable<D>,
 	D: DB,
@@ -128,8 +136,44 @@ where
 {
 	if is_onchain(ext) {
 		state.persist();
+		LedgerStatesExt::release_all(ext);
 		return;
 	}
+	hold_offchain(ext, state_root, state);
+}
+
+/// Keep a newly produced intra-block ledger state. `state_root` must be its serialized key, taken
+/// before this call.
+///
+/// During block execution it is *not* persisted: [`LedgerStatesExt`] keeps it addressable until
+/// the post-block update ([`retain`]) releases it. The input state is not released, so a FRAME
+/// storage rollback after the apply can still resolve the `StateKey` it reverts to. Otherwise it
+/// is held for the rest of the execution, like every off-chain state.
+pub fn retain_intermediate<T, D>(
+	ext: &mut dyn Externalities,
+	state_root: &[u8],
+	state: Sp<T, D>,
+) -> Result<(), sp_externalities::Error>
+where
+	T: ledger_storage_ledger_8::Storable<D>,
+	D: DB,
+	Sp<T, D>: Send,
+{
+	if is_onchain(ext) {
+		return LedgerStatesExt::hold(ext, Box::new(state)).inspect_err(|e| {
+			log::error!(target: LOG_TARGET, "Failed to hold intermediate ledger state: {e:?}");
+		});
+	}
+	hold_offchain(ext, state_root, state);
+	Ok(())
+}
+
+fn hold_offchain<T, D>(mut ext: &mut dyn Externalities, state_root: &[u8], state: Sp<T, D>)
+where
+	T: ledger_storage_ledger_8::Storable<D>,
+	D: DB,
+	Sp<T, D>: Send,
+{
 	if ext.extension::<LedgerEphemeralExt>().is_none()
 		&& ext.register_extension(LedgerEphemeralExt::default()).is_err()
 	{

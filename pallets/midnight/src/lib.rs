@@ -30,8 +30,8 @@ pub use midnight_primitives::{
 
 pub use midnight_node_ledger::types::active_version::LedgerApiError;
 
-#[cfg(test)]
-mod mock;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod mock;
 
 #[cfg(test)]
 mod tests;
@@ -685,7 +685,12 @@ pub mod pallet {
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
-			let max_weight = T::BlockWeights::get().max_block.ref_time();
+			let weights = T::BlockWeights::get();
+			let max_weight = weights
+				.get(frame_support::dispatch::DispatchClass::Normal)
+				.max_total
+				.unwrap_or(weights.max_block)
+				.ref_time();
 			Self::ensure_declared_nodes_within_limit(tx)?;
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}

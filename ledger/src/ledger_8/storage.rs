@@ -139,6 +139,26 @@ where
 	bytes
 }
 
+/// Returns the persist refcount for the ledger state addressed by `state_key`,
+/// or `None` if the state is not currently a GC root (refcount zero).
+///
+/// Test-only. Hard-wired to `ParityDb`, matching `init_storage_paritydb_separate`.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
+	use crate::ledger_8::api::Ledger;
+	use crate::ledger_8::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		crate::ledger_8::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	default_storage::<ParityDb>()
+		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+}
+
 #[cfg(feature = "std")]
 pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	dir: P,
