@@ -1,0 +1,30 @@
+# Guards the frozen res/ per-network config (deployed genesis artifacts) against
+# any change. These files must never change without a deliberate, reviewed decision.
+name: "Frozen Paths Check"
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  frozen-paths:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          # Full history so the base branch is available for the diff: with
+          # fetch-depth 0, checkout fetches +refs/heads/*:refs/remotes/origin/*,
+          # which is what makes origin/<base_ref> resolvable below.
+          fetch-depth: 0
+
+      - name: Frozen res/ network config
+        env:
+          # Diff against the base *branch*, not github.event.pull_request.base.sha.
+          # That SHA is pinned to the base tip from when the PR was last synced, so
+          # as the base moves on, the `BASE...HEAD` merge-base stops advancing and
+          # the three-dot diff starts reporting commits merged into the base since
+          # - flagging frozen res/ files the PR never touched.
+          BASE_REF: origin/${{ github.base_ref }}
+        run: scripts/ci/check-frozen-res.sh "$BASE_REF"

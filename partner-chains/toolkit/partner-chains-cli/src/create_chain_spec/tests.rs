@@ -13,10 +13,9 @@ impl PartnerChainRuntime for MockRuntime {
 		config: &super::CreateChainSpecConfig<TestSessionKeys>,
 	) -> serde_json::Value {
 		serde_json::json!({
-			"session":config.pallet_partner_chains_session_config::<MockRuntime>(),
+			"session":config.pallet_session_config::<MockRuntime>(),
 			"sessionCommitteeManagement": config.pallet_session_validator_management_config::<MockRuntime>(),
 			"sidechain": config.pallet_sidechain_config::<MockRuntime>(SlotsPerEpoch(13)),
-			"governedMap":config.governed_map_config::<MockRuntime>(),
 			"bridge":config.bridge_config::<MockRuntime>(),
 		})
 	}
@@ -154,10 +153,6 @@ fn cardano_addresses_json() -> serde_json::Value {
 				"asset_name": "0x5043546f6b656e44656d6f",
 			},
 			"illiquid_circulation_supply_validator_address": "addr_test1wrhvtvx3f0g9wv9rx8kfqc60jva3e07nqujk2cspekv4mqs9rjdvz"
-		},
-		"governed_map": {
-			"validator_address": "addr_test1wqpjpjq08treyvmqjca0qy5kw8xgq4awgt945v46jsxgyhsafz4ws",
-			"policy_id": "0xc814db91bfaf7f0078e2c69d13443ffc46c9957393174f7baa8d0000"
 		}
 	})
 }
@@ -190,13 +185,6 @@ fn show_chain_parameters() -> MockIO {
 		MockIO::print(
 			"- illiquid circulation supply validator address: addr_test1wrhvtvx3f0g9wv9rx8kfqc60jva3e07nqujk2cspekv4mqs9rjdvz",
 		),
-		MockIO::print("Governed Map Configuration:"),
-		MockIO::print(
-			"- validator address: addr_test1wqpjpjq08treyvmqjca0qy5kw8xgq4awgt945v46jsxgyhsafz4ws",
-		),
-		MockIO::print(
-			"- asset policy ID: 0xc814db91bfaf7f0078e2c69d13443ffc46c9957393174f7baa8d0000",
-		),
 	])
 }
 
@@ -216,8 +204,9 @@ fn generated_chain_spec() -> serde_json::Value {
 	serde_json::json!(
 		{
 			"session": {
-				"initialValidators": [
+				"keys": [
 					[
+						"5C7C2Z5sWbytvHpuLTvzKunnnRwQxft1jiqrLD5rhucQ5S9X",
 						"5C7C2Z5sWbytvHpuLTvzKunnnRwQxft1jiqrLD5rhucQ5S9X",
 						{
 							"aura": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -226,12 +215,14 @@ fn generated_chain_spec() -> serde_json::Value {
 					],
 					[
 						"5DVskgSC9ncWQpxFMeUn45NU43RUq93ByEge6ApbnLk6BR9N",
+						"5DVskgSC9ncWQpxFMeUn45NU43RUq93ByEge6ApbnLk6BR9N",
 						{
 							"aura": "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty",
 							"grandpa": "5GoNkf6WdbxCFnPdAnYYQyCjAKPJgLNxXwPjwTh6DGg6gN3E"
 						}
 					]
-				]
+				],
+				"nonAuthorityKeys": []
 			},
 			"sessionCommitteeManagement": {
 				"initialAuthorities": [
@@ -248,17 +239,11 @@ fn generated_chain_spec() -> serde_json::Value {
 				"genesisUtxo": "0000000000000000000000000000000000000000000000000000000000000000#0",
 				"slotsPerEpoch": 13,
 			},
-			"governedMap": {
-				"mainChainScripts": {
-					"asset_policy_id": "0xc814db91bfaf7f0078e2c69d13443ffc46c9957393174f7baa8d0000",
-					"validator_address": "addr_test1wqpjpjq08treyvmqjca0qy5kw8xgq4awgt945v46jsxgyhsafz4ws"
-				},
-				"marker": null,
-			},
 			"bridge": {
 				"initialCheckpoint": "0x0000000000000000000000000000000000000000000000000000000000000000",
 				"mainChainScripts": {
 					"illiquid_circulation_supply_validator_address": "addr_test1wrhvtvx3f0g9wv9rx8kfqc60jva3e07nqujk2cspekv4mqs9rjdvz",
+					"reserve_validator_address": "",
 					"token_asset_name": "0x5043546f6b656e44656d6f",
 					"token_policy_id": "0xada83ddd029614381f00e28de0922ab0dec6983ea9dd29ae20eef9b4",
 				},

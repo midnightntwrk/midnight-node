@@ -20,7 +20,7 @@ set -euxo pipefail
 . /shared/mc.env
 
 ./midnight-node \
-  --charlie \
+  --validator \
   --chain=/shared/chain-spec.json \
   --node-key=0000000000000000000000000000000000000000000000000000000000000003 \
   --port=30335 \
@@ -29,7 +29,7 @@ set -euxo pipefail
   --base-path=/data \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
-  --rpc-port=9935 \
+  --rpc-port="$RPC_PORT" \
   --rpc-cors=all \
   --prometheus-port=9617 \
   --prometheus-external \

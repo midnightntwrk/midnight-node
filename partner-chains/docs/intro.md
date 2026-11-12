@@ -29,8 +29,6 @@
     * [registration-status](#registration-status)
     * [ariadne-parameters](#ariadne-parameters)
     * [registration-signatures](#registration-signatures)
-    * [sign-address-association](#sign-address-association)
-    * [sign-block-producer-metadata](#sign-block-producer-metadata)
     * [smart-contracts](#smart-contracts)
       * [get-scripts](#get-scripts)
       * [upsert-d-parameter](#upsert-d-parameter)
@@ -73,7 +71,6 @@
     * [deregister](#deregister)
   * [Features](#features)
     * [Features Overview](#feature-overview)
-    * [Block Participation Rewards](#block-participation-rewards)
     * [Partner Chains Governance](#partner-chains-governance)
     * [Native Token Reserve Management](#native-token-reserve-management)
   * [Rust Docs](#rust-docs)
@@ -670,34 +667,6 @@ $ pc-node registration-signatures --genesis-utxo <GENESIS_UTXO>
 registered. `REGISTRATION_UTXO` should be a UTXO in the wallet associated with that signing key
 available to be spent by the subsequent registration transaction.
 
-#### sign-address-association
-
-Creates signatures required for Cardano delegators to associate their Cardano addresses with their
-Partner Chain address.
-
-```shell
-$ pc-node sign-address-association
-    --genesis-utxo <GENESIS_UTXO>
-    --partnerchain-address <PARTNERCHAIN_ADDRESS>
-    --signing-key <SIGNING_KEY>
-```
-
-The generated signatures can be later submitted to the Partner Chain ledger via an extrinsic.
-
-#### sign-block-producer-metadata
-
-Signs block producer metadata for submitting to the runtime.
-
-```shell
-$ pc-node sign-block-producer-metadata
-    --genesis-utxo <GENESIS_UTXO>
-    --metadata-file <METADATA_FILE>
-    --cross-chain-signing-key <CROSS_CHAIN_SIGNING_KEY>
-```
-
-The `METADATA_FILE` should be a Json file containing data compatible with the metadata format used.
-As each Partner Chain can define its own format, users should consult their Partner Chain's documentation.
-
 #### smart-contracts
 
 The smart contracts command provides multiple sub-commands for interacting with Partner Chain smart
@@ -1278,17 +1247,9 @@ features.
 * **core**: Establishes a chain as a Partner Chain by tying its identity to a `genesis utxo` on Cardano. Provides the mechanism for the Partner Chain's blocks to reference stable Cardano blocks.
 * **governed map**: Governance controlled key-value store on the Cardano main chain.
 * **native token management**: Provides governance controlled tokens and token reserve management.
-* **address association**: Provides a mechanism for users to establish a mapping between their identities on Cardano and the Partner Chain
 * **committee selection**: Provides a Cardano-based committee selection using the Ariadne algorithm.
-* **Cardano-based block production rewards**: Calculation of rewards for Partner Chain block producers
-and their Cardano delegators.
 
 More detailed documentation for the different features is provided in the sections below.
-
-#### Block Participation Rewards
-
-Please refer to [block-participation-rewards.md](./developer-guides/block-participation-rewards.md)
-to learn about mechanisms to build and configure rewards for block producers and their delegators.
 
 #### Partner Chains Governance
 

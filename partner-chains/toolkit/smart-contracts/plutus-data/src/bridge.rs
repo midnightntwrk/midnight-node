@@ -13,8 +13,3 @@ pub fn transfer_to_addressed_transaction_metadatum(
 	list.add(&TransactionMetadatum::new_bytes(address_bytes.to_vec())?);
 	Ok(TransactionMetadatum::new_list(&list))
 }
-
-/// Metadata of reserve transfer is an empty list.
-pub fn transfer_to_reserve_metadatum() -> TransactionMetadatum {
-	TransactionMetadatum::new_list(&MetadataList::new())
-}

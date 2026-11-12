@@ -28,7 +28,7 @@ use sidechain_mc_hash::McHashDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 use sqlx::{Pool, Postgres};
 
-use super::cfg::midnight_cfg::MidnightCfg;
+use super::cfg::midnight_cfg::{MainChainFollowerMock, MidnightCfg};
 use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -44,9 +44,6 @@ use midnight_primitives_mainchain_follower::{
 	FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
 	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
 };
-
-// TODO: Decide if it should be experimental
-// #[cfg(feature = "experimental")]
 
 #[derive(Clone)]
 pub struct DataSources {
@@ -65,12 +62,13 @@ pub struct DbPoolCfg {
 	max_connections: u32,
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	cfg: MidnightCfg,
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> std::result::Result<DataSources, ServiceError> {
-	if cfg.use_main_chain_follower_mock {
+	if cfg.use_main_chain_follower_mock == MainChainFollowerMock::All {
 		let mock = create_mock_data_sources(cfg.clone()).await.map_err(|err| {
 			ServiceError::Application(
 				format!("Failed to create main chain follower mock: {err}. Check configuration.")
@@ -239,6 +237,11 @@ pub async fn create_cached_data_sources(
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
+	let mock_sources = if cfg.use_main_chain_follower_mock == MainChainFollowerMock::Authorities {
+		Some(create_mock_data_sources(cfg.clone()).await?)
+	} else {
+		None
+	};
 	warn_deprecated_allow_non_ssl(&cfg);
 	let postgres_uri = &cfg
 		.db_sync_postgres_connection_string
@@ -266,29 +269,36 @@ pub async fn create_cached_data_sources(
 		slot_duration_millis: Duration::from_millis(cfg.mc_slot_duration_millis),
 	};
 
-	let candidates_pool =
-		get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.ssl_root_cert.as_deref())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to connect to database for candidates data source: {e}");
-				e
-			})?;
+	let authority_selection: Arc<dyn AuthoritySelectionDataSource + Send + Sync> =
+		if let Some(mock) = &mock_sources {
+			mock.authority_selection.clone()
+		} else {
+			let candidates_pool =
+				get_connection(postgres_uri, CANDIDATES_POOL_CFG, cfg.ssl_root_cert.as_deref())
+					.await
+					.map_err(|e| {
+						log::warn!("Failed to connect to database for candidates data source: {e}");
+						e
+					})?;
 
-	// All these pools are connections to the same database, so we can use any pool to create the index
-	create_index_if_not_exists(&candidates_pool).await;
+			// All these pools are connections to the same database, so we can use any pool to create the index
+			create_index_if_not_exists(&candidates_pool).await;
 
-	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to initialise candidates data source: {e}");
-				e
-			})?;
-	let candidates_data_source_cached =
-		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
-			log::warn!("Failed to create candidates data source cache: {e}");
-			e
-		})?;
+			let candidates_data_source =
+				CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
+					.await
+					.map_err(|e| {
+						log::warn!("Failed to initialise candidates data source: {e}");
+						e
+					})?;
+			let candidates_data_source_cached =
+				candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
+					log::warn!("Failed to create candidates data source cache: {e}");
+					e
+				})?;
+
+			Arc::new(candidates_data_source_cached)
+		};
 
 	let sidechain_pool =
 		get_connection(postgres_uri, SIDECHAIN_POOL_CFG, cfg.ssl_root_cert.as_deref())
@@ -335,23 +345,31 @@ pub async fn create_cached_data_sources(
 		1000,
 	);
 
-	let federated_authority_observation_pool = get_connection(
-		postgres_uri,
-		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
-		cfg.ssl_root_cert.as_deref(),
-	)
-	.await
-	.map_err(|e| {
-		log::warn!(
-			"Failed to connect to database for federated_authority_observation data source: {e}"
+	let federated_authority_observation: Arc<
+		dyn FederatedAuthorityObservationDataSource + Send + Sync,
+	> = if let Some(mock) = &mock_sources {
+		mock.federated_authority_observation.clone()
+	} else {
+		let federated_authority_observation_pool = get_connection(
+			postgres_uri,
+			FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
+			cfg.ssl_root_cert.as_deref(),
+		)
+		.await
+		.map_err(|e| {
+			log::warn!(
+				"Failed to connect to database for federated_authority_observation data source: {e}"
+			);
+			e
+		})?;
+		let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
+			federated_authority_observation_pool,
+			midnight_metrics_opt,
+			1000,
 		);
-		e
-	})?;
-	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
-		federated_authority_observation_pool,
-		midnight_metrics_opt,
-		1000,
-	);
+
+		Arc::new(federated_authority_observation)
+	};
 
 	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.ssl_root_cert.as_deref())
 		.await
@@ -370,10 +388,10 @@ pub async fn create_cached_data_sources(
 	Ok(DataSources {
 		sidechain_rpc: Arc::new(sidechain_rpc),
 		mc_hash: Arc::new(mc_hash),
-		authority_selection: Arc::new(candidates_data_source_cached),
+		authority_selection,
 		cnight_observation: Arc::new(cnight_observation),
 		bridge: Arc::new(bridge),
-		federated_authority_observation: Arc::new(federated_authority_observation),
+		federated_authority_observation,
 	})
 }
 
@@ -524,6 +542,39 @@ fn missing(field: &str) -> sc_service::Error {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	fn mock_authorities_cfg() -> MidnightCfg {
+		MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::Authorities,
+			mock_registrations_file: Some(
+				concat!(
+					env!("CARGO_MANIFEST_DIR"),
+					"/../res/mock-bridge-data/default-registrations.json"
+				)
+				.into(),
+			),
+			mc_epoch_duration_millis: 86_400_000,
+			..Default::default()
+		}
+	}
+
+	#[tokio::test]
+	async fn full_mock_does_not_open_a_database() {
+		let cfg = MidnightCfg {
+			use_main_chain_follower_mock: MainChainFollowerMock::All,
+			..mock_authorities_cfg()
+		};
+		assert!(create_cached_main_chain_follower_data_sources(cfg, None, None).await.is_ok());
+	}
+
+	#[tokio::test]
+	async fn authority_mock_does_not_fall_back_to_mock_cardano() {
+		let result =
+			create_cached_main_chain_follower_data_sources(mock_authorities_cfg(), None, None)
+				.await;
+		let error = result.err().expect("real Cardano still requires database configuration");
+		assert!(error.to_string().contains("db_sync_postgres_connection_string"));
+	}
 
 	#[test]
 	fn connection_error_redacts_infrastructure_details() {

@@ -23,7 +23,13 @@ pub use pallet::*;
 mod check_throttle;
 pub use check_throttle::CheckThrottle;
 
-pub mod migration;
+/// `InvalidTransaction::Custom` code returned when a signed transaction would take its
+/// account over the per-window byte or transaction limit.
+///
+/// Distinct from `InvalidTransaction::ExhaustsResources`, which signals the per-transaction
+/// or per-block weight limit. Codes from the top of the range down are used for errors raised
+/// outside the ledger (255 is the ledger mapping's `HostApiError`), so this takes the next one.
+pub const THROTTLE_LIMIT_EXCEEDED: u8 = 254;
 
 #[cfg(test)]
 mod mock;
@@ -73,7 +79,7 @@ pub mod pallet {
 		type WindowSize: Get<u32>;
 	}
 
-	/// Tracks (bytes_used, window_start_block) per account for throttling signed transactions.
+	/// Tracks per-account throttle usage within a rolling block window.
 	#[pallet::storage]
 	pub type AccountUsage<T: Config> =
 		StorageMap<_, Blake2_128Concat, T::AccountId, UsageStats<T>, ValueQuery>;

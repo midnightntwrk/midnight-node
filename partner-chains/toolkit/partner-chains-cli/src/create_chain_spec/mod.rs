@@ -67,15 +67,6 @@ impl<T: PartnerChainRuntime> CreateChainSpecCmd<T> {
 			"- illiquid circulation supply validator address: {}",
 			config.illiquid_circulation_supply_validator_address
 		));
-		context.print("Governed Map Configuration:");
-		context.print(&format!(
-			"- validator address: {}",
-			config.governed_map_validator_address.clone().unwrap_or_default()
-		));
-		context.print(&format!(
-			"- asset policy ID: {}",
-			config.governed_map_asset_policy_id.clone().unwrap_or_default().to_hex_string()
-		));
 		use colored::Colorize;
 		if config.initial_permissioned_candidates_parsed.is_empty() {
 			context.print("WARNING: The list of initial permissioned candidates is empty. Generated chain spec will not allow the chain to start.".red().to_string().as_str());
@@ -108,8 +99,6 @@ pub struct CreateChainSpecConfig<Keys> {
 	pub bridge_token_policy: PolicyId,
 	pub bridge_token_asset_name: AssetName,
 	pub illiquid_circulation_supply_validator_address: MainchainAddress,
-	pub governed_map_validator_address: Option<MainchainAddress>,
-	pub governed_map_asset_policy_id: Option<PolicyId>,
 }
 
 impl<Keys: MaybeFromCandidateKeys> CreateChainSpecConfig<Keys> {
@@ -140,9 +129,6 @@ impl<Keys: MaybeFromCandidateKeys> CreateChainSpecConfig<Keys> {
 				c,
 				&config_fields::ILLIQUID_SUPPLY_ADDRESS,
 			)?,
-			governed_map_validator_address: config_fields::GOVERNED_MAP_VALIDATOR_ADDRESS
-				.load_from_file(c),
-			governed_map_asset_policy_id: config_fields::GOVERNED_MAP_POLICY_ID.load_from_file(c),
 		})
 	}
 
@@ -158,21 +144,25 @@ impl<Keys: MaybeFromCandidateKeys> CreateChainSpecConfig<Keys> {
 		}
 	}
 
-	/// Returns [pallet_partner_chains_session::GenesisConfig] derived from the config, using initial permissioned candidates
+	/// Returns [pallet_session::GenesisConfig] derived from the config, using initial permissioned candidates
 	/// as initial validators
-	pub fn pallet_partner_chains_session_config<T: pallet_partner_chains_session::Config>(
+	pub fn pallet_session_config<T: pallet_session::Config>(
 		&self,
-	) -> pallet_partner_chains_session::GenesisConfig<T>
+	) -> pallet_session::GenesisConfig<T>
 	where
 		T::ValidatorId: From<AccountId32>,
 		T::Keys: From<Keys>,
+		T::AccountId: From<AccountId32>,
 	{
-		pallet_partner_chains_session::GenesisConfig {
-			initial_validators: self
+		pallet_session::GenesisConfig {
+			keys: self
 				.initial_permissioned_candidates_parsed
 				.iter()
-				.map(|c| (c.account_id_32().into(), c.keys.clone().into()))
+				.map(|c| {
+					(c.account_id_32().into(), c.account_id_32().into(), c.keys.clone().into())
+				})
 				.collect::<Vec<_>>(),
+			..Default::default()
 		}
 	}
 
@@ -220,25 +210,9 @@ impl<Keys: MaybeFromCandidateKeys> CreateChainSpecConfig<Keys> {
 				illiquid_circulation_supply_validator_address: self
 					.illiquid_circulation_supply_validator_address
 					.clone(),
+				reserve_validator_address: MainchainAddress::default(),
 			}),
 			initial_checkpoint: Some(self.genesis_utxo.tx_hash),
-			_marker: PhantomData,
-		}
-	}
-
-	/// Returns [pallet_governed_map::GenesisConfig] derived from the config
-	pub fn governed_map_config<T: pallet_governed_map::Config>(
-		&self,
-	) -> pallet_governed_map::GenesisConfig<T> {
-		pallet_governed_map::GenesisConfig {
-			main_chain_scripts: self.governed_map_validator_address.as_ref().and_then(|addr| {
-				self.governed_map_asset_policy_id.as_ref().map(|policy| {
-					sp_governed_map::MainChainScriptsV1 {
-						validator_address: addr.clone(),
-						asset_policy_id: policy.clone(),
-					}
-				})
-			}),
 			_marker: PhantomData,
 		}
 	}
@@ -256,8 +230,6 @@ impl<T> Default for CreateChainSpecConfig<T> {
 			bridge_token_policy: Default::default(),
 			bridge_token_asset_name: Default::default(),
 			illiquid_circulation_supply_validator_address: Default::default(),
-			governed_map_validator_address: Default::default(),
-			governed_map_asset_policy_id: Default::default(),
 		}
 	}
 }

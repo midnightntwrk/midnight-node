@@ -16,15 +16,14 @@
 mod common;
 
 use clap::Parser;
-use common::{
-	test_image,
-	toolkit_helper::{CircuitCall, ToolkitTestHelper},
-	wait_for_node::wait_for_finalized_block,
-};
+#[cfg(feature = "compact-contract-tests")]
+use common::toolkit_helper::{CircuitCall, ContractSpec, ToolkitTestHelper};
+use common::{test_image, wait_for_node, wait_for_node::wait_for_finalized_block};
+#[cfg(feature = "compact-contract-tests")]
+use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
 	commands::{contract_address, show_address},
-	tx_generator::builder::FUNDING_SEED,
 };
 use std::{path::Path, time::Duration};
 use testcontainers::{
@@ -49,6 +48,8 @@ async fn node_ws_url() -> &'static str {
 				.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 				.with_exposed_port(ContainerPort::Tcp(9944))
 				.with_env_var("CFG_PRESET", "dev")
+				// Each toolkit command opens its own RPC client, outrunning the default cap of 100.
+				.with_env_var("APPEND_ARGS", "--rpc-max-connections 1000")
 				.start()
 				.await
 				.expect("failed to start midnight-node container");
@@ -109,6 +110,7 @@ async fn run_cli(args: &[&str]) {
 }
 
 const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
+const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000002";
 
 fn ledger_test_artifacts_ready() -> bool {
 	let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
@@ -189,7 +191,7 @@ async fn register_dust_address() {
 			"--network",
 			"undeployed",
 			"--seed",
-			"0000000000000000000000000000000000000000000000000000000000000002",
+			SOURCE_SEED,
 			"--dust",
 		]);
 		match cli.command {
@@ -208,9 +210,9 @@ async fn register_dust_address() {
 		"inmemory",
 		"register-dust-address",
 		"--wallet-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"--destination-dust",
 		&dust_address,
 		"-s",
@@ -229,7 +231,7 @@ async fn register_dust_address() {
 		"--wallet-seed",
 		"0000000000000000000000000000000000000000000000000000000000000052",
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"-s",
 		url,
 		"-d",
@@ -244,9 +246,73 @@ async fn register_dust_address() {
 		"inmemory",
 		"deregister-dust-address",
 		"--wallet-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// Issue #1896: fund a new wallet with 4 NIGHT UTXOs, then register it self-funded
+	// (no --funding-seed) - the fee is paid from the wallet's own retroactive DUST.
+	let new_seed = hex::encode(rand::random::<[u8; 32]>());
+	let new_address = {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"show-address",
+			"--network",
+			"undeployed",
+			"--seed",
+			&new_seed,
+			"--unshielded",
+		]);
+		match cli.command {
+			Commands::ShowAddress(args) => match show_address::execute(args) {
+				show_address::ShowAddress::SingleAddress(addr) => addr,
+				show_address::ShowAddress::Addresses(_) => panic!("should not reach this arm"),
+			},
+			_ => unreachable!(),
+		}
+	};
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		"2000000000000",
+		"--destination-address",
+		&new_address,
+		"--destination-address",
+		&new_address,
+		"--destination-address",
+		&new_address,
+		"--destination-address",
+		&new_address,
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// The fresh UTXOs have accrued no retroactive DUST inside their own funding block
+	// (dt = 0); one more block accrues plenty for the fee.
+	wait_for_node::wait_for_next_finalized_block(url, Duration::from_secs(60)).await;
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"register-dust-address",
+		"--wallet-seed",
+		&new_seed,
 		"-s",
 		url,
 		"-d",
@@ -389,14 +455,13 @@ async fn contract_ops() {
 /// into on-chain transaction data. Deploys a bulletin board contract, posts a
 /// message using the secret key as a private witness, then asserts the key does
 /// not appear anywhere in the serialized transactions.
+#[cfg(feature = "compact-contract-tests")]
 #[tokio::test]
 async fn bboard_private_witness_not_leaked() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
 
-	if !helper.prerequisites_ready() {
-		return;
-	}
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	let secret_key = "deadbeefcafebabe1234567890abcdef1122334455667788aabbccddeeff0011";
 
@@ -492,4 +557,1029 @@ async fn bboard_private_witness_not_leaked() {
 
 	println!("9. Verifying takeDown() transaction does not contain secret key");
 	helper.assert_secret_not_in_tx(&takedown_tx, secret_key, "takeDown()");
+}
+
+/// Counter contract E2E ported from `midnight-contracts`: deploy, then `increment()`,
+/// exercising the full compile -> prove -> submit -> on-chain verify pipeline.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn counter_increment_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	let coin_public_addr = helper.show_address_coin_public(FUNDING_SEED);
+
+	let counter_source = helper.load_contract_file("counter/counter.compact");
+	let compiled_dir = helper
+		.compile_contract(&counter_source, "counter")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"counter/config.template.ts",
+		&[("COIN_PUBLIC", &coin_public_addr), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "counter/contract.config.ts");
+
+	let deploy = helper
+		.generate_intent_deploy(&config_file, &coin_public_addr)
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+
+	let counter_addr =
+		helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	let state_file = helper.work_dir.path().join("counter_state.mn");
+	helper
+		.contract_state(&counter_addr, &state_file)
+		.await
+		.expect("contract state fetch failed");
+
+	let increment = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public_addr,
+			&state_file,
+			&deploy.private_state,
+			&counter_addr,
+			CircuitCall { circuit_id: "increment", call_args: &[] },
+		)
+		.await
+		.expect("generate increment intent failed");
+	let increment_tx = helper
+		.send_intent(&increment.intent, &compiled_dir, FUNDING_SEED, Some(&increment.zswap_state))
+		.await
+		.expect("send increment intent failed");
+
+	helper.submit_tx(&increment_tx).await.expect("submit increment tx failed");
+}
+
+/// Welcome contract E2E ported from `midnight-contracts`: deploy, `add_participant`,
+/// `check_in` through the full compile -> prove -> submit -> verify pipeline. The
+/// constructor is simplified from the upstream `Vector<5000, Maybe<..>>` to a small
+/// fixed vector of plain strings (see `welcome.compact`).
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn welcome_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; makes the deployer an organizer via the `local_sk` witness.
+	let organizer_sk = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+	let new_organizer_sk = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+	// `Opaque<"string">`; must be identical across add/check_in so membership matches.
+	let participant = r#""alice""#;
+	let new_participant = r#""bob""#;
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let welcome_source = helper.load_contract_file("welcome/welcome.compact");
+	let compiled_dir = helper
+		.compile_contract(&welcome_source, "welcome")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"welcome/config.template.ts",
+		&[
+			("ORGANIZER_SK", organizer_sk),
+			("NEW_ORGANIZER_SK", new_organizer_sk),
+			("COIN_PUBLIC", &coin_public),
+			("NETWORK", "undeployed"),
+		],
+	);
+	let config_file = helper.write_config(&config_content, "welcome/contract.config.ts");
+
+	// Single-element seed vector for the `Vector<1, Opaque<"string">>` constructor.
+	let deploy = helper
+		.generate_intent_deploy_with_args(&config_file, &coin_public, &[r#"["seed"]"#])
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, organizer_sk, "welcome deploy");
+	helper.assert_secret_not_in_tx(&deploy_tx, new_organizer_sk, "welcome deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let welcome_addr =
+		helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Organizer adds an eligible participant.
+	let state_1 = helper.work_dir.path().join("welcome_state_1.mn");
+	helper
+		.contract_state(&welcome_addr, &state_1)
+		.await
+		.expect("contract state fetch failed");
+	let add = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_1,
+			&deploy.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "add_participant", call_args: &[participant] },
+		)
+		.await
+		.expect("generate add_participant intent failed");
+	let add_tx = helper
+		.send_intent(&add.intent, &compiled_dir, FUNDING_SEED, Some(&add.zswap_state))
+		.await
+		.expect("send add_participant intent failed");
+	helper.assert_secret_not_in_tx(&add_tx, organizer_sk, "add_participant()");
+	helper.submit_tx(&add_tx).await.expect("submit add_participant tx failed");
+
+	// Exercise the other organizer-authorized circuit and verify its witness stays private.
+	let state_2 = helper.work_dir.path().join("welcome_state_2.mn");
+	helper
+		.contract_state(&welcome_addr, &state_2)
+		.await
+		.expect("contract state fetch failed");
+	let add_organizer = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_2,
+			&add.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "add_organizer", call_args: &[] },
+		)
+		.await
+		.expect("generate add_organizer intent failed");
+	let add_organizer_tx = helper
+		.send_intent(
+			&add_organizer.intent,
+			&compiled_dir,
+			FUNDING_SEED,
+			Some(&add_organizer.zswap_state),
+		)
+		.await
+		.expect("send add_organizer intent failed");
+	helper.assert_secret_not_in_tx(&add_organizer_tx, organizer_sk, "add_organizer()");
+	helper.assert_secret_not_in_tx(&add_organizer_tx, new_organizer_sk, "add_organizer()");
+	helper
+		.submit_tx(&add_organizer_tx)
+		.await
+		.expect("submit add_organizer tx failed");
+
+	// Authenticate as the newly added organizer and exercise a privileged state mutation.
+	let state_3 = helper.work_dir.path().join("welcome_state_3.mn");
+	helper
+		.contract_state(&welcome_addr, &state_3)
+		.await
+		.expect("contract state fetch failed");
+	let add_by_new_organizer = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_3,
+			&add_organizer.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "add_participant", call_args: &[new_participant] },
+		)
+		.await
+		.expect("generate add_participant intent for new organizer failed");
+	let add_by_new_organizer_tx = helper
+		.send_intent(
+			&add_by_new_organizer.intent,
+			&compiled_dir,
+			FUNDING_SEED,
+			Some(&add_by_new_organizer.zswap_state),
+		)
+		.await
+		.expect("send add_participant intent for new organizer failed");
+	helper.assert_secret_not_in_tx(
+		&add_by_new_organizer_tx,
+		new_organizer_sk,
+		"new organizer add_participant()",
+	);
+	helper
+		.submit_tx(&add_by_new_organizer_tx)
+		.await
+		.expect("submit add_participant tx for new organizer failed");
+
+	// Check in the participant added by the new organizer.
+	let state_4 = helper.work_dir.path().join("welcome_state_4.mn");
+	helper
+		.contract_state(&welcome_addr, &state_4)
+		.await
+		.expect("contract state fetch failed");
+	let check_in = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_4,
+			&add_by_new_organizer.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "check_in", call_args: &[new_participant] },
+		)
+		.await
+		.expect("generate check_in intent failed");
+	let check_in_tx = helper
+		.send_intent(&check_in.intent, &compiled_dir, FUNDING_SEED, Some(&check_in.zswap_state))
+		.await
+		.expect("send check_in intent failed");
+	helper.submit_tx(&check_in_tx).await.expect("submit check_in tx failed");
+
+	// Read the post-call state and prove that check_in persisted its ledger mutation.
+	let state_5 = helper.work_dir.path().join("welcome_state_5.mn");
+	helper
+		.contract_state(&welcome_addr, &state_5)
+		.await
+		.expect("contract state fetch failed");
+	let verify = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_5,
+			&check_in.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "verify_checked_in", call_args: &[new_participant] },
+		)
+		.await
+		.expect("generate verify_checked_in intent failed");
+	let verify_tx = helper
+		.send_intent(&verify.intent, &compiled_dir, FUNDING_SEED, Some(&verify.zswap_state))
+		.await
+		.expect("send verify_checked_in intent failed");
+	helper.submit_tx(&verify_tx).await.expect("submit verify_checked_in tx failed");
+}
+
+/// Tic-tac-toe contract E2E ported from `midnight-contracts`: deploy a two-player game,
+/// play a full game to a Player X win, and assert the final state via verifier circuits.
+///
+/// `make_move` proves knowledge of the current player's private witness and compares its
+/// derived identity with the registered player key. Fees are paid by FUNDING_SEED; player
+/// authorization is deliberately independent from the public fee-paying wallet.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn tic_tac_toe_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	const PLAYER_X_SK: &str = "1000000000000000000000000000000000000000000000000000000000000001";
+	const PLAYER_O_SK: &str = "2000000000000000000000000000000000000000000000000000000000000002";
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("tic-tac-toe/tic_tac_toe.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "tic-tac-toe")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"tic-tac-toe/config.template.ts",
+		&[
+			("PLAYER_X_SK", PLAYER_X_SK),
+			("PLAYER_O_SK", PLAYER_O_SK),
+			("COIN_PUBLIC", &coin_public),
+			("NETWORK", "undeployed"),
+		],
+	);
+	let config_file = helper.write_config(&config_content, "tic-tac-toe/contract.config.ts");
+
+	let deploy = helper
+		.generate_intent_deploy(&config_file, &coin_public)
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, PLAYER_X_SK, "tic-tac-toe deploy");
+	helper.assert_secret_not_in_tx(&deploy_tx, PLAYER_O_SK, "tic-tac-toe deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// X wins the middle row (3-4-5). Each entry is (circuit, args, is_player_o).
+	let calls: Vec<(&str, Vec<&str>, bool)> = vec![
+		("make_move", vec!["4"], false),                   // X center
+		("make_move", vec!["0"], true),                    // O top-left
+		("make_move", vec!["3"], false),                   // X mid-left
+		("make_move", vec!["1"], true),                    // O top-middle
+		("make_move", vec!["5"], false),                   // X mid-right -> X wins
+		("verify_game_state", vec!["1", "1", "5"], false), // turn=X, status=x_wins, moves=5
+		("verify_winner", vec!["1"], false),               // winner=X
+	];
+
+	let mut prev_private = deploy.private_state.clone();
+	for (i, (circuit, args, is_o)) in calls.into_iter().enumerate() {
+		let state = helper.work_dir.path().join(format!("ttt_state_{i}.mn"));
+		helper.contract_state(&addr, &state).await.expect("contract state fetch failed");
+		let out = helper
+			.generate_intent_circuit(
+				&config_file,
+				&coin_public,
+				&state,
+				&prev_private,
+				&addr,
+				CircuitCall { circuit_id: circuit, call_args: args.as_slice() },
+			)
+			.await
+			.unwrap_or_else(|e| panic!("generate {circuit} intent failed: {e}"));
+		let tx = helper
+			.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+			.await
+			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
+		if circuit == "make_move" {
+			let player_secret = if is_o { PLAYER_O_SK } else { PLAYER_X_SK };
+			helper.assert_secret_not_in_tx(&tx, player_secret, "tic-tac-toe make_move()");
+		}
+		helper
+			.submit_tx(&tx)
+			.await
+			.unwrap_or_else(|e| panic!("submit {circuit} tx failed: {e}"));
+		prev_private = out.private_state;
+	}
+}
+
+/// DAO contract E2E ported from `midnight-contracts`: plays one full voting round, from
+/// buying a vote through to the beneficiary cashing out the pot.
+///
+/// `buy_in`, `set_topic` and `vote_commit` each take a `ShieldedCoinInfo` the circuit
+/// `receiveShielded`s, so this also covers struct- and generic-typed circuit arguments. One
+/// identity is both organizer and voter; `FUNDING_SEED` pays fees, supplies the coins and is
+/// the beneficiary.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn dao_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; `public_key(sk)` of it becomes the on-chain `organizer`.
+	const ORGANIZER_SK: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+	const VOTER_A_SK: &str = "1f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f1";
+	const VOTER_B_SK: &str = "2f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f2";
+	const VOTER_C_SK: &str = "3f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f3";
+	// Base units; `tdust()` is 1_000_000, so both are 1 tDUST.
+	const SEED_DUST: u64 = 1_000_000;
+	const BUY_IN_DUST: u64 = 1_000_000;
+	// `nativeToken()`, which is what the dev genesis funds the seed wallet with.
+	const NATIVE_TOKEN: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+	// Received coins become fresh outputs, so their commitments must differ.
+	const BUY_IN_NONCE_A: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+	const BUY_IN_NONCE_B: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+	const BUY_IN_NONCE_C: &str = "4444444444444444444444444444444444444444444444444444444444444444";
+	const SEED_NONCE: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+	const RESEED_NONCE: &str = "5555555555555555555555555555555555555555555555555555555555555555";
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("dao/dao.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "dao")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"dao/config.template.ts",
+		&[("SECRET_KEY", ORGANIZER_SK), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "dao/contract.config.ts");
+
+	let costs = format!(r#"{{"seed_dust": {SEED_DUST}, "buy_in_dust": {BUY_IN_DUST}}}"#);
+	let deploy = helper
+		.generate_intent_deploy_with_args(&config_file, &coin_public, &[ORGANIZER_SK, &costs])
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, ORGANIZER_SK, "dao deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let dao_addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Runs one circuit against the latest state, threading the private state forward.
+	let mut step = 0usize;
+	let mut organizer_private = deploy.private_state.clone();
+	macro_rules! call {
+		($private:ident, $circuit:expr, $args:expr) => {{
+			step += 1;
+			let state = helper.work_dir.path().join(format!("dao_state_{step}.mn"));
+			helper
+				.contract_state(&dao_addr, &state)
+				.await
+				.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&$private,
+					&dao_addr,
+					CircuitCall { circuit_id: $circuit, call_args: $args },
+				)
+				.await
+				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
+			let tx = helper
+				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.await
+				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
+			helper.assert_secret_not_in_tx(&tx, ORGANIZER_SK, $circuit);
+			helper
+				.submit_tx(&tx)
+				.await
+				.unwrap_or_else(|e| panic!("submit {} tx failed: {e}", $circuit));
+			out
+		}};
+	}
+
+	let voter_state = |name: &str, secret_key: &str| {
+		let state = helper.work_dir.path().join(format!("dao_{name}_private_state.json"));
+		std::fs::write(
+			&state,
+			serde_json::json!({ "secretKey": secret_key, "ballots": {}, "states": {} }).to_string(),
+		)
+		.expect("write voter private state");
+		state
+	};
+	let mut voter_a_private = voter_state("voter_a", VOTER_A_SK);
+	let mut voter_b_private = voter_state("voter_b", VOTER_B_SK);
+	let mut voter_c_private = voter_state("voter_c", VOTER_C_SK);
+
+	let seed_coin =
+		format!(r#"{{"nonce": "{SEED_NONCE}", "color": "{NATIVE_TOKEN}", "value": {SEED_DUST}}}"#);
+	let beneficiary = format!(r#"{{"bytes": "{coin_public}"}}"#);
+
+	// The organizer opens the proposal before voters buy voting rights.
+	organizer_private = call!(
+		organizer_private,
+		"set_topic",
+		&["Fund the community pool", beneficiary.as_str(), seed_coin.as_str()]
+	)
+	.private_state;
+
+	// Each buy-in adds to the pot and returns a distinct voting token.
+	let buy_in_coin_a = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE_A}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in_coin_b = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE_B}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in_coin_c = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE_C}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in_a = call!(organizer_private, "buy_in", &[buy_in_coin_a.as_str(), "1"]);
+	organizer_private = buy_in_a.private_state.clone();
+	let voting_coin_a = helper.shielded_coin_arg(&buy_in_a.result);
+	let buy_in_b = call!(organizer_private, "buy_in", &[buy_in_coin_b.as_str(), "1"]);
+	organizer_private = buy_in_b.private_state.clone();
+	let voting_coin_b = helper.shielded_coin_arg(&buy_in_b.result);
+	let buy_in_c = call!(organizer_private, "buy_in", &[buy_in_coin_c.as_str(), "1"]);
+	organizer_private = buy_in_c.private_state.clone();
+	let voting_coin_c = helper.shielded_coin_arg(&buy_in_c.result);
+
+	// Two yes votes and one no vote exercise both counters while leaving a cash-out majority.
+	voter_a_private =
+		call!(voter_a_private, "vote_commit", &["true", voting_coin_a.as_str()]).private_state;
+	voter_b_private =
+		call!(voter_b_private, "vote_commit", &["true", voting_coin_b.as_str()]).private_state;
+	voter_c_private =
+		call!(voter_c_private, "vote_commit", &["false", voting_coin_c.as_str()]).private_state;
+
+	// Move to reveal, then use each voter's private state to reproduce its commitment path.
+	organizer_private = call!(organizer_private, "advance", &[]).private_state;
+	call!(voter_a_private, "vote_reveal", &[]);
+	call!(voter_b_private, "vote_reveal", &[]);
+	call!(voter_c_private, "vote_reveal", &[]);
+
+	// Finalize the round and pay the pot to the configured beneficiary.
+	organizer_private = call!(organizer_private, "advance", &[]).private_state;
+	organizer_private = call!(organizer_private, "cash_out", &[]).private_state;
+
+	// Proves cash_out applied: set_topic asserts `state == setup`, which only reset_state sets.
+	let reseed_coin = format!(
+		r#"{{"nonce": "{RESEED_NONCE}", "color": "{NATIVE_TOKEN}", "value": {SEED_DUST}}}"#
+	);
+	call!(
+		organizer_private,
+		"set_topic",
+		&["Second round after cash-out", beneficiary.as_str(), reseed_coin.as_str()]
+	);
+}
+
+/// Battleship E2E ported from `midnight-contracts`.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn battleship_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary keys; `red_pk(sk)`/`blue_pk(sk)` of these become the on-chain identities.
+	const RED_SK: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+	const BLUE_SK: &str = "b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f91";
+	// Blinds each board commitment; distinct so both differ even on the same square.
+	const RED_BOARD_NONCE: &str = "11111111111111111111";
+	const BLUE_BOARD_NONCE: &str = "22222222222222222222";
+	// Ship positions on the 3x3 board (1..9).
+	const RED_SHIP: &str = "1";
+	const BLUE_SHIP: &str = "7";
+	// The contract asserts the deposit; the wager is free, but Blue's must match Red's.
+	const DEPOSIT_DUST: u64 = 100_000;
+	const WAGER_DUST: u64 = 1_000_000;
+	// `nativeToken()`, which is what the dev genesis funds the seed wallet with.
+	const NATIVE_TOKEN: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+	// Received coins become fresh outputs, so their commitments must differ. The `0xb*`
+	// family is this test's alone: dao sends coins of the same value and colour to the same
+	// node, and only disjoint nonces keep the two sets of commitments apart.
+	const RED_WAGER_NONCE: &str =
+		"b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
+	const RED_DEPOSIT_NONCE: &str =
+		"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2";
+	const BLUE_WAGER_NONCE: &str =
+		"b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3";
+	const BLUE_DEPOSIT_NONCE: &str =
+		"b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4";
+
+	let (game, red_deploy_private) = helper
+		.deploy_contract(
+			ContractSpec::new("battleship")
+				.vars(&[("SECRET_KEY", RED_SK), ("BOARD_NONCE", RED_BOARD_NONCE)])
+				.secrets(&[RED_SK]),
+		)
+		.await;
+
+	// Red's private state comes from the deploy; Blue's is the same shape, own key and nonce.
+	let mut red_private = red_deploy_private;
+	let mut blue_private = helper.work_dir.path().join("battleship_blue_private_state.json");
+	std::fs::write(
+		&blue_private,
+		serde_json::json!({
+			"secretKey": BLUE_SK,
+			"boardNonce": BLUE_BOARD_NONCE,
+			"boardPosition": "0",
+		})
+		.to_string(),
+	)
+	.expect("write blue private state");
+
+	let coin = |nonce: &str, value: u64| {
+		format!(r#"{{"nonce": "{nonce}", "color": "{NATIVE_TOKEN}", "value": {value}}}"#)
+	};
+	let red_wager = coin(RED_WAGER_NONCE, WAGER_DUST);
+	let red_deposit = coin(RED_DEPOSIT_NONCE, DEPOSIT_DUST);
+	let blue_wager = coin(BLUE_WAGER_NONCE, WAGER_DUST);
+	let blue_deposit = coin(BLUE_DEPOSIT_NONCE, DEPOSIT_DUST);
+
+	// First `start` is Red and seeds the pot; the second is Blue, whose matching wager
+	// `start` merges into the same pot coin.
+	red_private = game
+		.call(
+			&red_private,
+			&[RED_SK],
+			CircuitCall {
+				circuit_id: "start",
+				call_args: &[RED_SHIP, red_wager.as_str(), red_deposit.as_str()],
+			},
+		)
+		.await
+		.private_state;
+	blue_private = game
+		.call(
+			&blue_private,
+			&[BLUE_SK],
+			CircuitCall {
+				circuit_id: "start",
+				call_args: &[BLUE_SHIP, blue_wager.as_str(), blue_deposit.as_str()],
+			},
+		)
+		.await
+		.private_state;
+
+	// Blue moves first (`blue_started` is Blue's turn) and lands on Red's ship.
+	blue_private = game
+		.call(
+			&blue_private,
+			&[BLUE_SK],
+			CircuitCall { circuit_id: "guess", call_args: &[RED_SHIP] },
+		)
+		.await
+		.private_state;
+
+	// Red is sunk, so `concede` is its only legal move: it proves the guess hit, records
+	// `blue_wins` and refunds Red's deposit.
+	game.call(&red_private, &[RED_SK], CircuitCall { circuit_id: "concede", call_args: &[] })
+		.await;
+
+	// `withdraw` asserts `state == blue_wins`, so the payout itself proves the outcome.
+	game.call(&blue_private, &[BLUE_SK], CircuitCall { circuit_id: "withdraw", call_args: &[] })
+		.await;
+}
+
+/// Election E2E ported from `midnight-contracts`.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn election_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary keys; `public_key(sk)` of the first becomes the on-chain `authority`, and of
+	// the others the leaves it allowlists.
+	const AUTHORITY_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000001";
+	const VOTER_A_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000002";
+	const VOTER_B_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000003";
+	const YES: &str = "true";
+	const NO: &str = "false";
+
+	let (election, deploy_private) = helper
+		.deploy_contract(
+			ContractSpec::new("election")
+				.vars(&[("SECRET_KEY", AUTHORITY_SK)])
+				.constructor_args(&[AUTHORITY_SK])
+				.secrets(&[AUTHORITY_SK]),
+		)
+		.await;
+
+	let mut authority_private = deploy_private;
+	let voter_state = |name: &str, secret_key: &str| {
+		let state = helper.work_dir.path().join(format!("election_{name}_private_state.json"));
+		std::fs::write(
+			&state,
+			serde_json::json!({ "secretKey": secret_key, "state": 0, "ballot": null }).to_string(),
+		)
+		.expect("write voter private state");
+		state
+	};
+	let voter_a_private = voter_state("voter_a", VOTER_A_SK);
+	let voter_b_private = voter_state("voter_b", VOTER_B_SK);
+
+	// `add_voter` takes a public key, so each voter derives its own. The circuit only reads
+	// state, so running it for the result is enough; nothing to submit.
+	let mut voter_pks = Vec::new();
+	for private in [&voter_a_private, &voter_b_private] {
+		let out = election
+			.read(private, CircuitCall { circuit_id: "voter_public_key", call_args: &[] })
+			.await;
+		voter_pks.push(helper.result_bytes_to_hex(&out.result));
+	}
+
+	// Setup: allowlist both voters and open the topic, all gated on the authority identity.
+	for pk in &voter_pks {
+		authority_private = election
+			.call(
+				&authority_private,
+				&[AUTHORITY_SK],
+				CircuitCall { circuit_id: "add_voter", call_args: &[pk.as_str()] },
+			)
+			.await
+			.private_state;
+	}
+	authority_private = election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "set_topic", call_args: &["Adopt the proposal"] },
+		)
+		.await
+		.private_state;
+
+	// setup -> commit.
+	authority_private = election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "advance", call_args: &[] },
+		)
+		.await
+		.private_state;
+
+	// Each commit proves membership in `eligible_voters`, then inserts into `committed_votes`.
+	let mut committed = Vec::new();
+	for (private, secret, ballot) in
+		[(&voter_a_private, VOTER_A_SK, YES), (&voter_b_private, VOTER_B_SK, NO)]
+	{
+		let out = election
+			.call(
+				private,
+				&[secret],
+				CircuitCall { circuit_id: "vote_commit", call_args: &[ballot] },
+			)
+			.await;
+		committed.push((out.private_state, secret));
+	}
+
+	// commit -> reveal.
+	authority_private = election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "advance", call_args: &[] },
+		)
+		.await
+		.private_state;
+
+	// Each reveal reproduces its commitment from private state and proves it is in the tree.
+	for (private, secret) in &committed {
+		election
+			.call(private, &[secret], CircuitCall { circuit_id: "vote_reveal", call_args: &[] })
+			.await;
+	}
+
+	// reveal -> final. Reaching it is the assertion that both reveals tallied.
+	election
+		.call(
+			&authority_private,
+			&[AUTHORITY_SK],
+			CircuitCall { circuit_id: "advance", call_args: &[] },
+		)
+		.await;
+}
+
+/// Shielded-pool E2E ported from `midnight-contracts`.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn shielded_pool_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; `derive_zk_public_key` of it owns the minted coin.
+	const SPENDER_SK: &str = "5ec4e70000000000000000000000000000000000000000000000000000000001";
+	// The recipient is off-contract, so its keys are opaque to us and can be anything.
+	const DEST_ZK_PK: &str = "dededededededededededededededededededededededededededededededede";
+	const DEST_ENCRYPTION_PK: &str =
+		"beefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef";
+
+	// `context$new_coin_info` hands these out in order, per the counter in the template.
+	// Both `mint` and `spend` consume one, so the indices below are the whole run.
+	let coin_nonce = |index: u8| format!("{:02x}", 0x10 + index).repeat(32);
+	let coin_opening = |index: u8| format!("{:02x}", 0x40 + index).repeat(32);
+	let coin_arg = |index: u8| {
+		format!(
+			r#"{{"nonce": {{"bytes": "{}"}}, "opening": {{"bytes": "{}"}}}}"#,
+			coin_nonce(index),
+			coin_opening(index)
+		)
+	};
+
+	let (pool, private_state) = helper
+		.deploy_contract(
+			ContractSpec::new("shielded-pool")
+				.source("shielded_pool")
+				.vars(&[("SECRET_KEY", SPENDER_SK)])
+				.secrets(&[SPENDER_SK]),
+		)
+		.await;
+
+	// Mints coin 0 to the spender's own key and records it in the wallet.
+	let mint = pool
+		.call(&private_state, &[SPENDER_SK], CircuitCall { circuit_id: "mint", call_args: &[] })
+		.await;
+
+	// Nested struct arguments: a public key holding a struct and opaque bytes, and the coin
+	// holding two structs. Spending proves the minted commitment is in the tree, and mints a
+	// fresh coin 1 for the recipient.
+	let dest_public_key =
+		format!(r#"{{"zk": {{"bytes": "{DEST_ZK_PK}"}}, "encryption": "{DEST_ENCRYPTION_PK}"}}"#);
+	let spend = pool
+		.call(
+			&mint.private_state,
+			&[SPENDER_SK],
+			CircuitCall {
+				circuit_id: "spend",
+				call_args: &[dest_public_key.as_str(), coin_arg(0).as_str()],
+			},
+		)
+		.await;
+
+	// The spend consumed coin 1 for the recipient, so this mint must take coin 2. If the
+	// counter only advanced on `mint`, this would re-issue the recipient's nonce and opening
+	// to the pool's own wallet.
+	let second_mint = pool
+		.call(
+			&spend.private_state,
+			&[SPENDER_SK],
+			CircuitCall { circuit_id: "mint", call_args: &[] },
+		)
+		.await;
+
+	let wallet: serde_json::Value = serde_json::from_str(
+		&std::fs::read_to_string(&second_mint.private_state).expect("read private state"),
+	)
+	.expect("parse private state");
+	assert_eq!(wallet["nextCoin"], 3, "mint/spend/mint must each consume one coin index: {wallet}");
+	let held: Vec<&str> = wallet["coins"]
+		.as_array()
+		.expect("coins array")
+		.iter()
+		.map(|c| c["nonce"].as_str().expect("coin nonce"))
+		.collect();
+	assert_eq!(
+		held,
+		vec![coin_nonce(2)],
+		"coin 0 was spent and coin 1 went to the recipient, so only coin 2 stays: {wallet}"
+	);
+}
+
+/// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit
+/// (<https://github.com/midnightntwrk/midnight-node/issues/1542>), ported from the former
+/// `scripts/tests/toolkit-ecdsa-e2e.sh`. Runs against the shared `dev` node, whose genesis is
+/// built on ledger 9, so the ECDSA scheme is accepted on-chain — the ledger runs the real
+/// `signature_verify` in `Transaction::well_formed` on every submitted tx.
+///
+/// Proves:
+///   1. ECDSA unshielded address derivation is wired and distinct from Schnorr for the same seed.
+///   2. A contract can be deployed with an ECDSA contract-maintenance committee, and the contract
+///      is actually indexed on-chain afterwards (see the closing `contract-state` fetch — it
+///      replays the real blocks and fails if the deploy did not apply, not merely finalize).
+///   3. A maintenance update signed by an ECDSA-only committee is accepted.
+///   4. A maintenance update signed by a mixed Schnorr+ECDSA committee is accepted (per-member
+///      scheme dispatch), and authority rotations persist across sequential updates.
+///
+/// Note on assertion strength: signature validity is enforced at mempool time —
+/// `validate_unsigned` runs `LedgerApi::validate_transaction` against current on-chain state — so a
+/// bad ECDSA or cross-scheme signature is rejected before inclusion and surfaces as a `run_cli`
+/// panic. The closing `contract-state` fetch additionally confirms on-chain application of the
+/// deploy. (`send`/finalization alone does not prove apply-time success, hence the explicit fetch.)
+#[tokio::test]
+async fn ecdsa_contract_committees_e2e() {
+	// Committee members only ever sign maintenance updates, so they need no on-chain funds; fees
+	// are paid by the default (Schnorr) funding seed. Keep every seed distinct so the toolkit's
+	// shared cross-scheme guard never sees one seed requested under two schemes in one invocation.
+	const ECDSA_AUTH_1: &str = "1000000000000000000000000000000000000000000000000000000000000001";
+	const SCHNORR_AUTH_2: &str = "2000000000000000000000000000000000000000000000000000000000000002";
+	const ECDSA_AUTH_3: &str = "3000000000000000000000000000000000000000000000000000000000000003";
+
+	// --- 1. ECDSA unshielded address derivation (no node required) ------------------------------
+	let unshielded_address = |seed: &str| {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"show-address",
+			"--network",
+			"undeployed",
+			"--seed",
+			seed,
+			"--unshielded",
+		]);
+		match cli.command {
+			Commands::ShowAddress(args) => match show_address::execute(args) {
+				show_address::ShowAddress::SingleAddress(addr) => addr,
+				show_address::ShowAddress::Addresses(_) => panic!("expected a single address"),
+			},
+			_ => unreachable!(),
+		}
+	};
+
+	// Same seed, different scheme => different NIGHT identity, hence a different address.
+	let schnorr_address = unshielded_address(ECDSA_AUTH_1);
+	let ecdsa_address = unshielded_address(&format!("ecdsa:{ECDSA_AUTH_1}"));
+	assert_ne!(
+		schnorr_address, ecdsa_address,
+		"ECDSA and Schnorr addresses must differ for the same seed"
+	);
+	assert!(
+		ecdsa_address.starts_with("mn_addr"),
+		"unexpected ECDSA unshielded address HRP: {ecdsa_address}"
+	);
+
+	// --- 2-4. Deploy + maintenance need the contract test artifacts and a live node -------------
+	if !ledger_test_artifacts_ready() {
+		return;
+	}
+	let url = node_ws_url().await;
+
+	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+	let deploy_file = tempdir.path().join("ecdsa_contract_deploy.mn");
+	let deploy_file_str = deploy_file.to_string_lossy().to_string();
+
+	// The contract address is derived from this rng seed, so a fixed seed collides with an
+	// already-deployed contract on a re-run against a persistent node. Randomize per run; log it so
+	// a failure stays reproducible.
+	let deploy_rng_seed = hex::encode(rand::random::<[u8; 32]>());
+	eprintln!("ecdsa_contract_committees_e2e: deploy rng-seed = {deploy_rng_seed}");
+
+	// 2. Deploy contract-simple with an ECDSA maintenance committee, then send it.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"--dest-file",
+		&deploy_file_str,
+		"contract-simple",
+		"deploy",
+		"--rng-seed",
+		&deploy_rng_seed,
+		"--authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"-s",
+		url,
+	])
+	.await;
+
+	let contract_address = {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"contract-address",
+			"--src-file",
+			&deploy_file_str,
+		]);
+		match cli.command {
+			Commands::ContractAddress(args) => {
+				contract_address::execute(args).expect("failed to get contract address")
+			},
+			_ => unreachable!(),
+		}
+	};
+	assert!(!contract_address.is_empty(), "deploy must produce a contract address");
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		&format!("--src-file={deploy_file_str}"),
+		"send",
+		"-d",
+		url,
+	])
+	.await;
+
+	// 3. Maintenance #1: the ECDSA authority rotates to a mixed Schnorr+ECDSA committee. The
+	//    initial authority counter is 0.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"contract-simple",
+		"maintenance",
+		"--rng-seed",
+		RNG_SEED,
+		"--contract-address",
+		&contract_address,
+		"--counter",
+		"0",
+		"--authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"--new-authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"--new-authority-seed",
+		&format!("schnorr:{SCHNORR_AUTH_2}"),
+		"--threshold",
+		"2",
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// 4. Maintenance #2: the mixed committee (one ECDSA + one Schnorr signature in a single
+	//    update) rotates to a fresh ECDSA committee. The previous rotation bumped the counter to 1.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"contract-simple",
+		"maintenance",
+		"--rng-seed",
+		RNG_SEED,
+		"--contract-address",
+		&contract_address,
+		"--counter",
+		"1",
+		"--authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"--authority-seed",
+		&format!("schnorr:{SCHNORR_AUTH_2}"),
+		"--new-authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_3}"),
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// Confirm on-chain application (not just finalization): replay the real blocks and read the
+	// contract state by address. `get_contract_state` does `ledger_state.index(addr).expect(..)`,
+	// so this panics — failing the test — if the deploy never actually landed on-chain. It also
+	// parses `contract_address`, so a malformed deploy address is caught here too.
+	run_cli(&[
+		"contract-state",
+		"--fetch-cache",
+		"inmemory",
+		"--contract-address",
+		&contract_address,
+		"-s",
+		url,
+	])
+	.await;
 }

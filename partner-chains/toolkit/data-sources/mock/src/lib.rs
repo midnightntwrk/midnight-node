@@ -56,11 +56,6 @@ pub use candidate::{
 	AuthoritySelectionDataSourceMock, MockEpochCandidates, MockRegistrationsConfig,
 };
 
-#[cfg(feature = "governed-map")]
-mod governed_map;
-#[cfg(feature = "governed-map")]
-pub use governed_map::GovernedMapDataSourceMock;
-
 #[cfg(feature = "mc-hash")]
 mod mc_hash;
 #[cfg(feature = "mc-hash")]
@@ -70,11 +65,6 @@ pub use mc_hash::McHashDataSourceMock;
 mod sidechain_rpc;
 #[cfg(feature = "sidechain-rpc")]
 pub use sidechain_rpc::SidechainRpcDataSourceMock;
-
-#[cfg(feature = "block-participation")]
-mod stake_distribution;
-#[cfg(feature = "block-participation")]
-pub use stake_distribution::StakeDistributionDataSourceMock;
 
 #[cfg(feature = "bridge")]
 mod bridge;

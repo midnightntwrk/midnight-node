@@ -4,3 +4,6 @@
 [submodule "midnight-reserve-contracts"]
 	path = midnight-reserve-contracts
 	url = https://github.com/midnightntwrk/midnight-reserve-contracts
+[submodule "compact"]
+	path = compact
+	url = https://github.com/LFDT-Minokawa/compact.git

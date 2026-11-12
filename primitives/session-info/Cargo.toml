@@ -1,0 +1,17 @@
+[package]
+name = "midnight-primitives-session-info"
+version = "0.1.0"
+edition = "2024"
+description = "Midnight Session Info Primitives"
+license-file.workspace = true
+
+
+[dependencies]
+sp-api.workspace = true
+
+
+[features]
+default = ["std"]
+std = [
+    "sp-api/std",
+]

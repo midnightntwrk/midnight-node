@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::tx_generator::source::GetTxsFromFile;
 use clap::Args;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
@@ -6,10 +19,12 @@ use serde::Serialize;
 #[derive(Args, Clone)]
 pub struct ContractAddressArgs {
 	/// Serialize Tagged
-	#[arg(long)]
+	#[arg(long, conflicts_with = "untagged")]
 	pub tagged: bool,
-	/// Serialize Untagged
-	#[arg(long)]
+	/// Deprecated. Kept for backward compatibility; the bare/untagged address
+	/// is now the default. Hidden from `--help`; will be removed in a future
+	/// major version.
+	#[arg(long, hide = true, conflicts_with = "tagged")]
 	pub untagged: bool,
 	/// Serialized Transaction
 	#[arg(long, short)]
@@ -57,18 +72,20 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 		return Err(ContractAddressError::TransactionIsSystemTransaction);
 	};
 
-	// Try ledger_8 first, fall back to ledger_7
-	let both = crate::commands::fork::ledger_8::contract_address::extract_contract_address(
+	// Try ledger_9 first, fall back to ledger_8
+	let both = crate::commands::fork::ledger_9::contract_address::extract_contract_address(
 		tx_bytes.as_slice(),
 	)
 	.or_else(|_| {
-		crate::commands::fork::ledger_7::contract_address::extract_contract_address(
+		crate::commands::fork::ledger_8::contract_address::extract_contract_address(
 			tx_bytes.as_slice(),
 		)
 	})?;
 
 	if args.untagged {
-		eprintln!("Warning: `--untagged` flag is deprecated (now default)");
+		log::warn!(
+			"--untagged is deprecated; the bare/untagged address is now the default — omit the flag."
+		);
 	}
 
 	if args.tagged { Ok(both.tagged().to_string()) } else { Ok(both.untagged().to_string()) }
@@ -94,7 +111,7 @@ mod test {
 		assert_eq!(res, untagged.trim());
 
 		let args =
-			ContractAddressArgs { src_file: src_file.to_string(), tagged: true, untagged: true };
+			ContractAddressArgs { src_file: src_file.to_string(), tagged: true, untagged: false };
 		let res = execute(args).expect("execution failed");
 		assert!(res.len() > untagged.trim().len());
 	}

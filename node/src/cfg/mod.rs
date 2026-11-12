@@ -302,7 +302,7 @@ impl SubstrateCli for Cfg {
 				};
 				chain_config(network)
 			},
-			"local" | "dev" => chain_config(UndeployedNetwork),
+			"dev" => chain_config(UndeployedNetwork),
 			path => crate::chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))
 				.map_err(|err| ChainSpecInitError::ParseError(err.to_string())),
 		};

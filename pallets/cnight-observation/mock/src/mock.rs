@@ -102,6 +102,7 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }
 
 impl pallet_midnight_system::Config for Test {
@@ -148,7 +149,9 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
-	type WeightInfo = ();
+	type LedgerStateProvider = Midnight;
+	type LedgerBlockContextProvider = Midnight;
+	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Test>;
 }
 
 impl mock_pallet::Config for Test {}
@@ -161,7 +164,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: UndeployedNetwork.id().to_string(),
-			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
+			genesis_state_key: midnight_node_ledger::ledger_9::storage::get_root(
 				UndeployedNetwork.genesis_state(),
 				Some(UndeployedNetwork.id()),
 			)

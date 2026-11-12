@@ -11,57 +11,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::Deserialize;
-use std::collections::HashMap;
+use std::{
+	collections::BTreeMap,
+	fmt::{self, Display, Formatter},
+};
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum DependencyValue {
-	String(String),
-	Object {
-		_git: Option<String>,
-		_package: Option<String>,
-		version: Option<String>,
-		tag: Option<String>,
-		rev: Option<String>,
-		_path: Option<String>,
-		_features: Option<Vec<String>>,
-		_default_features: Option<bool>,
-		branch: Option<String>,
-	},
-}
+/// Lazy `Display` for a `PartialSuccess` per-segment result map.
+///
+/// Renders directly into the formatter rather than building a string, so a log line that the
+/// level filter drops costs nothing and an enabled one allocates no intermediate.
+pub struct SegmentResults<'a, E>(pub &'a BTreeMap<u16, Result<(), E>>);
 
-#[derive(Debug, Deserialize)]
-struct CargoToml {
-	workspace: Workspace,
-}
-
-#[derive(Debug, Deserialize)]
-struct Workspace {
-	dependencies: HashMap<String, DependencyValue>,
-}
-
-pub fn find_crate_version(crate_name: &str) -> Option<Vec<u8>> {
-	let cargo_toml_raw = include_str!("../../Cargo.toml");
-	let cargo_toml: Result<CargoToml, _> = toml::from_str(cargo_toml_raw);
-
-	if let Ok(data) = cargo_toml
-		&& let Some(value) = data.workspace.dependencies.get(crate_name)
-	{
-		return match value {
-			DependencyValue::String(version) => Some(version.to_owned().into_bytes()),
-			DependencyValue::Object { version: Some(version), .. } => {
-				Some(version.to_owned().into_bytes())
-			},
-			DependencyValue::Object { tag: Some(tag), .. } => Some(tag.to_owned().into_bytes()),
-			DependencyValue::Object { rev: Some(rev), .. } => Some(rev.to_owned().into_bytes()),
-			DependencyValue::Object { branch: Some(branch), .. } => {
-				Some(branch.to_owned().into_bytes())
-			},
-			_ => None,
-		};
+impl<E: Display> Display for SegmentResults<'_, E> {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		for (i, (id, res)) in self.0.iter().enumerate() {
+			if i > 0 {
+				f.write_str(", ")?;
+			}
+			match res {
+				Ok(()) => write!(f, "{id}: ok")?,
+				Err(reason) => write!(f, "{id}: {reason}")?,
+			}
+		}
+		Ok(())
 	}
-	None
+}
+
+/// Resolved version (UTF-8 bytes) of a ledger generation's backing crate, for the
+/// `get_ledger_version` runtime API / RPC.
+///
+/// Delegates to [`midnight_node_ledger_helpers::find_dependency_version`], which reads the version
+/// resolved in `Cargo.lock` rather than the requested spec in `Cargo.toml` (LeastAuthority audit,
+/// "Prefer Cargo.lock For Build-Time Crate Versions"). Registry deps yield the bare semver; git
+/// deps include the locked tag and commit SHA.
+pub fn find_crate_version(crate_name: &str) -> Option<Vec<u8>> {
+	midnight_node_ledger_helpers::find_dependency_version(crate_name).map(String::into_bytes)
 }
 
 #[cfg(test)]
@@ -70,8 +54,32 @@ mod tests {
 
 	#[test]
 	fn should_find_crate_version() {
-		let version = find_crate_version("mn-ledger");
+		let version = find_crate_version("mn-ledger-8");
 		assert!(version.is_some());
+	}
+
+	struct Reason(&'static str);
+
+	impl Display for Reason {
+		fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+			f.write_str(self.0)
+		}
+	}
+
+	#[test]
+	fn should_render_segment_results_in_key_order() {
+		let segments =
+			BTreeMap::from([(2u16, Err(Reason("expected a cell, received map"))), (1u16, Ok(()))]);
+		assert_eq!(
+			SegmentResults(&segments).to_string(),
+			"1: ok, 2: expected a cell, received map"
+		);
+	}
+
+	#[test]
+	fn should_render_empty_segment_results() {
+		let segments: BTreeMap<u16, Result<(), Reason>> = BTreeMap::new();
+		assert_eq!(SegmentResults(&segments).to_string(), "");
 	}
 
 	#[test]

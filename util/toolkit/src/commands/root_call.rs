@@ -29,6 +29,20 @@ use subxt::{
 use subxt_signer::sr25519::Keypair;
 use thiserror::Error;
 
+/// Dev-network council member private keys (sr25519 seeds, hex). Ferdie, Dave, Eve.
+pub const DEFAULT_COUNCIL_KEYS: [&str; 3] = [
+	"42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842",
+	"868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246",
+	"786ad0e2df456fe43dd1f91ebca22e235bc162e0bb8d53c633e8c85b2af68b7a",
+];
+
+/// Dev-network technical committee member private keys (sr25519 seeds, hex). Bob, Charlie, Alice.
+pub const DEFAULT_TC_KEYS: [&str; 3] = [
+	"398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89",
+	"bc1ede780f784bb6991a585e4f6e61522c14e1cae6ad0895fb57b9a205a8f938",
+	"e5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a",
+];
+
 #[derive(Args)]
 pub struct RootCallArgs {
 	/// RPC URL of the node
@@ -40,11 +54,7 @@ pub struct RootCallArgs {
 	#[arg(
 		long = "council-keys",
 		num_args = 1..,
-		default_values_t = [
-			"42438b7883391c05512a938e36c2df0131e088b3756d6aa7a755fbff19d2f842".to_string(),
-			"868020ae0687dda7d57565093a69090211449845a7e11453612800b663307246".to_string(),
-			"786ad0e2df456fe43dd1f91ebca22e235bc162e0bb8d53c633e8c85b2af68b7a".to_string(),
-		]
+		default_values_t = DEFAULT_COUNCIL_KEYS.map(String::from)
 	)]
 	pub council_keys: Vec<String>,
 
@@ -53,11 +63,7 @@ pub struct RootCallArgs {
 	#[arg(
 		long = "tc-keys",
 		num_args = 1..,
-		default_values_t = [
-			"398f0c28f98885e046333d4a41c19cee4c37368a9832c6502f6cfd182e2aef89".to_string(),
-			"bc1ede780f784bb6991a585e4f6e61522c14e1cae6ad0895fb57b9a205a8f938".to_string(),
-			"e5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a".to_string(),
-		]
+		default_values_t = DEFAULT_TC_KEYS.map(String::from)
 	)]
 	pub tc_keys: Vec<String>,
 
@@ -91,7 +97,7 @@ pub enum RootCallError {
 	#[error("Need at least 2 technical committee keys for 2/3 threshold voting")]
 	NotEnoughTcKeys,
 	#[error("Kepair parse error")]
-	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
+	KeypairParseError(#[from] midnight_ledger_unsafe_helpers::KeypairParseError),
 	#[error("Failed to decode call: {0}")]
 	CallDecodeError(String),
 	#[error("online client at block error: {0}")]
@@ -160,7 +166,7 @@ fn get_encoded_call(args: &RootCallArgs) -> Result<Vec<u8>, RootCallError> {
 }
 
 fn get_signer(key_str: &str) -> Result<Keypair, RootCallError> {
-	Ok(midnight_node_ledger_helpers::Keypair::from_str(key_str)?.0)
+	Ok(midnight_ledger_unsafe_helpers::Keypair::from_str(key_str)?.0)
 }
 
 /// Decode SCALE-encoded call bytes into a Value using runtime metadata
@@ -396,7 +402,6 @@ fn extract_proposal_index(
 	#[derive(Decode)]
 	struct ProposedPrefix {
 		_account: [u8; 32],
-		#[codec(compact)]
 		proposal_index: u32,
 	}
 

@@ -45,7 +45,7 @@
 use crate::McFollowerMetrics;
 use crate::db_model::*;
 use crate::metrics::observed_async_trait;
-use sidechain_domain::McBlockHash;
+use sidechain_domain::{McBlockHash, McTxHash};
 use sp_partner_chains_bridge::*;
 use sqlx::PgPool;
 use sqlx::types::JsonValue;
@@ -98,18 +98,20 @@ observed_async_trait!(
 				.await?
 				.ok_or(format!("Could not find block for hash {current_mc_block_hash:?}"))?;
 
-			let data_checkpoint = match data_checkpoint {
+			let resolved_checkpoint = match &data_checkpoint {
 				BridgeDataCheckpoint::Tx(tx_hash) => {
 					let TxBlockInfo { block_number, tx_ix } =
-						get_block_info_for_tx_hash(&self.pool, tx_hash.into()).await?.ok_or(
-							format!(
-								"Could not find block info for data checkpoint: {data_checkpoint:?}"
-							),
-						)?;
+						self.resolve_tx_position(*tx_hash).await?;
 					ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix }
 				},
+				// The reserve transfer of this transaction, which the runtime has already
+				// handled, is left out of the returned data below.
+				BridgeDataCheckpoint::TxReserveTransfer(tx) => {
+					let TxBlockInfo { block_number, tx_ix } = self.resolve_tx_position(*tx).await?;
+					ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, tx_ix }
+				},
 				BridgeDataCheckpoint::Block(number) => {
-					ResolvedBridgeDataCheckpoint::Block { number: number.into() }
+					ResolvedBridgeDataCheckpoint::Block { number: (*number).into() }
 				},
 			};
 
@@ -117,50 +119,131 @@ observed_async_trait!(
 				self.db_sync_config.get_tx_in_config().await?,
 				&self.pool,
 				&main_chain_scripts.illiquid_circulation_supply_validator_address.into(),
+				&main_chain_scripts.reserve_validator_address.into(),
 				asset,
-				data_checkpoint,
+				resolved_checkpoint,
 				current_mc_block.block_no,
-				Some(max_transfers),
+				Some(max_txs_to_read(max_transfers)),
 			)
 			.await?;
 
-			let new_checkpoint = match txs.last() {
-				None => BridgeDataCheckpoint::Block(current_mc_block.block_no.into()),
-				Some(_) if (txs.len() as u32) < max_transfers => {
-					BridgeDataCheckpoint::Block(current_mc_block.block_no.into())
-				},
-				Some(tx) => BridgeDataCheckpoint::Tx(tx.tx_id()),
-			};
-
-			let transfers = txs.into_iter().map(tx_to_transfer).collect();
-
-			Ok((transfers, new_checkpoint))
+			Ok(txs_to_transfers(txs, &data_checkpoint, max_transfers, current_mc_block.block_no))
 		}
 	}
 );
 
-fn tx_to_transfer<RecipientAddress>(tx: BridgeTx) -> BridgeTransferV1<RecipientAddress>
+impl TokenBridgeDataSourceImpl {
+	async fn resolve_tx_position(
+		&self,
+		tx_hash: McTxHash,
+	) -> Result<TxBlockInfo, Box<dyn std::error::Error + Send + Sync>> {
+		get_block_info_for_tx_hash(&self.pool, tx_hash.into()).await?.ok_or_else(|| {
+			format!("Could not find block info for data checkpoint tx: {tx_hash:?}").into()
+		})
+	}
+}
+
+/// Number of Cardano transaction rows to read in order to return up to `max_transfers` transfers
+///
+/// One transaction yields at least one transfer, of which at most one is dropped as already
+/// processed, so reading one transaction more than the transfer limit guarantees that the limit
+/// can always be filled if there is enough data for it. In particular, progress is always
+/// possible, even with a limit of a single transfer.
+fn max_txs_to_read(max_transfers: u32) -> u32 {
+	max_transfers.saturating_add(1)
+}
+
+/// Turns the observed Cardano transactions into the transfers to be handled next
+///
+/// Transfers are returned in the order they were made, cut off at `max_transfers`. The cut can
+/// fall between the two transfers of one Cardano transaction, in which case the returned
+/// checkpoint is a [BridgeDataCheckpoint::TxReserveTransfer].
+fn txs_to_transfers<RecipientAddress>(
+	txs: Vec<BridgeTx>,
+	current_checkpoint: &BridgeDataCheckpoint,
+	max_transfers: u32,
+	block_bound: BlockNumber,
+) -> (Vec<BridgeTransferV1<RecipientAddress>>, BridgeDataCheckpoint)
 where
 	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
 {
-	let amount = tx.amount.0.try_into().expect("There can't be more than u64 of cNIGHT");
+	// Hitting the transaction limit means there may be further transactions before `block_bound`
+	// that were not read.
+	let all_txs_read = txs.len() < max_txs_to_read(max_transfers) as usize;
+
+	let mut remaining = txs
+		.into_iter()
+		.flat_map(tx_to_transfers::<RecipientAddress>)
+		// The transfer that the current checkpoint points at has already been handled. This only
+		// ever matches the reserve transfer of a `TxReserveTransfer` checkpoint's transaction,
+		// because transactions the checkpoint has passed are not returned by the query at all.
+		.filter(|transfer| transfer.checkpoint() != *current_checkpoint)
+		.peekable();
+
+	let transfers: Vec<BridgeTransferV1<RecipientAddress>> =
+		remaining.by_ref().take(max_transfers as usize).collect();
+
+	let checkpoint = if all_txs_read && remaining.peek().is_none() {
+		BridgeDataCheckpoint::Block(block_bound.into())
+	} else {
+		match transfers.last() {
+			Some(tx) => tx.checkpoint(),
+			None => current_checkpoint.clone(),
+		}
+	};
+
+	(transfers, checkpoint)
+}
+
+/// This function from [BridgeTx] to [Vec<BridgeTransferV1>] works under assumption that
+/// Reserve can unlock only to ICS. If reserve shrinked, then delta went to ICS.
+/// User transfer is computed in the second place as the rest of ICS surplus.
+/// In case the second step took tokens out of ICS, it means it was ICS withdrawal.
+/// ICS are not supported by this bride, so no additional [BridgeTransferV1] is emmited in such a case.
+fn tx_to_transfers<RecipientAddress>(tx: BridgeTx) -> Vec<BridgeTransferV1<RecipientAddress>>
+where
+	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
+{
 	let mc_tx_hash = tx.tx_id();
-	let recipient = match tx.c2m_metadata {
-		Some(JsonValue::Array(values)) => match values.first() {
-			None => TransferRecipient::Reserve,
-			Some(JsonValue::String(str)) => {
-				let str = str.trim_start_matches("0x");
-				match hex::decode(str)
-					.ok()
+	let reserve_debit: u64 = tx.reserve_in.saturating_sub(tx.reserve_out).into();
+	let ics_credit: u64 = tx.bridge_out.saturating_sub(tx.bridge_in).into();
+	let locked_amount = ics_credit.saturating_sub(reserve_debit);
+
+	let mut transfers = Vec::with_capacity(2);
+
+	if reserve_debit > 0 {
+		let recipient = TransferRecipient::Reserve;
+		transfers.push(BridgeTransferV1 { mc_tx_hash, amount: reserve_debit, recipient })
+	}
+
+	if locked_amount > 0 {
+		let recipient = metadata_to_recipient(tx.c2m_metadata);
+		transfers.push(BridgeTransferV1 { mc_tx_hash, amount: locked_amount, recipient })
+	}
+
+	transfers
+}
+
+fn metadata_to_recipient<RecipientAddress>(
+	metadata: Option<JsonValue>,
+) -> TransferRecipient<RecipientAddress>
+where
+	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
+{
+	match metadata {
+		Some(JsonValue::Array(values)) => match values.as_slice() {
+			[JsonValue::String(str)] => {
+				match str
+					.strip_prefix("0x")
+					.and_then(|str| hex::decode(str).ok())
 					.and_then(|bytes| RecipientAddress::try_from(&bytes).ok())
 				{
 					Some(recipient) => TransferRecipient::Address { recipient },
-					None => TransferRecipient::Invalid,
+					_ => TransferRecipient::Invalid,
 				}
 			},
 			_ => TransferRecipient::Invalid,
 		},
 		_ => TransferRecipient::Invalid,
-	};
-	BridgeTransferV1 { mc_tx_hash, amount, recipient }
+	}
 }

@@ -43,15 +43,11 @@ pub struct BridgeTransferArgs {
 	ics_config: PathBuf,
 
 	/// Hex-encoded midnight UserAddress
-	#[arg(long, conflicts_with_all(["invalid", "reserve"]))]
+	#[arg(long, conflicts_with_all(["invalid"]))]
 	recipient_address: Option<String>,
 
-	/// Transfer to Reserve
-	#[arg(long, conflicts_with_all(["invalid", "recipient_address"]))]
-	reserve: bool,
-
 	/// Makes invalid transfer for tests
-	#[arg(long, conflicts_with_all(["reserve", "recipient_address"]))]
+	#[arg(long, conflicts_with_all(["recipient_address"]))]
 	invalid: bool,
 
 	/// Amount of cNight tokens to transfer
@@ -145,7 +141,6 @@ fn read_payment_key(path: &Path) -> Result<PrivateKey, Box<dyn std::error::Error
 
 enum Recipient {
 	ToAddress([u8; 32]),
-	Reserve,
 	Invalid,
 }
 
@@ -154,12 +149,11 @@ fn parse_recipient_args(
 ) -> Result<Recipient, Box<dyn std::error::Error + Send + Sync + 'static>> {
 	if args.invalid {
 		Ok(Recipient::Invalid)
-	} else if args.reserve {
-		Ok(Recipient::Reserve)
 	} else {
-		let address = args.recipient_address.as_ref().ok_or_else(|| {
-			"Either --reserve or --invalid or --recipient-address has to be set".to_string()
-		})?;
+		let address = args
+			.recipient_address
+			.as_ref()
+			.ok_or_else(|| "Either --invalid or --recipient-address has to be set".to_string())?;
 		let bytes = hex::decode(address)
 			.map_err(|e| format!("--recipient-address is not valid hex string: {e}"))?;
 		let bytes: [u8; 32] = bytes
@@ -274,7 +268,6 @@ fn build_metadata_item(
 			);
 			TransactionMetadatum::new_list(&metadata_list)
 		},
-		Recipient::Reserve => TransactionMetadatum::new_list(&MetadataList::new()),
 		Recipient::Invalid => {
 			TransactionMetadatum::new_text("this is invalid bridge tx metadata".to_owned())
 				.map_err(|e| e.to_string())?

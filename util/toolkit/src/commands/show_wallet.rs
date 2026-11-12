@@ -1,9 +1,24 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::collections::HashMap;
 
 use crate::source::Source;
-use crate::tx_generator::builder::build_fork_aware_context_cached;
+use crate::tx_generator::builder::{
+	WalletSchemes, build_fork_aware_context_cached_with_schemes, ensure_ecdsa_supported,
+};
 use crate::tx_generator::source::create_file_wallet_cache;
-use crate::{HRP_CREDENTIAL_SHIELDED, TxGenerator, WalletAddress, WalletSeed};
+use crate::{HRP_CREDENTIAL_SHIELDED, TxGenerator, WalletAddress};
 use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
@@ -15,6 +30,11 @@ pub struct WalletInfoJson {
 	pub coins: HashMap<String, QualifiedInfoSer>,
 	pub utxos: Vec<UtxoSer>,
 	pub dust_utxos: Vec<QualifiedDustOutputSer>,
+	/// NIGHT block rewards currently claimable by this wallet's unshielded address.
+	pub claimable_block_rewards: u128,
+	/// NIGHT from Cardano-bridge transfers currently claimable by this wallet's unshielded
+	/// address (amount already net of the bridge fee).
+	pub claimable_bridge_transfers: u128,
 }
 
 #[derive(Debug)]
@@ -28,33 +48,45 @@ pub enum ShowWalletResult {
 #[group(id = "wallet_id", required = true, multiple = false)]
 pub struct ShowWalletArgs {
 	#[command(flatten)]
-	source: Source,
-	/// The seed of the wallet to show wallet state for, including private state
-	#[arg(long, value_parser = cli::wallet_seed_decode, group = "wallet_id")]
-	seed: Option<WalletSeed>,
+	pub source: Source,
+	/// The seed of the wallet to show wallet state for, including private state. Bare seed
+	/// selects Schnorr; prefix with `ecdsa:` for an ECDSA NIGHT identity (ledger 9+), e.g.
+	/// `--seed ecdsa:<seed>`. Resolves distinct NIGHT UTXOs between the two schemes; the
+	/// shielded/dust state is scheme-independent.
+	#[arg(long, value_parser = cli::scheme_seed_decode, group = "wallet_id")]
+	pub seed: Option<cli::SchemeSeed>,
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
-	address: Option<WalletAddress>,
+	pub address: Option<WalletAddress>,
 	/// Output the full wallet state using a debug print
 	#[arg(long)]
-	debug: bool,
+	pub debug: bool,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	if let Some(indexer_url) = args.source.indexer_url.clone() {
+		return execute_indexer(args, &indexer_url).await;
+	}
+
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
+	// Exactly one of `--seed` / `--address` is set (clap's `wallet_id` group).
+	let resolved_seed = args.seed.as_ref().map(cli::SchemeSeed::resolve);
+
 	if args.dry_run {
-		if let Some(seed) = args.seed {
-			log::info!("Dry-run: fetching wallet for seed {:?}", seed);
-		} else {
-			log::info!("Dry-run: fetching wallet for address {:?}", args.address.unwrap());
+		match &resolved_seed {
+			Some((seed, scheme)) => {
+				log::info!("Dry-run: fetching wallet for seed {:?} ({:?})", seed, scheme)
+			},
+			None => log::info!("Dry-run: fetching wallet for address {:?}", args.address.unwrap()),
 		}
 		return Ok(ShowWalletResult::DryRun(()));
 	}
@@ -62,28 +94,32 @@ pub async fn execute(
 	let source_blocks = src.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
-	if let Some(seed) = args.seed {
-		let fork_ctx = build_fork_aware_context_cached(
+	if let Some((seed, scheme)) = resolved_seed {
+		let schemes = WalletSchemes::from([(seed.clone(), scheme)]);
+		ensure_ecdsa_supported(source_blocks.tip_ledger_version(), &schemes)?;
+		let fork_ctx = build_fork_aware_context_cached_with_schemes(
 			&[seed.clone()],
 			&source_blocks,
 			wallet_cache.as_deref(),
+			&schemes,
+			replay_checkpoint_interval,
 		)
 		.await;
 
 		Ok(fork_ctx.dispatch(
 			|ctx| {
-				let seed_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed.clone());
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
-					&ctx, seed_v7, args.debug,
-				);
-				fork_wallet_result_v7(result)
-			},
-			|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
-					&ctx, seed.clone(), args.debug,
+					&ctx, seed_v8, args.debug,
 				);
 				fork_wallet_result_v8(result)
+			},
+			|ctx| {
+				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_seed(
+					&ctx, seed.clone(), args.debug,
+				);
+				fork_wallet_result_v9(result)
 			},
 		))
 	} else {
@@ -92,28 +128,85 @@ pub async fn execute(
 			return Err("unavailable information - secret key needed".into());
 		}
 
-		let fork_ctx =
-			build_fork_aware_context_cached(&[], &source_blocks, wallet_cache.as_deref()).await;
+		let fork_ctx = build_fork_aware_context_cached_with_schemes(
+			&[],
+			&source_blocks,
+			wallet_cache.as_deref(),
+			&WalletSchemes::new(),
+			replay_checkpoint_interval,
+		)
+		.await;
 
 		let address_clone = address.clone();
 		Ok(fork_ctx.dispatch(
 			|ctx| {
-				let addr_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
-						&address_clone,
-					);
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
-					&ctx, addr_v7,
+				let addr_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
+					&address_clone,
 				);
-				fork_wallet_result_v7(result)
-			},
-			|ctx| {
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
-					&ctx, address,
+					&ctx, addr_v8,
 				);
 				fork_wallet_result_v8(result)
 			},
+			|ctx| {
+				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_address(
+					&ctx, address,
+				);
+				fork_wallet_result_v9(result)
+			},
 		))
+	}
+}
+/// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
+/// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
+async fn execute_indexer(
+	args: ShowWalletArgs,
+	indexer_url: &str,
+) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
+
+	let Some(scheme_seed) = args.seed.clone() else {
+		return Err("indexer-backed show-wallet requires --seed \
+		            (the --address path needs local ledger state)"
+			.into());
+	};
+	let (seed, scheme) = scheme_seed.resolve();
+
+	if args.dry_run {
+		log::info!("Dry-run: indexer show-wallet for seed {seed:?} ({scheme:?}) via {indexer_url}");
+		return Ok(ShowWalletResult::DryRun(()));
+	}
+
+	let schemes = WalletSchemes::from([(seed.clone(), scheme)]);
+	let synced =
+		sync_indexer(&args.source, indexer_url, std::slice::from_ref(&seed), &schemes).await?;
+	let result = match &synced.context {
+		IndexerLedgerContext::Ledger9(ctx) => {
+			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
+			fork_wallet_result_v9(show_wallet_from_indexer(ctx, seed, args.debug).await)
+		},
+		IndexerLedgerContext::Ledger8(ctx) => {
+			use crate::commands::fork::ledger_8::show_wallet::show_wallet_from_indexer;
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					seed,
+				);
+			fork_wallet_result_v8(show_wallet_from_indexer(ctx, seed_v8, args.debug).await)
+		},
+	};
+	synced.save_cache().await;
+
+	Ok(result)
+}
+
+fn fork_wallet_result_v9(
+	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
+) -> ShowWalletResult {
+	use crate::commands::fork::ledger_9::show_wallet::ShowWalletResult as R;
+	match result {
+		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
+		R::Json(j) => ShowWalletResult::Json(j),
 	}
 }
 
@@ -127,19 +220,10 @@ fn fork_wallet_result_v8(
 	}
 }
 
-fn fork_wallet_result_v7(
-	result: crate::commands::fork::ledger_7::show_wallet::ShowWalletResult,
-) -> ShowWalletResult {
-	use crate::commands::fork::ledger_7::show_wallet::ShowWalletResult as R;
-	match result {
-		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
-		R::Json(j) => ShowWalletResult::Json(j),
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::WalletSeed;
 	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
@@ -179,6 +263,12 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -190,27 +280,27 @@ mod tests {
 	}
 
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000001", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-1"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000002", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-2"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000003", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-3"
 	)]
 	#[test_case(test_fixture!("a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-4"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000005", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if utxos.is_empty() && coins.is_empty() && dust_utxos.is_empty();
 		"unfunded-unshielded-seed"
 	)]
@@ -230,13 +320,95 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
-			seed: Some(seed),
+			seed: Some(cli::SchemeSeed {
+				seed,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
+			}),
 			address: None,
 			debug: false,
 			dry_run: false,
 		};
 
 		super::execute(args).await
+	}
+
+	/// Seed 01 is funded for its *Schnorr* NIGHT identity in genesis. The ECDSA identity of the
+	/// same seed is a different unshielded address and owns no genesis NIGHT UTXOs, so
+	/// `--seed ecdsa:<seed>` must resolve an empty *unshielded* UTXO set (whereas a bare `--seed`
+	/// resolves a funded one — see the `funded-unshielded-seed-1` case). This proves the chosen scheme is
+	/// threaded into wallet resolution. The shielded coins and DUST wallet derive from the seed
+	/// alone (scheme-independent), so they stay funded and are not asserted here.
+	#[tokio::test]
+	async fn ecdsa_seed_resolves_distinct_identity_from_schnorr() {
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000001",
+		)
+		.unwrap();
+		let src_files = vec![
+			concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/genesis/genesis_block_undeployed.mn")
+				.to_string(),
+		];
+		let args = ShowWalletArgs {
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 20,
+				fetch_compute_concurrency: None,
+				src_files: Some(src_files),
+				dust_warp: true,
+				ignore_block_context: false,
+				fetch_only_cached: false,
+				fetch_cache: FetchCacheConfig::InMemory,
+				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
+			},
+			seed: Some(cli::SchemeSeed {
+				seed,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Ecdsa,
+			}),
+			address: None,
+			debug: false,
+			dry_run: false,
+		};
+
+		let res = super::execute(args)
+			.await
+			.expect("ECDSA show-wallet should resolve on ledger 9");
+		assert!(
+			matches!(res, ShowWalletResult::Json(WalletInfoJson { utxos, .. }) if utxos.is_empty()),
+			"the ECDSA identity of the funded Schnorr seed 01 owns no NIGHT UTXOs (distinct \
+			 unshielded identity)"
+		);
+	}
+
+	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
+	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
+	#[test]
+	fn indexer_concurrency_rejects_zero() {
+		use clap::Parser;
+
+		#[derive(Parser)]
+		struct Cli {
+			#[command(flatten)]
+			args: ShowWalletArgs,
+		}
+
+		let parse = |n: &str| {
+			Cli::try_parse_from(["t", "--seed", &"0".repeat(64), "--indexer-concurrency", n])
+		};
+
+		assert!(parse("0").is_err(), "--indexer-concurrency 0 would hang the drain");
+		assert_eq!(parse("8").unwrap().args.source.indexer_concurrency.get(), 8);
 	}
 }
