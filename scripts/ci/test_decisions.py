@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import scope
+import trusted_cache
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('faucet', ROOT / 'scripts/ci/faucet-preflight.py')
@@ -101,3 +102,29 @@ class FaucetTests(unittest.TestCase):
         self.assertTrue(endpoint.startswith('wss://'))
         self.assertTrue(address.startswith('addr_test'))
         self.assertEqual((minimum, buffer), (250_000_000, 5_000_000))
+
+
+class TrustedCacheTests(unittest.TestCase):
+    def test_exact_key_and_trusted_branch(self):
+        def no_lookup(number):
+            self.fail('Branch caches do not need a PR lookup')
+        self.assertTrue(trusted_cache.trusted_hit(
+            [{'key': 'signed', 'ref': 'refs/heads/main'}], 'signed', 'org/repo', no_lookup))
+        self.assertFalse(trusted_cache.trusted_hit(
+            [{'key': 'signed-spoof', 'ref': 'refs/heads/main'}], 'signed', 'org/repo', no_lookup))
+
+    def test_fork_marker_cannot_satisfy_trusted_check(self):
+        entry = [{'key': 'signed', 'ref': 'refs/pull/42/merge'}]
+        self.assertFalse(trusted_cache.trusted_hit(entry, 'signed', 'org/repo', lambda _: 'fork/repo'))
+        self.assertTrue(trusted_cache.trusted_hit(entry, 'signed', 'org/repo', lambda _: 'org/repo'))
+
+    def test_unknown_ref_is_not_trusted(self):
+        self.assertFalse(trusted_cache.trusted_hit(
+            [{'key': 'signed', 'ref': 'refs/tags/v1'}], 'signed', 'org/repo', lambda _: 'org/repo'))
+
+    def test_api_failure_is_not_a_hit(self):
+        def unavailable(number):
+            raise subprocess.CalledProcessError(1, 'gh')
+        with self.assertRaises(subprocess.CalledProcessError):
+            trusted_cache.trusted_hit([{'key': 'signed', 'ref': 'refs/pull/42/merge'}],
+                                      'signed', 'org/repo', unavailable)

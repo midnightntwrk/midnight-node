@@ -39,7 +39,7 @@ runs:
         tree=$(git rev-parse "HEAD^{tree}")
         if [[ -n "$TREE_PATH" ]]; then
           tree=$(printf '%s\n' "$(git -C "$TREE_PATH" rev-parse 'HEAD^{tree}')" \
-            "$(git hash-object .github/workflows/continuous-integration.yml .github/actions/tree-cache-guard/action.yml .envrc)" | sha256sum | cut -d ' ' -f1)
+            "$(git hash-object .github/workflows/continuous-integration.yml .github/actions/tree-cache-guard/action.yml scripts/ci/trusted_cache.py .envrc)" | sha256sum | cut -d ' ' -f1)
         fi
         if [[ -z "$TREE_GUARD_HMAC" || "$EVENT_NAME" == schedule || "$EVENT_NAME" == workflow_dispatch || "$IS_FORK" == true ]]; then
           echo 'hit=false' >> "$GITHUB_OUTPUT"
@@ -78,10 +78,7 @@ runs:
         result=''
         err=$(mktemp)
         for attempt in 1 2 3; do
-          if out=$(gh cache list \
-                     --repo "$GITHUB_REPOSITORY" \
-                     --key  "${key}" \
-                     --json id --jq 'length' 2>"$err"); then
+          if out=$(python3 "$GITHUB_ACTION_PATH/../../../scripts/ci/trusted_cache.py" "$key" 2>"$err"); then
             result="${out//[[:space:]]/}"
             break
           fi

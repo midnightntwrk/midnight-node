@@ -43,7 +43,9 @@ already does. It is an optimisation, not an artifact-transfer contract: a differ
 host or an evicted layer recompiles inline. Toolkit archive preparation does not
 need a running node. Test execution still waits for the built node image.
 
-Success markers require `TREE_GUARD_HMAC`. Missing secrets, forks, manual runs,
+Success markers require `TREE_GUARD_HMAC` and an exact cache-key match from a
+repository branch or a same-repository PR. Fork-created entries cannot satisfy
+a trusted check, even if the key is visible in logs. Missing secrets, forks, manual runs,
 schedules, workflow overrides and lookup failures cause cache misses. Marker keys
 include check identity and input tree; indexer markers use the submodule tree plus
 the parent workflow, cache action and environment setup. Compiler reuse and test
