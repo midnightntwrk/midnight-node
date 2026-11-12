@@ -1234,7 +1234,7 @@ async fn usable_snapshot(
 	}
 }
 
-/// Give up the warm start at `height`: every cached seed is replayed from genesis.
+/// Give up the warm start at `restore_height`: every cached seed is replayed from genesis.
 fn fall_back_to_genesis(
 	reason: &str,
 	restore_height: &mut Option<u64>,
@@ -1502,7 +1502,6 @@ fn replay_blocks_9(
 		flush(&mut events, done);
 	}
 
-	// Inject remaining wallets at the last replayed block height.
 	// This handles the case where some wallets are cached at the tip with no new blocks.
 	if !remaining.is_empty() {
 		let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();

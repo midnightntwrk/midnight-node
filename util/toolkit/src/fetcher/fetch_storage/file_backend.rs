@@ -130,9 +130,8 @@ fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Resul
 	Ok(None)
 }
 
-/// The snapshot in `path` if it holds a ledger arena root, `Ok(None)` if it is not one
-/// (or too short to say). Reads only the version byte of an inline snapshot, which can
-/// be a large file. `Err` if the file cannot be opened, read or decoded.
+/// The snapshot in `path` if it holds a ledger arena root; `Ok(None)` if it does not, or
+/// is too short to tell. Reads only the version byte of an inline snapshot, which can be large.
 fn read_root_snapshot(path: &Path, block_height: u64) -> io::Result<Option<LedgerSnapshot>> {
 	use std::io::Read;
 	let mut file = fs::File::open(path)?;
