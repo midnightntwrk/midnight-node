@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::{
 	serde_def::SourceTransactions,
 	tx_generator::{
@@ -82,17 +95,18 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		cli_parsers::contract_address_decode,
+		cli_parsers::{SchemeSeed, contract_address_decode},
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchSingleTxArgs, ClaimRewardsArgs, CoinSelectionStrategy, ContractCall,
-				ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
+				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
+				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
 	};
-	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
+	use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
+	use midnight_ledger_unsafe_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
 	fn resource_file(path: &str) -> String {
@@ -117,6 +131,11 @@ mod tests {
 					fetch_only_cached: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 					ledger_state_db: String::new(),
+					replay_checkpoint_interval: 0,
+					indexer_url: None,
+					network: "undeployed".to_string(),
+					indexer_concurrency: midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+					no_fast_sync: false,
 				},
 				destination: Destination {
 					dest_urls: vec![],
@@ -138,8 +157,11 @@ mod tests {
 		shielded_token_type: vec![t_token()],
 		unshielded_amount: vec![100],
 		unshielded_token_type: vec![NIGHT],
-		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
-			.parse().unwrap(),
+		source_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001"
+				.parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		funding_seed: None,
 		destination_address: vec![
 			WalletAddress::from_str(
@@ -159,9 +181,13 @@ mod tests {
 		"send-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		funding_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001".parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		rng_seed:None,
-		amount: 500_000
+		amount: 500_000,
+		claim_kind: ClaimKindArg::Reward
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"

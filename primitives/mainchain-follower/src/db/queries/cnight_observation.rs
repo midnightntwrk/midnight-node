@@ -17,8 +17,8 @@
 //! To get a better understanding of how these queries are working, see the schema documentation for db-sync:
 //! https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 use crate::db::{
-	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, PagedQuery, QueryBounds,
-	RegistrationRow,
+	AssetCreateRow, AssetSpendRow, Block, DbDatumIfValid, DeregistrationRow, PagedQuery,
+	QueryBounds, RegistrationRow,
 };
 use log::info;
 use sidechain_domain::*;
@@ -32,11 +32,13 @@ pub async fn get_registrations(
 ) -> Result<Vec<RegistrationRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
+	// The ORDER BY must be total: LIMIT can split a transaction's rows, and every
+	// validator must keep the same ones.
 	sqlx::query_as!(
 		RegistrationRow,
 		r#"
 SELECT
-    datum.value::jsonb AS "full_datum!: _",
+    datum.value::jsonb AS "full_datum!: DbDatumIfValid",
     block.block_no AS "block_number!: _",
     block.hash AS "block_hash: _",
     block.time AS "block_timestamp: _",
@@ -57,7 +59,7 @@ WHERE tx.id >= $9 AND tx.id <= $10
     AND ma_tx_out.quantity = 1
     AND (block.block_no > $3 OR (block.block_no = $3 AND tx.block_index >= $4))
     AND (block.block_no < $5 OR (block.block_no = $5 AND tx.block_index < $6))
-ORDER BY block.block_no, tx.block_index
+ORDER BY block.block_no, tx.block_index, tx_out.index
 LIMIT $7 OFFSET $8;
         "#,
 		smart_contract_address,
@@ -86,15 +88,13 @@ pub async fn get_deregistrations(
 ) -> Result<Vec<DeregistrationRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
-	// NOTE: Ordered by transaction index (i.e. index of transaction within block)
-	// Once one valid deregistration can occur in a single tx, so we don't have to worry about
-	// ordering within txs
-
+	// The ORDER BY must be total: LIMIT can split a transaction's rows, and every
+	// validator must keep the same ones.
 	sqlx::query_as!(
 		DeregistrationRow,
 		r#"
 SELECT
-    datum.value::jsonb AS "full_datum!: _",
+    datum.value::jsonb AS "full_datum!: DbDatumIfValid",
     block.block_no as "block_number!: _",
     block.hash as "block_hash: _",
     block.time as "block_timestamp: _",
@@ -115,7 +115,7 @@ WHERE block.block_no >= $2 AND block.block_no <= $4
     AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))
     AND tx.id >= $8 AND tx.id <=$9
     AND tx_in.id >= $10 AND tx_in.id <= $11
-ORDER BY block.block_no, tx.block_index
+ORDER BY block.block_no, tx.block_index, tx_tx_out.hash, tx_out.index
 LIMIT $6 OFFSET $7;
         "#,
 		smart_contract_address,
@@ -192,6 +192,8 @@ pub(crate) async fn get_asset_spends(
 ) -> Result<Vec<AssetSpendRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
+	// The ORDER BY must be total: LIMIT can split a transaction's rows, and every
+	// validator must keep the same ones.
 	sqlx::query_as!(
 		AssetSpendRow,
 		r#"
@@ -218,7 +220,7 @@ WHERE spending_block.block_no >= $2 AND spending_block.block_no <= $4
     AND (spending_block.block_no < $4 OR (spending_block.block_no = $4 AND spending_tx.block_index < $5))
     AND spending_tx.id >= $8 AND spending_tx.id <=$9
     AND tx_in.id >= $10 AND tx_in.id <= $11
-ORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index
+ORDER BY spending_block.block_no, spending_tx.block_index, tx.hash, tx_out.index
 LIMIT $6 OFFSET $7;
     "#,
 		ident,
@@ -447,33 +449,15 @@ FROM
 	.await
 }
 
-/// Highest stable `block_no` present in db-sync that does not exceed `upper`.
-///
-/// Stability is the same coarse block-number bound used by the mainchain
-/// follower: latest db-sync block minus `cardano_security_parameter +
-/// block_stability_margin`. This keeps cNIGHT refresh lookahead out of the
-/// rollback-prone tail of Cardano while still clamping to an existing block.
-pub async fn get_highest_stable_block_le(
+/// `maxTxSize`, in bytes, of the Cardano epoch holding block `block_no`.
+pub async fn get_max_tx_size(
 	pool: &Pool<Postgres>,
-	upper: u32,
-	stability_margin: u32,
-) -> Result<Option<u32>, SqlxError> {
-	let latest: Option<i64> = sqlx::query_scalar("SELECT max(block_no)::bigint FROM block")
-		.fetch_one(pool)
-		.await?;
-	let Some(latest) = latest else {
-		return Ok(None);
-	};
-	let latest = u32::try_from(latest).unwrap_or(u32::MAX);
-	let stable_upper = latest.saturating_sub(stability_margin);
-	let bounded_upper = upper.min(stable_upper);
-
-	// Cast to bigint so we decode INT8 regardless of the db-sync `block_no`
-	// column width (it is INT4 on current schemas).
-	let max: Option<i64> =
-		sqlx::query_scalar("SELECT max(block_no)::bigint FROM block WHERE block_no <= $1")
-			.bind(i64::from(bounded_upper))
-			.fetch_one(pool)
-			.await?;
-	Ok(max.map(|n| n as u32))
+	block_no: u32,
+) -> Result<Option<i64>, SqlxError> {
+	sqlx::query_scalar(
+		"SELECT MAX(epoch_param.max_tx_size)::BIGINT FROM block JOIN epoch_param ON epoch_param.epoch_no = block.epoch_no WHERE block.block_no = $1",
+	)
+	.bind(block_no as i32)
+	.fetch_one(pool)
+	.await
 }

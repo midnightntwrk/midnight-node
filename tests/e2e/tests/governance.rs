@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::{self, Settings};
@@ -215,7 +228,7 @@ async fn get_ariadne_parameters_returns_valid_structure() {
 /// TC-PC-003: Verify D-Parameter from pallet matches expected configuration.
 ///
 /// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
-/// In local environment, it's configured as (4, 1) - 4 permissioned, 1 registered.
+/// In local environment, it's configured as (5, 0) - 5 permissioned, 0 registered.
 #[e2e_test]
 async fn d_parameter_from_pallet_matches_config() {
     tracing::info!("=== TC-PC-003: D-Parameter Pallet Integration ===");
@@ -258,11 +271,10 @@ async fn d_parameter_from_pallet_matches_config() {
         "D-Parameter registered count should match between endpoints"
     );
 
-    // Local environment configures D-Parameter as (3, 0)
-    // 3 permissioned (Alice, Bob, Charlie) from qanet config
+    // Local environment configures D-Parameter as (5, 0)
     assert_eq!(
-        d_param.num_permissioned_candidates, 3,
-        "Permissioned count should match system-parameters config (expected 3)"
+        d_param.num_permissioned_candidates, 5,
+        "Permissioned count should match system-parameters config (expected 5)"
     );
     assert_eq!(
         d_param.num_registered_candidates, 0,

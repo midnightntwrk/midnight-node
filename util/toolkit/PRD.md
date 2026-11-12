@@ -6,7 +6,7 @@
 > **Audience:** broader Midnight org — primarily product and architecture.
 >
 > **Last updated:** 2026-04-28.
-> 
+>
 > **Author(s):** Oscar Bailey
 
 ---
@@ -355,7 +355,10 @@ The most load-bearing scripts:
 | `toolkit-maintenance-e2e.sh` | Contract maintenance updates (entrypoint upserts/removals, authority rotation). |
 | `toolkit-update-ledger-parameters-e2e.sh` | Federated-authority ledger parameter update, end-to-end. |
 | `toolkit-tokens-minter-e2e.sh` | Token-minter contract variants. |
-| `toolkit-multi-dest-e2e.sh` | Multi-destination transaction send. |
+
+The multi-destination-send no-hang check moved to the Rust e2e suite as
+`operational::toolkit_multi_dest_send_does_not_hang` (runs against the local-env,
+funded by the cNIGHT bridge), replacing the former `toolkit-multi-dest-e2e.sh`.
 
 Because these scripts exercise the same CLI users invoke by hand, any
 regression in a user-facing command also breaks CI — which gives the
@@ -520,7 +523,7 @@ redundant network round-trips; the cache is shared across commands.
 | Dry-run | `--dry-run` plans without executing |
 | Multi-source / multi-destination | repeatable `--src-file`, multiple `--dest-url` |
 | Network-id selection | inferred from source; `--network <name>` for derivation commands |
-| **Multi-ledger-version support** | The toolkit supports every ledger version currently running on Midnight's live production chains. Per-version logic lives under [`src/commands/fork/`](src/commands/fork/) (e.g. `ledger_7.rs`, `ledger_8.rs`). |
+| **Multi-ledger-version support** | The toolkit supports every ledger version currently running on Midnight's live production chains. Per-version logic lives under [`src/commands/fork/`](src/commands/fork/) (e.g. `ledger_8.rs`, `ledger_9.rs`). |
 
 ---
 
@@ -616,11 +619,11 @@ be — but in practice the team behaves as if it were.
    `runtime-upgrade`, `root-call`). This locks the toolkit out of
    production multi-party governance, where seeds are split across
    holders.
-2. **Minimum supported node version: `0.22.0`** (the current mainnet
-   version), which corresponds to **Ledger v7**. The toolkit is committed
-   to backward compatibility from this floor up through every node /
-   ledger version currently in use across production and pre-production
-   networks.
+2. **Minimum supported node version: `0.22.0`**, which corresponds to
+   **Ledger v8** (ledger 7 support was removed — mainnet has always run
+   ledger 8 onwards). The toolkit is committed to backward compatibility
+   from this floor up through every node / ledger version currently in
+   use across production and pre-production networks.
 3. **Lockstep with node and ledger.** The toolkit is built from the same
    workspace as the node and shares types directly with the runtime; it
    cannot drift from the protocol it speaks to.
@@ -725,8 +728,10 @@ The toolkit is doing its job when:
 
 **Closed design questions** *(included for the record):*
 
-- **Multi-ledger-version pruning** — *not pruned.* Mainnet launched on
-  Ledger v7 / node `0.22.0`, so that floor is permanent.
+- **Multi-ledger-version pruning** — *ledger 7 pruned.* It predated
+  mainnet, so nothing running in production ever depended on it. Ledger
+  8 (node `0.22.0`) remains the permanent floor, since mainnet launched
+  on it.
 - **Indexer support and the existing fetch path** — *coexist.* The
   indexer integration sits alongside the re-implemented fetch path;
   it does not replace it, so the diagnostic independence of the

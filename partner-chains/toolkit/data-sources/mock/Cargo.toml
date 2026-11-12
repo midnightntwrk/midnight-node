@@ -26,6 +26,9 @@ pallet-sidechain-rpc = { workspace = true, optional = true }
 authority-selection-inherents = { workspace = true, optional = true }
 sp-partner-chains-bridge = { workspace = true, optional = true }
 
+[dev-dependencies]
+tokio = { workspace = true }
+
 [features]
 default = ["std", "block-source", "candidate-source"]
 std = [
@@ -38,6 +41,3 @@ candidate-source = ["authority-selection-inherents"]
 mc-hash = ["sidechain-mc-hash"]
 sidechain-rpc = ["pallet-sidechain-rpc"]
 bridge = ["sp-partner-chains-bridge"]
-
-[lib]
-test = false

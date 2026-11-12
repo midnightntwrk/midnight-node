@@ -1,5 +1,20 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::time::Duration;
-use whisky::csl::{Credential, EnterpriseAddress, NetworkInfo as CardanoNetworkInfo, ScriptHash};
+use whisky::csl::{
+    Credential, EnterpriseAddress, NetworkInfo as CardanoNetworkInfo, RewardAddress, ScriptHash,
+};
 use whisky::{LanguageVersion, Network as CardanoNetwork};
 
 // Default location of the contract-info and plutus blueprint files.
@@ -50,6 +65,13 @@ fn submodule_network() -> &'static str {
     {
         "qanet"
     }
+    // devnet observes the same Preview-deployed contracts as qanet (the
+    // two networks' cnight configs match), and the pinned contracts
+    // submodule has no devnet dir — read the identical qanet snapshot.
+    #[cfg(feature = "devnet")]
+    {
+        "qanet"
+    }
 }
 
 fn read_contracts_info_entry(name: &str) -> serde_json::Value {
@@ -96,7 +118,7 @@ impl Settings {
     pub fn new() -> Self {
         {
             let network_info = CardanoNetworkInfo::testnet_preview();
-            Self {
+            let mut settings = Self {
                 node_client: NodeClientSettings {
                     #[cfg(feature = "local-dev")]
                     base_url: "ws://127.0.0.1:9944".into(),
@@ -109,13 +131,18 @@ impl Settings {
 
                     #[cfg(feature = "qanet")]
                     base_url: "wss://rpc.qanet.midnight.network".into(),
+
+                    #[cfg(feature = "devnet")]
+                    base_url: "wss://rpc.devnet.midnight.network".into(),
                 },
                 ogmios_client: OgmiosClientSettings {
                     #[cfg(any(feature = "local", feature = "local-dev"))]
                     base_url: "ws://127.0.0.1:1337".into(),
                     #[cfg(feature = "local-ci")]
                     base_url: "ws://172.17.0.1:1337".into(),
-                    #[cfg(feature = "qanet")]
+                    // qanet and devnet both follow Cardano Preview and share
+                    // the same ogmios deployment.
+                    #[cfg(any(feature = "qanet", feature = "devnet"))]
                     base_url: "wss://ogmios.devnet.midnight.network".into(),
                     timeout_seconds: 180,
                     network: CardanoNetwork::Preview,
@@ -123,7 +150,7 @@ impl Settings {
                 },
                 #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
                 finality_timeout: Duration::from_secs(60),
-                #[cfg(feature = "qanet")]
+                #[cfg(any(feature = "qanet", feature = "devnet"))]
                 finality_timeout: Duration::from_secs(300),
                 constants: Constants {
                     payments: Payments {
@@ -195,7 +222,18 @@ impl Settings {
                         ],
                     ],
                 },
+            };
+            // Reachability override: when running as a compose service on the
+            // local-env network, the node RPC + ogmios are reached by service
+            // name (e.g. ws://midnight-node-1:9933 / ws://ogmios:1337), not the
+            // host-mapped ports the feature defaults assume. Unset = no change.
+            if let Ok(url) = std::env::var("E2E_NODE_URL") {
+                settings.node_client.base_url = url;
             }
+            if let Ok(url) = std::env::var("E2E_OGMIOS_URL") {
+                settings.ogmios_client.base_url = url;
+            }
+            settings
         }
     }
 }
@@ -244,6 +282,18 @@ pub fn mapping_validator_address() -> String {
         .to_address()
         .to_bech32(None)
         .expect("Failed to encode mapping_validator address")
+}
+
+/// Reward (stake) address of the mapping validator's own script credential.
+pub fn mapping_validator_reward_address() -> String {
+    let script_hash = ScriptHash::from_hex(&mapping_validator_policy_id())
+        .expect("Failed to decode mapping_validator script hash");
+    let cred = Credential::from_scripthash(&script_hash);
+    let network_id = CardanoNetworkInfo::testnet_preview().network_id();
+    RewardAddress::new(network_id, &cred)
+        .to_address()
+        .to_bech32(None)
+        .expect("Failed to encode mapping_validator reward address")
 }
 
 pub fn mapping_validator_policy_id() -> String {

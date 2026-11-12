@@ -12,13 +12,19 @@
 // limitations under the License.
 
 // grcov-excl-start
+#![allow(deprecated)]
+
 use super::*;
 use crate::{
 	Call as MidnightCall, mock,
 	mock::{RuntimeOrigin, Test},
 };
 use assert_matches::assert_matches;
-use frame_support::{assert_err, assert_ok, pallet_prelude::Weight, traits::OnFinalize};
+use frame_support::{
+	assert_err, assert_ok,
+	pallet_prelude::Weight,
+	traits::{OnFinalize, OnInitialize},
+};
 use frame_system::RawOrigin;
 use midnight_node_ledger::types::active_version::{
 	BlockContext, DeserializationError, LedgerApiError, MalformedError, TransactionError,
@@ -55,11 +61,44 @@ fn process_block(block_number: u64, block_context: BlockContext) {
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
 }
 
+/// Drives the start of a block the way a real one is built: `on_initialize` records the parent
+/// block's timestamp (which becomes the ledger's `last_block_time`) while `pallet_timestamp`
+/// still holds it, and only then does the timestamp inherent set the block's own.
+fn begin_block(block_number: u64, parent_ts: u64, block_ts: u64) {
+	mock::System::set_block_number(block_number);
+	mock::Timestamp::set_timestamp(parent_ts * 1000);
+	<mock::Midnight as OnInitialize<u64>>::on_initialize(block_number);
+	mock::Timestamp::set_timestamp(block_ts * 1000);
+}
+
+/// The correction's fixed offset (`slot_duration_secs * (1 + MaxSkippedSlots)`), hardcoded in
+/// `midnight-node-ledger`. The tests below subtract it from the parent timestamp they want the
+/// correction to *produce*; the arithmetic itself is covered by the `well_formed_tblock` unit
+/// tests in that crate.
+const TBLOCK_CORRECTION_OFFSET_SECS: u64 = 12;
+
+fn send_mn_transaction(tx: Vec<u8>) -> sp_runtime::DispatchResult {
+	mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx)
+}
+
+/// A block timestamp shortly after `block_context`'s, distinct on every call.
+///
+/// The strict transaction-validation cache is a process-global static keyed by
+/// `(ledger state hash, tx hash, block timestamp)`, and every `tblock_correction` test below
+/// validates the same fixture against the same genesis state. Handing out a distinct block
+/// timestamp per assertion keeps them from serving each other's cached `well_formed` results —
+/// which would make an assertion pass without ever running the code it is testing. The
+/// timestamps stay well inside the fixture's validity window.
+fn uncached_block_ts(block_context: &BlockContext) -> u64 {
+	static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(101);
+	block_context.tblock + NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 #[test]
 fn test_send_mn_transaction() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 		init_ledger_state(block_context.into());
 
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx));
@@ -93,7 +132,7 @@ fn test_send_mn_transaction_malformed_tx() {
 fn test_send_mn_transaction_invalid_tx() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 		init_ledger_state(block_context.into());
 
 		let error: sp_runtime::DispatchError = Error::<Test>::Transaction(
@@ -111,13 +150,13 @@ fn test_send_mn_transaction_invalid_tx() {
 fn test_get_contract_state() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx_deploy, block_context_deploy) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 		let (tx_store, block_context_store) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 		let (tx_check, block_context_check) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(CHECK_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(CHECK_TX);
 		let (tx_maintenance, block_context_maintenance) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(MAINTENANCE_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(MAINTENANCE_TX);
 
 		init_ledger_state(block_context_deploy.into());
 
@@ -167,7 +206,7 @@ fn test_get_unclaimed_amount_beneficiary_not_found() {
 #[test]
 fn test_validation_works() {
 	let (tx, block_context) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 
 	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
@@ -203,7 +242,7 @@ fn test_validation_fails() {
 #[test]
 fn test_pre_dispatch_accepts_valid_transaction() {
 	let (tx, block_context) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 
 	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
@@ -220,7 +259,7 @@ fn test_pre_dispatch_rejects_contract_not_present() {
 	// This tests the DDoS mitigation: transactions that would fail the guaranteed
 	// part are rejected at pre_dispatch time, before consuming blockspace.
 	let (tx, block_context) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 
 	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
@@ -260,9 +299,9 @@ fn test_pre_dispatch_rejects_replay_attack() {
 	mock::new_test_ext().execute_with(|| {
 		// Set up ledger state and deploy contract
 		let (deploy_tx, block_context_deploy) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 		let (store_tx, block_context_store) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 
 		init_ledger_state(block_context_deploy.into());
 
@@ -292,7 +331,7 @@ fn test_pre_dispatch_rejects_replay_attack() {
 fn test_pre_dispatch_validation_does_not_modify_state() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -322,7 +361,7 @@ fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 	mock::new_test_ext().execute_with(|| {
 		// STORE_TX will fail (no contract deployed) but should not modify state
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -368,7 +407,7 @@ fn sets_extra_transaction_size_weight() {
 fn test_get_mn_transaction_fee() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -376,6 +415,57 @@ fn test_get_mn_transaction_fee() {
 
 		// Assert the transaction has some associated cost
 		assert!(gas_cost > 0);
+	});
+}
+
+#[test]
+fn test_get_decoded_transaction() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context.into());
+
+		let decoded = mock::Midnight::get_decoded_transaction(&tx).unwrap();
+
+		assert!(!decoded.operations.is_empty());
+	});
+}
+
+/// A real transaction whose untagged body is padded one byte past `transaction_byte_limit`.
+/// Genuine leading bytes pass the node-count check, so the byte limit is what rejects it.
+fn oversized_tx() -> Vec<u8> {
+	let (mut tx, _) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let (tag, _) = midnight_node_ledger::types::split_tag(&tx).expect("DEPLOY_TX is tagged");
+	tx.resize(tag.len() + (1 << 20) + 1, 0);
+	tx
+}
+
+#[test]
+fn test_get_decoded_transaction_rejects_oversized_tx() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_eq!(
+			mock::Midnight::get_decoded_transaction(&oversized_tx()).unwrap_err(),
+			LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			))
+		);
+	});
+}
+
+#[test]
+fn test_get_transaction_cost_rejects_oversized_tx() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		assert_eq!(
+			mock::Midnight::get_transaction_cost(&oversized_tx()).unwrap_err(),
+			LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			))
+		);
 	});
 }
 
@@ -395,7 +485,7 @@ fn test_get_ledger_parameters() {
 fn test_send_zswap_tx() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(ZSWAP_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(ZSWAP_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -408,7 +498,7 @@ fn test_send_zswap_tx() {
 fn test_get_zswap_state_root() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(ZSWAP_TX);
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(ZSWAP_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -448,53 +538,212 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 	});
 }
 
-#[cfg(feature = "experimental")]
-#[ignore = "TODO UNSHIELDED - fix when Claim Mint is properly handled for Unshielded"]
+/// The parent timestamp that makes the correction land a minute before the block context the
+/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies, while the
+/// block's own timestamp still does (the shape of mainnet #1788980).
+fn parent_ts_that_the_correction_rejects(block_context: &BlockContext) -> u64 {
+	block_context.tblock - 60 - TBLOCK_CORRECTION_OFFSET_SECS
+}
+
+/// The runtime this node ships imports version 2 of the host function, which does not correct:
+/// a block whose first transaction the correction would have rejected is verified against its own
+/// timestamp and accepted. This is the loophole closing — it is gated on the runtime upgrade,
+/// nothing else.
+///
+/// Version 1's side of the split is only reachable for ledger 8 (the pallet here runs ledger 9,
+/// which never skews), so it is covered by the `well_formed_tblock` / `strict_cache_key` unit
+/// tests in `midnight-node-ledger` rather than from a pallet test.
+///
+/// See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 #[test]
-fn test_send_claim_mint() {
-	/*
-	test commented out because it references block_rewards which no longer exist
-		use crate::mock::BeneficiaryId;
-		use frame_support::{
-			pallet_prelude::ProvideInherent,
-			traits::{OnFinalize, UnfilteredDispatchable},
-		};
-		use midnight_node_res::undeployed::transactions::CLAIM_MINT_TX;
-		use sp_inherents::InherentData;
+fn test_tblock_correction_not_applied_by_the_current_runtime() {
+	let (tx, block_context) =
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let block_context: BlockContext = block_context.into();
+	let parent_ts = parent_ts_that_the_correction_rejects(&block_context);
 
-		mock::new_test_ext().execute_with(|| {
-			init_ledger_state(BlockContext::default());
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.clone());
+		begin_block(1, parent_ts, uncached_block_ts(&block_context));
 
-			let mut inherent_data = InherentData::new();
+		assert_ok!(send_mn_transaction(tx.clone()));
+	});
+}
 
-			let block_beneficiary_provider = sp_block_rewards::BlockBeneficiaryInherentProvider::<
-				BeneficiaryId,
-			>::from_env("SIDECHAIN_BLOCK_BENEFICIARY")
-			.expect("SIDECHAIN_BLOCK_BENEFICIARY env variable not provided");
+/// Mempool ingress must not be corrected: `validate_unsigned` already skews the block context it
+/// passes to the ledger by `slot_duration * (1 + MaxSkippedSlots)`, so correcting there too would
+/// double-count a slot and reject valid transactions.
+#[test]
+fn test_tblock_correction_does_not_affect_mempool_validation() {
+	let (tx, block_context) =
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let block_context: BlockContext = block_context.into();
+	let parent_ts = parent_ts_that_the_correction_rejects(&block_context);
 
-			inherent_data
-				.put_data(
-					sp_block_rewards::INHERENT_IDENTIFIER,
-					&block_beneficiary_provider.beneficiary_id,
-				)
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.clone());
+		begin_block(1, parent_ts, uncached_block_ts(&block_context));
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: tx.clone() };
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+			TransactionSource::External,
+			&call
+		));
+	});
+}
+
+/// Asserts the contract external consumers such as the indexer rely on: `StateKey` points at a
+/// `Ledger` with zero `block_fullness`, so it can be recomputed from the ledger state alone.
+fn assert_state_key_is_block_start() {
+	let state_key = StateKey::<Test>::get();
+	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(true));
+	assert_eq!(midnight_node_ledger::block_start_state_key(false, &state_key), Ok(state_key));
+}
+
+/// Guards the assertion above against passing vacuously: inside a block the fullness is non-zero.
+fn assert_state_key_is_mid_block() {
+	let state_key = StateKey::<Test>::get();
+	assert_eq!(midnight_node_ledger::is_block_start(false, &state_key), Ok(false));
+}
+
+type ApplySystemTransactionFn =
+	fn(
+		&[u8],
+		&[u8],
+		BlockContext,
+		u32,
+	) -> Result<midnight_node_ledger::types::SystemTransactionAppliedStateRoot, LedgerApiError>;
+
+/// Applies a system transaction the way `pallet-midnight-system` does for cNIGHT and the bridge.
+fn apply_system_transaction(apply: ApplySystemTransactionFn, tx: Vec<u8>) {
+	<mock::Midnight as LedgerStateProviderMut>::mut_ledger_state(|state_key| {
+		let block_context =
+			<mock::Midnight as midnight_primitives::LedgerBlockContextProvider>::get_block_context(
+			);
+		let runtime_version = <frame_system::Pallet<Test>>::runtime_version().spec_version;
+		apply(&state_key, &tx, block_context, runtime_version).map(|result| (result.state_root, ()))
+	})
+	.unwrap_or_else(|err| panic!("system transaction failed: {err:?}"));
+}
+
+#[test]
+fn state_key_is_block_start_at_genesis() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+		assert_state_key_is_block_start();
+	})
+}
+
+#[test]
+fn state_key_is_block_start_after_a_block_with_a_transaction() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		assert_ok!(send_mn_transaction(tx));
+		assert_state_key_is_mid_block();
+
+		mock::Midnight::on_finalize(1);
+		assert_state_key_is_block_start();
+	})
+}
+
+#[test]
+fn state_key_is_block_start_after_a_block_with_system_transactions() {
+	use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
+	use midnight_node_ledger_helpers::{DustPublicKey, Fr, serialize_untagged};
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let owner = serialize_untagged(&DustPublicKey(Fr::from(7u64))).unwrap();
+		let event =
+			LedgerApi::construct_cnight_generates_dust_event(1_000, &owner, 0, 0, [0u8; 32])
 				.unwrap();
+		let cnight_tx = LedgerApi::construct_cnight_generates_dust_system_tx(vec![event]).unwrap();
+		apply_system_transaction(LedgerApi::apply_cnight_system_transaction, cnight_tx);
+		assert_state_key_is_mid_block();
 
-			let call = <mock::BlockRewards as ProvideInherent>::create_inherent(&inherent_data)
-				.expect("Creating test inherent should not fail");
+		let bridge_txs = [
+			LedgerApi::construct_unlock_to_treasury_system_tx(0).unwrap(),
+			LedgerApi::construct_distribute_reserve_system_tx(0).unwrap(),
+			LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+				0, &[0u8; 32], [0u8; 32],
+			)
+			.unwrap(),
+		];
+		for tx in bridge_txs {
+			apply_system_transaction(LedgerApi::apply_bridge_system_transaction, tx);
+		}
+		assert_state_key_is_mid_block();
 
-			call.dispatch_bypass_filter(RuntimeOrigin::none())
-				.expect("dispatching test call should work");
-
-			mock::Midnight::on_finalize(mock::System::block_number());
-			let events = mock::midnight_events();
-
-			assert_matches!(events[0], Event::PayoutMinted(_));
-
-			assert_ok!(mock::Midnight::send_mn_transaction(
-				RuntimeOrigin::none(),
-				hex::encode(CLAIM_MINT_TX).into_bytes()
-			));
-		});
-	*/
+		mock::Midnight::on_finalize(1);
+		assert_state_key_is_block_start();
+	})
 }
 // grcov-excl-stop
+
+/// A payload far inside the byte limit is still refused when it declares too many nodes.
+#[test]
+fn declared_node_count_is_capped() {
+	mock::new_test_ext().execute_with(|| {
+		// Declares 20,000 nodes in a few dozen bytes, so only the node cap can reject it.
+		let mut dense = b"midnight:transaction[v12](proof):".to_vec();
+		dense.extend(((20_000u32 << 2) | 0b10).to_le_bytes());
+
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&dense),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+
+		// A realistic count gets past the cap and fails on content instead.
+		let mut sparse = b"midnight:transaction[v12](proof):".to_vec();
+		sparse.extend(((43u32 << 2) | 0b10).to_le_bytes());
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&sparse),
+			Err(LedgerApiError::Deserialization(_))
+		);
+	});
+}
+
+/// The node cap must bind first, or the item cap would refuse transactions the ledger accepts
+/// and blocks can carry.
+#[test]
+fn the_node_cap_binds_before_the_item_cap() {
+	use sp_core::Get;
+
+	mock::new_test_ext().execute_with(|| {
+		let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
+		assert!(crate::MaxTransactionNodes::<Test>::get() / crate::NODES_PER_OPERATION < items);
+
+		let too_many = items * crate::NODES_PER_OPERATION;
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many),
+			crate::Error::<Test>::MaxTransactionNodesExceedsItemCap
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many - 1));
+	});
+}
+
+#[test]
+fn governance_can_lower_the_node_cap() {
+	mock::new_test_ext().execute_with(|| {
+		let mut tx = b"midnight:transaction[v12](proof):".to_vec();
+		tx.extend(((100u16 << 2) | 0b01).to_le_bytes());
+
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RuntimeOrigin::none(), 99),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), 99));
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&tx),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+	});
+}

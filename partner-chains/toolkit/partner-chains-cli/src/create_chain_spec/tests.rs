@@ -13,7 +13,7 @@ impl PartnerChainRuntime for MockRuntime {
 		config: &super::CreateChainSpecConfig<TestSessionKeys>,
 	) -> serde_json::Value {
 		serde_json::json!({
-			"session":config.pallet_partner_chains_session_config::<MockRuntime>(),
+			"session":config.pallet_session_config::<MockRuntime>(),
 			"sessionCommitteeManagement": config.pallet_session_validator_management_config::<MockRuntime>(),
 			"sidechain": config.pallet_sidechain_config::<MockRuntime>(SlotsPerEpoch(13)),
 			"bridge":config.bridge_config::<MockRuntime>(),
@@ -204,8 +204,9 @@ fn generated_chain_spec() -> serde_json::Value {
 	serde_json::json!(
 		{
 			"session": {
-				"initialValidators": [
+				"keys": [
 					[
+						"5C7C2Z5sWbytvHpuLTvzKunnnRwQxft1jiqrLD5rhucQ5S9X",
 						"5C7C2Z5sWbytvHpuLTvzKunnnRwQxft1jiqrLD5rhucQ5S9X",
 						{
 							"aura": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -214,12 +215,14 @@ fn generated_chain_spec() -> serde_json::Value {
 					],
 					[
 						"5DVskgSC9ncWQpxFMeUn45NU43RUq93ByEge6ApbnLk6BR9N",
+						"5DVskgSC9ncWQpxFMeUn45NU43RUq93ByEge6ApbnLk6BR9N",
 						{
 							"aura": "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty",
 							"grandpa": "5GoNkf6WdbxCFnPdAnYYQyCjAKPJgLNxXwPjwTh6DGg6gN3E"
 						}
 					]
-				]
+				],
+				"nonAuthorityKeys": []
 			},
 			"sessionCommitteeManagement": {
 				"initialAuthorities": [

@@ -1,9 +1,23 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 import { Effect, Layer } from 'effect';
 import { Command } from '@effect/cli';
 import { NodeContext } from '@effect/platform-node';
 import { describe, it, expect } from 'vitest';
 import { resolve } from 'node:path';
 import { rm, stat } from 'node:fs/promises';
+import { resolveVariantModule } from '../src/compactc-resolver.js';
 
 const COUNTER_CONFIG_FILEPATH = resolve(import.meta.dirname, 'contract/contract.config.ts');
 
@@ -17,9 +31,16 @@ const COUNTER_OUTPUT_ZSWAP_FILEPATH = resolve(import.meta.dirname, `zswap-${vers
 
 describe(`Deploy Command (compact ${version})`, () => {
   it('should run to success', async () => {
-    // Dynamically import so the import resolves through the version-dispatch hook (rather than the
-    // package npm happened to hoist), matching how the CLI resolves these at runtime.
-    const { ConfigCompiler, deployCommand } = await import('@midnight-ntwrk/compact-js-command/effect');
+    // Resolve the entrypoint to the variant copy pinned for this COMPACTC_VERSION and import that absolute
+    // path. A *bare* specifier here is pre-resolved by Vitest's module runner before the version-dispatch
+    // hook (installed in test/setup-compactc-resolver.ts) can redirect it, so it loads whichever
+    // compact-js-command npm hoisted to the workspace root — a different, version-mismatched variant whose
+    // ledger deserializes the contract state at the wrong format version. Importing the resolved absolute
+    // path pins it to this variant; its transitive bare imports still flow through the hook. See
+    // src/compactc-resolver.ts (resolveVariantModule).
+    const { ConfigCompiler, deployCommand } = await import(
+      resolveVariantModule(version, '@midnight-ntwrk/compact-js-command/effect')
+    );
 
     const testLayer = Layer.mergeAll(
       ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer))

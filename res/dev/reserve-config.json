@@ -4,13 +4,12 @@
     "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
     "asset_name": "NIGHT"
   },
-  "_comment": "Dev/test reserve: 5B NIGHT (5e15 STARS) covers default faucet funding (~2B NIGHT). The remainder of MAX_SUPPLY lands in locked_pool so c2m-bridge UnlockToTreasury/DistributeNight(CardanoBridge) inflows have something to draw from. Without this, locked_pool=0 (because fallback for reserve is MAX_SUPPLY, that leaves 0 for locked pool) and any bridge transfer fails with SystemTransactionError::IllegalPayout.",
   "utxos": [
     {
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "output_index": 0,
-      "amount": 5000000000000000
+      "amount": 6000000000873988
     }
   ],
-  "total_amount": 5000000000000000
+  "total_amount": 6000000000873988
 }

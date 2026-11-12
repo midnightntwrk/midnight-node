@@ -48,7 +48,10 @@ use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sp_core::{
 	ByteArray, Pair,
-	crypto::key_types::{AURA as AURA_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE},
+	crypto::key_types::{
+		AURA as AURA_KEY_TYPE, BABE as BABE_KEY_TYPE, BEEFY as BEEFY_KEY_TYPE,
+		GRANDPA as GRANDPA_KEY_TYPE,
+	},
 	offchain::KeyTypeId,
 };
 use sp_keystore::KeystorePtr;
@@ -92,14 +95,17 @@ pub fn run() -> sc_cli::Result<()> {
 			run_subcommand(cli.subcommand, cfg)
 		},
 		Err(e) if e.kind() == clap::error::ErrorKind::DisplayHelp => {
-			// Only show current config settings for main command.
+			// Only show current config settings for main command. `RunMidnight` (not bare
+			// `RunCmd`) so Midnight-specific run flags show up in the help text.
 			if !subcommand_used {
 				if std::env::args().any(|a| a == "--help") {
-					let _ =
-						RunCmd::try_parse_from(["midnight-node", "--help"]).unwrap_err().print();
+					let _ = RunMidnight::try_parse_from(["midnight-node", "--help"])
+						.unwrap_err()
+						.print();
 					Cfg::help();
 				} else {
-					let _ = RunCmd::try_parse_from(["midnight-node", "-h"]).unwrap_err().print();
+					let _ =
+						RunMidnight::try_parse_from(["midnight-node", "-h"]).unwrap_err().print();
 				}
 			}
 			let _ = e.print();
@@ -130,7 +136,7 @@ fn get_cfg(validate: bool) -> sc_cli::Result<Cfg> {
 	let cfg = if validate { Cfg::new() } else { Cfg::new_no_validation() };
 	let cfg = cfg.map_err(|e| {
 		let msg = format!("configuration error: {e}");
-		eprintln!("{}", &msg);
+		eprintln!("{}", msg);
 		Cfg::help();
 		sc_cli::Error::Input(msg)
 	})?;
@@ -171,12 +177,12 @@ fn decode_genesis_state(
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	bail_if_runtime_benchmarks("running a node");
-	let run_cmd: RunCmd = cfg
-		.substrate_cfg
-		.clone()
-		.into_run_cmd(&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?)?;
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
 		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
+	let run_cmd: RunCmd = cfg.substrate_cfg.clone().apply_overrides_to_run_cmd(
+		run_midnight.run.clone(),
+		&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?,
+	)?;
 	let tx_filter_config = if run_midnight.filter_deploy_txs {
 		TxFilterConfig::enabled()
 	} else {
@@ -190,11 +196,52 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.map_err(|e| sc_cli::Error::Application(Box::new(e)))?;
 	}
 
-	let runner = cfg.create_runner(&run_cmd)?;
 	let base_path = run_cmd
 		.shared_params()
 		.base_path()?
 		.unwrap_or_else(|| BasePath::from_project("", "", "midnight-node"));
+
+	#[cfg(target_os = "linux")]
+	let landlock_writable: Option<Vec<std::path::PathBuf>> = cfg
+		.midnight_cfg
+		.landlock
+		.then(|| {
+			let keystore = run_cmd.keystore_params.keystore_path.clone();
+			let node_key_dir = (run_cmd.network_params.node_key_params.node_key_file.as_deref())
+				.and_then(|f| f.parent().map(|p| p.to_path_buf()));
+			// Landlock skips missing paths, so create the ones the node would create later.
+			for dir in std::iter::once(base_path.path()).chain(keystore.as_deref()) {
+				std::fs::create_dir_all(dir)?;
+			}
+			Ok::<_, std::io::Error>(
+				[base_path.path().to_path_buf(), std::env::temp_dir(), "/dev/null".into()]
+					.into_iter()
+					.chain(keystore)
+					.chain(node_key_dir)
+					.collect(),
+			)
+		})
+		.transpose()?;
+	#[cfg(target_os = "linux")]
+	let landlock_status = landlock_writable
+		.as_deref()
+		.map(crate::landlock::restrict)
+		.transpose()
+		.map_err(|e| sc_cli::Error::Input(format!("landlock: {e}")))?;
+	#[cfg(target_os = "linux")]
+	let landlock_readable: Vec<std::path::PathBuf> =
+		cfg.midnight_cfg.ssl_root_cert.iter().map(Into::into).collect();
+
+	let runner = cfg.create_runner(&run_cmd)?;
+
+	#[cfg(target_os = "linux")]
+	match landlock_status {
+		Some(landlock::RulesetStatus::NotEnforced) => {
+			log::warn!("Landlock is not supported by this kernel; the node runs unsandboxed")
+		},
+		Some(status) => log::info!("Landlock filesystem sandbox: {status:?}"),
+		None => log::warn!("Landlock sandbox disabled by config"),
+	}
 	let chain_id = run_cmd.shared_params().chain_id(run_cmd.shared_params().is_dev());
 	let chain_spec = cfg.load_spec(&chain_id)?;
 	let config_dir = base_path.config_dir(chain_spec.id());
@@ -228,7 +275,20 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
 		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("AURA pubkey: {}", &keypair.public())
+		log::info!("AURA pubkey: {}", keypair.public())
+	}
+
+	if let Some(seed_file) = &cfg.midnight_cfg.babe_seed_file {
+		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
+			sc_cli::Error::Input(format!(
+				"error when reading BABE seed file at {seed_file}. Error: {e}"
+			))
+		})?;
+		let seed = seed.trim();
+		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
+			.map_err(|e| sc_cli::Error::Input(format!("Invalid BABE seed: {e}")))?;
+		keystore.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		log::info!("BABE pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {
@@ -241,7 +301,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
 		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("GRANDPA pubkey: {}", &keypair.public())
+		log::info!("GRANDPA pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.cross_chain_seed_file {
@@ -256,7 +316,20 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		keystore
 			.insert(KeyTypeId(*b"crch"), seed, &keypair.public().to_raw_vec())
 			.unwrap();
-		log::info!("CROSS_CHAIN pubkey: {}", &keypair.public())
+		log::info!("CROSS_CHAIN pubkey: {}", keypair.public())
+	}
+
+	if let Some(seed_file) = &cfg.midnight_cfg.beefy_seed_file {
+		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
+			sc_cli::Error::Input(format!(
+				"error when reading BEEFY seed file at {seed_file}. Error: {e}"
+			))
+		})?;
+		let seed = seed.trim();
+		let (keypair, _) = sp_core::ecdsa::Pair::from_string_with_seed(seed, None)
+			.map_err(|e| sc_cli::Error::Input(format!("Invalid BEEFY seed: {e}")))?;
+		keystore.insert(BEEFY_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		log::info!("BEEFY pubkey: {}", keypair.public())
 	}
 
 	// Hold the database backend handle outside the tokio runtime so we can
@@ -317,9 +390,20 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			hwbench,
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
+			run_midnight.serve_warp_ledger_sync,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;
+
+		#[cfg(target_os = "linux")]
+		if let Some(writable) = &landlock_writable {
+			match crate::landlock::restrict_reads(landlock_readable, writable) {
+				Ok(status) => log::info!("Landlock read sandbox: {status:?}"),
+				Err(e) => {
+					log::warn!("Landlock read sandbox not applied, reads stay unrestricted: {e}")
+				},
+			}
+		}
 
 		// Stash the backend handle so it outlives the tokio runtime.
 		*backend_handle_inner.lock().expect("backend mutex poisoned") = Some(backend);
@@ -1544,8 +1628,8 @@ mod tests {
 		chain_spec_genesis: &[u8],
 		compiled_genesis: &[u8],
 	) -> sc_cli::Result<()> {
-		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
-		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		let spec_hash = sp_crypto_hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_crypto_hashing::blake2_256(compiled_genesis);
 		if spec_hash != compiled_hash {
 			return Err(sc_cli::Error::Input(format!(
 				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",
