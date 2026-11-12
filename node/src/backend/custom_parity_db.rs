@@ -57,6 +57,18 @@ pub(crate) mod columns_polkadot {
 
 pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
+/// META-column key written when the ledger storage is created by a node that persists every
+/// ledger root through the tagged-root wrapper. Its absence means the ledger storage was created
+/// by an older node and holds roots the ledger GC can never release, so the GC does not run
+/// (`ledger_gc::try_spawn`). One point read; no root is ever iterated to decide this.
+const LEDGER_GC_TAGGED_KEY: &[u8] = b"midnight:ledger_gc_tagged_roots";
+
+/// Whether this database was created with tagged ledger roots from genesis (see
+/// [`LEDGER_GC_TAGGED_KEY`]).
+pub fn ledger_gc_tagged_from_genesis(db: &parity_db::Db) -> parity_db::Result<bool> {
+	Ok(db.get(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY)?.is_some())
+}
+
 /// Wrap parity-db database into a trait object that implements `sp_database::Database`
 pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
@@ -97,6 +109,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 			true,
 		);
 	}
+	let existing_meta = parity_db::Options::load_metadata(path)?;
 
 	if upgrade {
 		log::info!("Upgrading database metadata.");
@@ -105,7 +118,19 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		}
 	}
 
+	// The ledger storage is fresh when the main database is new and, in separate mode, the
+	// ledger directory does not exist yet either (decided before `init_ledger_storage_separate`
+	// creates it). A fresh ledger storage only ever receives tagged roots.
+	let ledger_fresh = existing_meta.is_none()
+		&& match storage_config.separation {
+			StorageSeparation::Separate => !storage_config.db_path.is_dir(),
+			StorageSeparation::Unified => true,
+		};
+
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
+	if ledger_fresh {
+		db.commit([(columns_polkadot::META as u8, LEDGER_GC_TAGGED_KEY, Some(b"1".to_vec()))])?;
+	}
 
 	match storage_config.separation {
 		StorageSeparation::Separate => {

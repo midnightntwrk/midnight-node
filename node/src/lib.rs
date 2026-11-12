@@ -35,6 +35,7 @@ pub mod genesis;
 pub mod inherent_data;
 #[cfg(target_os = "linux")]
 pub mod landlock;
+pub mod ledger_gc;
 pub mod ledger_stats_rpc;
 pub mod main_chain_follower;
 pub mod memory_monitor;
