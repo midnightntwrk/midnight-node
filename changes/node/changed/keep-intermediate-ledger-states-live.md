@@ -11,9 +11,6 @@ Previously every host call re-deserialized the ledger working set, roughly
 three times per transaction; it is now materialised about once per block. DB
 writes per block are unchanged.
 
-Also fixes `has_ledger_state` panicking, instead of returning `false`, for an
-unresolvable state key.
-
 No storage-layout, host-ABI or runtime change.
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1442
