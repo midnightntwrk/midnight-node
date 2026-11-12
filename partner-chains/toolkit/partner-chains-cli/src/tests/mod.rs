@@ -26,7 +26,7 @@ pub(crate) mod runtime;
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum MockIO {
-	RunCommand { expected_cmd: String, output: anyhow::Result<String> },
+	RunCommand { expected_cmd: Vec<String>, output: anyhow::Result<String> },
 	Print(String),
 	EPrint(String),
 	Prompt { prompt: String, default: Option<String>, input: String },
@@ -94,19 +94,19 @@ impl MockIO {
 		Self::DeleteFile { path: path.into() }.with_location()
 	}
 	#[track_caller]
-	pub fn run_command(expected_cmd: &str, output: &str) -> Self {
-		Self::RunCommand { expected_cmd: expected_cmd.into(), output: Ok(output.into()) }
-			.with_location()
+	pub fn run_command(expected_cmd: &[&str], output: &str) -> Self {
+		Self::run_command_with_result(expected_cmd, Ok(output.into()))
 	}
 	#[track_caller]
 	pub fn run_command_with_result(
-		expected_cmd: &str,
+		expected_cmd: &[&str],
 		output: anyhow::Result<std::string::String>,
 	) -> Self {
-		Self::RunCommand { expected_cmd: expected_cmd.into(), output }.with_location()
+		let expected_cmd = expected_cmd.iter().map(|arg| arg.to_string()).collect();
+		Self::RunCommand { expected_cmd, output }.with_location()
 	}
 	#[track_caller]
-	pub fn run_command_json(expected_cmd: &str, output: &serde_json::Value) -> Self {
+	pub fn run_command_json(expected_cmd: &[&str], output: &serde_json::Value) -> Self {
 		Self::run_command(expected_cmd, &serde_json::to_string_pretty(output).unwrap())
 	}
 	#[track_caller]
@@ -496,17 +496,19 @@ impl Drop for MockIOContext {
 impl IOContext for MockIOContext {
 	type Offchain = OffchainMock;
 
-	fn run_command(&self, cmd: &str) -> anyhow::Result<String> {
-		let next = self.pop_next_action(&format!("run_command({cmd})"));
+	fn run_command(&self, program: &str, args: &[&str]) -> anyhow::Result<String> {
+		let cmd: Vec<String> =
+			std::iter::once(program).chain(args.iter().copied()).map(String::from).collect();
+		let next = self.pop_next_action(&format!("run_command({cmd:?})"));
 		next.print_mock_location_on_panic(|next| match next {
 			MockIO::RunCommand { expected_cmd, output } => {
 				assert_eq!(
 					cmd, expected_cmd,
-					"Incorrect command executed: {cmd}  expected: {expected_cmd}"
+					"Incorrect command executed: {cmd:?}  expected: {expected_cmd:?}"
 				);
 				output
 			},
-			other => panic!("Unexpected command executed: {cmd}, expected: {other:?}"),
+			other => panic!("Unexpected command executed: {cmd:?}, expected: {other:?}"),
 		})
 	}
 
