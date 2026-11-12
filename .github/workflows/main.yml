@@ -88,7 +88,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 #v2.87.29
+        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 #v2.90.0
         with:
           tool: just
 
@@ -127,6 +127,7 @@ jobs:
       - name: Extract existing artifacts
         if: steps.check-images.outputs.images_exist == 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
           NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
@@ -147,12 +148,14 @@ jobs:
       - name: Run build
         if: steps.check-images.outputs.images_exist != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image --STRIP_BINARIES="$STRIP_BINARIES"
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image --STRIP_BINARIES="$STRIP_BINARIES"
 
       - name: Get image digests
         id: digests
@@ -340,6 +343,7 @@ jobs:
       - name: Extract existing artifacts
         if: steps.check-images.outputs.images_exist == 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
           NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
@@ -353,10 +357,14 @@ jobs:
       - name: Run Node and toolkit builds
         if: steps.check-images.outputs.images_exist != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          # Private clones strip the shipped binaries (STRIP_BINARIES in the Earthfile). Inverted so
+          # a payload with no repository object strips rather than ships symbols.
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
-          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image --STRIP_BINARIES="$STRIP_BINARIES"
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image --STRIP_BINARIES="$STRIP_BINARIES"
 
       - name: Get image digests
         id: digests

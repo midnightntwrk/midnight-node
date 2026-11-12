@@ -100,6 +100,12 @@ wait_for_finalized_block() {
     _wait_for_block_inner _rpc_get_finalized_height "finalized" "$1" "$2" "${3:-90}"
 }
 
+# wait_for_toolkit_ready <rpc_url> [timeout_secs]
+# The toolkit refuses to connect until a block past genesis is finalized.
+wait_for_toolkit_ready() {
+    wait_for_finalized_block "$1" 1 "${2:-90}"
+}
+
 # wait_for_next_finalized_block <rpc_url> [timeout_secs]
 #     Waits until finality advances at least one block past the current finalized
 #     height. Use after a state-changing transaction when the next step needs the

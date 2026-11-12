@@ -34,7 +34,9 @@ use tokio::sync::Mutex as MutexTokio;
 
 pub mod builder_context;
 pub mod indexer_context;
+pub use crate::indexer_client::{IndexerClient, IndexerClientError};
 pub use builder_context::BuilderContext;
+pub use indexer_context::IndexerContext;
 
 #[derive(Debug, Error)]
 pub enum LedgerContextError {
@@ -714,6 +716,20 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 			.map_err(|_| "ledger state lock was poisoned".to_string())?
 			.clone();
 		tx.well_formed(&*ref_state, WellFormedStrictness::default(), now)?;
+		Ok(())
+	}
+
+	async fn apply_pending_tx<S, P>(
+		&self,
+		tx: &SerdeTransaction<S, P, D>,
+		block_context: &BlockContext,
+	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
+	where
+		S: SignatureKind<D>,
+		P: ProofKind<D> + std::fmt::Debug,
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		self.update_from_tx(tx, block_context)?;
 		Ok(())
 	}
 }

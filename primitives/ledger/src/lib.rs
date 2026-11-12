@@ -314,6 +314,34 @@ impl LedgerStorageExt {
 }
 
 sp_externalities::decl_extension! {
+	/// Marks a runtime call as block authoring or block import.
+	///
+	/// Ledger state is persisted only during block authoring and import, i.e. when this is
+	/// present. Other runtime calls use an ephemeral storage, discarded with their extensions.
+	#[derive(Debug, Default)]
+	pub struct LedgerOnchainExt(());
+}
+
+/// A ledger value kept alive for the rest of an off-chain execution, with its serialized root.
+pub type HeldState = (Vec<u8>, Box<dyn std::any::Any + Send>);
+
+sp_externalities::decl_extension! {
+	/// Ledger states produced by an off-chain execution.
+	///
+	/// They are not persisted, so they stay resolvable only while held here; dropping the
+	/// extension releases them.
+	#[derive(Default)]
+	pub struct LedgerEphemeralExt(Vec<HeldState>);
+}
+
+impl LedgerEphemeralExt {
+	/// Keep `state` alive under its serialized root `state_root`.
+	pub fn hold(&mut self, state_root: Vec<u8>, state: Box<dyn std::any::Any + Send>) {
+		self.0.push((state_root, state));
+	}
+}
+
+sp_externalities::decl_extension! {
 	/// Keeps a block's intra-block ledger states, which are never persisted, addressable.
 	///
 	/// The node registers one per runtime-API instance, so they live as long as the block's

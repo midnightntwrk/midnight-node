@@ -210,7 +210,12 @@ impl MidnightNodeClient {
 	}
 
 	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {
-		let call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
+		// Unvalidated: the call's hash covers every `LedgerApiError` variant, so runtimes whose error
+		// enums differ from `mn_meta`'s would refuse it although the `Vec<u8>` payload is the same.
+		let call = mn_meta::runtime_apis::RuntimeApi
+			.midnight_runtime_api()
+			.get_ledger_parameters()
+			.unvalidated();
 		let response = self.api.at_current_block().await?.runtime_apis().call(call).await?;
 		let bytes = response.expect("Unable to retrieve ledger parameters from RPC server");
 		let parameters: LedgerParameters = deserialize(&mut &bytes[..])

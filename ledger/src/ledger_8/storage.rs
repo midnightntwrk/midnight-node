@@ -24,7 +24,7 @@ use crate::ledger_8::ledger_storage_local::{
 // (column offset 0) for `Separate`, or column offset = NUM_COLUMNS_POLKADOT
 // for `Unified`. Drop whichever exists.
 type DbSeparate = ParityDb;
-type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+type DbUnified = ParityDb<storage_sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 pub fn drop_default_storage_if_exists() {
 	if try_get_default_storage::<DbSeparate>().is_some() {
@@ -173,7 +173,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		std::fs::create_dir_all(dir.as_ref())
 			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.as_ref().display()));
 
-		let db = ParityDb::<sha2::Sha256>::open(dir.as_ref());
+		let db = ParityDb::<storage_sha2::Sha256>::open(dir.as_ref());
 		Storage::new(cache_size, db)
 	});
 	if res.is_err() {
@@ -206,7 +206,7 @@ pub fn init_storage_paritydb_unified<
 	};
 
 	let res = set_default_storage(|| {
-		let db = ParityDb::<sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
+		let db = ParityDb::<storage_sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
 		Storage::new(cache_size, db)
 	});
 	if res.is_err() {
@@ -215,6 +215,27 @@ pub fn init_storage_paritydb_unified<
 
 	alloc_with_initial_state::<
 		crate::ledger_8::TransactionSignature,
-		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
+		ParityDb<storage_sha2::Sha256, D, COLUMN_OFFSET>,
 	>(genesis_state)
 }
+
+// grcov-excl-start
+#[cfg(test)]
+mod tests {
+	use super::get_root;
+
+	/// Genesis ledger state of a local "undeployed" chain run by node 0.22.0.
+	const UNDEPLOYED_GENESIS: &[u8] =
+		include_bytes!("../../test-data/genesis_state_undeployed_node_0_22_0.raw");
+
+	/// `StateKey` that node 0.22.0 stored at block 0 of that chain. The indexer pins the same
+	/// pair, so the two sides cannot drift apart unnoticed.
+	const UNDEPLOYED_GENESIS_STATE_KEY: &str = "6d69646e696768743a73746f726167652d6b6579286c65646765722d73746174655b7631335d293a0094da59ebc5abee3d5abc325275ee39df52f01eed96b86ea635c4f18b31f99689";
+
+	#[test]
+	fn get_root_reproduces_the_genesis_state_key() {
+		let state_key = get_root(UNDEPLOYED_GENESIS, Some("undeployed")).expect("get_root failed");
+		assert_eq!(hex::encode(state_key), UNDEPLOYED_GENESIS_STATE_KEY);
+	}
+}
+// grcov-excl-stop

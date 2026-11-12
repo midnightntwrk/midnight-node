@@ -31,12 +31,6 @@ use mn_ledger_local::error::{
 };
 use zswap_local::error::{MalformedOffer, TransactionInvalid as ZswapTransactionInvalid};
 
-// Version-specific helper modules live at `ledger_X::error_ext`. Each version
-// supplies its own implementation that matches only the variants it knows
-// about, so future upstream additions fall through to the `UnknownError + log`
-// arm rather than being silently misclassified.
-use crate::ledger_9::error_ext;
-
 impl From<TransactionApplicationError> for TransactionApplicationErrorCode {
 	fn from(error: TransactionApplicationError) -> Self {
 		match error {
@@ -68,13 +62,8 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 				ZswapTransactionInvalid::UnknownMerkleRoot(..) => {
 					ZswapInvalidErrorCode::UnknownMerkleRoot
 				},
-				#[allow(unreachable_patterns)]
-				other => match error_ext::try_convert_extra_zswap_invalid(other) {
-					Ok(code) => code,
-					Err(other) => {
-						log::warn!("Unmapped zswap TransactionInvalid variant: {other:?}");
-						ZswapInvalidErrorCode::Unknown
-					},
+				ZswapTransactionInvalid::MerkleTreeError(..) => {
+					ZswapInvalidErrorCode::MerkleTreeError
 				},
 			}),
 			Ti::Transcript(..) => Ie::Transcript,
@@ -87,18 +76,16 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 			Ti::InputNotInUtxos(..) => Ie::InputNotInUtxos,
 			Ti::DustDoubleSpend(..) => Ie::DustDoubleSpend,
 			Ti::DustDeregistrationNotRegistered(..) => Ie::DustDeregistrationNotRegistered,
-			// Dust-generation uniqueness: the upstream variant is spelled differently per ledger
-			// (`GenerationInfoAlreadyPresent` in 8, `InitialNonceAlreadyPresent` from
-			// 9.1.0.0-rc.4), so it is mapped in each `error_ext::ledger_N` instead of here.
+			Ti::InitialNonceAlreadyPresent(..) => Ie::GenerationInfoAlreadyPresent,
 			Ti::InvariantViolation(..) => Ie::InvariantViolation,
 			Ti::RewardTooSmall { .. } => Ie::RewardTooSmall,
 			Ti::DivideByZero => Ie::DivideByZero,
-			other => match error_ext::try_convert_extra_invalid(other) {
-				Ok(ie) => ie,
-				Err(other) => {
-					log::warn!("Unmapped TransactionInvalid variant: {other:?}");
-					Ie::UnknownError
-				},
+			Ti::MerkleTreeError(..) => Ie::MerkleTreeError,
+			Ti::BridgeClaimTooSmall { .. } => Ie::BridgeClaimTooSmall,
+			Ti::ContractTooManyOperations { .. } => Ie::ContractTooManyOperations,
+			other => {
+				log::warn!("Unmapped TransactionInvalid variant: {other:?}");
+				Ie::UnknownError
 			},
 		}
 	}
@@ -118,14 +105,8 @@ impl From<LedgerSystemTransactionError> for SystemTransactionError {
 			Lste::InvalidBasisPoints(_) => Ste::InvalidBasisPoints,
 			Lste::InvariantViolation(_) => Ste::InvariantViolation,
 			Lste::TreasuryDisabled => Ste::TreasuryDisabled,
-			#[allow(unreachable_patterns)]
-			other => match error_ext::try_convert_extra_system_tx(other) {
-				Ok(ste) => ste,
-				Err(other) => {
-					log::warn!("Unmapped SystemTransactionError variant: {other:?}");
-					Ste::UnknownError
-				},
-			},
+			Lste::MerkleTreeError(..) => Ste::MerkleTreeError,
+			Lste::InitialNonceAlreadyPresent(..) => Ste::GenerationInfoAlreadyPresent,
 		}
 	}
 }
@@ -161,11 +142,6 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 					MalformedZswapErrorCode::NonDisjointCoinMerge
 				},
 				MalformedOffer::NotNormalized => MalformedZswapErrorCode::NotNormalized,
-				#[allow(unreachable_patterns)]
-				other => {
-					log::warn!("Unmapped zswap MalformedOffer variant: {other:?}");
-					MalformedZswapErrorCode::Unknown
-				},
 			}),
 			Mt::BuiltinDecode(..) => Me::BuiltinDecode,
 			Mt::CantMergeTypes => Me::CantMergeTypes,
@@ -185,6 +161,11 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				FeeCalculationError::BlockLimitExceeded => {
 					FeeCalculationErrorCode::BlockLimitExceeded
 				},
+				FeeCalculationError::RepeatedEntries => FeeCalculationErrorCode::RepeatedEntries,
+				other => {
+					log::warn!("Unmapped FeeCalculationError variant: {other:?}");
+					FeeCalculationErrorCode::Unknown
+				},
 			}),
 			Mt::InvalidDustRegistrationSignature { .. } => Me::InvalidDustRegistrationSignature,
 			Mt::InvalidDustSpendProof { .. } => Me::InvalidDustSpendProof,
@@ -197,6 +178,9 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				},
 				MalformedContractDeploy::IncorrectChargedState => {
 					MalformedContractDeployErrorCode::IncorrectChargedState
+				},
+				MalformedContractDeploy::TooManyOperations { .. } => {
+					MalformedContractDeployErrorCode::TooManyOperations
 				},
 				other => {
 					log::warn!("Unmapped MalformedContractDeploy variant: {other:?}");
@@ -272,6 +256,11 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::OutputsNotSorted(..) => Me::OutputsNotSorted,
 			Mt::DuplicateInputs(..) => Me::DuplicateInputs,
 			Mt::InputsSignaturesLengthMismatch { .. } => Me::InputsSignaturesLengthMismatch,
+			Mt::TooManyPublicInputs { .. } => Me::TooManyPublicInputs,
+			Mt::TranscriptGasExceedsBlockLimits { .. } => Me::TranscriptGasExceedsBlockLimits,
+			Mt::ContractDustTransfer { .. } => Me::ContractDustTransfer,
+			Mt::RepeatedCommitteeSignature { .. } => Me::RepeatedCommitteeSignature,
+			Mt::RepeatedDustRegistration { .. } => Me::RepeatedDustRegistration,
 			other => {
 				log::warn!("Unmapped MalformedTransaction variant: {other:?}");
 				Me::UnknownError

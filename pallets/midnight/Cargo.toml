@@ -23,6 +23,8 @@ frame-system.workspace = true
 log.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
+# Only for `test-utils`: the exported `mock` registers its block-execution marker.
+midnight-primitives-ledger = { workspace = true, optional = true }
 sp-api.workspace = true
 sp-core = { workspace = true, optional = true }
 sp-io = { workspace = true, optional = true }
@@ -33,6 +35,7 @@ sp-tracing = { workspace = true}
 sidechain-domain.workspace = true
 
 [dev-dependencies]
+midnight-primitives-ledger = { workspace = true }
 sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true
@@ -41,6 +44,7 @@ midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 assert_matches.workspace = true
 tempfile.workspace = true
 midnight-ledger-unsafe-helpers = { workspace = true }
+midnight-node-ledger-helpers.workspace = true
 midnight-node-ledger = { workspace = true, features = ["std", "test-utils"] }
 test-log.workspace = true
 
@@ -70,6 +74,7 @@ runtime-benchmarks = [
     ]
 try-runtime = ["frame-support/try-runtime"]
 test-utils = [
+    "midnight-primitives-ledger",
     "sp-core",
     "sp-io",
     "midnight-node-ledger/test-utils",

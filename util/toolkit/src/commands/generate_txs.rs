@@ -132,6 +132,10 @@ mod tests {
 					fetch_cache: FetchCacheConfig::InMemory,
 					ledger_state_db: String::new(),
 					replay_checkpoint_interval: 0,
+					indexer_url: None,
+					network: "undeployed".to_string(),
+					indexer_concurrency: midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+					no_fast_sync: false,
 				},
 				destination: Destination {
 					dest_urls: vec![],

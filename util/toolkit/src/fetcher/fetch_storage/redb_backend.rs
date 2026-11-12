@@ -39,6 +39,12 @@ pub struct BlockKey {
 /// Data is serialized with postcard. Uses `RwLock` for concurrent read access.
 /// An advisory file lock on a `<path>.lock` sidecar prevents concurrent toolkit
 /// processes from corrupting the cache.
+///
+/// The `_vN` suffix carries the `RawBlockData` wire format and must be bumped with it.
+/// postcard is not self-describing and `postcard::from_bytes` ignores trailing bytes, so a
+/// row holding one field more than the struct expects decodes to a *different* block instead
+/// of failing — drop a field and `state_root` reads the byte after it, landing as `None`,
+/// which silently turns the replay's state-root check off.
 #[derive(Clone)]
 pub struct RedbBackend {
 	pub db: Arc<RwLock<Database>>,
@@ -94,8 +100,8 @@ impl RedbBackend {
 
 		Self {
 			db: Arc::new(RwLock::new(Database::create(path).expect("failed to create database"))),
-			block_data_table: TableDefinition::new("raw_block_data_v2"),
-			highest_verified_table: TableDefinition::new("highest_verified"),
+			block_data_table: TableDefinition::new("raw_block_data_v3"),
+			highest_verified_table: TableDefinition::new("highest_verified_v3"),
 			_lock: Arc::new(lock_file),
 		}
 	}

@@ -29,6 +29,7 @@ use sp_runtime_interface::runtime_interface;
 
 #[cfg(feature = "std")]
 use {
+	crate::ephemeral::{EphemeralDb, ensure_storage, is_onchain},
 	midnight_primitives_ledger::{LedgerStorageDb, LedgerStorageExt},
 	sp_externalities::{Externalities, ExternalitiesExt},
 };
@@ -67,7 +68,7 @@ pub struct DustGenerationValues {
 type DbSeparate = crate::ledger_8::ledger_storage_local::db::ParityDb;
 #[cfg(feature = "std")]
 type DbUnified = crate::ledger_8::ledger_storage_local::db::ParityDb<
-	sha2::Sha256,
+	storage_sha2::Sha256,
 	crate::ledger_8::ledger_storage_local::db::paritydb::OwnedDb,
 	{ LedgerStorageExt::COLUMN_OFFSET },
 >;
@@ -78,6 +79,26 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 		ext.extension::<LedgerStorageExt>().map(|e| &e.0.db),
 		Some(LedgerStorageDb::UnifiedDb(_)),
 	)
+}
+
+/// Call `Bridge::$call` instantiated for this call's storage mode, over the shared ledger
+/// storage, or over the ephemeral one when `$ephemeral` (see [`crate::ephemeral`]).
+#[cfg(feature = "std")]
+macro_rules! with_bridge {
+	($bridge:ident<$sig:ty>, $ext:expr, $ephemeral:expr, $call:ident($($arg:expr),* $(,)?)) => {
+		match (is_unified($ext), $ephemeral) {
+			(true, false) => $bridge::<$sig, DbUnified>::$call($($arg),*),
+			(false, false) => $bridge::<$sig, DbSeparate>::$call($($arg),*),
+			(true, true) => {
+				ensure_storage::<DbUnified>($ext);
+				$bridge::<$sig, EphemeralDb<DbUnified>>::$call($($arg),*)
+			},
+			(false, true) => {
+				ensure_storage::<DbSeparate>($ext);
+				$bridge::<$sig, EphemeralDb<DbSeparate>>::$call($($arg),*)
+			},
+		}
+	};
 }
 
 /// The body of version 1 of `apply_transaction`, which skews the `tblock` of a block's first
@@ -94,27 +115,20 @@ pub fn apply_transaction_v1(
 	block_context: BlockContext,
 	runtime_version: u32,
 ) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
-	if is_unified(externalities) {
-		Bridge::<Signature, DbUnified>::apply_transaction(
+	with_bridge!(
+		Bridge<Signature>,
+		externalities,
+		!is_onchain(externalities),
+		apply_transaction(
 			externalities,
 			state_key,
 			tx,
 			block_context,
 			true,
 			runtime_version,
-			/* skew_tblock */ true,
+			/* skew_tblock */ true
 		)
-	} else {
-		Bridge::<Signature, DbSeparate>::apply_transaction(
-			externalities,
-			state_key,
-			tx,
-			block_context,
-			true,
-			runtime_version,
-			/* skew_tblock */ true,
-		)
-	}
+	)
 }
 
 /// Shared body of both versions of `validate_guaranteed_execution`; they differ only in
@@ -128,25 +142,19 @@ fn validate_guaranteed_execution_inner(
 	runtime_version: u32,
 	skew_tblock: bool,
 ) -> Result<(), LedgerApiError> {
-	if is_unified(externalities) {
-		Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
+	with_bridge!(
+		Bridge<Signature>,
+		externalities,
+		!is_onchain(externalities),
+		validate_guaranteed_execution(
 			externalities,
 			state_key,
 			tx,
 			block_context,
 			runtime_version,
-			skew_tblock,
+			skew_tblock
 		)
-	} else {
-		Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
-			externalities,
-			state_key,
-			tx,
-			block_context,
-			runtime_version,
-			skew_tblock,
-		)
-	}
+	)
 }
 
 #[runtime_interface]
@@ -172,11 +180,12 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::post_block_update(*self, state_key, block_context)
-		} else {
-			Bridge::<Signature, DbSeparate>::post_block_update(*self, state_key, block_context)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			post_block_update(*self, state_key, block_context)
+		)
 	}
 
 	fn apply_post_block_update(
@@ -184,15 +193,12 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_post_block_update(
-				*self,
-				state_key,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_post_block_update(*self, state_key, block_context)
+		)
 	}
 
 	// Current Enabled Version
@@ -235,27 +241,20 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_transaction(
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_transaction(
 				*self,
 				state_key,
 				tx,
 				block_context,
 				true,
 				runtime_version,
-				/* skew_tblock */ false,
+				/* skew_tblock */ false
 			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				true,
-				runtime_version,
-				/* skew_tblock */ false,
-			)
-		}
+		)
 	}
 
 	fn apply_system_transaction(
@@ -265,21 +264,12 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_system_transaction(*self, state_key, tx, block_context)
+		)
 	}
 
 	fn apply_governance_system_transaction(
@@ -289,21 +279,12 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_governance_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_governance_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_governance_system_transaction(*self, state_key, tx, block_context)
+		)
 	}
 
 	fn apply_cnight_system_transaction(
@@ -313,21 +294,12 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_cnight_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_cnight_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_cnight_system_transaction(*self, state_key, tx, block_context)
+		)
 	}
 
 	fn apply_bridge_system_transaction(
@@ -337,21 +309,12 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_bridge_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_bridge_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_bridge_system_transaction(*self, state_key, tx, block_context)
+		)
 	}
 
 	/*
@@ -366,27 +329,23 @@ pub trait Ledger8Bridge {
 		// The Runtime's max weight as of now
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
-		let (hash, _) = if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::validate_transaction(
+		// Off-chain this deserializes a caller-supplied transaction and caches its
+		// `VerifiedTransaction`, so it uses the ephemeral storage like the other transaction
+		// paths.
+		let (hash, _) = with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			validate_transaction(
 				*self,
 				state_key,
 				tx,
 				block_context,
 				runtime_version,
 				max_weight,
-				false,
-			)?
-		} else {
-			Bridge::<Signature, DbSeparate>::validate_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				max_weight,
-				false,
-			)?
-		};
+				false
+			)
+		)?;
 
 		Ok(hash)
 	}
@@ -443,26 +402,32 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_contract_state(state_key, contract_address)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_contract_state(state_key, contract_address)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_contract_state(state_key, contract_address)
+		)
 	}
 
 	/*
 	 * get_decoded_transaction()
+	 *
+	 * Only reachable from old runtimes (the new runtime uses the ledger-9 bridge), so
+	 * bounded by the hardcoded ledger defaults, which equal the on-chain limits at
+	 * every historic block.
 	 */
 	// Current Enabled Version
 	fn get_decoded_transaction(
 		&mut self,
 		transaction_bytes: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Tx, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_decoded_transaction(transaction_bytes)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_decoded_transaction(transaction_bytes)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_decoded_transaction_v1(transaction_bytes)
+		)
 	}
 
 	/*
@@ -474,11 +439,12 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_zswap_chain_state(state_key, contract_address)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_zswap_chain_state(state_key, contract_address)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_zswap_chain_state(state_key, contract_address)
+		)
 	}
 
 	/*
@@ -490,11 +456,12 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		beneficiary: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_unclaimed_amount(state_key, beneficiary)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_unclaimed_amount(state_key, beneficiary)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_unclaimed_amount(state_key, beneficiary)
+		)
 	}
 
 	/*
@@ -506,11 +473,12 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		beneficiary: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_bridge_receiving_amount(state_key, beneficiary)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_bridge_receiving_amount(state_key, beneficiary)
+		)
 	}
 
 	/*
@@ -521,11 +489,7 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_ledger_parameters(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_ledger_parameters(state_key)
-		}
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_parameters(state_key))
 	}
 
 	/*
@@ -536,15 +500,19 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_c_to_m_bridge_min_amount(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_c_to_m_bridge_min_amount(state_key)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_c_to_m_bridge_min_amount(state_key)
+		)
 	}
 
 	/*
 	 * Returns the expected fee to pay for a submitting a transaction
+	 *
+	 * Only reachable from old runtimes; the hardcoded default byte limit equals the
+	 * on-chain limit at every historic block.
 	 */
 	fn get_transaction_cost(
 		&mut self,
@@ -553,21 +521,12 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_transaction_cost(
-				state_key,
-				tx,
-				&block_context,
-				max_weight,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_transaction_cost(
-				state_key,
-				tx,
-				&block_context,
-				max_weight,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_transaction_cost_v1(state_key, tx, &block_context, max_weight)
+		)
 	}
 
 	/*
@@ -578,11 +537,7 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_zswap_state_root(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_zswap_state_root(state_key)
-		}
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_zswap_state_root(state_key))
 	}
 
 	fn is_governance_allowed_system_tx(&mut self, system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
@@ -603,11 +558,7 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_ledger_state_root(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_ledger_state_root(state_key)
-		}
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_state_root(state_key))
 	}
 
 	fn construct_cnight_generates_dust_event(
@@ -701,16 +652,25 @@ pub trait Ledger8Bridge {
 	) -> AllocateAndReturnByCodec<Result<DustGenerationValues, LedgerApiError>> {
 		// `set_default_storage` is idempotent, so this stays callable from
 		// anywhere in the block.
+		use crate::host_api::dust_generation::dust_generation_values;
+
+		let ephemeral = !is_onchain(*self);
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-			crate::host_api::dust_generation::dust_generation_values::<DbUnified>(
-				state_key, &nonces,
-			)
+			if ephemeral {
+				ensure_storage::<DbUnified>(*self);
+				dust_generation_values::<EphemeralDb<DbUnified>>(state_key, &nonces)
+			} else {
+				dust_generation_values::<DbUnified>(state_key, &nonces)
+			}
 		} else {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			crate::host_api::dust_generation::dust_generation_values::<DbSeparate>(
-				state_key, &nonces,
-			)
+			if ephemeral {
+				ensure_storage::<DbSeparate>(*self);
+				dust_generation_values::<EphemeralDb<DbSeparate>>(state_key, &nonces)
+			} else {
+				dust_generation_values::<DbSeparate>(state_key, &nonces)
+			}
 		}
 	}
 

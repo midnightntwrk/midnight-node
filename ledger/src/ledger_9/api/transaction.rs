@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::num::TryFromIntError;
 
 use crate::ledger_9::{
@@ -25,11 +25,10 @@ use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use coin_structure_local::coin::{NIGHT, UnshieldedTokenType, UserAddress};
-use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash,
+		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash, LedgerState,
 		OutputInstructionUnshielded, ProofKind, ProofMarker, SignatureKind, StandardTransaction,
 		Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
@@ -37,7 +36,7 @@ use mn_ledger_local::{
 use std::borrow::Borrow;
 
 use super::{
-	ContractAddress, DeserializableError, LOG_TARGET, Ledger, LedgerParameters, SerializableError,
+	ContractAddress, DeserializableError, LOG_TARGET, LedgerParameters, SerializableError,
 	TransactionIdentifier, TransactionInvalid,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
@@ -148,21 +147,56 @@ impl UnshieldedUtxos {
 		self.inputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
+	/// Drops every UTXO that this transaction both creates and spends.
+	///
+	/// A later intent may spend an earlier intent's output. That UTXO is in neither the
+	/// initial nor the final ledger state, so [`Self::check_utxos_response_integrity`]
+	/// would reject it. Matching on [`UtxoInfo::id`] suffices: the ledger already
+	/// checked owner, type and value when it applied the spend. Call after removing
+	/// failed segments, so a spend whose creating segment failed is not netted away.
+	pub fn net_intra_tx_utxos(&mut self) {
+		let spent: HashSet<_> = self.inputs.values().flatten().map(UtxoInfo::id).collect();
+		let created = self.outputs.values().flatten().map(UtxoInfo::id);
+		let both: HashSet<_> = created.filter(|id| spent.contains(id)).collect();
+		for utxos in self.outputs.values_mut().chain(self.inputs.values_mut()) {
+			utxos.retain(|u| !both.contains(&u.id()));
+		}
+	}
+
 	pub fn outputs(&self) -> Vec<UtxoInfo> {
 		self.outputs.values().flat_map(|utxos| utxos.iter()).cloned().collect()
 	}
 
-	/// Checks the integrity of UTXO events against the final Ledger state.
+	/// The apply-time integrity check, limited to the guaranteed segment: mempool
+	/// validation and `pre_dispatch` dry-run only that, so `state` holds no fallible
+	/// effects. Run there, a tx apply would reject never reaches a block to sit in
+	/// fee-free. The caller gates it by host-fn version.
+	pub fn check_guaranteed_integrity<D: DB>(
+		mut self,
+		initial_utxos_size: usize,
+		state: &LedgerState<D>,
+	) -> Result<(), LedgerApiError> {
+		self.outputs.retain(|segment, _| *segment == 0);
+		self.inputs.retain(|segment, _| *segment == 0);
+		self.net_intra_tx_utxos();
+		self.check_utxos_response_integrity(initial_utxos_size, state).map(|_| ())
+	}
+
+	/// Checks the integrity of UTXO events against `state`: the final state at apply,
+	/// the post-guaranteed state at validation.
 	///
 	/// This function verifies that:
 	/// - All returned UTXO outputs are present in the updated Ledger state.
 	/// - All returned UTXO inputs have been removed from the Ledger state.
 	/// - The final number of UTXOs in the Ledger matches the expected size
 	///   after applying the additions and deletions.
+	///
+	/// A UTXO created and spent within this transaction fails the check unless
+	/// [`Self::net_intra_tx_utxos`] ran first.
 	pub fn check_utxos_response_integrity<D: DB>(
 		&self,
 		initial_utxos_size: usize,
-		state: &Sp<Ledger<D>, D>,
+		state: &LedgerState<D>,
 	) -> Result<(Vec<UtxoInfo>, Vec<UtxoInfo>), LedgerApiError> {
 		// Check returned utxo outputs exist in the state
 		for utxo_info in self.outputs.values().flatten() {
@@ -174,7 +208,7 @@ impl UnshieldedUtxos {
 				output_no: utxo_info.output_no,
 			};
 
-			if !state.state.utxo.utxos.contains_key(&utxo) {
+			if !state.utxo.utxos.contains_key(&utxo) {
 				log::error!(target: LOG_TARGET, "Returned UTXO output {utxo:?} should be present in the Ledger state");
 				return Err(LedgerApiError::HostApiError);
 			}
@@ -190,14 +224,14 @@ impl UnshieldedUtxos {
 				output_no: utxo_info.output_no,
 			};
 
-			if state.state.utxo.utxos.contains_key(&utxo) {
+			if state.utxo.utxos.contains_key(&utxo) {
 				log::error!(target: LOG_TARGET, "Returned UTXO input {utxo:?} should NOT be present in the Ledger state");
 				return Err(LedgerApiError::HostApiError);
 			}
 		}
 
 		// Check no other utxos have been added or removed from the final Ledger state
-		let final_utxos_size = state.state.utxo.utxos.size();
+		let final_utxos_size = state.utxo.utxos.size();
 
 		let utxo_outputs = self.outputs();
 		let num_additions = utxo_outputs.len();
@@ -435,12 +469,13 @@ pub enum Operation {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::ledger_9::{BlockContext, CRATE_NAME, TransactionSignature as Signature, api};
+	use crate::ledger_9::{
+		BlockContext, CRATE_NAME, TransactionSignature as Signature, api, api::Ledger,
+	};
 	use ledger_storage_local::DefaultDB;
 	use midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
-	use mn_ledger_local::structure::LedgerState;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
 	const MALFORMED: &[u8] = include_bytes!("../../../test-data/malformed_tx.json");
@@ -649,6 +684,103 @@ mod tests {
 		);
 		assert_eq!(info.value, value, "minted UTXO value must equal the claimed amount");
 		assert_eq!(info.output_no, 0);
+	}
+
+	fn utxo_info(intent_byte: u8, output_no: u32) -> UtxoInfo {
+		UtxoInfo {
+			address: [1u8; PERSISTENT_HASH_BYTES],
+			token_type: NIGHT.0.0,
+			intent_hash: [intent_byte; PERSISTENT_HASH_BYTES],
+			value: 1_000_000,
+			output_no,
+		}
+	}
+
+	/// A later intent spends Y, created by an earlier one: Y is in neither the initial nor
+	/// the final state.
+	#[test]
+	fn integrity_check_nets_a_utxo_created_and_spent_in_the_same_tx() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+		let y = utxo_info(0xAA, 0);
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(1, vec![y.clone()]);
+		utxos.inputs.insert(2, vec![y.clone()]);
+
+		assert!(
+			utxos.check_utxos_response_integrity(initial, &ledger.state).is_err(),
+			"un-netted: Y is reported as created but is absent from the final state"
+		);
+
+		utxos.net_intra_tx_utxos();
+		assert!(utxos.outputs().is_empty() && utxos.inputs().is_empty());
+		let (outputs, inputs) = utxos
+			.check_utxos_response_integrity(initial, &ledger.state)
+			.expect("netted: nothing left to verify");
+		assert!(outputs.is_empty() && inputs.is_empty());
+	}
+
+	#[test]
+	fn netting_keeps_unpaired_utxos() {
+		let y = utxo_info(0xAA, 0);
+		let sibling = utxo_info(0xAA, 1);
+		let other_spend = utxo_info(0xBB, 0);
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(0, vec![y.clone(), sibling.clone()]);
+		utxos.inputs.insert(1, vec![other_spend.clone(), y]);
+
+		utxos.net_intra_tx_utxos();
+		assert_eq!(utxos.outputs(), vec![sibling]);
+		assert_eq!(utxos.inputs(), vec![other_spend]);
+	}
+
+	#[test]
+	fn netting_does_not_hide_a_missing_output() {
+		let ledger = prepare_ledger();
+		let initial = ledger.state.utxo.utxos.size();
+
+		let mut utxos = UnshieldedUtxos::default();
+		utxos.outputs.insert(0, vec![utxo_info(0xAA, 0)]);
+
+		utxos.net_intra_tx_utxos();
+		assert!(utxos.check_utxos_response_integrity(initial, &ledger.state).is_err());
+	}
+
+	/// [`UnshieldedUtxos::check_guaranteed_integrity`] of `(segment, utxo)` pairs, at most
+	/// one per segment per side, against genesis, which holds none of them.
+	fn guaranteed_integrity(
+		outputs: &[(u16, UtxoInfo)],
+		inputs: &[(u16, UtxoInfo)],
+	) -> Result<(), LedgerApiError> {
+		let ledger = prepare_ledger();
+		let side = |p: &[(_, UtxoInfo)]| p.iter().map(|(s, u)| (*s, vec![u.clone()])).collect();
+		let utxos = UnshieldedUtxos { outputs: side(outputs), inputs: side(inputs) };
+		utxos.check_guaranteed_integrity(ledger.state.utxo.utxos.size(), &ledger.state)
+	}
+
+	/// Validation dry-runs only the guaranteed segment, so the check it runs must
+	/// ignore fallible segments, which the state it is given has not applied.
+	#[test]
+	fn guaranteed_integrity_ignores_fallible_segments() {
+		let checked = guaranteed_integrity(&[(1, utxo_info(0xAA, 0))], &[(2, utxo_info(0xBB, 0))]);
+		checked.expect("fallible segments are not checked");
+	}
+
+	/// A UTXO created and spent within the guaranteed segment nets out at validation
+	/// exactly as it does at apply.
+	#[test]
+	fn guaranteed_integrity_nets_within_the_segment() {
+		let y = utxo_info(0xAA, 0);
+		guaranteed_integrity(&[(0, y.clone())], &[(0, y)]).expect("netted to nothing");
+	}
+
+	/// A guaranteed output the dry-run state does not hold is rejected before the
+	/// transaction can reach a block.
+	#[test]
+	fn guaranteed_integrity_rejects_a_missing_output() {
+		assert!(guaranteed_integrity(&[(0, utxo_info(0xAA, 0))], &[]).is_err());
 	}
 }
 // grcov-excl-stop
