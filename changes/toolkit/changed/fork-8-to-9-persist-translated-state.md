@@ -9,5 +9,5 @@ toolkit now persists the result before the translation state drops, as the node'
 
 Verified: cold replay of Preview (77,069 blocks) to the tip.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2431
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2422
