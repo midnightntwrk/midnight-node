@@ -57,6 +57,57 @@ pub(crate) mod columns_polkadot {
 
 pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
+/// META-column key recording which `storage_separation` mode a database was created in.
+const STORAGE_SEPARATION_KEY: &[u8] = b"midnight:storage_separation";
+
+fn separation_marker(separation: StorageSeparation) -> &'static [u8] {
+	match separation {
+		StorageSeparation::Separate => b"separate",
+		StorageSeparation::Unified => b"unified",
+	}
+}
+
+/// Refuse to open a database in the other `storage_separation` mode than it was created in.
+///
+/// Switching modes on an existing data directory would silently reinitialise ledger state
+/// from genesis (separate -> unified leaves `ledger_storage/` orphaned and starts on empty
+/// ledger columns; the reverse starts a fresh `ledger_storage/`). Both modes now use the same
+/// ledger column options, so the parity-db column check that used to catch this no longer
+/// does; the mode is recorded explicitly in the META column on first open instead. For a
+/// database that predates the marker, the presence of the separate-mode ledger directory
+/// decides: separate mode always creates it, unified mode never does.
+fn check_storage_separation(
+	db: &parity_db::Db,
+	existed: bool,
+	storage_config: &StorageInit,
+) -> parity_db::Result<()> {
+	let want = separation_marker(storage_config.separation);
+	let recorded = db.get(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY)?;
+	let created_as: Option<&[u8]> = match &recorded {
+		Some(v) => Some(v.as_slice()),
+		None if existed => {
+			Some(if storage_config.db_path.is_dir() { b"separate" } else { b"unified" })
+		},
+		None => None,
+	};
+	if let Some(created_as) = created_as
+		&& created_as != want
+	{
+		return Err(parity_db::Error::IncompatibleColumnConfig {
+			id: NUM_COLUMNS_POLKADOT,
+			reason: format!(
+				"database was created with storage_separation={}, now configured {}",
+				String::from_utf8_lossy(created_as),
+				String::from_utf8_lossy(want)
+			),
+		});
+	}
+	if recorded.is_none() {
+		db.commit([(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY, Some(want.to_vec()))])?;
+	}
+	Ok(())
+}
+
 /// Wrap parity-db database into a trait object that implements `sp_database::Database`
 pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
@@ -89,13 +140,26 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.preimage = true;
 	tx_col.uniform = true;
 
-	// Set init options for ParityDb backend
-	if storage_config.separation == StorageSeparation::Separate {
-		midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
-			&mut config,
-			NUM_COLUMNS_POLKADOT,
-			true,
-		);
+	// Set storage-core's options on the ledger columns in BOTH modes. Unified mode is the
+	// one that actually uses these columns: without `btree_index` on the root and node
+	// columns storage-core cannot iterate them (`get_roots`, `size`, the GC scan), and
+	// without the options the node column is stored uncompressed (issue #2294). Separate
+	// mode keeps its own ledger DB (configured by storage-core itself) and leaves these
+	// columns unused, so the options are harmless there.
+	// Column options are fixed when a database is created, and parity-db refuses to open an
+	// existing one with different options (`IncompatibleColumnConfig`), so an existing DB
+	// keeps the ledger column options it was created with; only new databases get these.
+	midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
+		&mut config,
+		NUM_COLUMNS_POLKADOT,
+		true,
+	);
+	let existing_meta = parity_db::Options::load_metadata(path)?;
+	if let Some(meta) = &existing_meta {
+		let ledger_cols = NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize;
+		if let Some(stored) = meta.columns.get(ledger_cols.clone()) {
+			config.columns[ledger_cols].clone_from_slice(stored);
+		}
 	}
 
 	if upgrade {
@@ -106,6 +170,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	}
 
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
+	check_storage_separation(&db, existing_meta.is_some(), storage_config)?;
 
 	match storage_config.separation {
 		StorageSeparation::Separate => {
