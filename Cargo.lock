@@ -8258,6 +8258,7 @@ dependencies = [
  "midnight-node-ledger",
  "midnight-primitives",
  "midnight-primitives-beefy",
+ "midnight-primitives-candidate-registrations",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
@@ -8267,6 +8268,7 @@ dependencies = [
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-c2m-bridge",
+ "pallet-candidate-registrations",
  "pallet-cnight-observation",
  "pallet-collective",
  "pallet-consensus-engine",
@@ -8530,6 +8532,25 @@ dependencies = [
  "sp-api",
  "sp-consensus-beefy",
  "sp-runtime",
+]
+
+[[package]]
+name = "midnight-primitives-candidate-registrations"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "hex",
+ "hex-literal 1.1.0",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "serde_valid",
+ "sidechain-domain",
+ "sp-api",
+ "sp-core",
+ "sp-inherents",
+ "sp-runtime",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -10397,6 +10418,26 @@ dependencies = [
  "sp-io",
  "sp-partner-chains-bridge",
  "sp-runtime",
+]
+
+[[package]]
+name = "pallet-candidate-registrations"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "hex",
+ "log",
+ "midnight-primitives-candidate-registrations",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "serde_valid",
+ "sidechain-domain",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "test-log",
 ]
 
 [[package]]

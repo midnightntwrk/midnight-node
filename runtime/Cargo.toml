@@ -87,7 +87,9 @@ midnight-primitives-federated-authority-observation.workspace = true
 midnight-primitives-session-info.workspace = true
 midnight-primitives-consensus-engine.workspace = true
 pallet-c2m-bridge.workspace = true
+pallet-candidate-registrations.workspace = true
 pallet-cnight-observation.workspace = true
+midnight-primitives-candidate-registrations.workspace = true
 midnight-primitives-cnight-observation.workspace = true
 midnight-primitives.workspace = true
 pallet-federated-authority-observation.workspace = true
@@ -141,6 +143,7 @@ std = [
     "pallet-partner-chains-bridge/std",
     "pallet-version/std",
     "pallet-c2m-bridge/std",
+    "pallet-candidate-registrations/std",
     "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
     "pallet-preimage/std",
@@ -181,6 +184,7 @@ std = [
     "sp-io/std",
     "midnight-primitives/std",
     "midnight-primitives-beefy/std",
+    "midnight-primitives-candidate-registrations/std",
     "midnight-primitives-cnight-observation/std",
     "midnight-primitives-session-info/std",
     "midnight-primitives-consensus-engine/std",

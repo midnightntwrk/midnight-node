@@ -35,7 +35,7 @@ Assumptions about Cardano (off-chain an on-chain):
 - A3 Registration Policy checks datum format
 - A4 Registration Policy checks SPO pool_id/public key hash field of datum
 - A5 Registration Datum has Active/Inactive flag
-- A6 Registration UTXO can be spent only when depositing one with analogical datum but with Inactive flag
+- A6 Registration UTXO can be spent only when depositing new registration UTXO (possibly with 'inactive' flag)
 - A7 Registration UTXO with Inactive flag can not be spent
 - A8 One Transaction can deposit at most one Registration UTXO
 - A9 Registration UTXO is the first output of a transaction
@@ -130,7 +130,7 @@ Rules are:
 - Session keys can be rotated individually when cross-chain key does not change.
 
 If there is illegal session key re-use, then given registration is saved as Invalid.
-Such registration will be removed when superseded by a valid registration.
+Such registration will be forgotten when superseded by a valid registration.
 Invalid registration is kept in pallet for user convenience - it would point to why it is invalid.
 
 Design decision: pallet does not store 'crch' to/from 'session key' mapping.
@@ -148,7 +148,7 @@ AURA key removal is planned and it should work out of the box.
 ### 2.4 Observation by events
 
 Registrations are **event-sourced**, following `pallets/cnight-observation`: the node observes
-outputs at the candidates address appearing and being consumed since a stored cursor, in bounded
+outputs at the candidates address appearing since a stored cursor, in bounded
 batches, and the runtime maintains the registration set in its own storage. The pattern is already
 in production here — `NextCardanoCursor`. Because of A8 cursor needs to point to transaction,
 doesn't need anyting inside it.
@@ -166,7 +166,7 @@ which are at most 1 to 1 with deposited UTXOs.
 | R2  | A proof is valid only for the registration carrying it — not liftable into another operator's registration, nor replayable onto another network.                       |
 | R3  | A registration is attributable to a stake pool only with that pool's signature, and that signature commits to the exact key set.                                       |
 | R4  | `register_committee_keys` cannot fail for a committee Ariadne selected. Key conflicts are resolved before selection.                                                   |
-| R5  | Adding a key type to `SessionKeys` needs no coordinated flag day. Operators register and prove a new key type before the runtime requires it.                          |
+| R5  | Removed                                                                                                                                                                |
 | R6  | Verification is paid once per observed registration, not per candidate per epoch.                                                                                      |
 | R7  | Operators can tell, before and after posting, whether their registration is valid and why not.                                                                         |
 | R8  | Observation cost per block is bounded independently of what exists on Cardano. Spam delays observation; it never halts or forks the chain.                             |
@@ -187,6 +187,9 @@ checked by Registration Policy nor session keys PoP are. Midnight has to validat
 Out of scope: stake-weighted attacks on Ariadne itself; compromise of a validator's node keystore;
 compromise of a pool's **cold key**, which is a Cardano-level loss whose blast radius far exceeds
 Midnight candidacy.
+
+R2 is implemented via separate (per-chain) Registration Smart Contract code / address.
+Invoking it requires SPO signature of the different transaction.
 
 ---
 
@@ -220,7 +223,7 @@ This one is specified as:
 pub struct CandidateKey {
     pub id: KeyTypeId,     // 4 bytes
     pub bytes: Vec<u8>,    // the public key
-    pub proof: Vec<u8>,    // proof of possession of it (§4.3)
+    pub proof: Vec<u8>,    // proof of possession of it (§4.4)
 }
 ```
 
@@ -251,15 +254,26 @@ The runtime reconstructs these bytes to check the signature, so the serialisatio
 cheap and unambiguous to rebuild, and it follows the fixed Datum-to-bytes rules. Golden
 tests over the encoding are what hold the signing side and the verifying side together.
 
-### 4.2 Proving control of the stake pool
+### 4.2 Registration state machine
+
+When registration first appears on Cardano it will be Active. Then registration can become Inactive by Cardano transaction (updated datum).
+Inactive registration can become Active again.
+
+In Midnight there is additional state of Invalid Registration. A new registration can appear as Active or Invalid (Invalid is Active from Cardano point of view, but invalid from Midnight point of view).
+Inactive can be updated to Active or Invalid.
+
+If configured in a way that observation of Cardano starts after some registration was deposited this registration is ignored.
+Inactivation of registration that Midnight does not know about should not stop processing
+
+### 4.3 Proving control of the stake pool
 
 It is done on Cardano side in Registration policy. Midnight does no re-check it.
 
-**Newest usage wins.** Minting policy check that no other Active registration exists for given
+**Newest usage wins.** Minting policy check that no other registration exists for given
 SPO key. Validator does not allow to spend UTXOs with Registration Token in a transaction other
-than one that deposits UTXO with Active/Inactive Registraiton.
+than one that deposits UTXO with Active/Inactive Registration.
 
-### 4.3 Proving possession of session keys
+### 4.4 Proving possession of session keys
 
 Done by Midnight node, by Runtime code, that knows required session keys set.
 **ECDSA note.** Store full 65-byte recoverable signatures.
@@ -294,8 +308,8 @@ The cursor is the total order `(block_no, tx_index_in_block)`. There is at most 
 **The map holds at most one record per pool** — it is keyed by pool id — so the only storage bound that remains is on the number of pools:
 
 1. **Across pools.** A bound on the size of the map, sized comfortably above Cardano's pool count
-   so it never binds in practice. On overflow, reject the newcomer: a deterministic rule, and one
-   that cannot be aimed at an incumbent. But this will not happen.
+   so it never binds in practice. On overflow the pallet stops progress. It will fail on the same Cardano Tx each time unless some fix is introduced.
+   It is called a fix, because under assumption of one entry per SPO it should not overflow.
 2. **Decode bounds, in the node, as the only copy.** Keys and signatures are not checked by Policy,
    Decode bounded, then verify signatures. If invalid, write the message along Invalid state of
    registration.
@@ -322,9 +336,7 @@ They are stated together because each only makes sense with the other two.
    `P`'s entry — even if "invalid on valid".
 2. **Validity is decided once.** A registration is judged against the facts at the position where
    it was observed, and never judged again.
-3. **Superseded is final.** A record that has been replaced is gone. It does not return if the
-   registration that replaced it is later spent, is itself invalid, or never existed as far as the
-   map is concerned.
+3. **Superseded is final.** A record that has been replaced is gone. Pallet keeps only the state resulting from the latest event.
 
 ### The checks
 
@@ -336,12 +348,10 @@ Per observed output, in order. **The order is a security property, not a present
 
 **Phase B — four proofs of possession, one ECDSA verification, and four index lookups.**
 
-2. Every required key type present and proven, and every other key of a type the runtime requires
-   and proven → else `MissingKeyProof(id)`, `UnknownKeyType(id)` or `InvalidKeyProof(id)`.
-   A key can be required and not be a session key during session keys migration period.
+2. Every session key type present and proven → else `MissingKeyProof(id)`, `UnknownKeyType(id)`, or `InvalidKeyProof(id)`.
 3. Cross-chain signature verifies → else `InvalidCrossChainSignature`.
-4. No key collides with a key any other pool has ever proved → else `KeyCollision`. Answered from
-   the key index, not by scanning the map.
+4. No key collides with a key any other pool has ever proved → else `SessionKeyReuse`. Answered from
+   by `set_keys` execution.
 
 An invalid registration is stored - for user convenience, to see what is wrong.
 Getting a Registration Token is reserved for SPOs, we can handle a record per SPO - regardless
@@ -421,7 +431,7 @@ the same state selection will run against — and asks db-sync for those pools' 
 The join is an **inner** one: a pool the stake list does not name is not a candidate this epoch.
 Two cases produce that, and both are intended.
 
-- A pool Cardano states no stake for. The stake gate (§4.3) asked that question once, at
+- A pool Cardano states no stake for. The stake gate (§4.4) asked that question once, at
   registration; this asks it again every epoch, because a seat should track stake even though
   validity does not. A pool that falls to zero keeps its registration and stops being selected.
 - A pool admitted by the _same block's_ observation inherent, which was not in the map when the
