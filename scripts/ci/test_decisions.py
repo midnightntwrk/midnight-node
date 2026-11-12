@@ -128,3 +128,27 @@ class TrustedCacheTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             trusted_cache.trusted_hit([{'key': 'signed', 'ref': 'refs/pull/42/merge'}],
                                       'signed', 'org/repo', unavailable)
+
+
+class CompilerCacheTests(unittest.TestCase):
+    def cache_args(self, **overrides):
+        block = (ROOT / '.envrc').read_text().split('# Hosted and fork jobs keep clean compiler directories.\n', 1)[1].split('# Publish targets', 1)[0]
+        with tempfile.TemporaryDirectory() as temp:
+            awk = Path(temp) / 'awk'
+            awk.write_text('#!/bin/sh\necho test-cpu\n')
+            awk.chmod(0o755)
+            env = dict(os.environ, PATH=f'{temp}:{os.environ["PATH"]}', CI='true',
+                       RUNNER_ENVIRONMENT='self-hosted', CI_CACHE_TRUSTED='true',
+                       GITHUB_REPOSITORY='org/repo', GITHUB_REF='refs/heads/main',
+                       GITHUB_HEAD_REF='', CI_SOURCE_REF='', EARTHLY_BUILD_ARGS='')
+            env.update(overrides)
+            return subprocess.check_output(['bash', '-c', block + '\nprintf "%s" "$EARTHLY_BUILD_ARGS"'],
+                                            env=env, cwd=ROOT, text=True)
+
+    def test_bot_and_dispatch_source_ref_isolates_compiler_cache(self):
+        self.assertNotEqual(self.cache_args(CI_SOURCE_REF='branch-a'), self.cache_args(CI_SOURCE_REF='branch-b'))
+        self.assertEqual(self.cache_args(CI_SOURCE_REF='branch-a'), self.cache_args(GITHUB_HEAD_REF='branch-a'))
+
+    def test_untrusted_and_hosted_jobs_do_not_get_compiler_mounts(self):
+        self.assertEqual(self.cache_args(CI_CACHE_TRUSTED='false'), 'CI=true')
+        self.assertEqual(self.cache_args(RUNNER_ENVIRONMENT='github-hosted'), 'CI=true')

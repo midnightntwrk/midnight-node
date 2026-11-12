@@ -32,7 +32,7 @@ jobs:
   run:
     needs: [scope]
     name: Fomatting and Linting
-    runs-on: ${{ needs.scope.outputs.product == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-24.04"]') }}
+    runs-on: ${{ needs.scope.outputs.product == 'true' && contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-24.04"]') }}
     permissions:
       contents: read
       actions: write

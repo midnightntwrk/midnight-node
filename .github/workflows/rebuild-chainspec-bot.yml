@@ -160,6 +160,8 @@ jobs:
 
   rebuild-chainspec:
     needs: plan
+    env:
+      CI_SOURCE_REF: ${{ needs.plan.outputs.ref }}
     runs-on: ${{ fromJSON(needs.plan.outputs.runner) }}
     permissions:
       contents: write
