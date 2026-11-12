@@ -14,4 +14,4 @@ shell parsing.
 
 Paths entered in the wizards are no longer shell-expanded, so `~` and `$VAR` are taken literally.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2430
