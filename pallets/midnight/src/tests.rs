@@ -16,9 +16,8 @@
 
 use super::*;
 use crate::{
-	mock,
+	Call as MidnightCall, mock,
 	mock::{RuntimeOrigin, Test},
-	Call as MidnightCall,
 };
 use assert_matches::assert_matches;
 use frame_support::{
@@ -653,7 +652,7 @@ fn state_key_is_block_start_after_a_block_with_a_transaction() {
 #[test]
 fn state_key_is_block_start_after_a_block_with_system_transactions() {
 	use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
-	use midnight_node_ledger_helpers::{serialize_untagged, DustPublicKey, Fr};
+	use midnight_node_ledger_helpers::{DustPublicKey, Fr, serialize_untagged};
 
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(BlockContext::default());
