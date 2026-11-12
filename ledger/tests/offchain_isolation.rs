@@ -123,8 +123,19 @@ fn run_block(
 	)
 	.unwrap();
 	let post_block = host::post_block_update(&applied_system.state_root, ctx.clone()).unwrap();
+	// During block execution the post-block update releases the block's intermediate states,
+	// so the second post-block variant runs on a sibling block from the same parent.
+	let sibling = host::apply_transaction(genesis, tx, ctx.clone(), RUNTIME_VERSION).unwrap();
+	let sibling_system = host::apply_cnight_system_transaction(
+		&sibling.state_root,
+		system_tx,
+		ctx.clone(),
+		RUNTIME_VERSION,
+	)
+	.unwrap();
+	assert_eq!(sibling_system.state_root, applied_system.state_root);
 	let apply_post_block =
-		host::apply_post_block_update(&applied_system.state_root, ctx.clone()).unwrap();
+		host::apply_post_block_update(&sibling_system.state_root, ctx.clone()).unwrap();
 	let (migrated, migration_cost) = host::migrate_state_v8_to_v9(v8_state).unwrap();
 	host::flush_storage();
 
@@ -211,7 +222,8 @@ fn offchain_calls_match_block_execution_without_touching_shared_storage() {
 		"off-chain execution changed the persisted roots",
 	);
 	assert_eq!(flushes(&offchain_metrics), 0, "off-chain execution flushed");
-	assert_eq!(held(&mut offchain), Some(produced.len()));
+	// The sibling block's two intermediates are held a second time.
+	assert_eq!(held(&mut offchain), Some(produced.len() + 2));
 
 	drop(offchain);
 	for key in &produced {
@@ -223,7 +235,13 @@ fn offchain_calls_match_block_execution_without_touching_shared_storage() {
 		run_block(&genesis, &v8_state, &tx, &system_tx, &ctx)
 	});
 	assert_eq!(offchain_outputs, onchain_outputs);
-	for key in &produced {
+	// Block execution persists only the post-block tips and the migration output; the
+	// intra-block states (the first two) are held, never made GC roots.
+	let (intermediates, durable) = produced.split_at(2);
+	for key in intermediates {
+		assert_eq!(in_shared(key).1, 0, "block execution persisted an intermediate state");
+	}
+	for key in durable {
 		let (known, roots) = in_shared(key);
 		assert!(known && roots > 0, "block execution did not persist its state");
 	}
