@@ -6,20 +6,11 @@ VERSION 0.8
 # that's changed a pallet's trait surface can leak its build into the
 # next PR's job and cause spurious E0046 trait/impl mismatches.
 #
-# Default is constant so local invocations share one cache. CI must
-# override this with a per-branch value (passed via `--build-arg
-# CACHE_KEY=<sanitized PR head ref>`). The Earthly builtin
-# EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
-# leaves the workspace on the PR merge commit in detached-HEAD state, so
-# the builtin resolves to the literal string `HEAD` across every PR.
-#
-# The `/target` cache mounts also suffix the id with `-${TARGETARCH}` (e.g.
-# `target-<key>-amd64`). BuildKit cache-mount ids are NOT scoped by platform
-# (moby/buildkit#2598), so a daemon that ever builds more than one arch (e.g.
-# emulated multi-platform) would otherwise point both arches at the same native
-# `/target/release` and thrash each other's artifacts. Native per-arch runners
-# already isolate them today; the suffix makes this correct regardless of the
-# daemon topology, at no cost (same-arch builds still share the cache).
+# Local invocations share one namespace. Trusted CI uses .envrc's hash of
+# repository, source branch, toolchain, architecture and CPU model. Detached
+# checkout's EARTHLY_GIT_BRANCH is always HEAD and cannot isolate PRs.
+# Cache mount IDs also include target flavor and TARGETARCH: BuildKit does
+# not scope cache mounts by platform (moby/buildkit#2598).
 ARG --global CACHE_KEY=local
 
 # CI compiler mounts require an explicit trusted-runner opt-in.

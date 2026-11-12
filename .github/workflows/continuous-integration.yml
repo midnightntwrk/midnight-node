@@ -100,14 +100,11 @@ jobs:
         if: needs.scope.outputs.product == 'true'
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
-          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           EARTHLY_REMOTE_CACHE: ""
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
           TMPDIR: ${{ runner.temp }}
         run: |
-          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-          test -n "$CACHE_KEY"
           . ./.envrc
           earth -P --strict \
             +local-env-ci-prepare
@@ -156,14 +153,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
-          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           EARTHLY_REMOTE_CACHE: ""
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
           TMPDIR: ${{ runner.temp }}
         run: |
-          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-          test -n "$CACHE_KEY"
           . ./.envrc
           earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict \
             +prepare-toolkit-tests
@@ -807,16 +801,7 @@ jobs:
         if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
-          # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
-          # under actions/checkout; reach for the actual head/ref name instead.
-          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         run: |
-          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-          if [ -z "$CACHE_KEY" ]; then
-            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
-            exit 1
-          fi
-          echo "Using CACHE_KEY=$CACHE_KEY"
           . ./.envrc && earth -P --strict \
             +test-pallet-fixtures
 
@@ -933,11 +918,6 @@ jobs:
           # wrong auth; override to empty for the earthly call.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
-          # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
-          # cache mount. Pass the PR ref so the cache is scoped per-branch — see
-          # +test's `Run build` step for the full rationale and why
-          # EARTHLY_GIT_BRANCH is unsafe here.
-          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -947,12 +927,6 @@ jobs:
           if [ "$EVENT_NAME" = "merge_group" ]; then
             PUSH_FLAG="--push"
           fi
-          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-          if [ -z "$CACHE_KEY" ]; then
-            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
-            exit 1
-          fi
-          echo "Using CACHE_KEY=$CACHE_KEY"
           . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
