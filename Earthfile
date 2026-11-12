@@ -1862,7 +1862,7 @@ local-env-e2e:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN --secret NODE_GIT_TOKEN with-git-creds cargo test --test e2e_tests -- --test-threads=6 --nocapture
+    RUN --secret NODE_GIT_TOKEN E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests -- --test-threads=16 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -2037,7 +2037,7 @@ local-env-ci:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
@@ -2104,7 +2104,7 @@ local-env-full-ci-localimg:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
@@ -2172,7 +2172,7 @@ local-env-oneshot:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
