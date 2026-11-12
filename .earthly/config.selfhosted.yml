@@ -20,7 +20,10 @@ global:
     tls_enabled: false
     disable_analytics: true
     buildkit_max_parallelism: 16
-    cache_size_pct: 20
+    # Matches the provisioned runner buildkitd's host-default config; an identical
+    # cache_size_pct keeps the settings hash the same across every earth job on the
+    # host, so the shared daemon is never restarted out from under a concurrent build.
+    cache_size_pct: 50
     # The registry earth publishes for image export. "earth" and "earthly"
     # installs both default to 127.0.0.1:8371, so earth-buildkitd cannot start
     # beside a v0.8.16 earthly-buildkitd ("port is already allocated").
