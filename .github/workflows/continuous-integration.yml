@@ -1,6 +1,7 @@
 name: CI + E2E
 
 env:
+  CI_CACHE_TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
   # Define environment variables for AWS credentials and region
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -27,8 +28,6 @@ on:
   merge_group:
   pull_request:
     branches: ["**"]
-    paths-ignore:
-      - "changes/**"
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -43,31 +42,54 @@ concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
+  scope:
+    name: Classify changed inputs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      product: ${{ steps.scope.outputs.product }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: scope
+        run: python3 scripts/ci/scope.py
+
   prepare-local-e2e:
+    needs: [scope]
     name: Prepare local integration test binary
     if: contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    runs-on: ${{ needs.scope.outputs.product != 'true' && fromJSON('["ubuntu-24.04"]') || ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-24.04"]') || fromJSON('["self-hosted", "tier:large"]')) }}
     permissions:
       contents: read
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           submodules: true
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        if: needs.scope.outputs.product == 'true'
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Isolate registry credentials
+        if: needs.scope.outputs.product == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to Docker Hub
+        if: needs.scope.outputs.product == 'true'
         continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
@@ -75,6 +97,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Prepare local integration test binary
+        if: needs.scope.outputs.product == 'true'
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
@@ -87,9 +110,66 @@ jobs:
           test -n "$CACHE_KEY"
           . ./.envrc
           earth -P --strict \
-            +local-env-ci-prepare --CACHE_KEY="$CACHE_KEY"
+            +local-env-ci-prepare
+
+  prepare-toolkit:
+    needs: [scope]
+    name: Prepare toolkit test binaries
+    if: contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ needs.scope.outputs.product != 'true' && fromJSON('["ubuntu-24.04"]') || ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-24.04"]') || fromJSON('["self-hosted", "tier:large"]')) }}
+    permissions:
+      contents: read
+    steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
+      - name: Checkout
+        if: needs.scope.outputs.product == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        if: needs.scope.outputs.product == 'true'
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Isolate registry credentials
+        if: needs.scope.outputs.product == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to Docker Hub
+        if: needs.scope.outputs.product == 'true'
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      - name: Prepare toolkit test binaries
+        if: needs.scope.outputs.product == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          test -n "$CACHE_KEY"
+          . ./.envrc
+          earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict \
+            +prepare-toolkit-tests
 
   run:
+    needs: [scope]
     name: Build node and images (linux/amd64, self-hosted-tier:large, amd64)
     permissions:
       id-token: write
@@ -98,7 +178,7 @@ jobs:
     # build performance. Revert before merge.
     # Self-hosted only in our own orgs (other repos have no such runners and would queue
     # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
-    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ needs.scope.outputs.product != 'true' && fromJSON('["ubuntu-24.04"]') || ((contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-24.04"]')) }}
     env:
       FORCE_COLOR: 1
     outputs:
@@ -110,7 +190,11 @@ jobs:
       toolkit_image: ${{ steps.image_tags.outputs.toolkit_image }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        if: needs.scope.outputs.product == 'true'
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
@@ -122,11 +206,13 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - name: Get current commit SHA
+        if: needs.scope.outputs.product == 'true'
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -136,6 +222,7 @@ jobs:
       # Appending `tls_enabled: false` to the repo's existing .earthly/config.yml
       # keeps the rest of midnight-node's earthly settings intact.
       - name: Disable earthly TLS (self-hosted runner has no certs)
+        if: needs.scope.outputs.product == 'true'
         run: |
           echo "    tls_enabled: false" >> .earthly/config.yml
           echo "--- updated .earthly/config.yml ---"
@@ -148,12 +235,13 @@ jobs:
       # DOCKER_CONFIG). Set via $GITHUB_ENV because runner.temp is unavailable
       # in job-level env.
       - name: Isolate docker config
+        if: needs.scope.outputs.product == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        if: env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -169,7 +257,7 @@ jobs:
       # still pulls + pushes without these creds. Dependabot runs don't have
       # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
-        if: env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
         continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
@@ -181,13 +269,14 @@ jobs:
       # before the build so an auth regression surfaces here rather than as an
       # opaque anonymous-token 403 mid-push.
       - name: Verify registry creds visible to earthly
-        if: env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
         run: |
           echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
           echo "Registries with creds:"
           jq '.auths | keys' "$DOCKER_CONFIG/config.json"
 
       - name: Compute image tags
+        if: needs.scope.outputs.product == 'true'
         id: image_tags
         run: |
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
@@ -210,6 +299,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
+        if: needs.scope.outputs.product == 'true'
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
@@ -233,7 +323,7 @@ jobs:
           fi
 
       - name: Run build
-        if: steps.check_images.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.check_images.outputs.skip_build != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
@@ -290,7 +380,7 @@ jobs:
       # Earthly tags images under GHCR_REGISTRY; retag them under the fork names the
       # downstream jobs were given.
       - name: Tag images for downstream jobs (fork PRs)
-        if: env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR == 'true')
         env:
           IMAGE_REPO: ${{ steps.image_tags.outputs.image_repo }}
           NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
@@ -302,7 +392,7 @@ jobs:
           docker tag "${GHCR_REGISTRY}/${IMAGE_REPO}-toolkit:${TOOLKIT_IMAGE_TAG}" "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}"
 
       - name: Save images for downstream jobs (fork PRs)
-        if: env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR == 'true')
         uses: ./.github/actions/save-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-name: fork-images-amd64
@@ -312,28 +402,28 @@ jobs:
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && ((success() || failure()) && steps.check_images.outputs.skip_build != 'true')
         with:
           name: Wasm Runtime and binaries (amd64)
           path: artifacts-amd64/
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && ((success() || failure()) && steps.check_images.outputs.skip_build != 'true')
         with:
           name: Test artifacts (amd64)
           path: test-artifacts-amd64/
 
   sbom-scan-node:
+    if: needs.scope.outputs.product == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
     name: SBOM/Scan Node
-    needs: [run]
+    needs: [scope, run]
     # Scans the image pushed to GHCR, which fork PRs don't have.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -345,15 +435,15 @@ jobs:
       DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-toolkit:
+    if: needs.scope.outputs.product == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
     name: SBOM/Scan Toolkit
-    needs: [run]
+    needs: [scope, run]
     # Scans the image pushed to GHCR, which fork PRs don't have.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
@@ -365,27 +455,33 @@ jobs:
       DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   run-arm64:
+    needs: [scope]
     name: Build node and images (arm64)
     permissions:
       id-token: write
       contents: read
-    runs-on: ubuntu-latest-8-core-arm64
+    runs-on: ${{ needs.scope.outputs.product != 'true' && 'ubuntu-24.04' || 'ubuntu-latest-8-core-arm64' }}
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        if: needs.scope.outputs.product == 'true'
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - name: Login to GHCR
-        if: env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -393,6 +489,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Compute image tags
+        if: needs.scope.outputs.product == 'true'
         id: image_tags
         run: |
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
@@ -406,6 +503,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
+        if: needs.scope.outputs.product == 'true'
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
@@ -428,7 +526,7 @@ jobs:
           fi
 
       - name: Run build
-        if: steps.check_images.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.check_images.outputs.skip_build != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
@@ -442,14 +540,14 @@ jobs:
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && ((success() || failure()) && steps.check_images.outputs.skip_build != 'true')
         with:
           name: Wasm Runtime and binaries (arm64)
           path: artifacts-arm64/
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && ((success() || failure()) && steps.check_images.outputs.skip_build != 'true')
         with:
           name: Test artifacts (arm64)
           path: test-artifacts-arm64/
@@ -458,18 +556,23 @@ jobs:
   # `run` and `run-arm64` under a single multi-arch tag.
   push-combined-manifest:
     name: Push combined multi-arch manifest
-    needs: [run, run-arm64]
+    needs: [scope, run, run-arm64]
     # Fork PRs push no per-platform images to combine.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       packages: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
+        if: needs.scope.outputs.product == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -477,6 +580,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Compute combined image tags
+        if: needs.scope.outputs.product == 'true'
         id: tags
         env:
           NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag_no_dev }}
@@ -498,6 +602,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Push combined manifest for midnight-node
+        if: needs.scope.outputs.product == 'true'
         env:
           COMBINED_TAG: ${{ steps.tags.outputs.node_combined }}
           AMD64_TAG: ${{ steps.tags.outputs.node_amd64 }}
@@ -518,6 +623,7 @@ jobs:
           docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
 
       - name: Push combined manifest for midnight-node-toolkit
+        if: needs.scope.outputs.product == 'true'
         env:
           COMBINED_TAG: ${{ steps.tags.outputs.toolkit_combined }}
           AMD64_TAG: ${{ steps.tags.outputs.toolkit_amd64 }}
@@ -538,70 +644,83 @@ jobs:
           docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
 
   check-unused-deps:
+    needs: [scope]
     permissions:
       contents: read
       actions: write
     name: Check Unused Dependencies
-    needs: [run]
-    if: needs.run.outputs.skip_build != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Check Deps
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc && earth +check-deps
 
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [run]
+    needs: [scope, run]
     permissions:
       id-token: write
       contents: read
       actions: write
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -609,14 +728,14 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Load images (fork PRs)
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true')
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
           registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Generate dummy genesis seeds
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         run: |
           mkdir -p secrets
           for cfg in res/cfg/*.toml; do
@@ -625,7 +744,7 @@ jobs:
           done
 
       - name: Check Genesis Rebuild
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
@@ -640,12 +759,13 @@ jobs:
             +rebuild-genesis
 
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
   # Test pallet-midnight fixture tests - these do NOT require toolkit-js
   test-pallet-fixtures:
+    needs: [scope]
     permissions:
       contents: read
       actions: write
@@ -653,31 +773,38 @@ jobs:
     # The fixture tests compile midnight-node-ledger with both ledger generations (and both
     # storage lines) in one crate; rustc is SIGKILLed on the 16 GB ubuntu-latest runner.
     # Same routing as Test Toolkit: self-hosted large for in-repo branches, GitHub-hosted for forks.
-    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ubuntu-24.04
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Free disk space
-        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted')
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run pallet fixture tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
@@ -691,10 +818,10 @@ jobs:
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
           . ./.envrc && earth -P --strict \
-            +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
+            +test-pallet-fixtures
 
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -704,23 +831,31 @@ jobs:
       contents: read
       actions: write
     name: Test Toolkit
-    needs: [run]
+    needs: [scope, run, prepare-toolkit]
+    if: ${{ !cancelled() && !failure() && needs.run.result == 'success' }}
     # Self-hosted only in our own orgs (other repos have no such runners and would queue
     # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
-    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ needs.scope.outputs.product != 'true' && fromJSON('["ubuntu-24.04"]') || ((contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-24.04"]')) }}
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout node repository
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
@@ -729,13 +864,13 @@ jobs:
       # Isolate docker config per job — see the matching step in the `run` job.
       # runner.temp is not available in job-level env, so set it here.
       - name: Isolate docker config
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -749,7 +884,7 @@ jobs:
       # public, so the build proceeds without these creds (e.g. Dependabot runs,
       # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true')
         continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
@@ -757,11 +892,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Free disk space
-        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted')
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Load images (fork PRs)
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true')
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
@@ -772,12 +907,12 @@ jobs:
       # to the workspace .earthly/config.yml so earthly skips TLS for its own
       # buildkitd container.
       - name: Disable earthly TLS (self-hosted runner has no certs)
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         run: |
           echo "    tls_enabled: false" >> .earthly/config.yml
 
       - name: Run toolkit tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
@@ -825,10 +960,10 @@ jobs:
             --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
               --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
-              --CACHE_KEY="$CACHE_KEY"
+
 
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -837,17 +972,24 @@ jobs:
       contents: read
       actions: write
     name: Toolkit E2E
-    needs: [run]
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: toolkit-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -855,7 +997,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -864,17 +1006,24 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Update Ledger Parameters E2E
-    needs: [run]
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: toolkit-update-ledger-parameters-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -882,7 +1031,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -891,17 +1040,24 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Maintenance E2E
-    needs: [run]
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: toolkit-maintenance-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -909,7 +1065,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -918,17 +1074,24 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Mint E2E
-    needs: [run]
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: toolkit-mint-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -936,7 +1099,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -945,17 +1108,24 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Unshielded Token E2E
-    needs: [run]
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: toolkit-tokens-minter-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -963,7 +1133,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -972,23 +1142,30 @@ jobs:
       contents: read
       actions: write
     name: Metadata Check
-    needs: run
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -996,14 +1173,14 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Load images (fork PRs)
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true')
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
           registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Run metadata check
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
@@ -1013,7 +1190,7 @@ jobs:
             --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -1079,17 +1256,24 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Contracts E2E
-    needs: [run]
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: toolkit-contracts-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -1097,7 +1281,7 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -1106,24 +1290,31 @@ jobs:
       contents: read
       actions: write
     name: Startup E2E in dev mode
-    needs: run
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: startup-dev-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -1131,14 +1322,18 @@ jobs:
     permissions:
       contents: read
     name: Chainspec Validation
-    needs: run
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        if: env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
@@ -1146,12 +1341,13 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Load images (fork PRs)
-        if: env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR == 'true')
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-amd64
 
       - name: Run chainspec validation harness
+        if: needs.scope.outputs.product == 'true'
         env:
           MIDNIGHT_NODE_IMAGE: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
         run: bash tests/chainspec-validation/run.sh
@@ -1161,17 +1357,24 @@ jobs:
       contents: read
       actions: write
     name: Genesis Wallets E2E for Undeployed network
-    needs: run
-    runs-on: ubuntu-latest
+    needs: [scope, run]
+    runs-on: ubuntu-24.04
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           just-command: genesis-wallets-undeployed-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -1179,34 +1382,49 @@ jobs:
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
   build-indexer-images:
+    needs: [scope]
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
       packages: read
       contents: write
+      actions: write
     outputs:
       indexer_api_image: ${{ steps.image_meta.outputs.indexer_api_image }}
       chain_indexer_image: ${{ steps.image_meta.outputs.chain_indexer_image }}
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
+      - id: indexer-tests
+        if: needs.scope.outputs.product == 'true'
+        uses: ./.github/actions/tree-cache-guard
+        with:
+          check-name: indexer-tests
+          tree-path: indexer
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
+
       - name: Login to GHCR
-        if: env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (env.IS_FORK_PR != 'true')
         env:
           REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
 
       - name: Compute content hash and check for existing images
+        if: needs.scope.outputs.product == 'true'
         id: image_meta
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
@@ -1236,23 +1454,30 @@ jobs:
 
           if [ "$API_EXISTS" = "true" ] && [ "$CHAIN_EXISTS" = "true" ] && [ "$WALLET_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
-            echo "Indexer images already exist for ${content_hash}, skipping build and tests"
+            echo "Indexer images already exist for ${content_hash}, skipping image build"
           else
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Free disk space
-        if: steps.image_meta.outputs.skip_build != 'true' && runner.environment != 'self-hosted'
+        if: needs.scope.outputs.product == 'true' && ((steps.image_meta.outputs.skip_build != 'true' || steps.indexer-tests.outputs.hit != 'true') && runner.environment != 'self-hosted')
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Install just
-        if: steps.image_meta.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.image_meta.outputs.skip_build != 'true' || steps.indexer-tests.outputs.hit != 'true')
         uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 #v2.90.0
         with:
           tool: just
 
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 #v2.9.3
+        if: needs.scope.outputs.product == 'true' && (steps.indexer-tests.outputs.hit != 'true')
+        with:
+          workspaces: indexer -> target
+          shared-key: indexer-standalone
+          cache-on-failure: true
+
       - name: Build indexer images
-        if: steps.image_meta.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.image_meta.outputs.skip_build != 'true')
         env:
           INDEXER_API_IMAGE: ${{ steps.image_meta.outputs.indexer_api_image }}
           CHAIN_INDEXER_IMAGE: ${{ steps.image_meta.outputs.chain_indexer_image }}
@@ -1281,15 +1506,9 @@ jobs:
           docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "$CHAIN_INDEXER_IMAGE"
           docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "$WALLET_INDEXER_IMAGE"
 
-          # Fork PRs hand the images on as an artifact (next step) instead.
-          if [ "$IS_FORK_PR" != "true" ]; then
-            docker push "$INDEXER_API_IMAGE"
-            docker push "$CHAIN_INDEXER_IMAGE"
-            docker push "$WALLET_INDEXER_IMAGE"
-          fi
 
       - name: Save indexer images for downstream jobs (fork PRs)
-        if: steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR == 'true')
         uses: ./.github/actions/save-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-name: fork-images-indexer
@@ -1298,24 +1517,22 @@ jobs:
             ${{ steps.image_meta.outputs.chain_indexer_image }}
             ${{ steps.image_meta.outputs.wallet_indexer_image }}
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 #v2.9.3
-        if: steps.image_meta.outputs.skip_build != 'true'
-
       # Fork PRs have no token, and an empty one in the rewrite would break public clones.
       - name: Configure git for private repos
-        if: steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.indexer-tests.outputs.hit != 'true' && env.IS_FORK_PR != 'true')
         run: |
           git config --global url."https://${GH_PAT}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
         env:
           GH_PAT: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Install cargo-nextest
-        if: steps.image_meta.outputs.skip_build != 'true'
-        run: |
-          cargo install cargo-nextest@0.9.128 --locked
+        if: needs.scope.outputs.product == 'true' && (steps.indexer-tests.outputs.hit != 'true')
+        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: cargo-nextest@0.9.128
 
       - name: just test
-        if: steps.image_meta.outputs.skip_build != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.indexer-tests.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
@@ -1330,13 +1547,29 @@ jobs:
           cd indexer || exit 1
           just feature=standalone test
 
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: needs.scope.outputs.product == 'true' && (steps.indexer-tests.outputs.hit != 'true')
+        with:
+          key: ${{ steps.indexer-tests.outputs.key }}
+
+      - name: Publish validated indexer images
+        if: needs.scope.outputs.product == 'true' && (steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR != 'true')
+        env:
+          INDEXER_API_IMAGE: ${{ steps.image_meta.outputs.indexer_api_image }}
+          CHAIN_INDEXER_IMAGE: ${{ steps.image_meta.outputs.chain_indexer_image }}
+          WALLET_INDEXER_IMAGE: ${{ steps.image_meta.outputs.wallet_indexer_image }}
+        run: |
+          docker push "$INDEXER_API_IMAGE"
+          docker push "$CHAIN_INDEXER_IMAGE"
+          docker push "$WALLET_INDEXER_IMAGE"
+
   local-environment-tests:
     name: Local Environment Tests
     if: ${{ !cancelled() && !failure() && needs.run.result == 'success' && needs.build-indexer-images.result == 'success' && ((github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group') }}
-    needs: [run, build-indexer-images, prepare-local-e2e]
+    needs: [scope, run, build-indexer-images, prepare-local-e2e]
     # Self-hosted only in our own orgs (other repos have no such runners and would queue
     # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
-    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:medium"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ needs.scope.outputs.product != 'true' && fromJSON('["ubuntu-24.04"]') || ((contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:medium"]') || fromJSON('["ubuntu-24.04"]')) }}
     # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
@@ -1349,33 +1582,40 @@ jobs:
       contents: write
       actions: write
     steps:
+      - name: Documentation-only check
+        if: needs.scope.outputs.product != 'true'
+        run: echo 'No product inputs changed; this check is satisfied.'
       - name: Checkout
+        if: needs.scope.outputs.product == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - id: guard
+        if: needs.scope.outputs.product == 'true'
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       # Isolate docker config per job — see the matching step in the `run` job.
       # This job runs concurrently, so per-job isolation matters: multiple
       # instances log in at once and would otherwise clobber each other's docker
       # auth. Inherited by the composite action's docker login and earthly --pull.
       - name: Isolate docker config
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Load images (fork PRs)
-        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true')
         uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           artifact-pattern: fork-images-*
           registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Deploy and test against local environment
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         uses: ./.github/actions/local-environment-tests
         with:
           node-git-token: ${{ secrets.NODE_GIT_TOKEN }}
@@ -1400,7 +1640,7 @@ jobs:
       # compose project so it never touches other jobs on the host. The project
       # name derives from runner-provided env (with RUNNER_NAME as fallback).
       - name: Tear down this job's local-env stack (defensive)
-        if: always()
+        if: needs.scope.outputs.product == 'true' && (always())
         shell: bash
         run: |
           proj="local-env-r${RUNNER_SLOT:-${RUNNER_NAME##*-}}"
@@ -1410,7 +1650,7 @@ jobs:
             | xargs -r docker volume rm -f || true
 
       - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
+        if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         with:
           key: ${{ steps.guard.outputs.key }}
 
@@ -1423,7 +1663,7 @@ jobs:
   #   #   - startup-dev-e2e
   #   #   - genesis-undeployed-e2e
   #
-  #   runs-on: ubuntu-latest
+  #   runs-on: ubuntu-24.04
   #   permissions:
   #     id-token: write
   #     contents: read

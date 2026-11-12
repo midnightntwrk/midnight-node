@@ -9,15 +9,24 @@ on:
         description: 'PR number to rebuild metadata for'
         required: true
 
+env:
+  CI_CACHE_TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
 jobs:
-  rebuild-metadata:
+  plan:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request && contains(github.event.comment.body, '/bot rebuild-metadata'))
-    runs-on: [self-hosted, "tier:medium"]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      runner: ${{ steps.plan.outputs.runner }}
+      node_image: ${{ steps.plan.outputs.node_image }}
+      sha: ${{ steps.pr.outputs.sha }}
+      ref: ${{ steps.pr.outputs.ref }}
+      number: ${{ steps.pr.outputs.number }}
     steps:
       - name: Check user permission
         if: github.event_name == 'issue_comment'
@@ -78,11 +87,47 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
+          submodules: false
           ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+      - name: Checkout workflow tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .workflow-tools
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - id: plan
+        run: bash .workflow-tools/scripts/ci/image-plan.sh bot
+
+  rebuild-metadata:
+    needs: plan
+    runs-on: ${{ fromJSON(needs.plan.outputs.runner) }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          submodules: ${{ runner.environment == 'self-hosted' }}
+          fetch-depth: 0
+      - name: Checkout workflow tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .workflow-tools
+          persist-credentials: false
+          sparse-checkout: scripts/ci
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
@@ -99,10 +144,15 @@ jobs:
 
       - name: Run rebuild-metadata
         env:
+          NODE_IMAGE: ${{ needs.plan.outputs.node_image }}
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
           . ./.envrc
-          earth -P +rebuild-metadata
+          if [ -n "$NODE_IMAGE" ]; then
+            bash .workflow-tools/scripts/ci/extract-metadata.sh "$NODE_IMAGE"
+          else
+            earth -P +rebuild-metadata
+          fi
 
       - name: Commit and push changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -159,7 +209,7 @@ jobs:
               input: {
                 branch: {
                   repositoryNameWithOwner: '${{ github.repository }}',
-                  branchName: '${{ steps.pr.outputs.ref }}'
+                  branchName: '${{ needs.plan.outputs.ref }}'
                 },
                 message: {
                   headline: 'chore: rebuild metadata'
@@ -180,7 +230,7 @@ jobs:
         with:
           message: |
             :white_check_mark: Metadata rebuild complete! Changes have been committed.
-          pr-number: ${{ steps.pr.outputs.number }}
+          pr-number: ${{ needs.plan.outputs.number }}
 
       - name: Post no-changes comment
         if: env.CHANGES_MADE == 'false'
@@ -188,7 +238,7 @@ jobs:
         with:
           message: |
             :white_check_mark: Metadata rebuild complete. No changes detected.
-          pr-number: ${{ steps.pr.outputs.number }}
+          pr-number: ${{ needs.plan.outputs.number }}
 
       - name: Post failure comment
         if: failure()
@@ -196,4 +246,4 @@ jobs:
         with:
           message: |
             :x: Metadata rebuild failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
-          pr-number: ${{ steps.pr.outputs.number }}
+          pr-number: ${{ needs.plan.outputs.number }}

@@ -24,7 +24,7 @@ env:
 jobs:
   toolkit-contract-e2e:
     name: Compact contract E2E
-    runs-on: [ self-hosted, "tier:large" ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
       FORCE_COLOR: 1
@@ -63,9 +63,8 @@ jobs:
       # but no certs are provisioned on the runner. Append tls_enabled: false
       # to the workspace .earthly/config.yml so earthly skips TLS for its own
       # buildkitd container.
-      - name: Disable earthly TLS (self-hosted runner has no certs)
-        run: |
-          echo "    tls_enabled: false" >> .earthly/config.yml
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run compact contract tests
         env:
@@ -86,4 +85,5 @@ jobs:
             --remote-cache="${GHCR_REGISTRY}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
               --CACHE_KEY=compact-contract-tests \
-              --RUN_COMPACT_CONTRACT_TESTS=true
+              --RUN_COMPACT_CONTRACT_TESTS=true \
+            --TOOLKIT_BUILD_JOBS=2

@@ -21,7 +21,7 @@ jobs:
       security-events: write
       actions: write
     if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       FORCE_COLOR: 1
     steps:
@@ -30,18 +30,14 @@ jobs:
         with:
           submodules: true
 
-      - id: guard
-        uses: ./.github/actions/tree-cache-guard
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Run cargo deny
-        if: steps.guard.outputs.hit != 'true'
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
@@ -63,10 +59,6 @@ jobs:
           sarif_file: scan_reports/cargo-deny.sarif
           category: cargo-deny
 
-      - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          key: ${{ steps.guard.outputs.key }}
 
   audit-typescript:
     name: audit job npm
@@ -75,7 +67,7 @@ jobs:
       security-events: write
       actions: write
     if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       FORCE_COLOR: 1
     steps:
@@ -84,18 +76,14 @@ jobs:
         with:
           submodules: true
 
-      - id: guard
-        uses: ./.github/actions/tree-cache-guard
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
-        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Run npm audit
-        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earth --use-inline-cache --strict +audit-nodejs
 
@@ -114,8 +102,3 @@ jobs:
         with:
           sarif_file: scan_reports/npm-audit-toolkit-js.sarif
           category: npm-audit-node-toolkit-js
-
-      - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          key: ${{ steps.guard.outputs.key }}

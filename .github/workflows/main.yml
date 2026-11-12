@@ -19,6 +19,7 @@ on:
 permissions: {}
 
 env:
+  CI_CACHE_TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
   # Registry the images built here are pushed to and pulled from. Derived from the repo owner
   # so a fork or private clone never touches midnightntwrk's registries. Upstream's private
   # GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the canonical
@@ -29,9 +30,42 @@ env:
   GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
 
 jobs:
+  plan-amd64:
+    name: Select AMD64 executor
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      runner: ${{ steps.plan.outputs.runner }}
+      sha: ${{ steps.plan.outputs.sha }}
+      node_image: ${{ steps.plan.outputs.node_image }}
+      toolkit_image: ${{ steps.plan.outputs.toolkit_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+          persist-credentials: false
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+      - name: Checkout workflow tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .workflow-tools
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - id: plan
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+        run: bash .workflow-tools/scripts/ci/image-plan.sh main
+
   publish-amd64:
     name: AMD Build and Publish
-    runs-on: [self-hosted, "tier:large"]
+    needs: plan-amd64
+    runs-on: ${{ fromJSON(needs.plan-amd64.outputs.runner) }}
     outputs:
       IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
       image_repo: ${{ steps.check-images.outputs.image_repo }}
@@ -45,7 +79,8 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+      - if: runner.environment == 'self-hosted'
+        uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
           version: v0.8.18
           github-token: ${{ github.token }}
@@ -54,8 +89,8 @@ jobs:
       - name: Checkout node repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
-          submodules: true
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
+          submodules: ${{ runner.environment == 'self-hosted' }}
+          ref: ${{ needs.plan-amd64.outputs.sha }}
 
       - name: Login to DockerHub
         # Pull-side rate-limit relief for docker.io base images only; a repo without these
@@ -125,28 +160,29 @@ jobs:
           printf "images_exist=%s\n" "${IMAGES_EXIST}" >> "$GITHUB_OUTPUT"
 
       - name: Extract existing artifacts
-        if: steps.check-images.outputs.images_exist == 'true'
+        if: runner.environment != 'self-hosted'
         env:
-          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
-          IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
-          NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
-          TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
+          NODE_IMAGE: ${{ needs.plan-amd64.outputs.node_image }}
+          TOOLKIT_IMAGE: ${{ needs.plan-amd64.outputs.toolkit_image }}
         run: |
-          echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
-          . ./.envrc && earth +extract-node-artifacts \
-            --NODE_IMAGE="${NODE_IMAGE}:${IMAGE_TAG}-amd64"
-          . ./.envrc && earth +extract-toolkit-artifacts \
-            --TOOLKIT_IMAGE="${TOOLKIT_IMAGE}:${IMAGE_TAG}-amd64"
-
-      - name: Free disk space
-        if: steps.check-images.outputs.images_exist != 'true' && runner.environment != 'self-hosted'
-        run: |
-          git fetch origin "$GITHUB_REF" --depth=1
-          git checkout FETCH_HEAD -- "scripts/free-disk-space.sh"
-          ./scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
+          set -euo pipefail
+          mkdir -p artifacts-amd64
+          docker pull "$NODE_IMAGE"
+          cid=$(docker create "$NODE_IMAGE")
+          trap 'docker rm -f "$cid" >/dev/null' EXIT
+          docker cp "$cid:/midnight-node" artifacts-amd64/
+          docker cp "$cid:/aiken-deployer" artifacts-amd64/
+          docker cp "$cid:/artifacts-amd64/." artifacts-amd64/
+          docker cp "$cid:/res" artifacts-amd64/res
+          docker rm "$cid" >/dev/null
+          docker pull "$TOOLKIT_IMAGE"
+          cid=$(docker create "$TOOLKIT_IMAGE")
+          docker cp "$cid:/midnight-node-toolkit" artifacts-amd64/
+          docker rm "$cid" >/dev/null
+          trap - EXIT
 
       - name: Run build
-        if: steps.check-images.outputs.images_exist != 'true'
+        if: runner.environment == 'self-hosted'
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
@@ -536,7 +572,7 @@ jobs:
 
   publish-multi-arch:
     name: Publish multi-arch image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [publish-amd64, publish-arm64, sbom-scan-node-amd64, sbom-scan-node-arm64, sbom-scan-toolkit-amd64, sbom-scan-toolkit-arm64]
     permissions:
       contents: write
