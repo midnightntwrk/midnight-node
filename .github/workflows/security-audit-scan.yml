@@ -30,7 +30,6 @@ jobs:
         with:
           submodules: true
 
-
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
           version: v0.8.18
@@ -44,7 +43,7 @@ jobs:
           . ./.envrc && earth --use-inline-cache --strict +audit-rust
 
       - name: Fix cargo-deny SARIF format
-        if: steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/cargo-deny.sarif') != ''
+        if: hashFiles('scan_reports/cargo-deny.sarif') != ''
         run: |
           # cargo-deny produces snippet/message as strings, but SARIF spec requires objects
           jq '(.. | .snippet? | strings) |= {"text": .}' scan_reports/cargo-deny.sarif | \
@@ -53,12 +52,11 @@ jobs:
 
       - name: Upload cargo-deny SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
-        if: (success() || failure()) && steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/cargo-deny.sarif') != ''
+        if: (success() || failure()) && hashFiles('scan_reports/cargo-deny.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/cargo-deny.sarif
           category: cargo-deny
-
 
   audit-typescript:
     name: audit job npm
@@ -76,7 +74,6 @@ jobs:
         with:
           submodules: true
 
-
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
           version: v0.8.18
@@ -89,7 +86,7 @@ jobs:
 
       - name: Upload npm-audit-local-environment SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
-        if: (success() || failure()) && steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/npm-audit-local-environment.sarif') != ''
+        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-local-environment.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/npm-audit-local-environment.sarif
@@ -97,7 +94,7 @@ jobs:
 
       - name: Upload npm-audit-node-toolkit-js SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
-        if: (success() || failure()) && steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
+        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/npm-audit-toolkit-js.sarif

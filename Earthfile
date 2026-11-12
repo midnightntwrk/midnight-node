@@ -1321,8 +1321,8 @@ build-test-toolkit:
     RUN --secret NODE_GIT_TOKEN mkdir -p /opt && \
         features="" && \
         if [ "$RUN_COMPACT_CONTRACT_TESTS" = "true" ]; then features="--features compact-contract-tests"; fi && \
-        MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest archive \
-            --release --locked -p midnight-node-toolkit --jobs=$TOOLKIT_BUILD_JOBS $features \
+        MIDNIGHT_LEDGER_EXPERIMENTAL=1 CARGO_BUILD_JOBS=$TOOLKIT_BUILD_JOBS with-git-creds cargo nextest archive \
+            --release --locked -p midnight-node-toolkit $features \
             --archive-file /opt/toolkit-tests.tar.zst
     COPY scripts/test-toolkit.sh /test-toolkit.sh
     ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]

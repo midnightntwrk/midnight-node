@@ -82,6 +82,10 @@ jobs:
         if: needs.scope.outputs.product == 'true' && (steps.guard.outputs.hit != 'true')
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          TMPDIR: ${{ runner.temp }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
         run: |
           . ./.envrc && earth --ci +check
 
