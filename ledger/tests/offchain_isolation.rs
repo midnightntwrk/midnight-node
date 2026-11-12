@@ -27,7 +27,7 @@ use midnight_node_ledger::{
 	ephemeral::EphemeralDb,
 	host_api::ledger_9::ledger_9_bridge as host,
 	ledger_8::api::ledger::Ledger as Ledger8,
-	ledger_9::{BlockContext, api::ledger::Ledger, storage::init_storage_paritydb_separate},
+	ledger_9::{BlockContext, api::ledger::Ledger},
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -41,8 +41,12 @@ use sp_externalities::{Externalities, ExternalitiesExt};
 use sp_state_machine::BasicExternalities;
 use std::sync::{Arc, Mutex};
 
-/// Host calls without a `LedgerStorageExt` use the separate-db storage.
-type Shared = ParityDb;
+/// The one storage instantiation host calls dispatch to: the ledger columns after Substrate's.
+type Shared = ParityDb<
+	storage_sha2::Sha256,
+	ledger_storage_ledger_8::db::paritydb::OwnedDb,
+	{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+>;
 
 const RUNTIME_VERSION: u32 = 1;
 
@@ -166,8 +170,11 @@ fn run_block(
 #[test]
 fn offchain_calls_match_block_execution_without_touching_shared_storage() {
 	let dir = tempfile::tempdir().unwrap();
-	let genesis =
-		init_storage_paritydb_separate(dir.path(), UndeployedNetwork.genesis_state(), 1024);
+	let genesis = midnight_node_ledger::init_ledger_storage_standalone(
+		dir.path(),
+		UndeployedNetwork.genesis_state(),
+		1024,
+	);
 	let (tx, ctx) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let ctx: BlockContext = ctx.into();
 	let system_tx = {
@@ -235,15 +242,25 @@ fn offchain_calls_match_block_execution_without_touching_shared_storage() {
 		run_block(&genesis, &v8_state, &tx, &system_tx, &ctx)
 	});
 	assert_eq!(offchain_outputs, onchain_outputs);
-	// Block execution persists only the post-block tips and the migration output; the
-	// intra-block states (the first two) are held, never made GC roots.
+	// Block execution persists only the post-block tips and the migration output, each
+	// through a tagged-root wrapper (never as a raw root); the intra-block states (the first
+	// two) are held, never made GC roots.
 	let (intermediates, durable) = produced.split_at(2);
 	for key in intermediates {
 		assert_eq!(in_shared(key).1, 0, "block execution persisted an intermediate state");
 	}
 	for key in durable {
 		let (known, roots) = in_shared(key);
-		assert!(known && roots > 0, "block execution did not persist its state");
+		assert!(known, "block execution did not store its state");
+		assert_eq!(roots, 0, "block execution rooted a ledger state raw");
+		assert!(
+			midnight_node_ledger::tagged_root::tagged_pin_count(
+				&default_storage::<Shared>().arena,
+				key
+			)
+			.is_some_and(|count| count > 0),
+			"block execution did not pin its state through a tagged root"
+		);
 	}
 	assert_eq!(flushes(&onchain_metrics), 1);
 	assert_eq!(held(&mut onchain), None);

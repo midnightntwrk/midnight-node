@@ -34,8 +34,12 @@ use sp_externalities::{Externalities, ExternalitiesExt};
 use sp_state_machine::BasicExternalities;
 use std::sync::{Arc, Mutex};
 
-/// Host calls without a `LedgerStorageExt` use the separate-db storage.
-type Shared = ParityDb;
+/// The one storage instantiation host calls dispatch to: the ledger columns after Substrate's.
+type Shared = ParityDb<
+	storage_sha2::Sha256,
+	ledger_storage_ledger_8::db::paritydb::OwnedDb,
+	{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+>;
 
 const RUNTIME_VERSION: u32 = 1;
 const NONCE: [u8; 32] = [9; 32];
@@ -135,7 +139,15 @@ fn run_block(genesis: &[u8], system_tx: &[u8], ctx: &BlockContext) -> Outputs {
 fn ledger_8_offchain_calls_match_block_execution_without_touching_shared_storage() {
 	let dir = tempfile::tempdir().unwrap();
 	let _ = set_default_storage(|| {
-		Storage::new(1024, ParityDb::<storage_sha2::Sha256>::open(dir.path()))
+		use midnight_primitives_ledger::LedgerStorageExt;
+		use midnight_storage_core::db::paritydb::{NUM_COLUMNS, OwnedDb, set_init_options};
+		let mut options = parity_db::Options::with_columns(
+			dir.path(),
+			LedgerStorageExt::COLUMN_OFFSET + NUM_COLUMNS,
+		);
+		set_init_options(&mut options, LedgerStorageExt::COLUMN_OFFSET, true);
+		let db = parity_db::Db::open_or_create(&options).expect("open parity-db");
+		Storage::new(1024, Shared::from_existing_db(OwnedDb(Arc::new(db))))
 	});
 
 	let genesis = {

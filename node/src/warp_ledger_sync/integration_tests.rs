@@ -50,18 +50,16 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	// fixture is v18 (`ledger_9`).
 	let genesis_state = include_bytes!("../../../res/genesis/genesis_state_preview.mn");
 
-	// Initialize the arena from genesis in Separate mode. This sets the process-global
-	// `default_storage`, persists the genesis ledger, and returns the on-chain `StateKey` bytes
-	// (the tagged `TypedArenaKey<Ledger>`) — exactly what `pallet_midnight::StateKey` would hold.
-	let state_key = midnight_node_ledger::ledger_8::storage::init_storage_paritydb_separate(
-		dir.path(),
-		genesis_state,
-		1024,
-	);
+	// Initialize the arena from genesis on a standalone parity-db with the node's column layout.
+	// This sets the process-global `default_storage`, persists the genesis ledger, and returns the
+	// on-chain `StateKey` bytes (the tagged `TypedArenaKey<Ledger>`) — exactly what
+	// `pallet_midnight::StateKey` would hold.
+	let state_key =
+		midnight_node_ledger::init_ledger_storage_standalone(dir.path(), genesis_state, 1024);
 	assert!(!state_key.is_empty(), "genesis init must produce a StateKey");
 
 	// Server side: serialize the `Ledger`-rooted snapshot at that StateKey.
-	let blob = midnight_node_ledger::serialize_ledger_snapshot(false, &state_key)
+	let blob = midnight_node_ledger::serialize_ledger_snapshot(&state_key)
 		.expect("serialize ledger snapshot");
 	assert!(blob.len() > state_key.len(), "snapshot blob should carry the arena, not just the key");
 
@@ -72,8 +70,52 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 
 	// Client/import: verify root == StateKey and persist. Idempotent against the
 	// already-initialized arena (content-addressed; genesis nodes dedup).
-	midnight_node_ledger::import_verified_ledger_snapshot(false, &reassembled, &state_key)
+	// The test has no block, so use a fixed stand-in for the target's parent hash.
+	const PARENT_HASH: [u8; 32] = [7u8; 32];
+	midnight_node_ledger::import_verified_ledger_snapshot(&reassembled, &state_key, PARENT_HASH)
 		.expect("verified import of a faithful snapshot should succeed");
+
+	// The imported tip is pinned by a tagged-root wrapper, not rooted raw. The snapshot is the
+	// genesis state, so its genesis wrapper (tag `[0; 32]`) and the import wrapper both pin it.
+	assert_eq!(
+		midnight_node_ledger::ledger_8::storage::get_state_root_count(&state_key),
+		None,
+		"the imported tip must not be a raw GC root"
+	);
+	assert_eq!(
+		midnight_node_ledger::ledger_8::storage::tagged_pin_count(&state_key),
+		Some(2),
+		"genesis wrapper + warp-import wrapper"
+	);
+
+	// The import wrapper's tag is the parent hash handed to the import (the warp target's
+	// parent), and it is the only wrapper carrying it.
+	let import_wrapper: Vec<_> = midnight_node_ledger::gc::tagged_roots()
+		.0
+		.into_iter()
+		.filter(|r| r.tag == PARENT_HASH)
+		.collect();
+	assert_eq!(import_wrapper.len(), 1, "exactly one wrapper per (tag, tip): {import_wrapper:?}");
+	assert_eq!(import_wrapper[0].count, 1);
+
+	// Importing the same snapshot again re-persists the same wrapper, so its count goes up by
+	// one. This is leak-only behaviour (a re-import is never released early), documented rather
+	// than prevented.
+	midnight_node_ledger::import_verified_ledger_snapshot(&reassembled, &state_key, PARENT_HASH)
+		.expect("re-importing the same snapshot should succeed");
+	let after: Vec<_> = midnight_node_ledger::gc::tagged_roots()
+		.0
+		.into_iter()
+		.filter(|r| r.tag == PARENT_HASH)
+		.collect();
+	assert_eq!(after.len(), 1, "still the same single wrapper");
+	assert_eq!(after[0].wrapper, import_wrapper[0].wrapper);
+	assert_eq!(after[0].count, 2, "a second import bumps the wrapper count by one");
+	assert_eq!(
+		midnight_node_ledger::ledger_8::storage::tagged_pin_count(&state_key),
+		Some(3),
+		"genesis wrapper + the import wrapper twice"
+	);
 
 	// Security property: tamper a byte well past the tag prefix (in the node-data region). The
 	// native multi-pass deserializer / root check must reject it — never a successful import.
@@ -81,7 +123,7 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	let idx = tampered.len() / 2;
 	tampered[idx] ^= 0xFF;
 	let result =
-		midnight_node_ledger::import_verified_ledger_snapshot(false, &tampered, &state_key);
+		midnight_node_ledger::import_verified_ledger_snapshot(&tampered, &state_key, PARENT_HASH);
 	assert!(
 		result.is_err(),
 		"a tampered snapshot must fail verification and not be imported, got {result:?}"

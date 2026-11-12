@@ -26,7 +26,7 @@ use midnight_primitives::{
 
 fn init_ledger_state() {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
+	let state_key = midnight_node_ledger::init_ledger_storage_standalone(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,

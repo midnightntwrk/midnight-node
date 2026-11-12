@@ -32,7 +32,8 @@ use sc_client_api::{Backend, StorageProvider};
 use sc_network::{
 	IfDisconnected, NetworkRequest, PeerId, ProtocolName, request_responses::RequestFailure,
 };
-use sp_runtime::traits::Block as BlockT;
+use sp_blockchain::HeaderBackend;
+use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 use super::{
 	LOG_TARGET,
@@ -55,8 +56,6 @@ pub struct LedgerSyncClient<B: BlockT, Client, BE, Network: ?Sized> {
 	client: Arc<Client>,
 	network: Arc<Network>,
 	protocol_name: ProtocolName,
-	/// Whether the local arena uses the unified ParityDb layout (forwarded to the importer).
-	unified: bool,
 	_phantom: PhantomData<(B, BE)>,
 }
 
@@ -64,16 +63,11 @@ impl<B, Client, BE, Network> LedgerSyncClient<B, Client, BE, Network>
 where
 	B: BlockT,
 	BE: Backend<B> + 'static,
-	Client: StorageProvider<B, BE> + Send + Sync + 'static,
+	Client: StorageProvider<B, BE> + HeaderBackend<B> + Send + Sync + 'static,
 	Network: NetworkRequest + Send + Sync + ?Sized + 'static,
 {
-	pub fn new(
-		client: Arc<Client>,
-		network: Arc<Network>,
-		protocol_name: ProtocolName,
-		unified: bool,
-	) -> Self {
-		Self { client, network, protocol_name, unified, _phantom: PhantomData }
+	pub fn new(client: Arc<Client>, network: Arc<Network>, protocol_name: ProtocolName) -> Self {
+		Self { client, network, protocol_name, _phantom: PhantomData }
 	}
 
 	/// Recover, verify, and import the ledger arena at `target` (the captured warp target N) by
@@ -84,6 +78,20 @@ where
 	pub async fn recover(&self, target: B::Hash, peers: &[PeerId]) -> Result<(), ClientError> {
 		let state_key = read_state_key::<B, Client, BE>(&self.client, target)?
 			.ok_or(ClientError::NoStateKey)?;
+
+		// The imported ledger is rooted under a wrapper tagged with the target block's parent
+		// hash. Never guess it: a missing header or odd-sized hash aborts the recovery.
+		let parent_hash: [u8; 32] = {
+			let header = self
+				.client
+				.header(target)?
+				.ok_or_else(|| ClientError::NoTargetHeader(format!("{target:?}")))?;
+			header
+				.parent_hash()
+				.as_ref()
+				.try_into()
+				.map_err(|_| ClientError::BadParentHash)?
+		};
 
 		if peers.is_empty() {
 			return Err(ClientError::NoPeers);
@@ -106,7 +114,6 @@ where
 			// emit a heartbeat so a slow recovery is observable. Verification still happens inside the
 			// importer (recomputed root must equal `state_key`); a failure means the peer served bad
 			// data — discard and try the next one. (A reputation report on the peer belongs here.)
-			let unified = self.unified;
 			let blob_len = blob.len();
 			let state_key = state_key.clone();
 			log::info!(
@@ -116,7 +123,11 @@ where
 			);
 			let started = std::time::Instant::now();
 			let mut import = tokio::task::spawn_blocking(move || {
-				midnight_node_ledger::import_verified_ledger_snapshot(unified, &blob, &state_key)
+				midnight_node_ledger::import_verified_ledger_snapshot(
+					&blob,
+					&state_key,
+					parent_hash,
+				)
 			});
 			let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
 			heartbeat.tick().await; // consume the immediate first tick
@@ -236,6 +247,10 @@ fn ensure_full_chunk(response: &LedgerSyncResponse) -> Result<(), ClientError> {
 pub enum ClientError {
 	#[error("no StateKey present at the target block")]
 	NoStateKey,
+	#[error("header of the warp target block {0} is not available")]
+	NoTargetHeader(String),
+	#[error("parent hash of the warp target block is not 32 bytes")]
+	BadParentHash,
 	#[error("no peers available to recover the ledger from")]
 	NoPeers,
 	#[error("blockchain error: {0}")]

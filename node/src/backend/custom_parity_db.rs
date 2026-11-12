@@ -14,13 +14,13 @@
 //! Derived implementation from polkadot-sdk: substrate/client/db/src/parity_db.rs
 //! Adds custom column definitions for midnight-ledger
 
-use midnight_primitives_ledger::LedgerStorageDb;
+use midnight_primitives_ledger::LedgerStorage;
 use midnight_storage_core::db::paritydb::{NUM_COLUMNS as NUM_COLUMNS_LEDGER, OwnedDb};
 use sc_client_db::Database;
 use sp_database::{Change, ColumnId, Transaction, error::DatabaseError};
 use std::sync::Arc;
 
-use crate::{cfg::midnight_cfg::StorageSeparation, service::StorageInit};
+use crate::service::StorageInit;
 
 pub struct DbAdapter(pub Arc<parity_db::Db>);
 
@@ -57,12 +57,116 @@ pub(crate) mod columns_polkadot {
 
 pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
+/// META-column key recording which `storage_separation` mode a database was created in.
+const STORAGE_SEPARATION_KEY: &[u8] = b"midnight:storage_separation";
+
+/// META-column key holding the storage format as an ASCII decimal.
+///
+/// Format 2 is the complete storage bundle: unified layout, btree-indexed and LZ4-compressed
+/// ledger columns, and tagged ledger roots from genesis. An absent key means format 1 (legacy).
+/// Written only when the node creates a fresh main database, never stamped onto an existing one.
+const STORAGE_FORMAT_KEY: &[u8] = b"midnight:storage_format";
+
+/// META-column key holding the version of the node that created the database.
+const STORAGE_CREATED_BY_KEY: &[u8] = b"midnight:storage_created_by";
+
+/// The storage format written to a freshly created database.
+pub const CURRENT_STORAGE_FORMAT: u32 = 2;
+
+/// Version of this node binary, as printed by `--version`.
+pub const NODE_VERSION: &str = env!("SUBSTRATE_CLI_IMPL_VERSION");
+
+/// The storage format a database was created with, read from its META column.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StorageFormat {
+	pub version: u32,
+	pub created_by: Option<String>,
+	/// The raw marker when it did not parse as a u32 (treated as legacy).
+	pub unparsable: Option<String>,
+}
+
+impl StorageFormat {
+	/// Whether the database was created at (or after) the current storage format.
+	pub fn is_current(&self) -> bool {
+		self.version >= CURRENT_STORAGE_FORMAT
+	}
+
+	/// Label for logs and metrics.
+	pub fn status(&self) -> &'static str {
+		if self.is_current() { "current" } else { "legacy" }
+	}
+}
+
+/// Read the storage format marker; an absent or unparsable marker is format 1.
+pub fn storage_format(db: &parity_db::Db) -> parity_db::Result<StorageFormat> {
+	let meta = columns_polkadot::META as u8;
+	let lossy = |v: Vec<u8>| String::from_utf8_lossy(&v).into_owned();
+	let (version, unparsable) = match db.get(meta, STORAGE_FORMAT_KEY)? {
+		None => (1, None),
+		Some(raw) => {
+			match std::str::from_utf8(&raw).ok().and_then(|s| s.trim().parse::<u32>().ok()) {
+				Some(v) => (v, None),
+				None => (1, Some(lossy(raw))),
+			}
+		},
+	};
+	let created_by = db.get(meta, STORAGE_CREATED_BY_KEY)?.map(lossy);
+	Ok(StorageFormat { version, created_by, unparsable })
+}
+
+/// Refuse a database created with the removed `separate` storage layout, and record `unified` in
+/// the META column of one that has no marker yet.
+///
+/// Only separate mode used to set storage-core's options on the main DB's ledger columns, so an
+/// unmarked indexed DB was created in separate mode even if `ledger_storage/` was deleted by hand.
+/// A first start killed before the marker commit became durable leaves the same shape, so the
+/// refusal names that cause too.
+fn check_storage_separation(
+	db: &parity_db::Db,
+	existing_columns: Option<&[parity_db::ColumnOptions]>,
+	storage_config: &StorageInit,
+) -> parity_db::Result<()> {
+	let recorded = db.get(columns_polkadot::META as u8, STORAGE_SEPARATION_KEY)?;
+	let refusal = match &recorded {
+		Some(v) if v.as_slice() == b"separate" => {
+			Some("the META column records the removed `separate` storage layout")
+		},
+		Some(_) => None,
+		None => existing_columns
+			.is_some_and(|columns| {
+				let node_column = (NUM_COLUMNS_POLKADOT
+					+ midnight_storage_core::db::paritydb::NODE_COLUMN) as usize;
+				storage_config.legacy_ledger_db_path.is_dir()
+					|| columns.get(node_column).is_some_and(|c| c.btree_index)
+			})
+			.then_some(
+				"no storage mode is recorded and the data directory looks like it was created \
+				 with the removed `separate` storage layout, or a previous first start was \
+				 interrupted before the storage mode was recorded",
+			),
+	};
+	if let Some(reason) = refusal {
+		return Err(parity_db::Error::IncompatibleColumnConfig {
+			id: NUM_COLUMNS_POLKADOT,
+			reason: reason.into(),
+		});
+	}
+	if recorded.is_none() {
+		db.commit([(
+			columns_polkadot::META as u8,
+			STORAGE_SEPARATION_KEY,
+			Some(b"unified".to_vec()),
+		)])?;
+	}
+	Ok(())
+}
+
 /// Wrap parity-db database into a trait object that implements `sp_database::Database`
 pub fn open<H: Clone + AsRef<[u8]>>(
 	path: &std::path::Path,
 	upgrade: bool,
 	storage_config: &StorageInit,
-) -> parity_db::Result<(OwnedDb, LedgerStorageDb)> {
+) -> parity_db::Result<(OwnedDb, LedgerStorage)> {
 	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS);
 
 	let compressed = [
@@ -89,13 +193,21 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.preimage = true;
 	tx_col.uniform = true;
 
-	// Set init options for ParityDb backend
-	if storage_config.separation == StorageSeparation::Separate {
-		midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
-			&mut config,
-			NUM_COLUMNS_POLKADOT,
-			true,
-		);
+	// Without `btree_index` on the root and node columns storage-core cannot iterate them
+	// (`get_roots`, `size`, the GC scan), and without the options the node column is stored
+	// uncompressed (issue #2294).
+	// Column options are fixed when a database is created, and parity-db refuses to open an
+	// existing one with different options (`IncompatibleColumnConfig`), so an existing DB
+	// keeps the ledger column options it was created with; only new databases get these.
+	// The node then starts normally and the ledger GC fails closed on the unindexed columns,
+	// asking for a resync (`ledger_gc::try_spawn`).
+	midnight_storage_core::db::paritydb::set_init_options(&mut config, NUM_COLUMNS_POLKADOT, true);
+	let existing_meta = parity_db::Options::load_metadata(path)?;
+	if let Some(meta) = &existing_meta {
+		let ledger_cols = NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize;
+		if let Some(stored) = meta.columns.get(ledger_cols.clone()) {
+			config.columns[ledger_cols].clone_from_slice(stored);
+		}
 	}
 
 	if upgrade {
@@ -105,29 +217,39 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		}
 	}
 
-	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
+	// The ledger is fresh exactly when the main database is new; a fresh ledger only ever
+	// receives tagged roots.
+	let ledger_fresh = existing_meta.is_none();
 
-	match storage_config.separation {
-		StorageSeparation::Separate => {
-			// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during
-			// the 8->9 hardfork; seed the arena with the deserializer matching the
-			// genesis `ledger-state[vN]` tag (see `init_ledger_storage_separate`).
-			midnight_node_ledger::init_ledger_storage_separate(
-				&storage_config.db_path,
-				&storage_config.genesis_state,
-				storage_config.cache_size,
-			);
-			Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
-		},
-		StorageSeparation::Unified => {
-			midnight_node_ledger::init_ledger_storage_unified::<_, NUM_COLUMNS_POLKADOT>(
-				OwnedDb(db.clone()),
-				&storage_config.genesis_state,
-				storage_config.cache_size,
-			);
-			Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
-		},
+	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
+	check_storage_separation(
+		&db,
+		existing_meta.as_ref().map(|m| m.columns.as_slice()),
+		storage_config,
+	)?;
+	if ledger_fresh {
+		db.commit([
+			(
+				columns_polkadot::META as u8,
+				STORAGE_FORMAT_KEY,
+				Some(CURRENT_STORAGE_FORMAT.to_string().into_bytes()),
+			),
+			(
+				columns_polkadot::META as u8,
+				STORAGE_CREATED_BY_KEY,
+				Some(NODE_VERSION.as_bytes().to_vec()),
+			),
+		])?;
 	}
+
+	// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during the 8->9 hardfork; the
+	// arena is seeded with the deserializer matching the genesis `ledger-state[vN]` tag.
+	midnight_node_ledger::init_ledger_storage::<_, NUM_COLUMNS_POLKADOT>(
+		OwnedDb(db.clone()),
+		&storage_config.genesis_state,
+		storage_config.cache_size,
+	);
+	Ok((OwnedDb(db.clone()), LedgerStorage::new(db, storage_config.cache_size)))
 }
 
 fn ref_counted_column(col: u32) -> bool {
@@ -204,5 +326,63 @@ impl<H: Clone + AsRef<[u8]>> Database<H> for DbAdapter {
 
 	fn sanitize_key(&self, key: &mut Vec<u8>) {
 		let _prefix = key.drain(0..key.len() - DB_HASH_LEN);
+	}
+}
+
+#[cfg(test)]
+mod storage_format_tests {
+	use super::*;
+
+	fn open_tmp(dir: &tempfile::TempDir) -> parity_db::Db {
+		let opts = parity_db::Options::with_columns(dir.path(), NUM_COLUMNS);
+		parity_db::Db::open_or_create(&opts).unwrap()
+	}
+
+	fn put(db: &parity_db::Db, key: &[u8], value: &[u8]) {
+		db.commit([(columns_polkadot::META as u8, key, Some(value.to_vec()))]).unwrap();
+	}
+
+	#[test]
+	fn absent_marker_is_legacy() {
+		let dir = tempfile::TempDir::new().unwrap();
+		let f = storage_format(&open_tmp(&dir)).unwrap();
+		assert_eq!(f, StorageFormat { version: 1, created_by: None, unparsable: None });
+		assert!(!f.is_current());
+		assert_eq!(f.status(), "legacy");
+	}
+
+	#[test]
+	fn current_marker_with_creator() {
+		let dir = tempfile::TempDir::new().unwrap();
+		let db = open_tmp(&dir);
+		put(&db, STORAGE_FORMAT_KEY, b"2");
+		put(&db, STORAGE_CREATED_BY_KEY, b"1.2.3-abc");
+		let f = storage_format(&db).unwrap();
+		assert_eq!(f.version, 2);
+		assert_eq!(f.created_by.as_deref(), Some("1.2.3-abc"));
+		assert!(f.is_current());
+		assert_eq!(f.status(), "current");
+	}
+
+	#[test]
+	fn newer_format_is_accepted() {
+		let dir = tempfile::TempDir::new().unwrap();
+		let db = open_tmp(&dir);
+		put(&db, STORAGE_FORMAT_KEY, b"3");
+		let f = storage_format(&db).unwrap();
+		assert_eq!(f.version, 3);
+		assert!(f.is_current());
+	}
+
+	#[test]
+	fn unparsable_marker_is_legacy() {
+		let dir = tempfile::TempDir::new().unwrap();
+		let db = open_tmp(&dir);
+		put(&db, STORAGE_FORMAT_KEY, b"abc");
+		let f = storage_format(&db).unwrap();
+		assert_eq!(f.version, 1);
+		assert_eq!(f.unparsable.as_deref(), Some("abc"));
+		assert!(!f.is_current());
+		assert_eq!(f.status(), "legacy");
 	}
 }

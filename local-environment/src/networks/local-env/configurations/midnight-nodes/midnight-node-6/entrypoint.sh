@@ -19,8 +19,6 @@ set -euxo pipefail
 # Source the mainchain env
 . /shared/mc.env
 
-export STORAGE_SEPARATION=unified
-
 # Non-validator archive node: no --validator, no keystore. Keeps full state and
 # block history (--state-pruning/--blocks-pruning archive) for RPC inspection.
 ./midnight-node \

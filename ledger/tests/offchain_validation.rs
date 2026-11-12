@@ -17,10 +17,7 @@
 //! the assertions inspect the shared write cache, which other tests would also fill.
 
 use ledger_storage_ledger_8::{db::ParityDb, storage::default_storage};
-use midnight_node_ledger::{
-	host_api::ledger_9::ledger_9_bridge as host,
-	ledger_9::{BlockContext, storage::init_storage_paritydb_separate},
-};
+use midnight_node_ledger::{host_api::ledger_9::ledger_9_bridge as host, ledger_9::BlockContext};
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
 	undeployed::transactions::DEPLOY_TX,
@@ -28,8 +25,12 @@ use midnight_node_res::{
 use midnight_primitives_ledger::LedgerOnchainExt;
 use sp_state_machine::BasicExternalities;
 
-/// Host calls without a `LedgerStorageExt` use the separate-db storage.
-type Shared = ParityDb;
+/// The one storage instantiation host calls dispatch to: the ledger columns after Substrate's.
+type Shared = ParityDb<
+	storage_sha2::Sha256,
+	ledger_storage_ledger_8::db::paritydb::OwnedDb,
+	{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+>;
 
 const RUNTIME_VERSION: u32 = 1;
 
@@ -43,8 +44,11 @@ fn pending_writes() -> usize {
 #[test]
 fn offchain_validation_leaves_no_pending_shared_writes() {
 	let dir = tempfile::tempdir().unwrap();
-	let genesis =
-		init_storage_paritydb_separate(dir.path(), UndeployedNetwork.genesis_state(), 1024);
+	let genesis = midnight_node_ledger::init_ledger_storage_standalone(
+		dir.path(),
+		UndeployedNetwork.genesis_state(),
+		1024,
+	);
 	let (tx, ctx) = midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let ctx: BlockContext = ctx.into();
 	assert_eq!(pending_writes(), 0);

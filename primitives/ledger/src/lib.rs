@@ -18,7 +18,6 @@ use prometheus_endpoint::{
 use sp_externalities::{Externalities, ExternalitiesExt};
 use std::{
 	any::Any,
-	path::PathBuf,
 	sync::{Arc, Mutex},
 };
 
@@ -48,6 +47,19 @@ pub struct LedgerMetrics {
 	pub tx_validation_cache_misses: CounterVec<U64>,
 	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_size: GaugeVec<U64>,
+	/// Duration of each ledger GC phase in seconds (label `phase`)
+	pub ledger_gc_phase_time: HistogramVec,
+	/// Tagged GC roots (label `kind`: "total", "candidates" or "pinned")
+	pub ledger_gc_tagged_roots: GaugeVec<U64>,
+	/// Storage format of the node's database (labels `version`, `status`); the matching series is 1
+	pub storage_format: GaugeVec<U64>,
+	/// Tagged GC roots released (label `reason`: "dead_position")
+	pub ledger_gc_released_total: CounterVec<U64>,
+	/// 1 while ledger GC is suspended (label `reason`: "mbm", "legacy_roots",
+	/// "sweep_panic" or "unindexed_columns")
+	pub ledger_gc_suspended: GaugeVec<U64>,
+	/// Nodes culled by the arena sweep (label `kind`: "arena_sweep")
+	pub ledger_gc_culled_total: CounterVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -192,6 +204,71 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			ledger_gc_phase_time: prometheus::register(
+				HistogramVec::new(
+					HistogramOpts::new(
+						"ledger_gc_phase_time",
+						"Time spent in each ledger GC phase, in seconds",
+					)
+					// GC holds are sub-millisecond to tens of milliseconds (slice budget 25 ms);
+					// the shared 50 ms linear buckets would put every observation in the first
+					// bucket. 100 µs doubling up to ~13 s.
+					.buckets(prometheus::exponential_buckets(0.0001, 2.0, 18)?),
+					&["phase"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_tagged_roots: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_gc_tagged_roots",
+						"Tagged GC roots seen by the last ledger GC slice",
+					),
+					&["kind"],
+				)?,
+				registry,
+			)?,
+			storage_format: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"midnight_storage_format",
+						"Storage format of the node's database (1 = legacy, 2 = current bundle); \
+						 the matching series is 1",
+					),
+					&["version", "status"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_released_total: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_gc_released_total",
+						"Tagged GC roots released by the ledger GC",
+					),
+					&["reason"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_suspended: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_gc_suspended",
+						"Whether ledger GC is currently suspended (1) or not (0)",
+					),
+					&["reason"],
+				)?,
+				registry,
+			)?,
+			ledger_gc_culled_total: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_gc_culled_total",
+						"Nodes culled by the ledger GC arena sweep",
+					),
+					&["kind"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -276,27 +353,51 @@ impl LedgerMetricsExt {
 			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
 		});
 	}
+
+	pub fn observe_gc_phase(&mut self, phase: &str, secs: f64) {
+		self.observe(|m| {
+			m.ledger_gc_phase_time.with_label_values(&[phase]).observe(secs);
+		});
+	}
+
+	pub fn set_gc_tagged_roots(&mut self, kind: &str, n: u64) {
+		self.observe(|m| {
+			m.ledger_gc_tagged_roots.with_label_values(&[kind]).set(n);
+		});
+	}
+
+	pub fn inc_gc_released(&mut self, n: u64) {
+		self.observe(|m| {
+			m.ledger_gc_released_total.with_label_values(&["dead_position"]).inc_by(n);
+		});
+	}
+
+	pub fn set_gc_suspended(&mut self, reason: &str, suspended: bool) {
+		self.observe(|m| {
+			m.ledger_gc_suspended.with_label_values(&[reason]).set(u64::from(suspended));
+		});
+	}
+
+	pub fn inc_gc_culled(&mut self, n: u64) {
+		self.observe(|m| {
+			m.ledger_gc_culled_total.with_label_values(&["arena_sweep"]).inc_by(n);
+		});
+	}
 }
 
-#[derive(Clone)]
-pub enum LedgerStorageDb {
-	UnifiedDb(Arc<parity_db::Db>),
-	SeparateDb(PathBuf),
-}
-/// Ledger Storage info to be sent to host functions
+/// Ledger Storage info to be sent to host functions.
+///
+/// The ledger arena lives in columns appended after Substrate's in the node's single parity-db
+/// instance (offset [`LedgerStorageExt::COLUMN_OFFSET`]), so `db` is that shared instance.
 #[derive(Clone)]
 pub struct LedgerStorage {
-	pub db: LedgerStorageDb,
+	pub db: Arc<parity_db::Db>,
 	pub cache_size: usize,
 }
 
 impl LedgerStorage {
-	pub fn new_existing(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
-		Self { db: LedgerStorageDb::UnifiedDb(db), cache_size }
-	}
-
-	pub fn new_separate(db_path: PathBuf, cache_size: usize) -> Self {
-		Self { db: LedgerStorageDb::SeparateDb(db_path), cache_size }
+	pub fn new(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
+		Self { db, cache_size }
 	}
 }
 

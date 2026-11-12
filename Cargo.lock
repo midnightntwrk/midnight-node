@@ -8292,6 +8292,7 @@ dependencies = [
  "pallet-cnight-observation-mock",
  "pallet-midnight",
  "pallet-midnight-rpc",
+ "pallet-migrations",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "pallet-staking",
@@ -8363,6 +8364,7 @@ dependencies = [
  "sp-keyring",
  "sp-keystore",
  "sp-mmr-primitives",
+ "sp-panic-handler",
  "sp-partner-chains-bridge",
  "sp-runtime",
  "sp-session-validator-management",
@@ -11361,7 +11363,8 @@ dependencies = [
 [[package]]
 name = "parity-db"
 version = "0.5.7"
-source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#a0f91c861c1ed2cca4cfbca629fb4f08930683a1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7697e37afbb7410115e32f2da9a96e908a601d103c7c769540ad08bb8406aa0c"
 dependencies = [
  "ahash 0.8.12",
  "blake2 0.10.6",

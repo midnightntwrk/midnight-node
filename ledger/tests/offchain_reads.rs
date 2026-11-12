@@ -25,7 +25,6 @@ use midnight_node_ledger::{
 	ephemeral::EphemeralDb,
 	host_api::{ledger_8::ledger_8_bridge as host8, ledger_9::ledger_9_bridge as host},
 	ledger_8::{BlockContext as BlockContext8, api::ledger::Ledger as Ledger8},
-	ledger_9::storage::init_storage_paritydb_separate,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_ledger::LedgerOnchainExt;
@@ -35,8 +34,12 @@ use std::{
 	thread,
 };
 
-/// Host calls without a `LedgerStorageExt` use the separate-db storage.
-type Shared = ParityDb;
+/// The one storage instantiation host calls dispatch to: the ledger columns after Substrate's.
+type Shared = ParityDb<
+	storage_sha2::Sha256,
+	ledger_storage_ledger_8::db::paritydb::OwnedDb,
+	{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+>;
 
 const READS: usize = 200;
 
@@ -157,7 +160,11 @@ fn ledger_8_state() -> Vec<u8> {
 #[test]
 fn offchain_reads_leave_nothing_for_a_flush() {
 	let dir = tempfile::tempdir().unwrap();
-	let v9 = init_storage_paritydb_separate(dir.path(), UndeployedNetwork.genesis_state(), 1024);
+	let v9 = midnight_node_ledger::init_ledger_storage_standalone(
+		dir.path(),
+		UndeployedNetwork.genesis_state(),
+		1024,
+	);
 	let v8 = ledger_8_state();
 	default_storage::<Shared>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let reads = reads(&v9, &v8);

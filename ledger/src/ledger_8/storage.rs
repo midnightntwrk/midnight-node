@@ -19,26 +19,16 @@ use crate::ledger_8::ledger_storage_local::{
 	storage::{try_get_default_storage, unsafe_drop_default_storage},
 };
 
-// Storage may be registered under either of two `ParityDb` instantiations
-// depending on the operator's `storage_separation` config: the default
-// (column offset 0) for `Separate`, or column offset = NUM_COLUMNS_POLKADOT
-// for `Unified`. Drop whichever exists.
-type DbSeparate = ParityDb;
-type DbUnified = ParityDb<storage_sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+/// The one `ParityDb` instantiation the node registers: the ledger columns appended after
+/// Substrate's in the shared parity-db instance.
+type Db = ParityDb<storage_sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 pub fn drop_default_storage_if_exists() {
-	if try_get_default_storage::<DbSeparate>().is_some() {
-		unsafe_drop_default_storage::<DbSeparate>();
+	if try_get_default_storage::<Db>().is_some() {
+		unsafe_drop_default_storage::<Db>();
 		log::info!(
 			target: LOG_TARGET,
-			"Dropped HF storage after rollback (separate)"
-		);
-	}
-	if try_get_default_storage::<DbUnified>().is_some() {
-		unsafe_drop_default_storage::<DbUnified>();
-		log::info!(
-			target: LOG_TARGET,
-			"Dropped HF storage after rollback (unified)"
+			"Dropped HF storage after rollback"
 		);
 	}
 }
@@ -130,8 +120,10 @@ where
 			.expect("failed to deserialize ledger genesis state");
 	let state = Ledger::new(state);
 
-	let mut state = default_storage::<D>().arena.alloc(state);
-	state.persist();
+	let state = default_storage::<D>().arena.alloc(state);
+	// Genesis is persisted once under a tagged root (tag = 32 zero bytes, there is no parent
+	// block) and never released, so it is retained for history.
+	crate::tagged_root::persist_tagged(&default_storage::<D>().arena, vec![0u8; 32], &state);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	crate::ledger_8::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
@@ -142,58 +134,25 @@ where
 /// Returns the persist refcount for the ledger state addressed by `state_key`,
 /// or `None` if the state is not currently a GC root (refcount zero).
 ///
-/// Test-only. Hard-wired to `ParityDb`, matching `init_storage_paritydb_separate`.
+/// Test-only inspection helper: lets tests verify that intra-block intermediates are
+/// never rooted and post-block tips always are. Queries the node's parity-db `Db`
+/// instantiation, as set up by `init_ledger_storage_standalone`.
 #[cfg(all(feature = "std", feature = "test-utils"))]
 pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
 	use crate::ledger_8::api::Ledger;
 	use crate::ledger_8::ledger_storage_local::{
 		arena::{ArenaKey, TypedArenaKey},
-		db::ParityDb,
 		storage::default_storage,
 	};
 
-	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+	let typed_key: TypedArenaKey<Ledger<Db>, _> =
 		crate::ledger_8::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
 	let key: ArenaKey<_> = typed_key.into();
-	default_storage::<ParityDb>()
-		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+	default_storage::<Db>().with_backend(|backend| backend.get_roots().get(key.hash()).copied())
 }
 
 #[cfg(feature = "std")]
-pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
-	dir: P,
-	genesis_state: &[u8],
-	cache_size: usize,
-) -> Vec<u8> {
-	use crate::ledger_8::ledger_storage_local::{
-		Storage, db::ParityDb, storage::set_default_storage,
-	};
-
-	let res = set_default_storage(|| {
-		std::fs::create_dir_all(dir.as_ref())
-			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.as_ref().display()));
-
-		let db = ParityDb::<storage_sha2::Sha256>::open(dir.as_ref());
-		Storage::new(cache_size, db)
-	});
-	if res.is_err() {
-		log::warn!("Warning: Failed to set default storage: {res:?}");
-	}
-
-	alloc_with_initial_state::<crate::ledger_8::TransactionSignature, ParityDb>(genesis_state)
-}
-
-#[cfg(feature = "std")]
-pub fn set_init_options_paritydb(
-	options: &mut parity_db::Options,
-	column_offset: u8,
-	use_compression: bool,
-) {
-	midnight_storage_core::db::paritydb::set_init_options(options, column_offset, use_compression);
-}
-
-#[cfg(feature = "std")]
-pub fn init_storage_paritydb_unified<
+pub fn init_storage_paritydb<
 	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
 	const COLUMN_OFFSET: u8,
 >(
@@ -217,6 +176,25 @@ pub fn init_storage_paritydb_unified<
 		crate::ledger_8::TransactionSignature,
 		ParityDb<storage_sha2::Sha256, D, COLUMN_OFFSET>,
 	>(genesis_state)
+}
+
+/// Returns the summed persist count of the tagged-root wrappers pinning the ledger state
+/// addressed by `state_key`, or `None` if no wrapper for it is currently a GC root.
+///
+/// Test-only inspection helper, the tagged-root counterpart of [`get_state_root_count`]:
+/// post-block tips are pinned by wrappers and are no longer raw roots themselves.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn tagged_pin_count(state_key: &[u8]) -> Option<u32> {
+	use crate::ledger_8::api::Ledger;
+	use crate::ledger_8::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<Db>, _> =
+		crate::ledger_8::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	crate::tagged_root::tagged_pin_count(&default_storage::<Db>().arena, key.hash())
 }
 
 // grcov-excl-start
