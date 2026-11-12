@@ -1,7 +1,20 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #[cfg(feature = "std")]
 use crate::ledger_9::Bridge;
 use crate::{
-	common::types::{
+	boundary::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
@@ -15,6 +28,7 @@ use sp_runtime_interface::runtime_interface;
 
 #[cfg(feature = "std")]
 use {
+	crate::ephemeral::{EphemeralDb, ensure_storage, is_onchain},
 	midnight_primitives_ledger::{LedgerStorageDb, LedgerStorageExt},
 	sp_externalities::{Externalities, ExternalitiesExt},
 };
@@ -32,7 +46,7 @@ type Signature = crate::ledger_9::TransactionSignature;
 type DbSeparate = crate::ledger_9::ledger_storage_local::db::ParityDb;
 #[cfg(feature = "std")]
 type DbUnified = crate::ledger_9::ledger_storage_local::db::ParityDb<
-	sha2::Sha256,
+	storage_sha2::Sha256,
 	crate::ledger_9::ledger_storage_local::db::paritydb::OwnedDb,
 	{ LedgerStorageExt::COLUMN_OFFSET },
 >;
@@ -43,6 +57,152 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 		ext.extension::<LedgerStorageExt>().map(|e| &e.0.db),
 		Some(LedgerStorageDb::UnifiedDb(_)),
 	)
+}
+
+/// Call `Bridge::$call` instantiated for this call's storage mode, over the shared ledger
+/// storage, or over the ephemeral one when `$ephemeral` (see [`crate::ephemeral`]).
+#[cfg(feature = "std")]
+macro_rules! with_bridge {
+	($bridge:ident<$sig:ty>, $ext:expr, $ephemeral:expr, $call:ident($($arg:expr),* $(,)?)) => {
+		match (is_unified($ext), $ephemeral) {
+			(true, false) => $bridge::<$sig, DbUnified>::$call($($arg),*),
+			(false, false) => $bridge::<$sig, DbSeparate>::$call($($arg),*),
+			(true, true) => {
+				ensure_storage::<DbUnified>($ext);
+				$bridge::<$sig, EphemeralDb<DbUnified>>::$call($($arg),*)
+			},
+			(false, true) => {
+				ensure_storage::<DbSeparate>($ext);
+				$bridge::<$sig, EphemeralDb<DbSeparate>>::$call($($arg),*)
+			},
+		}
+	};
+}
+
+/// Shared body of every `apply_transaction` host-function version.
+#[cfg(feature = "std")]
+fn apply_transaction_inner(
+	ext: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	filter_only_failed_segments: bool,
+	net_intra_tx_utxos: bool,
+) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
+	with_bridge!(
+		Bridge<Signature>,
+		ext,
+		!is_onchain(ext),
+		apply_transaction(
+			ext,
+			state_key,
+			tx,
+			block_context,
+			filter_only_failed_segments,
+			net_intra_tx_utxos,
+			runtime_version,
+			/* skew_tblock */ false,
+		)
+	)
+}
+
+/// Shared body of both `validate_transaction` host-function versions.
+#[cfg(feature = "std")]
+fn validate_transaction_inner(
+	ext: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	max_weight: u64,
+	check_utxos: bool,
+) -> Result<Hash, LedgerApiError> {
+	// Off-chain this deserializes a caller-supplied transaction and caches its
+	// `VerifiedTransaction`, so it uses the ephemeral storage like the other transaction paths.
+	with_bridge!(
+		Bridge<Signature>,
+		ext,
+		!is_onchain(ext),
+		validate_transaction(
+			ext,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* get_tx_details */ false,
+			check_utxos,
+		)
+	)
+	.map(|(hash, _)| hash)
+}
+
+/// Shared body of both `validate_guaranteed_execution` host-function versions.
+#[cfg(feature = "std")]
+fn validate_guaranteed_execution_inner(
+	ext: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	check_utxos: bool,
+) -> Result<(), LedgerApiError> {
+	with_bridge!(
+		Bridge<Signature>,
+		ext,
+		!is_onchain(ext),
+		validate_guaranteed_execution(
+			ext,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* skew_tblock */ false,
+			check_utxos,
+		)
+	)
+}
+
+#[cfg(feature = "std")]
+use crate::ledger_8::Bridge as Bridge8;
+#[cfg(feature = "std")]
+type Signature8 = crate::ledger_8::TransactionSignature;
+
+/// Translate a ledger-8 `LedgerApiError` into its ledger-9 counterpart.
+///
+/// The two are distinct types declared identically in `ledger_8/types.rs` and
+/// `ledger_9/types.rs`, so their SCALE encodings are identical by construction. Round-tripping keeps this correct
+/// when a variant is added, where a hand-written match would need editing in
+/// lockstep. `ledger_8_error_encoding_matches_ledger_9` guards the assumption.
+#[cfg(feature = "std")]
+fn as_ledger_9_error(error: crate::ledger_8::types::LedgerApiError) -> LedgerApiError {
+	use parity_scale_codec::{Decode, Encode};
+	LedgerApiError::decode(&mut &error.encode()[..]).unwrap_or(LedgerApiError::HostApiError)
+}
+
+/// Serve a read-only ledger accessor from the ledger-8 bridge when `$state_key`
+/// is a ledger-8 arena root, by returning early from the enclosing host function.
+/// Falls through to the ledger-9 body otherwise.
+///
+/// For the ledger 8 -> 9 hard-fork, `system_version == 1` which means runtime code
+/// is applied during the upgrade block rather than queued to be applied in the next
+/// block. This code allows off-chain runtime calls to access historic block data
+/// using the correct ledger api despite the runtime code/chain data skew.
+///
+/// This will not be needed for future forks; see:
+/// - https://github.com/midnightntwrk/midnight-node/pull/1900
+///
+/// `$call` names the `Bridge` method and takes its arguments verbatim; only the
+/// storage-mode dispatch and the error translation are supplied here.
+#[cfg(feature = "std")]
+macro_rules! serve_pre_migration_v8_read {
+	($ext:expr, $state_key:expr, $call:ident($($arg:expr),* $(,)?)) => {
+		if crate::is_ledger_8_state_key($state_key) {
+			let result = with_bridge!(Bridge8<Signature8>, $ext, !is_onchain($ext), $call($($arg),*));
+			return result.map_err(as_ledger_9_error);
+		}
+	};
 }
 
 #[runtime_interface]
@@ -68,11 +228,12 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::post_block_update(*self, state_key, block_context)
-		} else {
-			Bridge::<Signature, DbSeparate>::post_block_update(*self, state_key, block_context)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			post_block_update(*self, state_key, block_context)
+		)
 	}
 
 	fn apply_post_block_update(
@@ -80,15 +241,12 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_post_block_update(
-				*self,
-				state_key,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_post_block_update(*self, state_key, block_context)
+		)
 	}
 
 	// Current Enabled Version
@@ -104,6 +262,18 @@ pub trait Ledger9Bridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * `skew_tblock` is always false here: the tblock correction only covers blocks produced
+	 * before the runtime upgrade that closed it, all of which are ledger 8 or older.
+	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
+	 *
+	 * v1 withholds contract events for every segment a partial-success transaction attempted,
+	 * succeeding ones included; v2 withholds only the failed ones. `System::Events` is in the
+	 * state trie, so blocks from pre-upgrade runtimes must keep replaying through v1.
+	 *
+	 * v3 also nets out a UTXO created and spent within the tx before the integrity check,
+	 * where v1 and v2 reject the tx. Runtimes bound to v2 keep that verdict on replay; a node
+	 * lacking v3 cannot import blocks from a runtime that needs it.
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -112,25 +282,53 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				true,
-				runtime_version,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				true,
-				runtime_version,
-			)
-		}
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ false,
+			/* net_intra_tx_utxos */ false,
+		)
+	}
+
+	#[version(2)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ true,
+			/* net_intra_tx_utxos */ false,
+		)
+	}
+
+	#[version(3)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ true,
+			/* net_intra_tx_utxos */ true,
+		)
 	}
 
 	fn apply_system_transaction(
@@ -140,25 +338,64 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_system_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_system_transaction(*self, state_key, tx, block_context)
+		)
+	}
+
+	fn apply_governance_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_governance_system_transaction(*self, state_key, tx, block_context)
+		)
+	}
+
+	fn apply_cnight_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_cnight_system_transaction(*self, state_key, tx, block_context)
+		)
+	}
+
+	fn apply_bridge_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_bridge_system_transaction(*self, state_key, tx, block_context)
+		)
 	}
 
 	/*
 	 * validate_transaction()
+	 *
+	 * v2 also runs the guaranteed-segment UTXO integrity check, so a tx
+	 * `apply_transaction` v3 would reject never enters the pool.
 	 */
 	fn validate_transaction(
 		&mut self,
@@ -169,29 +406,36 @@ pub trait Ledger9Bridge {
 		// The Runtime's max weight as of now
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
-		let (hash, _) = if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::validate_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				max_weight,
-				false,
-			)?
-		} else {
-			Bridge::<Signature, DbSeparate>::validate_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-				max_weight,
-				false,
-			)?
-		};
+		validate_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* check_utxos */ false,
+		)
+	}
 
-		Ok(hash)
+	#[version(2)]
+	fn validate_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+		// The Runtime's max weight as of now
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
+		validate_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			max_weight,
+			/* check_utxos */ true,
+		)
 	}
 
 	/*
@@ -199,6 +443,10 @@ pub trait Ledger9Bridge {
 	 *
 	 * Validates that the guaranteed part of a transaction will succeed.
 	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 *
+	 * v2 also runs the guaranteed-segment UTXO integrity check. A pre_dispatch rejection
+	 * decides block validity, so this is consensus state like `apply_transaction` v3, and
+	 * runtimes bound to v1 keep their verdict on replay.
 	 */
 	fn validate_guaranteed_execution(
 		&mut self,
@@ -207,23 +455,32 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-			)
-		}
+		validate_guaranteed_execution_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* check_utxos */ false,
+		)
+	}
+
+	#[version(2)]
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
+		validate_guaranteed_execution_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* check_utxos */ true,
+		)
 	}
 
 	/*
@@ -235,26 +492,65 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_contract_state(state_key, contract_address)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_contract_state(state_key, contract_address)
-		}
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_contract_state(state_key, contract_address)
+		);
+
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_contract_state(state_key, contract_address)
+		)
 	}
 
 	/*
 	 * get_decoded_transaction()
+	 *
+	 * Kept for old runtimes, which bind v1 forever (every historic-block `state_call`
+	 * executes that block's runtime). Bounded by the hardcoded ledger defaults, which
+	 * equal the on-chain limits at every historic block.
 	 */
-	// Current Enabled Version
 	fn get_decoded_transaction(
 		&mut self,
 		transaction_bytes: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Tx, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_decoded_transaction(transaction_bytes)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_decoded_transaction(transaction_bytes)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_decoded_transaction_v1(transaction_bytes)
+		)
+	}
+
+	/*
+	 * As v1, but stateful: rejects transactions above the on-chain
+	 * `transaction_byte_limit` before deserialization (so a future governance raise
+	 * isn't clamped by the v1 default), and caps decoded operations/identifiers at
+	 * `max_items` (the runtime's `MaxDecodedTxItems` pallet constant).
+	 */
+	// Current Enabled Version
+	#[version(2)]
+	fn get_decoded_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		transaction_bytes: PassFatPointerAndRead<&[u8]>,
+		max_items: u32,
+	) -> AllocateAndReturnByCodec<Result<Tx, LedgerApiError>> {
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_decoded_transaction(state_key, transaction_bytes, max_items)
+		);
+
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_decoded_transaction(state_key, transaction_bytes, max_items)
+		)
 	}
 
 	/*
@@ -266,11 +562,18 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_zswap_chain_state(state_key, contract_address)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_zswap_chain_state(state_key, contract_address)
-		}
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_zswap_chain_state(state_key, contract_address)
+		);
+
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_zswap_chain_state(state_key, contract_address)
+		)
 	}
 
 	/*
@@ -282,11 +585,18 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		beneficiary: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_unclaimed_amount(state_key, beneficiary)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_unclaimed_amount(state_key, beneficiary)
-		}
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_unclaimed_amount(state_key, beneficiary)
+		);
+
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_unclaimed_amount(state_key, beneficiary)
+		)
 	}
 
 	/*
@@ -298,11 +608,18 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		beneficiary: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_bridge_receiving_amount(state_key, beneficiary)
-		}
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_bridge_receiving_amount(state_key, beneficiary)
+		);
+
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_bridge_receiving_amount(state_key, beneficiary)
+		)
 	}
 
 	/*
@@ -313,11 +630,9 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_ledger_parameters(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_ledger_parameters(state_key)
-		}
+		serve_pre_migration_v8_read!(*self, state_key, get_ledger_parameters(state_key));
+
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_parameters(state_key))
 	}
 
 	/*
@@ -328,15 +643,26 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_c_to_m_bridge_min_amount(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_c_to_m_bridge_min_amount(state_key)
-		}
+		serve_pre_migration_v8_read!(*self, state_key, get_c_to_m_bridge_min_amount(state_key));
+
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_c_to_m_bridge_min_amount(state_key)
+		)
 	}
 
 	/*
 	 * Returns the expected fee to pay for a submitting a transaction
+	 *
+	 * No `serve_pre_migration_v8_read!` guard here, unlike the accessors above: a
+	 * cost estimate is always requested for a transaction about to be submitted,
+	 * and `get_ledger_version` reports ledger 9 as soon as the new code is live, so
+	 * `tx` is a v9-format transaction that ledger-8 code cannot deserialize anyway.
+	 * The same reasoning covers the transaction paths (`validate_transaction`,
+	 * `apply_transaction`, ...): at the skew block they concern v9 transactions, and
+	 * they resolve on their own one block later once the migration has run.
 	 */
 	fn get_transaction_cost(
 		&mut self,
@@ -345,21 +671,39 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		max_weight: u64,
 	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_transaction_cost(
-				state_key,
-				tx,
-				&block_context,
-				max_weight,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_transaction_cost(
-				state_key,
-				tx,
-				&block_context,
-				max_weight,
-			)
-		}
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_transaction_cost_v1(state_key, tx, &block_context, max_weight)
+		)
+	}
+
+	/*
+	 * As v1, but `tx` may also be a `SystemTransaction`: the version dispatches on
+	 * the serialized header tag. v1 could only price user transactions, which left
+	 * the cNIGHT dust replay migration with no way to ask what a
+	 * `CNightGeneratesDustUpdate` batch costs.
+	 *
+	 * A strict superset of v1 for `Transaction` bytes, and sp-runtime-interface
+	 * always binds the runtime to the highest version, so every existing caller
+	 * (`pallet_midnight::get_tx_weight` among them) moves here.
+	 */
+	// Current Enabled Version
+	#[version(2)]
+	fn get_transaction_cost(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			get_any_transaction_cost(state_key, tx, &block_context, max_weight)
+		)
 	}
 
 	/*
@@ -370,11 +714,9 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_zswap_state_root(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_zswap_state_root(state_key)
-		}
+		serve_pre_migration_v8_read!(*self, state_key, get_zswap_state_root(state_key));
+
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_zswap_state_root(state_key))
 	}
 
 	fn is_governance_allowed_system_tx(&mut self, system_tx: PassFatPointerAndRead<&[u8]>) -> bool {
@@ -392,11 +734,9 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::get_ledger_state_root(state_key)
-		} else {
-			Bridge::<Signature, DbSeparate>::get_ledger_state_root(state_key)
-		}
+		serve_pre_migration_v8_read!(*self, state_key, get_ledger_state_root(state_key));
+
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_ledger_state_root(state_key))
 	}
 
 	fn construct_cnight_generates_dust_event(
@@ -517,13 +857,26 @@ pub trait Ledger9Bridge {
 		// runs in the Executive migrations tuple, before pallet_midnight's
 		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.
 		// `set_default_storage` is idempotent — a no-op if the pre-fork ledger-8
-		// blocks already set it (v8 and v9 share the same storage backend).
+		// blocks already set it (v8 and v9 share the same parity-db arena).
+		use crate::host_api::migration_8_to_9::migrate_state_v8_to_v9;
+
+		let ephemeral = !is_onchain(*self);
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbUnified>(state_key)
+			if ephemeral {
+				ensure_storage::<DbUnified>(*self);
+				migrate_state_v8_to_v9::<EphemeralDb<DbUnified>>(*self, state_key)
+			} else {
+				migrate_state_v8_to_v9::<DbUnified>(*self, state_key)
+			}
 		} else {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbSeparate>(state_key)
+			if ephemeral {
+				ensure_storage::<DbSeparate>(*self);
+				migrate_state_v8_to_v9::<EphemeralDb<DbSeparate>>(*self, state_key)
+			} else {
+				migrate_state_v8_to_v9::<DbSeparate>(*self, state_key)
+			}
 		}
 	}
 
@@ -547,6 +900,10 @@ pub trait Ledger9Bridge {
 		const GENESIS_STATE_UNDEPLOYED: &[u8] =
 			include_bytes!("../../../res/genesis/genesis_state_undeployed.mn");
 		use std::sync::OnceLock;
+
+		// Benchmarks run off-chain, but the weights they produce are for block execution.
+		let _ = self.register_extension(midnight_primitives_ledger::LedgerOnchainExt::default());
+
 		static INIT: OnceLock<()> = OnceLock::new();
 		INIT.get_or_init(|| {
 			let mut dir = std::env::temp_dir();
@@ -558,5 +915,38 @@ pub trait Ledger9Bridge {
 				10_000,
 			);
 		});
+	}
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+	use super::as_ledger_9_error;
+	use crate::{ledger_8::types as v8, ledger_9::types as v9};
+
+	/// `as_ledger_9_error` relies on the two versions' `LedgerApiError` sharing a
+	/// SCALE encoding, which holds because `ledger_8/types.rs` and
+	/// `ledger_9/types.rs` declare it identically. Pin that down — including a nested payload and
+	/// the last variant, which is where a divergence would first show up — so a
+	/// future edit to one version's enum fails here rather than silently turning
+	/// every pre-migration read error into `HostApiError`.
+	#[test]
+	fn ledger_8_error_encoding_matches_ledger_9() {
+		let cases = [
+			(v8::LedgerApiError::NoLedgerState, v9::LedgerApiError::NoLedgerState),
+			(v8::LedgerApiError::ContractNotPresent, v9::LedgerApiError::ContractNotPresent),
+			(v8::LedgerApiError::BeneficiaryNotFound, v9::LedgerApiError::BeneficiaryNotFound),
+			(
+				v8::LedgerApiError::Deserialization(v8::DeserializationError::TypedArenaKey),
+				v9::LedgerApiError::Deserialization(v9::DeserializationError::TypedArenaKey),
+			),
+			(
+				v8::LedgerApiError::Serialization(v8::SerializationError::LedgerParameters),
+				v9::LedgerApiError::Serialization(v9::SerializationError::LedgerParameters),
+			),
+		];
+
+		for (from, expected) in cases {
+			assert_eq!(as_ledger_9_error(from.clone()), expected, "mistranslated {from:?}");
+		}
 	}
 }

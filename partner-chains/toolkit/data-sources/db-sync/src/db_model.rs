@@ -1,4 +1,4 @@
-use crate::db_datum::DbDatum;
+use crate::db_datum::{DbDatum, DbDatumIfValid};
 use crate::{DataSourceError, SqlxError};
 use bigdecimal::ToPrimitive;
 use cardano_serialization_lib::PlutusData;
@@ -11,8 +11,9 @@ use sidechain_domain::{
 };
 use sqlx::{
 	Decode, PgPool, Pool, Postgres, database::Database, error::BoxDynError, postgres::PgTypeInfo,
-	types::JsonValue,
 };
+#[cfg(feature = "bridge")]
+use sqlx::{ValueRef, types::JsonValue};
 use std::{cell::OnceCell, str::FromStr, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -145,6 +146,7 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
+	#[sqlx(try_from = "DbDatumIfValid")]
 	pub datum: Option<DbDatum>,
 	pub tx_inputs: Vec<String>,
 }
@@ -434,7 +436,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index) ORDER BY consumes_tx.hash, consumes_tx_in.tx_out_index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
@@ -483,7 +485,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index) ORDER BY consumes_tx.hash, consumes_tx_out.index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
@@ -596,6 +598,42 @@ mod tests {
 	}
 }
 
+/// Decodes transaction metadata that is NULL or not valid JSON as `None`
+///
+/// Anyone can pay to the illiquid circulating supply address and attach whatever metadata they
+/// like, so one unreadable metadatum must not fail the whole query. In particular, serde_json
+/// rejects JSON nested 128 levels or deeper, which a metadatum of 128 nested lists reaches.
+#[cfg(feature = "bridge")]
+pub(crate) struct C2mMetadataIfValid(Option<JsonValue>);
+
+#[cfg(feature = "bridge")]
+impl sqlx::Type<Postgres> for C2mMetadataIfValid {
+	fn type_info() -> <Postgres as Database>::TypeInfo {
+		<JsonValue as sqlx::Type<Postgres>>::type_info()
+	}
+
+	fn compatible(ty: &<Postgres as Database>::TypeInfo) -> bool {
+		<JsonValue as sqlx::Type<Postgres>>::compatible(ty)
+	}
+}
+
+#[cfg(feature = "bridge")]
+impl<'r> Decode<'r, Postgres> for C2mMetadataIfValid {
+	fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+		if value.is_null() {
+			return Ok(Self(None));
+		}
+		Ok(Self(<JsonValue as Decode<Postgres>>::decode(value).ok()))
+	}
+}
+
+#[cfg(feature = "bridge")]
+impl From<C2mMetadataIfValid> for Option<JsonValue> {
+	fn from(metadata: C2mMetadataIfValid) -> Self {
+		metadata.0
+	}
+}
+
 #[cfg(feature = "bridge")]
 #[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
 pub(crate) struct BridgeTx {
@@ -604,6 +642,10 @@ pub(crate) struct BridgeTx {
 	pub(crate) tx_hash: TxHash,
 	/// Value of transaction metadata with a specific C-to-M key.
 	/// Not the full metadata JSON. Db-sync metadata uses a separate row per metadata key.
+	///
+	/// Metadata that cannot be decoded is read as `None`, which makes the transfer's recipient
+	/// [sp_partner_chains_bridge::TransferRecipient::Invalid], same as any other unusable value.
+	#[sqlx(try_from = "C2mMetadataIfValid")]
 	pub(crate) c2m_metadata: Option<JsonValue>,
 	/// Sum of bridge token amounts in inputs at bridge address for given tx
 	pub(crate) bridge_in: NativeTokenAmount,
@@ -631,8 +673,19 @@ pub(crate) type TxOrderingKey = (BlockNumber, TxIndexInBlock);
 #[cfg(feature = "bridge")]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum ResolvedBridgeDataCheckpoint {
-	Tx { block_number: BlockNumber, tx_ix: TxIndexInBlock },
-	Block { number: BlockNumber },
+	Tx {
+		block_number: BlockNumber,
+		tx_ix: TxIndexInBlock,
+	},
+	/// A transaction that has to be returned again, without its reserve transfer, which has
+	/// already been processed by the runtime.
+	TxReserveTransfer {
+		block_number: BlockNumber,
+		tx_ix: TxIndexInBlock,
+	},
+	Block {
+		number: BlockNumber,
+	},
 }
 
 #[cfg(feature = "bridge")]
@@ -641,6 +694,7 @@ impl ResolvedBridgeDataCheckpoint {
 		match self {
 			ResolvedBridgeDataCheckpoint::Block { number } => *number,
 			ResolvedBridgeDataCheckpoint::Tx { block_number, .. } => *block_number,
+			ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, .. } => *block_number,
 		}
 	}
 }
@@ -683,12 +737,12 @@ pub(crate) async fn get_bridge_txs(
 	native_token: Asset,
 	checkpoint: ResolvedBridgeDataCheckpoint,
 	to_block: BlockNumber,
-	max_transfers: Option<u32>,
+	max_txs: Option<u32>,
 ) -> Result<Vec<BridgeTx>, SqlxError> {
 	use partner_chains_plutus_data::bridge::TOKEN_TRANSFER_METADATUM_KEY;
 	use sqlx::QueryBuilder;
 
-	let max_rows = max_transfers.as_ref().map(ToString::to_string).unwrap_or("null".into());
+	let max_rows = max_txs.as_ref().map(ToString::to_string).unwrap_or("null".into());
 
 	let checkpoint_limit = match checkpoint {
 		ResolvedBridgeDataCheckpoint::Block { number } => {
@@ -696,6 +750,11 @@ pub(crate) async fn get_bridge_txs(
 		},
 		ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix } => {
 			format!("(block.block_no, tx.block_index) > ({}, {})", block_number.0, tx_ix.0)
+		},
+		// The transaction itself may still have its ICS transfer left to process, so it is
+		// included. Its reserve transfer is filtered out by the caller.
+		ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, tx_ix } => {
+			format!("(block.block_no, tx.block_index) >= ({}, {})", block_number.0, tx_ix.0)
 		},
 	};
 

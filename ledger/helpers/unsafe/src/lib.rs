@@ -1,0 +1,96 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Ledger transaction/wallet-building apparatus used exclusively by
+//! `midnight-node-toolkit` (the CLI and transaction generator) and by test
+//! tooling that borrows it as a dev-dependency (`tests/e2e`, `pallets/midnight`'s
+//! and `midnight-node-ledger`'s own unit tests).
+//!
+//! This crate builds transactions and wallets by hand from raw inputs, which can
+//! genuinely panic on malformed input — unlike the node's real block-execution
+//! path in `midnight-node-ledger`. It sits alongside `midnight-node-ledger-helpers`
+//! (the shared/production ledger glue) and depends on it for the version-independent
+//! passthrough types (`BlockContext`, `WalletSeed`, `fork::raw_block_data`, etc.).
+
+pub mod extract_tx_with_context;
+
+/// Typed GraphQL/WebSocket client for the Midnight indexer, plus the sync-progress accounting and
+/// concurrency/timeout policy layered over its subscriptions.
+///
+/// Version-independent (hex blobs, not ledger types), so `ledger_8` and `ledger_9` share it, as
+/// with `CoinSelectionStrategy` below. Only decoding the blobs into wallet updates is
+/// per-generation, in each `ledger_N::context::indexer_context`.
+pub mod indexer_client;
+pub use indexer_client::{IndexerClient, IndexerClientError, WalletSyncState};
+
+/// Process-wide counters of replayed transactions that did not fully apply,
+/// shared by every ledger generation's `LedgerContext`.
+pub mod replay_stats {
+	use std::sync::atomic::AtomicU64;
+
+	pub static PARTIALLY_FAILED_TXS: AtomicU64 = AtomicU64::new(0);
+	pub static FAILED_TXS: AtomicU64 = AtomicU64::new(0);
+}
+
+/// Strategy for ordering candidate coins/UTXOs during input selection.
+///
+/// Defined at the crate root (not inside `ledger_8`/`ledger_9`) so that all versions
+/// see the same type, allowing it to flow through the toolkit's version-dispatched
+/// builders unchanged.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CoinSelectionStrategy {
+	/// Use the largest coins/UTXOs first. Minimizes the number of inputs.
+	#[default]
+	LargestFirst,
+	/// Use the smallest coins/UTXOs first. Consolidates dust.
+	SmallestFirst,
+}
+
+/// An untagged-serialized zswap `WalletState`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZswapWalletStateRaw(pub Vec<u8>);
+
+/// An untagged-serialized `DustLocalState`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DustLocalStateRaw(pub Vec<u8>);
+
+/// Where a verified DUST fast sync left each spend chain: the snapshot block, and every
+/// untagged-serialized `QualifiedDustOutput` the wallet held unspent there.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DustFrontierRaw {
+	pub height: u64,
+	pub block_hash: [u8; 32],
+	pub heads: Vec<Vec<u8>>,
+	/// A dust ledger-event id at or before the first event after `height`, if one was known.
+	pub event_cursor: Option<u64>,
+}
+
+/// An unshielded UTXO as its untagged-serialized `Utxo` plus its creation time.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UnshieldedUtxoRaw {
+	pub utxo: Vec<u8>,
+	pub ctime_secs: u64,
+}
+
+/// Struct to store serialized verifying key bytes
+/// To be deserialized when constructing ContractOperations
+pub struct ContractVerifyingKeyBytes(pub Vec<u8>);
+
+pub mod ledger_8;
+pub mod ledger_9;
+
+pub use ledger_9 as latest;
+
+pub mod fork;
+
+pub use latest::*;

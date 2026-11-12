@@ -1,9 +1,22 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::api::cardano::CardanoClient;
 use crate::config::{NodeClientSettings, OgmiosClientSettings};
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
     DefaultDB, DustWallet, LedgerParameters, WalletSeed, deserialize, serialize_untagged,
 };
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
@@ -66,6 +79,9 @@ pub struct AriadneParametersResponse {
 /// C-to-M bridge data from all `Bridge::handle_transfers` calls of one block.
 #[derive(Debug)]
 pub struct C2MBridgePalletCalls {
+    /// Number of the block these calls and events were observed in. Lets callers
+    /// resume a scan at the next block without risking skipping one.
+    pub block_number: u64,
     /// `C2MBridge` pallet specific events emitted in the block.
     pub c2m_bridge_events: Vec<mn_meta::c2m_bridge::Event>,
     /// Transfers passed as argument to the `Bridge::handle_transfers` calls.
@@ -477,7 +493,7 @@ impl MidnightClient {
         }
     }
 
-    /// Read `cNightObservation.nextCardanoPosition.block_number` at a
+    /// Read `cNightObservation.nextCardanoCursor.position.block_number` at a
     /// specific Midnight block (by number). Used by the past-scan path
     /// to binary-search the watermark across history.
     async fn read_next_cardano_position_at(
@@ -493,7 +509,7 @@ impl MidnightClient {
         const MAX_ATTEMPTS: u32 = 5;
         let addr = mn_meta::storage()
             .c_night_observation()
-            .next_cardano_position();
+            .next_cardano_cursor();
         for attempt in 1..=MAX_ATTEMPTS {
             let result = timeout(PER_ATTEMPT_TIMEOUT, async {
                 let at = self.online_client().at_block(midnight_block).await?;
@@ -504,7 +520,7 @@ impl MidnightClient {
                     .map(|v| v.decode())
                     .transpose()?;
                 Ok::<_, Box<dyn std::error::Error>>(
-                    value.map(|p| p.block_number as u64).unwrap_or(0),
+                    value.map(|c| c.position.block_number as u64).unwrap_or(0),
                 )
             })
             .await;
@@ -765,6 +781,7 @@ impl MidnightClient {
                 }
 
                 let result = C2MBridgePalletCalls {
+                    block_number,
                     c2m_bridge_events,
                     transfers,
                     system_transactions_applied,

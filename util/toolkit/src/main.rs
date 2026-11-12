@@ -45,8 +45,13 @@ impl fmt::Display for PanicError {
 impl Error for PanicError {}
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	// Both `ring` (via sqlx) and `aws-lc-rs` (via reqwest) are compiled in, so rustls can't
+	// auto-select a default provider and panics the first time one is needed (e.g. the indexer
+	// WS/TLS client). Pinning is idempotent, so a pre-installed provider is fine.
+	let _ = rustls::crypto::ring::default_provider().install_default();
+
 	let result = panic::catch_unwind(AssertUnwindSafe(|| {
-		tokio::runtime::Builder::new_current_thread()
+		tokio::runtime::Builder::new_multi_thread()
 			.enable_all()
 			.build()
 			.unwrap()

@@ -1,6 +1,10 @@
 name: "Deploy and Test Against Local Environment"
 description: "Deploys a local environment and runs end-to-end tests."
 inputs:
+  node-git-token:
+    description: "Token for fetching private cargo git dependencies (NODE_GIT_TOKEN)"
+    required: false
+    default: ""
   sha:
     description: "SHA to checkout"
     required: true
@@ -17,8 +21,9 @@ inputs:
     description: "Test set to run (premerge or postmerge)"
     required: true
   ghcr-password:
-    description: "Password for Docker login to GHCR"
-    required: true
+    description: "Password for Docker login to GHCR (empty on fork PRs, whose images come from load-fork-images)"
+    required: false
+    default: ""
   dockerhub-username:
     description: "Docker Hub username for authenticated public-image pulls (optional; empty = anonymous, rate-limited)"
     required: false
@@ -40,14 +45,19 @@ inputs:
     description: "Wallet indexer image reference"
     required: true
 
+  ci-execution:
+    description: "Run identity that prevents cached integration-test execution"
+    required: false
+    default: ''
+
 outputs: {}
 
 runs:
   using: "composite"
   steps:
-    - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+    - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
       with:
-        version: v0.8.16
+        version: v0.8.18
         use-cache: false
 
     # Match the tls_enabled: false setting the other self-hosted earthly jobs apply
@@ -64,6 +74,7 @@ runs:
     # GHCR auth for earthly's `--pull` of the private node / indexer / toolkit images
     # into the nested DinD daemon (writes to the per-slot DOCKER_CONFIG the caller set).
     - name: Docker Login
+      if: inputs.ghcr-password != ''
       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
       with:
         registry: ghcr.io
@@ -91,6 +102,8 @@ runs:
     - name: Deploy + test against local environment (nested dockerd)
       shell: bash
       env:
+        CI_EXECUTION: ${{ inputs.ci-execution }}
+        GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         NODE_IMAGE: ${{ inputs.image }}
         TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
         INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
@@ -98,12 +111,17 @@ runs:
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
         DOCKERHUB_USER: ${{ inputs.dockerhub-username }}
         DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
+        NODE_GIT_TOKEN: ${{ inputs.node-git-token }}
       run: |
+        CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+        test -n "$CACHE_KEY"
         . ./.envrc
-        earthly -P \
+        earth -P \
           --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
           --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
           +local-env-ci \
+          --CI_EXECUTION="$CI_EXECUTION" \
+          --CACHE_KEY="$CACHE_KEY" \
           --NODE_IMAGE="$NODE_IMAGE" \
           --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
           --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \

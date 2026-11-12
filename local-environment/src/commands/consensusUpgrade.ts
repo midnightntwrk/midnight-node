@@ -25,24 +25,22 @@ import { ensureRunningAndConnect } from "./runtimeUpgradeShared";
 
 /**
  * The `pallet-consensus-engine` governance calls, keyed by their camelCased
- * extrinsic name. Both are gated by `EnsureRoot`, so they cannot be submitted
+ * extrinsic name. They are gated by `EnsureRoot`, so they cannot be submitted
  * as signed transactions — they must be dispatched as root via a
  * federated-authority motion.
  */
-type ConsensusAction = "armBabe" | "scheduleFlip";
+type ConsensusAction = "scheduleFlip";
 
 /**
- * The `EngineState` variant each action transitions *from*. The pallet treats a
- * call as a no-op from any other state, so we refuse to open a motion unless the
- * engine is here (and gathering collective votes would be wasted).
+ * The `EngineState` variant each action transitions *from*. The pallet rejects a
+ * call from any other state, so we refuse to open a motion unless the engine is
+ * here (gathering collective votes would be wasted).
  */
 const REQUIRED_STATE: Record<ConsensusAction, string> = {
-  armBabe: "Aura",
-  scheduleFlip: "ArmedBabe",
+  scheduleFlip: "Aura",
 };
 
 const EXPECTED_STATE: Record<ConsensusAction, string> = {
-  armBabe: "ArmedBabe",
   scheduleFlip: "ScheduledFlip",
 };
 
@@ -95,9 +93,8 @@ async function consensusUpgrade(
 
     await executeFederatedMotion(api, innerCall, signers);
 
-    // The consensus-engine calls succeed unconditionally but only transition
-    // when the engine is in the expected state, so surface the resulting state
-    // rather than assume the flip took effect.
+    // A motion can close successfully while the inner call fails, so surface the
+    // resulting state rather than assume the transition took effect.
     const after = await readEngineState(api);
     console.log(`Consensus engine state after: ${after.human}`);
     console.log(`consensusEngine.${action} motion completed.`);
@@ -110,13 +107,6 @@ async function consensusUpgrade(
   } finally {
     await disconnectApi(api, provider);
   }
-}
-
-export async function consensusUpgradeArmBabe(
-  namespace: string,
-  opts: GovernanceCallOptions,
-) {
-  await consensusUpgrade(namespace, opts, "armBabe");
 }
 
 export async function consensusUpgradeScheduleFlip(

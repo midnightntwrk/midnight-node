@@ -17,16 +17,17 @@ frame-system.workspace = true
 log.workspace = true
 pallet-aura.workspace = true
 pallet-babe.workspace = true
+pallet-session.workspace = true
 sp-consensus-aura.workspace = true
 sp-consensus-babe.workspace = true
 sp-consensus-slots.workspace = true
+sp-runtime.workspace = true
 midnight-primitives-consensus-engine.workspace = true
 
 [dev-dependencies]
 pallet-timestamp.workspace = true
 sp-core.workspace = true
 sp-io.workspace = true
-sp-runtime.workspace = true
 
 [features]
 default = ["std"]
@@ -36,10 +37,12 @@ std = [
     "frame-system/std",
     "pallet-aura/std",
     "pallet-babe/std",
+    "pallet-session/std",
     "scale-info/std",
     "sp-consensus-aura/std",
     "sp-consensus-babe/std",
     "sp-consensus-slots/std",
+    "sp-runtime/std",
     "midnight-primitives-consensus-engine/std",
 ]
 try-runtime = [
@@ -47,6 +50,8 @@ try-runtime = [
     "frame-system/try-runtime",
     "pallet-aura/try-runtime",
     "pallet-babe/try-runtime",
+    "pallet-session/try-runtime",
+    "sp-runtime/try-runtime",
 ]
 
 [package.metadata.cargo-shear]

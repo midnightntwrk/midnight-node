@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Host-side v8 -> v9 ledger state translation, driven by
-//! [`crate::state_translation_v8_to_v9::StateTranslationTable`].
+//! Host-side v8 -> v9 ledger state translation, driven by the ledger team's
+//! [`v8_to_v9_state_translation::StateTranslationTable`].
 //!
 //! The on-chain pallet stores only the arena root of the ledger state
 //! (`pallet_midnight::StateKey`, a `tagged_serialize`d `TypedArenaKey<Ledger>`);
@@ -26,18 +26,21 @@
 //! translating it into a v9 `LedgerState`, re-persists it, and returns the new v9
 //! arena root for the pallet to store back into `StateKey`.
 //!
-//! v8 and v9 share one storage crate (`ledger-storage-ledger-8`,
-//! midnight-storage 2.0.1) and hence one arena, so the translation reads and
-//! writes the same parity-db instance the pre-fork ledger-8 blocks populated.
+//! v8 (`ledger-storage-ledger-8`, midnight-storage 2.x) and v9
+//! (`ledger-storage-ledger-9`, midnight-storage 3.x) are distinct storage crates
+//! but share one `midnight-storage-core`, hence one arena: the translation reads
+//! and writes the same parity-db instance the pre-fork ledger-8 blocks populated.
+//! The translation machinery lives on the v9 side.
 
 use crate::ledger_8::api::Ledger as Ledger8;
 use crate::ledger_9::api::Ledger as Ledger9;
 use crate::ledger_9::types::{DeserializationError, LedgerApiError, SerializationError};
-use midnight_node_ledger_helpers::state_translation_v8_to_v9::StateTranslationTable;
+use v8_to_v9_state_translation::StateTranslationTable;
 
 use base_crypto::cost_model::CostDuration;
-use ledger_storage_ledger_8 as storage;
+use ledger_storage_ledger_9 as storage;
 use midnight_serialize::{tagged_deserialize, tagged_serialize};
+use sp_externalities::Externalities;
 use storage::{
 	arena::{Sp, TypedArenaKey},
 	db::DB,
@@ -73,6 +76,7 @@ const MAX_STEPS: usize = 100_000;
 /// If `state_key_v8` already references a ledger-9 state this is a no-op: it
 /// returns the key unchanged with zero cost (see the idempotency guard below).
 pub fn migrate_state_v8_to_v9<D: DB>(
+	ext: &mut dyn Externalities,
 	state_key_v8: &[u8],
 ) -> Result<(Vec<u8>, u64), LedgerApiError> {
 	let t_total = std::time::Instant::now();
@@ -161,8 +165,13 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 	let t_persist = std::time::Instant::now();
 	let ledger9 = Ledger9::new((*state9).clone());
 	let mut sp9: Sp<Ledger9<D>, D> = default_storage::<D>().arena.alloc(ledger9);
+	// The root is serialized after `persist`, which can change its key form, so the ephemeral
+	// path persists too (into the ephemeral storage only) and drops the root again below.
 	sp9.persist();
-	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+	let onchain = crate::ephemeral::is_onchain(ext);
+	if onchain {
+		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+	}
 	log::debug!(
 		target: LOG_TARGET,
 		"[perf] migrate_state_v8_to_v9 persist+flush took {:?}",
@@ -175,6 +184,10 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 		log::error!(target: LOG_TARGET, "failed to serialize v9 state key: {e:?}");
 		LedgerApiError::Serialization(SerializationError::TypedArenaKey)
 	})?;
+	if !onchain {
+		sp9.unpersist();
+		crate::ephemeral::retain(ext, &bytes, sp9);
+	}
 
 	log::debug!(target: LOG_TARGET, "[perf] migrate_state_v8_to_v9 took {:?}", t_total.elapsed());
 	Ok((bytes, consumed_cost_ps))
@@ -183,7 +196,107 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use ledger_storage_ledger_8::db::InMemoryDB;
+	use ledger_storage_ledger_9::db::InMemoryDB;
+	use midnight_serialize::Tagged;
+	use std::borrow::Cow;
+	use std::ops::Deref;
+	use storage::state_translation::TranslationTable;
+
+	/// Drive the imported translation table to completion over an in-memory arena.
+	fn translate_to_completion(v8: LedgerState8<InMemoryDB>) -> LedgerState9<InMemoryDB> {
+		let tl = TypedTranslationState::<
+			LedgerState8<InMemoryDB>,
+			LedgerState9<InMemoryDB>,
+			StateTranslationTable,
+			InMemoryDB,
+		>::start(Sp::new(v8))
+		.expect("failed to start translation");
+
+		let finished = tl
+			.run(CostDuration::from_picoseconds(1_000_000_000_000))
+			.expect("translation failed");
+
+		finished
+			.result()
+			.expect("failed to get result")
+			.expect("translation did not complete")
+			.deref()
+			.clone()
+	}
+
+	/// Every `TranslationId` a table entry requires must itself be in the table,
+	/// or translation errors at runtime the first time the entry is needed.
+	#[test]
+	fn table_is_closed() {
+		<StateTranslationTable as TranslationTable<InMemoryDB>>::assert_closure();
+	}
+
+	/// The imported `TABLE` hardcodes tag string literals, and upstream validates them
+	/// against *its* dependency pins — not this workspace's `[patch.crates-io]` rc pins.
+	/// If a tag on either the v8 or v9 side drifts (e.g. an rc bump changes a `#[tag]`),
+	/// the literal no longer matches what `T::tag()` produces here and the migration
+	/// silently mis-dispatches. Rebuild every expected ID from the node's actual crate
+	/// types and compare.
+	#[test]
+	fn table_tags_match_types() {
+		use ledger_storage_ledger_8::merkle_patricia_trie::{MerklePatriciaTrie, Node};
+		use storage::merkle_patricia_trie::{
+			MerklePatriciaTrie as MerklePatriciaTrie9, Node as Node9,
+		};
+		use storage::storable::SizeAnn;
+
+		type V8Ann = mn_ledger_8::annotation::NightAnn;
+		type V9Ann = mn_ledger_9::annotation::NightAnn;
+		type V8Contract = onchain_state_ledger_8::state::ContractState<InMemoryDB>;
+		type V9Contract = onchain_state_ledger_9::state::ContractState<InMemoryDB>;
+
+		let expected: Vec<(Cow<'static, str>, Cow<'static, str>)> = vec![
+			(LedgerState8::<InMemoryDB>::tag(), LedgerState9::<InMemoryDB>::tag()),
+			(
+				mn_ledger_8::structure::LedgerParameters::tag(),
+				mn_ledger_9::structure::LedgerParameters::tag(),
+			),
+			(V8Contract::tag(), V9Contract::tag()),
+			(
+				MerklePatriciaTrie::<V8Contract, InMemoryDB, V8Ann>::tag(),
+				MerklePatriciaTrie9::<V9Contract, InMemoryDB, V9Ann>::tag(),
+			),
+			(
+				Node::<V8Contract, InMemoryDB, V8Ann>::tag(),
+				Node9::<V9Contract, InMemoryDB, V9Ann>::tag(),
+			),
+			(u128::tag(), u128::tag()),
+			(
+				MerklePatriciaTrie::<u128, InMemoryDB, SizeAnn>::tag(),
+				MerklePatriciaTrie9::<u128, InMemoryDB, V9Ann>::tag(),
+			),
+			(Node::<u128, InMemoryDB, SizeAnn>::tag(), Node9::<u128, InMemoryDB, V9Ann>::tag()),
+		];
+
+		let actual: Vec<_> = <StateTranslationTable as TranslationTable<InMemoryDB>>::TABLE
+			.iter()
+			.map(|(id, _)| (id.0.clone(), id.1.clone()))
+			.collect();
+
+		assert_eq!(actual, expected);
+	}
+
+	/// The translation wipes dust: whatever generation/utxo state v8 held, the v9 side
+	/// comes out as the empty state genesis starts from. `pallet_cnight_observation`'s
+	/// dust re-apply migration is built entirely on this being true, and upstream has no
+	/// test for it.
+	#[test]
+	fn dust_state_is_wiped() {
+		let mut v8 = LedgerState8::<InMemoryDB>::new("test-network");
+		let mut dust = (*v8.dust).clone();
+		dust.generation.generating_tree_first_free = 7;
+		dust.utxo.commitments_first_free = 3;
+		v8.dust = Sp::new(dust);
+
+		let v9 = translate_to_completion(v8);
+
+		assert_eq!(*v9.dust, mn_ledger_9::dust::DustState::default());
+	}
 
 	/// Dev-only: verify that seeding a v8 genesis blob with *this* crate's
 	/// ledger_8 `Ledger` wrapper reproduces the exact arena root a ledger-8 node

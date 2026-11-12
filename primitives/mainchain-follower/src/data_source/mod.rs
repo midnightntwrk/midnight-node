@@ -17,7 +17,6 @@
 
 pub mod candidates_data_source;
 pub mod cnight_observation;
-pub mod cnight_observation_bulk;
 pub mod cnight_observation_mock;
 pub mod federated_authority_observation;
 pub mod federated_authority_observation_mock;
@@ -27,11 +26,7 @@ pub use candidates_data_source::CandidatesDataSourceImpl;
 pub use candidates_data_source::cached::CandidateDataSourceCached;
 pub use candidates_data_source::get_epoch_for_block_hash;
 pub use cnight_observation::{
-	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
-	TxPosition,
-};
-pub use cnight_observation_bulk::{
-	BulkCacheConfig, BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE, bulk_pull,
+	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl,
 };
 pub use cnight_observation_mock::CNightObservationDataSourceMock;
 pub use federated_authority_observation::FederatedAuthorityObservationDataSourceImpl;

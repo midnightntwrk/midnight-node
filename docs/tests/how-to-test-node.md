@@ -146,12 +146,13 @@ A release isn't just one Docker image. Each tag (e.g. `node-1.0.0`) produces:
   produced it. Verify with
   `gh attestation verify <file> --repo midnightntwrk/midnight-node`.
 
-The WASM is built with **srtool** (`paritytech/srtool`, pinned Rust + srtool
-versions for determinism — see `Earthfile +srtool-build` and
-`.github/workflows/srtool-build.yml`). The whole point is that anyone can
-re-run the build from the tag and get **byte-identical** WASM, then verify
-against `SHA256SUMS-srtool`. The same WASM can be re-used to deterministically
-rebuild chainspecs (`DETERMINISTIC=true` path in the Earthfile).
+The WASM is built with **srtool** (`ghcr.io/shieldedtech/srtool`, our fork of
+`paritytech/srtool`; pinned Rust + srtool versions for determinism — see
+`Earthfile +srtool-build` and `.github/workflows/srtool-build.yml`). The whole
+point is that anyone can re-run the build from the tag and get
+**byte-identical** WASM, then verify against `SHA256SUMS-srtool`. The same WASM
+can be re-used to deterministically rebuild chainspecs (`DETERMINISTIC=true`
+path in the Earthfile).
 
 Why this matters for SDETs:
 
@@ -330,8 +331,8 @@ We **don't run the Rust e2e suite** automatically against these. We do support
 - `npm run full-upgrade:<network>` — image + governance, sequentially.
 
 For the exact invocations — required env vars (`NODE_IMAGE`, `NEW_NODE_IMAGE`)
-and CLI options (`--wasm`, `--council-uris`, `--technical-uris`,
-`--executor-uri`, `--from-snapshot`) — see
+and CLI options (`--wasm` / `--wasm-from-image`, `--council-uris`,
+`--technical-uris`, `--executor-uri`, `--from-snapshot`) — see
 [`local-environment/README.md`](../../local-environment/README.md).
 
 Networks other than `dev` require AWS access to rebuild genesis — ping the node team.

@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::config::{self, Constants, OgmiosClientSettings};
 use aiken_contracts_lib::{
     FederatedOpsCandidate, GovernanceMember, build_federated_ops_datum,
@@ -63,6 +76,20 @@ pub fn is_inputs_spent_error(e: &OgmiosClientError) -> bool {
     s.contains("unknown utxo reference")
         || s.contains("unknownoutputreferences")
         || s.contains("all inputs are spent")
+}
+
+/// Detects the ledger rejecting a stake-credential registration because the
+/// credential already exists — expected on every run after the first against a
+/// given Cardano network.
+pub fn is_already_registered_error(e: &OgmiosClientError) -> bool {
+    let OgmiosClientError::RequestError(s) = e else {
+        return false;
+    };
+    let s = s.to_lowercase();
+    s.contains("servererror(3145)")
+        || s.contains("already known credential")
+        || s.contains("re-register")
+        || s.contains("already registered")
 }
 
 /// Compute a tx id locally, for when a submission was accepted but its
@@ -849,6 +876,205 @@ impl CardanoClient {
         }
     }
 
+    /// Registers the mapping validator script's own stake credential.
+    ///
+    /// A credential must be registered before a transaction can withdraw from
+    /// it, and the validator only allows the zero-mint spend that updates a
+    /// registration in place when a withdrawal from its own credential is
+    /// present. Registration itself needs no script witness — the validator's
+    /// `Publishing { RegisterCredential }` branch exists precisely to permit
+    /// it — so only the payment key signs here.
+    ///
+    /// The credential is network-wide state, so this succeeds once per Cardano
+    /// network and is rejected afterwards with "already registered" — see
+    /// [`is_already_registered_error`]. Any other failure means the credential
+    /// does not exist and every later zero-mint spend will be rejected, so
+    /// callers must treat it as fatal.
+    ///
+    /// Submit this before anything else spends from the wallet: helpers such as
+    /// `mint_tokens` select their own input by max lovelace and will happily
+    /// consume the UTXO reserved for this transaction.
+    pub async fn register_mapping_validator_stake_credential(
+        &self,
+        tx_in: &OgmiosUtxo,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let payment_addr = self.address_as_bech32();
+        let reward_address = config::mapping_validator_reward_address();
+        tracing::info!("Registering mapping validator stake credential: {reward_address}");
+
+        let mut tx_builder = self.new_tx_builder();
+        tx_builder
+            .network(self.network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(tx_in.transaction.id),
+                tx_in.index.into(),
+                &Self::build_asset_vector(tx_in),
+                &payment_addr,
+            )
+            .register_stake_certificate(&reward_address)
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = self
+            .wallet
+            .sign_tx(&tx_builder.tx_hex())
+            .expect("Failed to sign stake registration tx");
+        let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        // Propagate the underlying error rather than collapsing it: callers
+        // need to tell "already registered" apart from a real failure.
+        match Self::ogmios_request(&self.ogmios_settings, request).await {
+            Ok(OgmiosResponse::SubmitTx(res)) => Ok(res),
+            Ok(_) => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Updates an existing registration to a new Midnight DUST address while
+    /// consolidating a cNIGHT UTXO, in one Cardano transaction.
+    ///
+    /// Mimics Dust App behavior.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_registration_with_cnight_rotation(
+        &self,
+        new_midnight_address_hex: &str,
+        registration_utxo: &OgmiosUtxo,
+        cnight_utxo: &OgmiosUtxo,
+        tx_in: &OgmiosUtxo,
+        collateral_utxo: &OgmiosUtxo,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let validator_address = config::mapping_validator_address();
+        let reward_address = config::mapping_validator_reward_address();
+        let payment_addr = self.address_as_bech32();
+        let mapping_validator_policy_id = config::mapping_validator_policy_id();
+        let mapping_validator_cbor = config::mapping_validator_cbor_double_encoding();
+
+        let stake_key_hash = self
+            .wallet
+            .addresses
+            .base_address
+            .as_ref()
+            .unwrap()
+            .stake_cred()
+            .to_keyhash()
+            .unwrap()
+            .to_hex();
+
+        // Same shape as `register`'s datum, with the new DUST address.
+        let new_datum = serde_json::to_string(&serde_json::json!({
+            "constructor": 0,
+            "fields": [
+                { "constructor": 0, "fields": [ { "bytes": &stake_key_hash } ] },
+                { "bytes": new_midnight_address_hex }
+            ]
+        }))
+        .unwrap();
+
+        // Only ADA and the auth NFT — the `Withdrawing` branch rejects any
+        // other asset in the validator output.
+        let validator_output = vec![
+            Asset::new_from_str("lovelace", "2000000"),
+            Asset::new_from_str(&mapping_validator_policy_id, "1"),
+        ];
+
+        let spend_redeemer = serde_json::to_string(&serde_json::json!({
+            "constructor": 0,
+            "fields": []
+        }))
+        .unwrap();
+        // Two redeemers run here (the spend and the withdrawal), so each gets a
+        // fraction of `maxTxExUnits` rather than the whole budget `register`
+        // can afford for its single redeemer — declaring the maximum twice
+        // would exceed the per-transaction limit. Same values as `deregister`,
+        // which likewise carries two redeemers.
+        let budget = Budget {
+            mem: 3765700,
+            steps: 941562940,
+        };
+
+        let mut tx_builder = self.new_tx_builder();
+        tx_builder
+            .network(self.network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(tx_in.transaction.id),
+                tx_in.index.into(),
+                &Self::build_asset_vector(tx_in),
+                &payment_addr,
+            )
+            // The user's cNIGHT, consolidated into the change output.
+            .tx_in(
+                &hex::encode(cnight_utxo.transaction.id),
+                cnight_utxo.index.into(),
+                &Self::build_asset_vector(cnight_utxo),
+                &payment_addr,
+            )
+            .spending_plutus_script_v3()
+            .tx_in(
+                &hex::encode(registration_utxo.transaction.id),
+                registration_utxo.index.into(),
+                &Self::build_asset_vector(registration_utxo),
+                &validator_address,
+            )
+            .tx_in_inline_datum_present()
+            .tx_in_script(&mapping_validator_cbor)
+            .tx_in_redeemer_value(&WRedeemer {
+                data: WData::JSON(spend_redeemer.clone()),
+                ex_units: budget.clone(),
+            })
+            .tx_in_collateral(
+                &hex::encode(collateral_utxo.transaction.id),
+                collateral_utxo.index.into(),
+                &Self::build_asset_vector(collateral_utxo),
+                &payment_addr,
+            )
+            // Must be output 0: the `Withdrawing` branch pairs each script
+            // input with the next output in order.
+            .tx_out(&validator_address, &validator_output)
+            .tx_out_inline_datum_value(&WData::JSON(new_datum))
+            // Zero-value withdrawal from the script's own credential, which is
+            // what authorises the zero-mint spend above.
+            .withdrawal_plutus_script_v3()
+            .withdrawal(&reward_address, 0)
+            .withdrawal_script(&mapping_validator_cbor)
+            .withdrawal_redeemer_value(&WRedeemer {
+                data: WData::JSON(spend_redeemer),
+                ex_units: budget,
+            })
+            .change_address(&payment_addr)
+            .required_signer_hash(&stake_key_hash)
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = self
+            .wallet
+            .sign_tx(&tx_builder.tx_hex())
+            .expect("Failed to sign registration update tx");
+
+        // The datum's credential must authorise, so the stake key signs too.
+        let stake_signing_key = Self::derive_stake_signing_key_from_mnemonic(&self.wallet).unwrap();
+        let stake_wallet = Wallet::new_cli(&stake_signing_key.to_hex()).unwrap();
+        let signed_by_stake_tx = stake_wallet.sign_tx(&signed_tx);
+
+        let tx_bytes =
+            hex::decode(signed_by_stake_tx.unwrap()).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        // Propagate the underlying error: a rejection here is a script or
+        // ledger diagnosis, and collapsing it to "Unexpected response type"
+        // throws that away.
+        match Self::ogmios_request(&self.ogmios_settings, request).await {
+            Ok(OgmiosResponse::SubmitTx(res)) => Ok(res),
+            Ok(_) => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+            Err(e) => Err(e),
+        }
+    }
+
     pub async fn mint_tokens(
         &self,
         amount: u64,
@@ -950,6 +1176,86 @@ impl CardanoClient {
             OgmiosResponse::SubmitTx(res) => {
                 tracing::info!(
                     "  mint_tokens submitted: tx_id=0x{}",
+                    hex::encode(res.transaction.id)
+                );
+                Ok(res)
+            }
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
+    /// Mint `per_output * n_outputs` cNIGHT split across `n_outputs` outputs at
+    /// this wallet's address in one Cardano transaction. Each output is observed
+    /// as its own `AssetCreate`.
+    pub async fn mint_tokens_split(
+        &self,
+        per_output: u64,
+        n_outputs: usize,
+        utxo: &OgmiosUtxo,
+        collateral_utxo: &OgmiosUtxo,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let policy_id = config::cnight_token_policy_id();
+        let minting_script = config::cnight_token_cbor_double_encoding();
+        let payment_addr = self.address_as_bech32();
+        let total = per_output * n_outputs as u64;
+
+        let mut tx_builder = self.new_tx_builder();
+        tx_builder
+            .network(self.network.clone())
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(utxo.transaction.id),
+                utxo.index.into(),
+                &Self::build_asset_vector(utxo),
+                &payment_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(collateral_utxo.transaction.id),
+                collateral_utxo.index.into(),
+                &Self::build_asset_vector(collateral_utxo),
+                &payment_addr,
+            );
+        let output_assets = vec![
+            Asset::new_from_str("lovelace", "1500000"),
+            Asset::new_from_str(&policy_id, &per_output.to_string()),
+        ];
+        for _ in 0..n_outputs {
+            tx_builder.tx_out(&payment_addr, &output_assets);
+        }
+        tx_builder
+            .mint_plutus_script_v3()
+            .mint(total as i128, &policy_id, "")
+            .minting_script(&minting_script)
+            .mint_redeemer_value(&WRedeemer {
+                data: WData::JSON(constr0(serde_json::json!([])).to_string()),
+                ex_units: Budget {
+                    mem: 14000000,
+                    steps: 10000000000,
+                },
+            })
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap();
+
+        let tx_hex = tx_builder.tx_hex();
+        tracing::info!(
+            "  mint_tokens_split: {n_outputs} x {per_output} cNIGHT (total {total}), \
+             input {}#{}, tx size {} bytes",
+            hex::encode(utxo.transaction.id),
+            utxo.index,
+            tx_hex.len() / 2,
+        );
+
+        let signed_tx = self.wallet.sign_tx(&tx_hex);
+        let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request).await?;
+        match response {
+            OgmiosResponse::SubmitTx(res) => {
+                tracing::info!(
+                    "  mint_tokens_split submitted: tx_id=0x{}",
                     hex::encode(res.transaction.id)
                 );
                 Ok(res)
@@ -1890,7 +2196,7 @@ pub struct SignedBridgeTransaction {
 }
 
 pub enum BridgeTransferRecipient {
-    Address([u8; 32]),
+    Address(Vec<u8>),
     /// For testing handling of transfers with invalid recipient
     Invalid,
 }

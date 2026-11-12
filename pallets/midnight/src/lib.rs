@@ -25,7 +25,7 @@ mod runtime_api;
 pub use runtime_api::*;
 
 pub use midnight_primitives::{
-	LedgerMutFn, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
+	LedgerMutFn, LedgerStateProvider, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
 };
 
 pub use midnight_node_ledger::types::active_version::LedgerApiError;
@@ -38,8 +38,6 @@ mod tests;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
-
-pub mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -54,17 +52,19 @@ pub mod pallet {
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
 		active_version::{
-			BlockContext, DeserializationError, LedgerApiError, SerializationError,
+			BlockContext, DeserializationError, LedgerApiError, MalformedError, SerializationError,
 			TransactionError,
 		},
 	};
 	use sp_runtime::Weight;
 
-	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
+	impl<T: Config> super::LedgerStateProvider for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
 			StateKey::<T>::get()
 		}
+	}
 
+	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
 		fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 		where
@@ -99,9 +99,6 @@ pub mod pallet {
 		}
 	}
 
-	// v2: ledger v8 -> v9 state translation (see `migrations::v2`). A ledger-8
-	// runtime is at on-chain version 1; upgrading to this runtime runs the
-	// `MigrateV1ToV2` translation. Fresh ledger-9 genesis starts at version 2.
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	// Manually add ~1% of block weight
@@ -135,6 +132,11 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type SlotDuration: Get<<Self as pallet_timestamp::Config>::Moment>;
+
+		/// Maximum number of operations and identifiers (each, independently) that
+		/// `get_decoded_transaction` will materialize from a transaction.
+		#[pallet::constant]
+		type MaxDecodedTxItems: Get<u32>;
 	}
 
 	// The pallet's runtime storage items.
@@ -150,7 +152,13 @@ pub mod pallet {
 	///
 	/// Theoretical maximum: 40 + 1 + 1024 = 1065 bytes
 	pub type StateKeyLength = ConstU32<1065>;
+	/// Lower bound on DAG nodes per operation; ledger_9's
+	/// `byte_limited_payload_cannot_declare_unbounded_work` asserts it.
+	pub const NODES_PER_OPERATION: u32 = 4;
 	type MaxNetworkIdLength = ConstU32<64>;
+	// Tagged arena key of the ledger's `Ledger` wrapper, whose `block_fullness` is zero at the end
+	// of every block; external consumers such as the indexer reproduce it from the ledger state.
+	// A plain comment keeps this note out of the runtime metadata.
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
 	/// It is safe to keep the state key unbounded as its size can not be influenced by external users.
@@ -194,6 +202,18 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
+
+	/// 4x the largest real transaction (2,023 nodes, mainnet), and above what compactc
+	/// already generates for state-heavy calls (6,287).
+	#[pallet::type_value]
+	pub fn DefaultMaxTransactionNodes() -> u32 {
+		8192
+	}
+
+	/// Maximum number of DAG nodes a transaction may declare before the ledger will
+	/// deserialize it at all.
+	#[pallet::storage]
+	pub type MaxTransactionNodes<T> = StorageValue<_, u32, ValueQuery, DefaultMaxTransactionNodes>;
 
 	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct TxAppliedDetails {
@@ -293,6 +313,10 @@ pub mod pallet {
 		ContractNotPresent,
 		#[codec(index = 14)]
 		BeneficiaryNotFound,
+		/// The node cap would admit more operations than `MaxDecodedTxItems`, so the item
+		/// cap would refuse transactions blocks can carry.
+		#[codec(index = 15)]
+		MaxTransactionNodesExceedsItemCap,
 	}
 	// grcov-excl-stop
 
@@ -439,6 +463,18 @@ pub mod pallet {
 			ConfigurableTransactionSizeWeight::<T>::set(new_weight);
 			Ok(())
 		}
+
+		#[pallet::call_index(2)]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
+		pub fn set_max_transaction_nodes(origin: OriginFor<T>, nodes: u32) -> DispatchResult {
+			ensure_root(origin)?;
+			ensure!(
+				nodes / NODES_PER_OPERATION < T::MaxDecodedTxItems::get(),
+				Error::<T>::MaxTransactionNodesExceedsItemCap
+			);
+			MaxTransactionNodes::<T>::put(nodes);
+			Ok(())
+		}
 	}
 
 	#[pallet::validate_unsigned]
@@ -479,6 +515,9 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
+			Self::ensure_declared_nodes_within_limit(midnight_tx)
+				.map_err(|e| Self::invalid_transaction(e.into()))?;
+
 			LedgerApi::validate_guaranteed_execution(
 				&state_key,
 				midnight_tx,
@@ -510,10 +549,38 @@ pub mod pallet {
 			LedgerApi::get_contract_state(&state_key, contract_address)
 		}
 
+		/// Refuse a payload declaring more structure than any real transaction has, before
+		/// the ledger deserializes it. Reachable with arbitrary bytes over the runtime API
+		/// and, via `validate_unsigned`, once per submitted extrinsic ahead of any fee.
+		fn ensure_declared_nodes_within_limit(tx: &[u8]) -> Result<(), LedgerApiError> {
+			match LedgerTypes::declared_node_count(tx) {
+				Ok(nodes) if nodes > MaxTransactionNodes::<T>::get() => {
+					Err(LedgerApiError::Transaction(TransactionError::Malformed(
+						MalformedError::TransactionTooLarge,
+					)))
+				},
+				Err(e) => match e {
+					LedgerTypes::NodeCountError::TagNotFound => {
+						Err(LedgerApiError::Deserialization(DeserializationError::Transaction))
+					},
+					LedgerTypes::NodeCountError::CountDecodeFailed => {
+						Err(LedgerApiError::Deserialization(DeserializationError::Transaction))
+					},
+				},
+				_ => Ok(()),
+			}
+		}
+
 		pub fn get_decoded_transaction(
 			midnight_transaction: &[u8],
 		) -> Result<LedgerTx, LedgerApiError> {
-			LedgerApi::get_decoded_transaction(midnight_transaction)
+			let state_key = StateKey::<T>::get();
+			Self::ensure_declared_nodes_within_limit(midnight_transaction)?;
+			LedgerApi::get_decoded_transaction(
+				&state_key,
+				midnight_transaction,
+				T::MaxDecodedTxItems::get(),
+			)
 		}
 
 		pub fn get_ledger_version() -> Vec<u8> {
@@ -576,6 +643,9 @@ pub mod pallet {
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
+				Self::ensure_declared_nodes_within_limit(midnight_tx)
+					.map_err(|e| Self::invalid_transaction(e.into()))?;
+
 				let tx_hash = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
@@ -621,6 +691,7 @@ pub mod pallet {
 				.max_total
 				.unwrap_or(weights.max_block)
 				.ref_time();
+			Self::ensure_declared_nodes_within_limit(tx)?;
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 

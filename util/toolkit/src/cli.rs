@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::commands::{
 	bridge_transfer::{self, BridgeTransferArgs},
 	contract_address::{self, ContractAddressArgs},
@@ -237,9 +250,9 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
-			let ledger_generation = midnight_node_ledger_helpers::latest::LEDGER_VERSION;
+			let ledger_generation = midnight_ledger_unsafe_helpers::latest::LEDGER_VERSION;
 			let ledger_semver =
-				find_dependency_version(midnight_node_ledger_helpers::latest::CRATE_NAME)
+				find_dependency_version(midnight_ledger_unsafe_helpers::latest::CRATE_NAME)
 					.expect("missing ledger version");
 			let compactc_version = include_str!("../../../COMPACTC_VERSION").trim();
 
@@ -281,5 +294,18 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::Fetch(args) => fetch::execute(args).await,
 		Commands::BridgeTransfer(args) => bridge_transfer::execute(args).await,
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::Cli;
+	use clap::CommandFactory;
+
+	/// `Source` args are flattened (many `global`) into most commands, so a flag it adds can clash
+	/// with a command's own; clap only reports that at runtime.
+	#[test]
+	fn cli_definition_is_consistent() {
+		Cli::command().debug_assert();
 	}
 }
