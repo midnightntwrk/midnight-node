@@ -205,22 +205,21 @@ impl CachedBlocks {
 		reader: Arc<dyn BlockReader>,
 		tip_height: u64,
 	) -> Result<Self, FetchError> {
-		let genesis = reader.read_block(chain_id, 0).await.ok_or(FetchError::BlockMissing(0))?;
-		let tip = if tip_height == 0 {
-			genesis.clone()
+		let first_version = reader
+			.read_block(chain_id, 0)
+			.await
+			.ok_or(FetchError::BlockMissing(0))?
+			.ledger_version();
+		let tip_version = if tip_height == 0 {
+			first_version
 		} else {
 			reader
 				.read_block(chain_id, tip_height)
 				.await
 				.ok_or(FetchError::BlockMissing(tip_height))?
+				.ledger_version()
 		};
-		Ok(Self {
-			chain_id,
-			tip_height,
-			first_version: genesis.ledger_version(),
-			tip_version: tip.ledger_version(),
-			reader,
-		})
+		Ok(Self { chain_id, tip_height, first_version, tip_version, reader })
 	}
 
 	/// Ledger generation at `height`: the block's own, or the tip's for a height beyond the

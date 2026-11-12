@@ -18,9 +18,9 @@
 
 use midnight_ledger_unsafe_helpers::{
 	BlockContext, DefaultDB, DustFrontierRaw, DustLocalState, HashOutput, LedgerContext,
-	LedgerState, Sp, Timestamp, UnshieldedSignatureScheme, UnshieldedUtxoRaw, Wallet, WalletSeed,
-	WalletState, deserialize_untagged, fork::fork_aware_context::watch_only_ecdsa_wallet_8,
-	ledger_8, serialize_untagged,
+	LedgerState, Sp, Storable, Timestamp, UnshieldedSignatureScheme, UnshieldedUtxoRaw, Wallet,
+	WalletSeed, WalletState, deserialize_untagged,
+	fork::fork_aware_context::watch_only_ecdsa_wallet_8, ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,17 @@ pub struct SerializableBlockContext {
 
 impl From<&BlockContext> for SerializableBlockContext {
 	fn from(ctx: &BlockContext) -> Self {
+		Self {
+			tblock_secs: ctx.tblock.to_secs(),
+			tblock_err: ctx.tblock_err,
+			parent_block_hash: ctx.parent_block_hash.0,
+			last_block_time: ctx.last_block_time.to_secs(),
+		}
+	}
+}
+
+impl From<&ledger_8::BlockContext> for SerializableBlockContext {
+	fn from(ctx: &ledger_8::BlockContext) -> Self {
 		Self {
 			tblock_secs: ctx.tblock.to_secs(),
 			tblock_err: ctx.tblock_err,
@@ -427,13 +438,7 @@ pub fn create_ledger_snapshot_8(
 	drop(ledger_state);
 
 	let state_root = compute_state_root(&ledger_state_bytes);
-	let ctx8 = context.latest_block_context();
-	let serializable_context = SerializableBlockContext {
-		tblock_secs: ctx8.tblock.to_secs(),
-		tblock_err: ctx8.tblock_err,
-		parent_block_hash: ctx8.parent_block_hash.0,
-		last_block_time: ctx8.last_block_time.to_secs(),
-	};
+	let serializable_context = SerializableBlockContext::from(&context.latest_block_context());
 
 	Ok(LedgerSnapshot {
 		block_height,
@@ -452,21 +457,12 @@ pub fn create_root_snapshot(
 	context: &LedgerContext<DefaultDB>,
 	block_height: u64,
 ) -> Result<LedgerSnapshot, CacheError> {
-	let sp = context
-		.ledger_state
-		.lock()
-		.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?
-		.clone();
-	let key = super::ledger_arena::persist_root(&sp)
-		.map_err(|e| CacheError::SerializeLedgerState(e.to_string()))?;
-	Ok(LedgerSnapshot {
+	root_snapshot(
+		&context.ledger_state,
 		block_height,
-		storage: SnapshotStorage::ArenaRoot,
-		ledger_version: LedgerVersion::Ledger9,
-		state_root: compute_state_root(&key),
-		ledger_state_bytes: key,
-		latest_block_context: SerializableBlockContext::from(&context.latest_block_context()),
-	})
+		LedgerVersion::Ledger9,
+		SerializableBlockContext::from(&context.latest_block_context()),
+	)
 }
 
 /// Ledger-8 variant of [`create_root_snapshot`].
@@ -474,26 +470,33 @@ pub fn create_root_snapshot_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
 	block_height: u64,
 ) -> Result<LedgerSnapshot, CacheError> {
-	let sp = context
-		.ledger_state
+	root_snapshot(
+		&context.ledger_state,
+		block_height,
+		LedgerVersion::Ledger8,
+		SerializableBlockContext::from(&context.latest_block_context()),
+	)
+}
+
+fn root_snapshot<T: Storable<DefaultDB>>(
+	ledger_state: &std::sync::Mutex<Sp<T, DefaultDB>>,
+	block_height: u64,
+	ledger_version: LedgerVersion,
+	latest_block_context: SerializableBlockContext,
+) -> Result<LedgerSnapshot, CacheError> {
+	let sp = ledger_state
 		.lock()
 		.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?
 		.clone();
 	let key = super::ledger_arena::persist_root(&sp)
 		.map_err(|e| CacheError::SerializeLedgerState(e.to_string()))?;
-	let ctx8 = context.latest_block_context();
 	Ok(LedgerSnapshot {
 		block_height,
 		storage: SnapshotStorage::ArenaRoot,
-		ledger_version: LedgerVersion::Ledger8,
+		ledger_version,
 		state_root: compute_state_root(&key),
 		ledger_state_bytes: key,
-		latest_block_context: SerializableBlockContext {
-			tblock_secs: ctx8.tblock.to_secs(),
-			tblock_err: ctx8.tblock_err,
-			parent_block_hash: ctx8.parent_block_hash.0,
-			last_block_time: ctx8.last_block_time.to_secs(),
-		},
+		latest_block_context,
 	})
 }
 

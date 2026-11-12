@@ -130,25 +130,22 @@ fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Resul
 	Ok(None)
 }
 
-/// The snapshot in `path` if it holds a ledger arena root. Reads only the version byte
-/// of an inline snapshot, which can be a large file.
-fn read_root_snapshot(path: &Path, block_height: u64) -> Option<LedgerSnapshot> {
+/// The snapshot in `path` if it holds a ledger arena root, `Ok(None)` if it is not one
+/// (or too short to say). Reads only the version byte of an inline snapshot, which can
+/// be a large file. `Err` if the file cannot be opened, read or decoded.
+fn read_root_snapshot(path: &Path, block_height: u64) -> io::Result<Option<LedgerSnapshot>> {
 	use std::io::Read;
-	let mut file = fs::File::open(path).ok()?;
+	let mut file = fs::File::open(path)?;
 	let mut version = [0u8; 1];
-	file.read_exact(&mut version).ok()?;
-	if version[0] != ROOT_SNAPSHOT_FORMAT_VERSION {
-		return None;
+	if file.read_exact(&mut version).is_err() || version[0] != ROOT_SNAPSHOT_FORMAT_VERSION {
+		return Ok(None);
 	}
 	let mut data = version.to_vec();
-	file.read_to_end(&mut data).ok()?;
-	match LedgerSnapshot::from_value_bytes(&data, block_height) {
-		Ok(snapshot) => Some(snapshot),
-		Err(e) => {
-			log::warn!("Failed to decode ledger snapshot {}: {e}", path.display());
-			None
-		},
-	}
+	file.read_to_end(&mut data)?;
+	LedgerSnapshot::from_value_bytes(&data, block_height).map(Some).map_err(|e| {
+		log::warn!("Failed to decode ledger snapshot {}: {e}", path.display());
+		io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+	})
 }
 
 /// Root keys of every arena-root snapshot under `root`, across all chains, one entry per
@@ -163,17 +160,8 @@ pub fn arena_root_keys(root: &Path) -> Option<Vec<Vec<u8>>> {
 		let dir = root.join(&chain).join("ledger");
 		for name in list_dir(&dir) {
 			let Some(height) = parse_ledger_height(&name) else { continue };
-			let path = dir.join(&name);
-			let mut version = [0u8; 1];
-			{
-				use std::io::Read;
-				let mut file = fs::File::open(&path).ok()?;
-				if file.read_exact(&mut version).is_err() {
-					continue;
-				}
-			}
-			if version[0] == ROOT_SNAPSHOT_FORMAT_VERSION {
-				keys.push(read_root_snapshot(&path, height)?.ledger_state_bytes);
+			if let Some(snapshot) = read_root_snapshot(&dir.join(&name), height).ok()? {
+				keys.push(snapshot.ledger_state_bytes);
 			}
 		}
 	}
@@ -358,7 +346,7 @@ impl WalletStateCaching for FileBackend {
 
 	async fn get_root_snapshot(&self, chain_id: H256, block_height: u64) -> Option<LedgerSnapshot> {
 		let path = self.ledger_path(chain_id, block_height);
-		tokio::task::spawn_blocking(move || read_root_snapshot(&path, block_height))
+		tokio::task::spawn_blocking(move || read_root_snapshot(&path, block_height).ok().flatten())
 			.await
 			.ok()
 			.flatten()
@@ -372,7 +360,7 @@ impl WalletStateCaching for FileBackend {
 		let dir = self.ledger_dir(chain_id);
 		let mut keep: std::collections::HashSet<u64> = keep_heights.iter().copied().collect();
 
-		let removed = tokio::task::spawn_blocking(move || {
+		let (removed, roots) = tokio::task::spawn_blocking(move || {
 			// Always spare the newest MIN_SNAPSHOTS_RETAINED snapshots, referenced or not.
 			let mut heights: Vec<u64> =
 				list_dir(&dir).iter().filter_map(|n| parse_ledger_height(n)).collect();
@@ -391,7 +379,7 @@ impl WalletStateCaching for FileBackend {
 						if dominated_by_grace_period {
 							continue;
 						}
-						let root = read_root_snapshot(&path, height);
+						let root = read_root_snapshot(&path, height).ok().flatten();
 						match fs::remove_file(&path) {
 							Ok(()) => {
 								removed += 1;
@@ -408,10 +396,10 @@ impl WalletStateCaching for FileBackend {
 		.await
 		.unwrap_or_default();
 
-		if removed.0 > 0 {
-			log::info!("GC: removed {} stale ledger snapshots", removed.0);
+		if removed > 0 {
+			log::info!("GC: removed {removed} stale ledger snapshots");
 		}
-		removed.1
+		roots
 	}
 
 	async fn get_all_cached_wallet_heights(&self, chain_id: H256) -> Vec<u64> {

@@ -1141,6 +1141,24 @@ fn inject_cached_wallets(
 	}
 }
 
+/// A genesis context holding `seeds`, before any block is replayed.
+fn genesis_context(
+	received_tx: &SourceTransactions,
+	seeds: &[WalletSeed],
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
+	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> =
+		seeds.iter().map(|seed| (seed.clone(), scheme_of(schemes, seed))).collect();
+	timed!(
+		"new_from_wallet_seeds",
+		ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
+			received_tx.ledger_version(),
+			&received_tx.network_id,
+			&seeds_with_schemes,
+		)
+	)
+}
+
 /// Create the initial fork-aware context, either cold (genesis) or warm (snapshot restore).
 /// A ledger-8 restore injects and drains `cached` here (no mid-replay injection on ledger 8).
 /// A failed restore returns the reason; the caller falls back to a replay from genesis.
@@ -1152,18 +1170,7 @@ async fn initialize_context(
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
 ) -> Result<ForkAwareLedgerContext, String> {
 	let Some(snapshot) = snapshot else {
-		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
-			.iter()
-			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
-			.collect();
-		return Ok(timed!(
-			"new_from_wallet_seeds (cold)",
-			ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
-				received_tx.ledger_version(),
-				&received_tx.network_id,
-				&seeds_with_schemes,
-			)
-		));
+		return Ok(genesis_context(received_tx, uncached_seeds, schemes));
 	};
 
 	let start_height = snapshot.block_height;
@@ -1229,16 +1236,15 @@ async fn usable_snapshot(
 
 /// Give up the warm start at `height`: every cached seed is replayed from genesis.
 fn fall_back_to_genesis(
-	height: u64,
 	reason: &str,
 	restore_height: &mut Option<u64>,
 	uncached_seeds: &mut Vec<WalletSeed>,
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
 ) {
+	let height = restore_height.take().unwrap_or_default();
 	log::warn!(
 		"ledger snapshot at block {height} cannot be restored ({reason}); replaying from genesis"
 	);
-	*restore_height = None;
 	uncached_seeds.extend(cached.drain(..).map(|(seed, _)| seed));
 }
 
@@ -1399,40 +1405,53 @@ impl ReplayProgress {
 /// transactions held at once; the apply itself must stay in block order.
 const DECODE_AHEAD_BLOCKS: usize = 512;
 
+/// Decode `blocks` [`DECODE_AHEAD_BLOCKS`] at a time in parallel, then hand each block
+/// and its decoded transactions to `apply` in block order.
+fn for_each_decoded<T: Send>(
+	blocks: &[RawBlockData],
+	decode: impl Fn(&RawBlockData) -> T + Sync,
+	mut apply: impl FnMut(&RawBlockData, &T),
+) {
+	use rayon::prelude::*;
+	for chunk in blocks.chunks(DECODE_AHEAD_BLOCKS) {
+		let t_decode = std::time::Instant::now();
+		let decoded: Vec<T> = chunk.par_iter().map(&decode).collect();
+		replay_stats::record(&replay_stats::TX_DESERIALIZE_NS, t_decode);
+		for (block, txs) in chunk.iter().zip(&decoded) {
+			apply(block, txs);
+		}
+	}
+}
+
 fn replay_blocks_8(
 	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
 	progress: &mut ReplayProgress,
 ) {
 	use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
-		DecodedTxs8, apply_decoded_block_8, decode_block_8,
+		apply_decoded_block_8, decode_block_8,
 	};
-	use rayon::prelude::*;
 
 	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_8::Event<Db8>> = Vec::new();
-
 	let total = blocks_sorted_by_height.len();
+	let mut done = 0;
+	let flush = |events: &mut Vec<_>, done: usize| {
+		ctx.update_dust_from_events(events.as_slice());
+		events.clear();
+		log::debug!("[perf] replay_blocks_8 progress: {done}/{total} blocks");
+	};
 
-	for (chunk_idx, chunk) in blocks_sorted_by_height.chunks(DECODE_AHEAD_BLOCKS).enumerate() {
-		let t_decode = std::time::Instant::now();
-		let decoded: Vec<DecodedTxs8> = chunk.par_iter().map(decode_block_8).collect();
-		replay_stats::record(&replay_stats::TX_DESERIALIZE_NS, t_decode);
-		for (j, (block, txs)) in chunk.iter().zip(&decoded).enumerate() {
-			let i = chunk_idx * DECODE_AHEAD_BLOCKS + j;
-			events.extend(apply_decoded_block_8(ctx, block, txs));
-
-			let is_last = i + 1 == total;
-			if events.len() >= DUST_BATCH_SIZE || is_last {
-				ctx.update_dust_from_events(events.as_slice());
-				events.clear();
-				log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
-			}
-
-			progress.tick();
+	for_each_decoded(blocks_sorted_by_height, decode_block_8, |block, txs| {
+		events.extend(apply_decoded_block_8(ctx, block, txs));
+		done += 1;
+		if events.len() >= DUST_BATCH_SIZE {
+			flush(&mut events, done);
 		}
-	}
+		progress.tick();
+	});
 
 	if let Some(block) = blocks_sorted_by_height.last() {
+		flush(&mut events, done);
 		ctx.update_dust_from_block(&block_context_from_raw_8(block));
 	}
 }
@@ -1445,43 +1464,42 @@ fn replay_blocks_9(
 	progress: &mut ReplayProgress,
 ) {
 	use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
-		DecodedTxs9, apply_decoded_block_9, decode_block_9,
+		apply_decoded_block_9, decode_block_9,
 	};
-	use rayon::prelude::*;
 
 	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
+	let mut done = 0;
+	let flush = |events: &mut Vec<_>, done: usize| {
+		ctx.update_dust_from_events(events.as_slice());
+		events.clear();
+		log::debug!("[perf] replay_blocks_9 progress: {done}/{total} blocks");
+	};
 
-	for (chunk_idx, chunk) in blocks_sorted_by_height.chunks(DECODE_AHEAD_BLOCKS).enumerate() {
-		let t_decode = std::time::Instant::now();
-		let decoded: Vec<DecodedTxs9> = chunk.par_iter().map(decode_block_9).collect();
-		replay_stats::record(&replay_stats::TX_DESERIALIZE_NS, t_decode);
-		for (j, (block, txs)) in chunk.iter().zip(&decoded).enumerate() {
-			let i = chunk_idx * DECODE_AHEAD_BLOCKS + j;
-			let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
-			if n > 0 {
-				let (to_inject, rest) = remaining.split_at(n);
-				if !events.is_empty() {
-					ctx.update_dust_from_events(events.as_slice());
-					events.clear();
-				}
-				let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
-				inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
-				remaining = rest;
-			}
-
-			events.extend(apply_decoded_block_9(ctx, block, txs));
-
-			let is_last = i + 1 == total;
-			if events.len() >= DUST_BATCH_SIZE || is_last {
+	for_each_decoded(blocks_sorted_by_height, decode_block_9, |block, txs| {
+		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
+		if n > 0 {
+			let (to_inject, rest) = remaining.split_at(n);
+			if !events.is_empty() {
 				ctx.update_dust_from_events(events.as_slice());
 				events.clear();
-				log::debug!("[perf] replay_blocks_9 progress: {}/{} blocks", i + 1, total);
 			}
-
-			progress.tick();
+			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
+			inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
+			remaining = rest;
 		}
+
+		events.extend(apply_decoded_block_9(ctx, block, txs));
+		done += 1;
+		if events.len() >= DUST_BATCH_SIZE {
+			flush(&mut events, done);
+		}
+		progress.tick();
+	});
+
+	if !blocks_sorted_by_height.is_empty() {
+		flush(&mut events, done);
 	}
 
 	// Inject remaining wallets at the last replayed block height.
@@ -1702,13 +1720,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		Some(height) => match usable_snapshot(storage, chain_id, height).await {
 			Ok(snapshot) => Some(snapshot),
 			Err(reason) => {
-				fall_back_to_genesis(
-					height,
-					reason,
-					&mut restore_height,
-					&mut uncached_seeds,
-					&mut cached,
-				);
+				fall_back_to_genesis(reason, &mut restore_height, &mut uncached_seeds, &mut cached);
 				None
 			},
 		},
@@ -1730,13 +1742,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	{
 		Ok(ctx) => ctx,
 		Err(reason) => {
-			fall_back_to_genesis(
-				restore_height.unwrap_or_default(),
-				&reason,
-				&mut restore_height,
-				&mut uncached_seeds,
-				&mut cached,
-			);
+			fall_back_to_genesis(&reason, &mut restore_height, &mut uncached_seeds, &mut cached);
 			initialize_context(received_tx, &uncached_seeds, None, schemes, &mut cached)
 				.await
 				.expect("a cold start has no snapshot to fail on")
@@ -2036,10 +2042,10 @@ async fn save_cache_ledger9(
 	release_roots(storage.gc_ledger_snapshots(chain_id, &keep_heights).await);
 	log::debug!("[perf] storage.gc_ledger_snapshots took {:?}", t.elapsed());
 	if persistent {
-		let t = std::time::Instant::now();
-		ledger_arena::finish_save();
-		ctx.ledger_state.lock().expect("ledger_state lock poisoned").unload();
-		log::debug!("[perf] ledger arena finish_save took {:?}", t.elapsed());
+		timed!("ledger arena finish_save", {
+			ledger_arena::finish_save();
+			ctx.ledger_state.lock().expect("ledger_state lock poisoned").unload();
+		});
 	}
 
 	log::info!(
@@ -2180,21 +2186,9 @@ async fn build_fork_aware_context_uncached(
 		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	};
 	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
-
-	let initial_version = received_tx.ledger_version();
-	let keyed_at_fork = ecdsa_seeds_keyed_at_fork(wallet_seeds, schemes, initial_version);
-	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
-		.iter()
-		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
-		.collect();
-	let mut ctx = timed!(
-		"new_from_wallet_seeds (raw)",
-		ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
-			initial_version,
-			&received_tx.network_id,
-			&seeds_with_schemes,
-		)
-	);
+	let keyed_at_fork =
+		ecdsa_seeds_keyed_at_fork(wallet_seeds, schemes, received_tx.ledger_version());
+	let mut ctx = genesis_context(received_tx, wallet_seeds, schemes);
 
 	let mut batches = ReplayBatches::streamed(chain, 0);
 	let mut progress = ReplayProgress::new(batches.total());
@@ -2229,28 +2223,9 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
 	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
-
-	let network_id = &received_tx.network_id;
-	let initial_version = received_tx
-		.blocks
-		.first()
-		.map(|b| b.ledger_version())
-		.unwrap_or(LedgerVersion::Ledger9);
-
-	let keyed_at_fork = ecdsa_seeds_keyed_at_fork(wallet_seeds, schemes, initial_version);
-	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
-		.iter()
-		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
-		.collect();
-
-	let t = std::time::Instant::now();
-	let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
-		initial_version,
-		network_id,
-		&seeds_with_schemes,
-	);
-	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
-
+	let keyed_at_fork =
+		ecdsa_seeds_keyed_at_fork(wallet_seeds, schemes, received_tx.ledger_version());
+	let ctx = genesis_context(received_tx, wallet_seeds, schemes);
 	replay_blocks(ctx, &received_tx.blocks, &[], schemes, &keyed_at_fork)
 }
 
