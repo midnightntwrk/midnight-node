@@ -80,6 +80,5 @@ jobs:
             --remote-cache="${GHCR_REGISTRY}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
               --CI_EXECUTION="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-              --CACHE_KEY=compact-contract-tests \
               --RUN_COMPACT_CONTRACT_TESTS=true \
             --TOOLKIT_BUILD_JOBS=2
