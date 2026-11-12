@@ -69,21 +69,42 @@ fn default_chain_config() -> serde_json::Value {
 	})
 }
 
-fn default_chain_config_run_command() -> String {
+fn default_chain_config_run_command() -> MockIO {
 	let node_ws_port = NODE_P2P_PORT.default.unwrap();
-	format!(
-		"CARDANO_SECURITY_PARAMETER='{SECURITY_PARAMETER}' \\
-         CARDANO_ACTIVE_SLOTS_COEFF='{ACTIVE_SLOTS_COEFF}' \\
-         DB_SYNC_POSTGRES_CONNECTION_STRING='{DB_CONNECTION_STRING}' \\
-         CARDANO_DATA_SOURCE='{CARDANO_DATA_SOURCE}' \\
-         MC__FIRST_EPOCH_TIMESTAMP_MILLIS='{FIRST_EPOCH_TIMESTAMP_MILLIS}' \\
-         MC__EPOCH_DURATION_MILLIS='{EPOCH_DURATION_MILLIS}' \\
-         MC__SLOT_DURATION_MILLIS='{SLOT_DURATION_MILLIS}' \\
-         MC__FIRST_EPOCH_NUMBER='{FIRST_EPOCH_NUMBER}' \\
-         MC__FIRST_SLOT_NUMBER='{FIRST_SLOT_NUMBER}' \\
-         BLOCK_STABILITY_MARGIN='0' \\
- <mock executable> --validator --chain {CHAIN_SPEC_FILE} --base-path {DATA_PATH} --keystore-path {DATA_PATH}/keystore --node-key-file {DATA_PATH}/network/secret_ed25519 --port {node_ws_port} --bootnodes {BOOTNODE}"
-	)
+	MockIO::Group(vec![
+		MockIO::set_env_var("CARDANO_SECURITY_PARAMETER", &SECURITY_PARAMETER.to_string()),
+		MockIO::set_env_var("CARDANO_ACTIVE_SLOTS_COEFF", &ACTIVE_SLOTS_COEFF.to_string()),
+		MockIO::set_env_var("DB_SYNC_POSTGRES_CONNECTION_STRING", DB_CONNECTION_STRING),
+		MockIO::set_env_var("CARDANO_DATA_SOURCE", CARDANO_DATA_SOURCE),
+		MockIO::set_env_var(
+			"MC__FIRST_EPOCH_TIMESTAMP_MILLIS",
+			&FIRST_EPOCH_TIMESTAMP_MILLIS.to_string(),
+		),
+		MockIO::set_env_var("MC__EPOCH_DURATION_MILLIS", &EPOCH_DURATION_MILLIS.to_string()),
+		MockIO::set_env_var("MC__SLOT_DURATION_MILLIS", &SLOT_DURATION_MILLIS.to_string()),
+		MockIO::set_env_var("MC__FIRST_EPOCH_NUMBER", &FIRST_EPOCH_NUMBER.to_string()),
+		MockIO::set_env_var("MC__FIRST_SLOT_NUMBER", &FIRST_SLOT_NUMBER.to_string()),
+		MockIO::set_env_var("BLOCK_STABILITY_MARGIN", "0"),
+		MockIO::run_command(
+			&[
+				"<mock executable>",
+				"--validator",
+				"--chain",
+				CHAIN_SPEC_FILE,
+				"--base-path",
+				DATA_PATH,
+				"--keystore-path",
+				&format!("{DATA_PATH}/keystore"),
+				"--node-key-file",
+				&format!("{DATA_PATH}/network/secret_ed25519"),
+				"--port",
+				node_ws_port,
+				"--bootnodes",
+				BOOTNODE,
+			],
+			"irrelevant",
+		),
+	])
 }
 
 #[rustfmt::skip]
@@ -130,7 +151,7 @@ fn happy_path() {
 				"🛠️ Loaded DB-Sync Postgres connection string from config ({RESOURCES_CONFIG_FILE_PATH}): {DB_CONNECTION_STRING}"
 			)),
 			value_check_prompt(),
-			MockIO::run_command(&default_chain_config_run_command(), "irrelevant")
+			default_chain_config_run_command()
 		]);
 
 	let result = StartNodeCmd::<MockRuntime> { silent: false, _phantom: PhantomData }.run(&context);
@@ -213,7 +234,7 @@ mod load_chain_config {
 		tests::{CHAIN_CONFIG_FILE_PATH, MockIO, MockIOContext},
 	};
 
-	use super::default_chain_config;
+	use super::{BOOTNODE, default_chain_config};
 
 	#[test]
 	fn accepts_a_correct_config() {
@@ -255,5 +276,49 @@ mod load_chain_config {
 		let result = load_chain_config(&context);
 
 		assert!(result.expect("should succeed").is_none(), "should not return a config value");
+	}
+
+	#[test]
+	fn rejects_a_config_with_a_malformed_bootnode() {
+		let mut incorrect = default_chain_config();
+		let bootnode = format!("{BOOTNODE}/extra");
+		incorrect["bootnodes"] = serde_json::json!([bootnode]);
+
+		let context = MockIOContext::new()
+			.with_json_file(CHAIN_CONFIG_FILE_PATH, incorrect)
+			.with_expected_io(vec![
+                MockIO::eprint(&format!(
+                    "⚠️ Chain config file {CHAIN_CONFIG_FILE_PATH} is invalid: invalid bootnode {bootnode:?}, expected a multiaddress ending in /p2p/<peer id>. Run prepare-configuration wizard or fix errors manually."
+                ))
+            ]);
+
+		let result = load_chain_config(&context);
+
+		assert!(result.expect("should succeed").is_none(), "should not return a config value");
+	}
+
+	#[test]
+	fn validates_bootnode_format() {
+		use crate::start_node::validate_bootnode;
+
+		let peer_id = "12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp";
+		for valid in [
+			format!("/ip4/10.0.0.1/tcp/30333/p2p/{peer_id}"),
+			format!("/dns/boot.example.io/tcp/30333/p2p/{peer_id}"),
+			format!("/ip6/::1/tcp/30333/ws/p2p/{peer_id}"),
+		] {
+			validate_bootnode(&valid).unwrap_or_else(|e| panic!("{valid} should be valid: {e}"));
+		}
+		for invalid in [
+			format!("ip4/10.0.0.1/tcp/30333/p2p/{peer_id}"),
+			format!("/p2p/{peer_id}"),
+			"/ip4/10.0.0.1/tcp/30333/p2p/not-a-peer-id".to_string(),
+			"/ip4/10.0.0.1/tcp/30333".to_string(),
+			format!("/ip4/10.0.0.1/tcp/30333/p2p/{peer_id} extra"),
+			format!("/dns/a b/tcp/30333/p2p/{peer_id}"),
+			format!("/ip4//tcp/30333/p2p/{peer_id}"),
+		] {
+			assert!(validate_bootnode(&invalid).is_err(), "{invalid} should be rejected");
+		}
 	}
 }

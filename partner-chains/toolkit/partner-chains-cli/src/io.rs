@@ -26,7 +26,8 @@ pub trait IOContext {
 		+ GetPermissionedCandidates
 		+ UpsertPermissionedCandidates;
 
-	fn run_command(&self, cmd: &str) -> anyhow::Result<String>;
+	/// Runs `program` with `args` passed as separate arguments, without a shell.
+	fn run_command(&self, program: &str, args: &[&str]) -> anyhow::Result<String>;
 	fn current_executable(&self) -> anyhow::Result<String>;
 	fn print(&self, msg: &str);
 	fn eprint(&self, msg: &str);
@@ -64,12 +65,15 @@ impl IOContext for DefaultCmdRunContext {
 	// Currently WsClient implements Ogmios traits, that implement all required Offchain traits
 	type Offchain = OgmiosClients;
 
-	fn run_command(&self, cmd: &str) -> anyhow::Result<String> {
+	fn run_command(&self, program: &str, args: &[&str]) -> anyhow::Result<String> {
+		let cmd = std::iter::once(program)
+			.chain(args.iter().copied())
+			.collect::<Vec<_>>()
+			.join(" ");
 		eprintln!("running external command: {cmd}");
 
-		let mut child = std::process::Command::new("sh")
-			.arg("-c")
-			.arg(cmd)
+		let mut child = std::process::Command::new(program)
+			.args(args)
 			.stderr(Stdio::piped())
 			.stdout(Stdio::piped())
 			.spawn()
