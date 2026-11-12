@@ -933,6 +933,7 @@ jobs:
             -P --strict $PUSH_FLAG \
             --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
+              --CI_EXECUTION="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
               --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
 
 

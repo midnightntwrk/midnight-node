@@ -41,7 +41,9 @@ fingerprints. The weekly clean build provides an independent uncached check.
 Preparation shares the existing host's BuildKit daemon, as local E2E preparation
 already does. It is an optimisation, not an artifact-transfer contract: a different
 host or an evicted layer recompiles inline. Toolkit archive preparation does not
-need a running node. Test execution still waits for the built node image.
+need a running node. Test execution still waits for the built node image. A run/attempt identifier
+invalidates toolkit execution independently of preparation, so scheduled and manual
+runs cannot reuse an old successful test-execution layer.
 
 Success markers require `TREE_GUARD_HMAC` and an exact cache-key match from a
 repository branch or a same-repository PR. Fork-created entries cannot satisfy

@@ -1314,13 +1314,17 @@ build-test-toolkit:
         if [ "$RUN_COMPACT_CONTRACT_TESTS" = "true" ]; then features="--features compact-contract-tests"; fi && \
         MIDNIGHT_LEDGER_EXPERIMENTAL=1 CARGO_BUILD_JOBS=$TOOLKIT_BUILD_JOBS with-git-creds cargo nextest archive \
             --release --locked -p midnight-node-toolkit $features \
-            --archive-file /opt/toolkit-tests.tar.zst
+            --archive-file /opt/toolkit-tests.tar.zst && \
+        if [ "$CI" = "true" ] && [ "$CI_CACHE" != "true" ]; then \
+            rm -rf /target /usr/local/cargo/registry /usr/local/cargo/git; \
+        fi
     COPY scripts/test-toolkit.sh /test-toolkit.sh
     ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
     SAVE IMAGE
 
 test-toolkit:
     ARG NATIVEARCH
+    ARG CI_EXECUTION=""
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     # Optional: override the indexer e2e's indexer image (default in test-images.docker-compose.yml).
@@ -1355,6 +1359,7 @@ test-toolkit:
                 --load test-toolkit:latest=(+build-test-toolkit --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) \
                 --pull $NODE_IMAGE
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1374,6 +1379,7 @@ test-toolkit:
     ELSE
         WITH DOCKER --load test-toolkit:latest=(+build-test-toolkit --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS)
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
