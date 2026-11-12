@@ -110,7 +110,10 @@ pub fn fork_context_8_to_9(
 				return Err(std::io::Error::other("v8->v9 state translation did not converge"));
 			}
 			tl = tl.run(budget)?;
-			if let Some(result) = tl.result()? {
+			if let Some(mut result) = tl.result()? {
+				// The result is lazy and its nodes are pinned only by `tl`; persist before `tl`
+				// drops, or the in-memory arena evicts them (as the node's migration does).
+				result.persist();
 				break result;
 			}
 		}

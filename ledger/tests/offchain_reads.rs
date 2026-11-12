@@ -17,6 +17,7 @@
 //! the assertions inspect the shared write cache, which other tests would also fill.
 
 use ledger_storage_ledger_8::{
+	arena::TypedArenaKey,
 	db::ParityDb,
 	storage::{default_storage, try_get_default_storage},
 };
@@ -137,10 +138,16 @@ fn ledger_8_state() -> Vec<u8> {
 
 	let mut onchain = BasicExternalities::default();
 	onchain.register_extension(LedgerOnchainExt::default());
+	// Block execution holds intra-block states only until the block ends, so commit this one
+	// here, as a block's tip would be.
 	sp_externalities::set_and_run_with_externalities(&mut onchain, || {
-		host8::apply_cnight_system_transaction(&empty, &system_tx, ctx, 1)
+		let applied = host8::apply_cnight_system_transaction(&empty, &system_tx, ctx, 1)
 			.unwrap()
-			.state_root
+			.state_root;
+		let key: TypedArenaKey<Ledger8<Shared>, storage_sha2::Sha256> =
+			midnight_serialize::tagged_deserialize(&mut &applied[..]).unwrap();
+		default_storage::<Shared>().arena.get_lazy(&key).unwrap().persist();
+		applied
 	})
 }
 
