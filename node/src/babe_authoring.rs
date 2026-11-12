@@ -355,10 +355,10 @@ where
 		);
 	}
 
-	// Bootstrap the flip block's cumulative BABE chain weight to 0. The flip block was imported
-	// through the AURA pipeline, which records no BABE block weight, so the first BABE block (its
-	// child) would fail to import with "Parent block ... has no associated weight". This mirrors the
-	// warp-sync bootstrap (`import_state`), which likewise resets the weight to 0 at the sync point.
+	// Give the flip block a cumulative BABE chain weight of 0, which its first BABE child needs as
+	// its parent weight. `AuraWeightBlockImport` records it at import; this covers a flip block
+	// imported without it (by an earlier binary, or inside the block gap). It mirrors the warp-sync
+	// bootstrap (`import_state`), which likewise resets the weight to 0 at the sync point.
 	let weight_key = block_weight_key(at);
 	let weight_value = (0 as BabeBlockWeight).encode();
 	let no_delete: &[&[u8]] = &[];

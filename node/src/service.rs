@@ -54,7 +54,9 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-use crate::consensus_engine_dispatch::{EngineDispatchBlockImport, EngineDispatchVerifier};
+use crate::consensus_engine_dispatch::{
+	AuraWeightBlockImport, EngineDispatchBlockImport, EngineDispatchVerifier, in_block_gap,
+};
 use crate::engine_digests::EngineSlotExtractor;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
@@ -574,7 +576,13 @@ pub fn new_partial(
 			babe_verifier,
 		),
 		Box::new(crate::warp_ledger_sync::block_import::GatedBlockImport::new(
-			EngineDispatchBlockImport::new(grandpa_block_import.clone(), babe_block_import),
+			EngineDispatchBlockImport::new(
+				AuraWeightBlockImport::new(
+					grandpa_block_import.clone(),
+					in_block_gap(client.clone()),
+				),
+				babe_block_import,
+			),
 			recovery_gate.clone(),
 			backend.clone(),
 		)),
@@ -988,7 +996,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				slot_duration: sc_slot_config.slot_duration,
 				client: client.clone(),
 				select_chain: select_chain.clone(),
-				block_import,
+				// Own AURA blocks get the same zero BABE weight as imported ones.
+				block_import: AuraWeightBlockImport::new(
+					block_import,
+					in_block_gap(client.clone()),
+				),
 				proposer_factory: aura_proposer_factory,
 				create_inherent_data_providers: make_proposal_cidp(),
 				force_authoring,
