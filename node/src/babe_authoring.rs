@@ -11,26 +11,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Block-authoring supervision for the AURA→BABE consensus migration.
+//! Block authoring across the AURA→BABE consensus migration.
 //!
-//! Two slot workers that cannot run concurrently:
-//! the inactive one would spam failed aux-data fetches every slot, and if both authored they
-//! would fork the chain. [`run_authoring_supervisor`] is the single authoring gate: it polls
-//! AURA until the flip, bootstraps BABE's epoch tree, then polls BABE for the rest of the
-//! node's life. The switch is one-directional, so a restart after the flip skips AURA.
+//! Two slot workers, of which at most one may author on a given best block. Both run for the
+//! node's life, each behind an [`EngineGatedSyncOracle`] that makes it skip a slot unless the state
+//! of the best block selects its engine. The choice follows the best block in both directions, so
+//! authoring returns to AURA if the best chain moves to a branch that has not flipped.
+//!
+//! Each worker reads the best block on its own: the gate from the client's chain info, the worker
+//! from its `SelectChain`. Both are the same while the node uses `LongestChain`. A block that
+//! changes the engine, imported between those reads, costs a skipped slot or an ordinary one-block
+//! fork.
 //!
 //! Seeding the epoch tree has two triggers, one implementation ([`seed_epoch_tree_if_needed`]):
 //!
-//! - **About to author a BABE block** (authorities only): the supervisor seeds after
-//!   [`wait_for_flip`] and before starting the BABE worker. The validator that authors the very
-//!   first BABE block has imported no BABE block yet and its own blocks bypass the import queue, so
-//!   nothing else would seed before it proposes. `wait_for_flip` watches the origin-independent
-//!   every-import stream so the hand-over also happens while syncing across the flip.
+//! - **About to author a BABE block** (authorities only): the BABE worker's gate seeds at the
+//!   best block before it lets a slot through. The validator that authors the very first BABE
+//!   block has imported no BABE block yet and its own blocks bypass the import queue, so nothing
+//!   else would seed before it proposes. A failed attempt is repeated at the next slot.
 //! - **About to verify a BABE block** (every role): [`BabeEpochSeeder`], called by the import
-//!   queue's dispatching verifier right before it hands a BABE block to the BABE verifier. This is
-//!   the only trigger that works while *syncing* across the flip — the client emits no block-import
-//!   notifications for sync-origin imports, so a notification watcher never fires there — and it is
-//!   what lets non-authorities import the first BABE block; they run no flip watcher at all.
+//!   queue's dispatching verifier right before it hands a BABE block to the BABE verifier. It is
+//!   what lets non-authorities import the first BABE block; they run no authoring gate.
 //!
 //! Seeding is idempotent and its check-and-import is atomic under the epoch-tree lock, so both
 //! triggers may run concurrently on an authority.
@@ -44,32 +45,37 @@
 //! `BabeApi` at the flip, not from that placeholder.
 
 use crate::consensus_engine_dispatch::EpochSeeder;
-use crate::engine_digests::{authoring_engine, has_authoritative_babe_pre_digest, slot_of};
-use futures::StreamExt;
+use crate::engine_digests::{authoring_engine, slot_of};
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
 use parity_scale_codec::Encode;
-use sc_client_api::{AuxStore, BlockchainEvents, UsageProvider};
-use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key};
+use sc_client_api::{AuxStore, UsageProvider};
+use sc_consensus_babe::{
+	BabeBlockWeight, BabeLink,
+	aux_schema::{block_weight_key, load_block_weight},
+};
 use sc_consensus_epochs::{EpochChanges, IsDescendentOfBuilder, ViableEpoch, descendent_query};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
+use sp_consensus::SyncOracle;
 use sp_consensus_babe::{BabeApi, BabeConfiguration, digests::NextEpochDescriptor};
 use sp_consensus_slots::{Slot, SlotDuration};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT, NumberFor};
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{
+	Arc,
+	atomic::{AtomicBool, Ordering},
+};
 
 const LOG_TARGET: &str = "babe-authoring";
 
 type Hash = <Block as BlockT>::Hash;
 
-/// Trait bundle for a client the supervisor can query, subscribe to, and write aux data on.
-pub trait SupervisorClient:
+/// Trait bundle for a client the authoring gates can query and write aux data on.
+pub trait AuthoringClient:
 	ProvideRuntimeApi<Block>
 	+ HeaderBackend<Block>
 	+ HeaderMetadata<Block, Error = sp_blockchain::Error>
-	+ BlockchainEvents<Block>
 	+ AuxStore
 	+ Send
 	+ Sync
@@ -77,11 +83,10 @@ pub trait SupervisorClient:
 {
 }
 
-impl<C> SupervisorClient for C where
+impl<C> AuthoringClient for C where
 	C: ProvideRuntimeApi<Block>
 		+ HeaderBackend<Block>
 		+ HeaderMetadata<Block, Error = sp_blockchain::Error>
-		+ BlockchainEvents<Block>
 		+ AuxStore
 		+ Send
 		+ Sync
@@ -161,86 +166,13 @@ where
 	}
 }
 
-/// Resolve once the best chain has flipped to BABE, yielding the best block hash at that point.
-///
-/// Returns immediately if the chain is already on BABE (restart after the flip); otherwise watches
-/// new-best block imports until one lands whose state selects BABE.
-///
-/// This uses `every_import_notification_stream`, not `import_notification_stream`: the latter is
-/// silent for blocks imported with a sync origin, so a validator syncing across the flip would keep
-/// running the AURA worker until some *other* node's block arrived at the tip — each slot in between
-/// it would attempt an AURA proposal that the runtime rejects ("AURA pre-runtime digest present in
-/// state 'Babe'"), and if every validator were in that state nobody would ever produce that block.
-/// The every-import stream fires for sync-origin imports too, so the hand-over happens at the flip
-/// block wherever the node is relative to the tip. The BABE worker then simply idles (slot workers
-/// skip slots while major-syncing) until sync completes.
-///
-/// The stream is subscribed *before* reading the best block so a flip imported in between is not
-/// missed. Every-import sinks only receive imports that happen after they exist.
-pub async fn wait_for_flip<C>(client: &Arc<C>) -> Hash
-where
-	C: SupervisorClient,
-	C::Api: ConsensusEngineApi<Block>,
-{
-	let mut notifications = client.every_import_notification_stream();
-
-	let best = client.info().best_hash;
-	if active_engine_at(&**client, best) == ActiveEngine::Babe {
-		log::info!(target: LOG_TARGET, "chain already on BABE at startup (best {best:?})");
-		return best;
-	}
-
-	while let Some(notification) = notifications.next().await {
-		if !notification.is_new_best {
-			continue;
-		}
-		// Cheap pre-filter for the (possibly long) history authored by pre-migration nodes: the
-		// flip block, like every block from a migration-aware author, carries a BABE pre-runtime
-		// digest. Blocks without one cannot be past the flip, so skip the runtime query for them.
-		if !has_authoritative_babe_pre_digest::<Block>(&notification.header) {
-			continue;
-		}
-		if active_engine_at(&**client, notification.hash) == ActiveEngine::Babe {
-			log::info!(
-				target: LOG_TARGET,
-				"consensus flip to BABE observed at block #{} ({:?})",
-				notification.header.number(),
-				notification.hash,
-			);
-			return notification.hash;
-		}
-	}
-
-	// The notification stream only ends when the node is shutting down.
-	client.info().best_hash
-}
-
-/// Wait for the consensus flip, then seed BABE's epoch tree (and chain-weight) at that block.
-///
-/// Returns the flip-block hash. Seeding is a no-op when the tree already covers the block
-/// (restart after the flip). Non-authorities don't use this; their tree is seeded on the import path.
-pub async fn bootstrap_babe_at_flip<C>(client: Arc<C>, babe_link: &BabeLink<Block>) -> Hash
-where
-	C: SupervisorClient,
-	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
-{
-	let at = wait_for_flip(&client).await;
-	if let Err(err) = seed_epoch_tree_if_needed(&client, babe_link, at) {
-		log::error!(
-			target: LOG_TARGET,
-			"failed to seed BABE epoch tree at {at:?}: {err}; BABE import/authoring may stall",
-		);
-	}
-	at
-}
-
 /// Whether `epoch_changes` can resolve an epoch for the children of the flip block `at`.
 ///
 /// The children are queried at `flip_slot + 1`, the first BABE slot, **not** at the flip block's own
 /// slot: the flip happens at the last AURA slot of an epoch and BABE's genesis slot is the one
 /// after, so every epoch in a seeded tree starts *above* `flip_slot`. Querying at `flip_slot` finds
 /// no epoch and reports an already-seeded tree as uncovered, which would make every subsequent call
-/// re-seed — and `reset` wipes the tree.
+/// seed again.
 fn tree_covers_children_of<D>(
 	epoch_changes: &EpochChanges<Hash, NumberFor<Block>, sc_consensus_babe::Epoch>,
 	descendent_of_builder: D,
@@ -310,7 +242,7 @@ pub fn seed_epoch_tree_if_needed<C>(
 	at: Hash,
 ) -> Result<(), String>
 where
-	C: SupervisorClient,
+	C: AuthoringClient,
 	C::Api: BabeApi<Block>,
 {
 	let header = client
@@ -323,20 +255,16 @@ where
 	// The flip block is the last AURA block; its slot is the AURA one, read by the shared rule.
 	let slot = slot_of::<Block>(&header).map_err(|e| format!("flip block {at:?}: {e}"))?;
 
-	// Hold the tree lock from the coverage check through the reset. Seeding has two triggers (the
-	// authoring supervisor and the import-path seeder) that can run concurrently around the flip;
-	// with check and reset under one lock the second caller sees the first one's result instead of
-	// racing it.
-	{
-		let mut epoch_changes = babe_link.epoch_changes().shared_data();
-		let covered =
-			tree_covers_children_of(&epoch_changes, descendent_query(&**client), &at, number, slot)
-				.map_err(|e| format!("epoch-tree lookup for children of {at:?} failed: {e}"))?;
-		if covered {
-			log::debug!(target: LOG_TARGET, "BABE epoch tree already covers {at:?}; not seeding");
-			return Ok(());
-		}
-
+	// Hold the tree lock from the coverage check through the weight write. Seeding has two triggers
+	// (the BABE authoring gate and the import-path seeder) that can run concurrently around the
+	// flip; under one lock the second caller sees the first one's complete result.
+	let mut epoch_changes = babe_link.epoch_changes().shared_data();
+	let covered =
+		tree_covers_children_of(&epoch_changes, descendent_query(&**client), &at, number, slot)
+			.map_err(|e| format!("epoch-tree lookup for children of {at:?} failed: {e}"))?;
+	if covered {
+		log::debug!(target: LOG_TARGET, "BABE epoch tree already covers {at:?}; not seeding");
+	} else {
 		let current = client.runtime_api().current_epoch(at).map_err(|e| e.to_string())?;
 		let next = client.runtime_api().next_epoch(at).map_err(|e| e.to_string())?;
 		let (current_index, next_index) = (current.epoch_index, next.epoch_index);
@@ -354,19 +282,24 @@ where
 			"seeded BABE epoch tree at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
 		);
 	}
+	ensure_zero_weight_at(&**client, at)
+}
 
-	// Give the flip block a cumulative BABE chain weight of 0, which its first BABE child needs as
-	// its parent weight. `AuraWeightBlockImport` records it at import; this covers a flip block
-	// imported without it (by an earlier binary, or inside the block gap). It mirrors the warp-sync
-	// bootstrap (`import_state`), which likewise resets the weight to 0 at the sync point.
+/// Give the flip block `at` a cumulative BABE chain weight of 0 unless it has one, which its first
+/// BABE child needs as its parent weight. `AuraWeightBlockImport` records it at import; this covers
+/// a flip block imported without it (by an earlier binary, or inside the block gap). It mirrors the
+/// warp-sync bootstrap (`import_state`), which likewise sets the weight to 0 at the sync point.
+fn ensure_zero_weight_at<C: AuxStore>(client: &C, at: Hash) -> Result<(), String> {
+	if load_block_weight(client, at).map_err(|e| e.to_string())?.is_some() {
+		return Ok(());
+	}
 	let weight_key = block_weight_key(at);
 	let weight_value = (0 as BabeBlockWeight).encode();
 	let no_delete: &[&[u8]] = &[];
 	client
 		.insert_aux(&[(weight_key.as_slice(), weight_value.as_slice())], no_delete)
 		.map_err(|e| e.to_string())?;
-
-	log::debug!(target: LOG_TARGET, "bootstrapped zero BABE chain-weight at flip block {at:?}");
+	log::debug!(target: LOG_TARGET, "recorded zero BABE chain weight at flip block {at:?}");
 	Ok(())
 }
 
@@ -376,9 +309,9 @@ where
 /// Called for every BABE block, so the common case must be cheap: a BABE-authored parent had its
 /// epoch recorded by the BABE import that brought it in and is skipped on its header alone. For any
 /// other parent it seeds only when the runtime state at `parent` has flipped to BABE. The parent
-/// hash comes from a peer-supplied header, so without that check a peer could make us reset the
-/// tree at an arbitrary imported block; with it, the only block that is both post-flip *and* not yet
-/// covered by the tree is the flip block itself.
+/// hash comes from a peer-supplied header, so without that check a peer could make us add an epoch
+/// pair at an arbitrary imported block; with it, the only block that is both post-flip *and* not
+/// yet covered by the tree is the flip block itself.
 pub struct BabeEpochSeeder<C> {
 	client: Arc<C>,
 	babe_link: BabeLink<Block>,
@@ -392,26 +325,11 @@ impl<C> BabeEpochSeeder<C> {
 
 impl<C> EpochSeeder<Block> for BabeEpochSeeder<C>
 where
-	C: SupervisorClient,
+	C: AuthoringClient,
 	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
 {
 	fn ensure_seeded_for_child_of(&self, parent: Hash) {
-		// Not imported (yet): nothing to seed at; the BABE block import will report `UnknownParent`
-		// and sync re-offers the block later.
-		let Ok(Some(parent_header)) = self.client.header(parent) else {
-			log::debug!(target: LOG_TARGET, "parent {parent:?} of a BABE block is not imported; not seeding");
-			return;
-		};
-		// A BABE-authored parent is already covered by the tree (see the type docs); only the flip
-		// block — an AURA-authored parent of a BABE block — can need seeding.
-		if authoring_engine::<Block>(&parent_header) == Some(ActiveEngine::Babe) {
-			return;
-		}
-		if active_engine_at(&*self.client, parent) != ActiveEngine::Babe {
-			log::debug!(target: LOG_TARGET, "state at {parent:?} has not flipped to BABE; not seeding");
-			return;
-		}
-		if let Err(err) = seed_epoch_tree_if_needed(&self.client, &self.babe_link, parent) {
+		if let Err(err) = self.seed_for_child_of(parent) {
 			log::error!(
 				target: LOG_TARGET,
 				"failed to seed BABE epoch tree at {parent:?} on the import path: {err}; BABE import may stall",
@@ -420,39 +338,156 @@ where
 	}
 }
 
-/// Drive AURA authoring until the consensus flip, bootstrap BABE's epoch tree, then drive BABE
-/// authoring for the remainder of the node's life.
-///
-/// `aura_worker` and `babe_worker` are the futures returned by `start_aura`/`start_babe`. The AURA
-/// future is polled only until the flip is observed and the epoch tree is seeded, then dropped;
-/// the BABE future runs terminally.
-pub async fn run_authoring_supervisor<C>(
-	client: Arc<C>,
-	babe_link: BabeLink<Block>,
-	aura_worker: impl Future<Output = ()>,
-	babe_worker: impl Future<Output = ()>,
-) where
-	C: SupervisorClient,
+impl<C> BabeEpochSeeder<C>
+where
+	C: AuthoringClient,
 	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
 {
-	let flip_at = {
-		let bootstrap = bootstrap_babe_at_flip(client, &babe_link);
-		futures::pin_mut!(aura_worker, bootstrap);
-		match futures::future::select(aura_worker, bootstrap).await {
-			// The AURA worker is spawned as essential; if it returns first the service is going
-			// down anyway, so there is nothing to hand over to.
-			futures::future::Either::Left(((), _bootstrap)) => {
-				log::warn!(target: LOG_TARGET, "AURA authoring worker exited before the consensus flip");
-				return;
-			},
-			futures::future::Either::Right((flip_at, _aura)) => flip_at,
+	/// Seed at `parent` if it is the flip block; `Ok` when a BABE child of `parent` can resolve its
+	/// epoch or `parent` is not a block to seed at.
+	fn seed_for_child_of(&self, parent: Hash) -> Result<(), String> {
+		// Not imported: nothing to seed at. Only a block imported with its state gets here.
+		let Ok(Some(parent_header)) = self.client.header(parent) else {
+			log::debug!(target: LOG_TARGET, "parent {parent:?} of a BABE block is not imported; not seeding");
+			return Ok(());
+		};
+		// A BABE-authored parent is already covered by the tree (see the type docs); only the flip
+		// block — an AURA-authored parent of a BABE block — can need seeding.
+		if authoring_engine::<Block>(&parent_header) == Some(ActiveEngine::Babe) {
+			return Ok(());
 		}
-	};
+		if active_engine_at(&*self.client, parent) != ActiveEngine::Babe {
+			log::debug!(target: LOG_TARGET, "state at {parent:?} has not flipped to BABE; not seeding");
+			return Ok(());
+		}
+		seed_epoch_tree_if_needed(&self.client, &self.babe_link, parent)
+	}
+}
 
-	log::info!(target: LOG_TARGET, "handing block authoring over from AURA to BABE at {flip_at:?}");
+/// Decides, at the start of a slot, whether a slot worker may author in it.
+pub type AuthoringGate = Arc<dyn Fn() -> bool + Send + Sync>;
 
-	babe_worker.await;
-	log::warn!(target: LOG_TARGET, "BABE authoring worker exited");
+/// Whether the AURA worker authors the child of `best`.
+fn aura_authors_child_of<C>(client: &C, best: Hash) -> bool
+where
+	C: ProvideRuntimeApi<Block>,
+	C::Api: ConsensusEngineApi<Block>,
+{
+	active_engine_at(client, best) == ActiveEngine::Aura
+}
+
+/// Whether the BABE worker authors the child of `best`: the state there selects BABE and `seed`
+/// did not fail.
+fn babe_authors_child_of<C>(
+	client: &C,
+	best: Hash,
+	seed: impl FnOnce(Hash) -> Result<(), String>,
+) -> bool
+where
+	C: ProvideRuntimeApi<Block>,
+	C::Api: ConsensusEngineApi<Block>,
+{
+	if active_engine_at(client, best) != ActiveEngine::Babe {
+		return false;
+	}
+	match seed(best) {
+		Ok(()) => true,
+		Err(err) => {
+			log::error!(
+				target: LOG_TARGET,
+				"failed to seed BABE epoch tree at {best:?}: {err}; not authoring in this slot",
+			);
+			false
+		},
+	}
+}
+
+/// Gate for the AURA worker: open while the state of the best block selects AURA.
+pub fn aura_authoring_gate<C>(client: Arc<C>) -> AuthoringGate
+where
+	C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
+	C::Api: ConsensusEngineApi<Block>,
+{
+	Arc::new(move || aura_authors_child_of(&*client, client.info().best_hash))
+}
+
+/// Gate for the BABE worker: open while the state of the best block selects BABE, seeding the
+/// epoch tree at the flip block first.
+pub fn babe_authoring_gate<C>(client: Arc<C>, babe_link: BabeLink<Block>) -> AuthoringGate
+where
+	C: AuthoringClient,
+	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
+{
+	let seeder = BabeEpochSeeder::new(client.clone(), babe_link);
+	let (babe_client, aura_client) = (client.clone(), client.clone());
+	logging_handover_gate(
+		move || client.info().best_hash,
+		move |best| babe_authors_child_of(&*babe_client, best, |at| seeder.seed_for_child_of(at)),
+		move |best| aura_authors_child_of(&*aura_client, best),
+	)
+}
+
+/// The BABE gate around `babe_authors`, read once per slot at `best_hash()`, logging when it opens
+/// and when it closes with `aura_authors` taking over.
+fn logging_handover_gate(
+	best_hash: impl Fn() -> Hash + Send + Sync + 'static,
+	babe_authors: impl Fn(Hash) -> bool + Send + Sync + 'static,
+	aura_authors: impl Fn(Hash) -> bool + Send + Sync + 'static,
+) -> AuthoringGate {
+	let was_open = AtomicBool::new(false);
+	Arc::new(move || {
+		let best = best_hash();
+		let open = babe_authors(best);
+		if was_open.swap(open, Ordering::AcqRel) != open {
+			if open {
+				log::info!(target: LOG_TARGET, "handing block authoring over from AURA to BABE at {best:?}");
+			} else if aura_authors(best) {
+				// Not logged when the gate closed on a seeding failure: AURA does not author then.
+				log::info!(target: LOG_TARGET, "handing block authoring back from BABE to AURA at {best:?}");
+			}
+		}
+		open
+	})
+}
+
+/// Wraps a slot worker's [`SyncOracle`] so the worker also skips every slot its gate is closed in.
+#[derive(Clone)]
+pub struct EngineGatedSyncOracle<Inner> {
+	inner: Inner,
+	gate: AuthoringGate,
+}
+
+impl<Inner> EngineGatedSyncOracle<Inner> {
+	pub fn new(inner: Inner, gate: AuthoringGate) -> Self {
+		Self { inner, gate }
+	}
+}
+
+impl<Inner: SyncOracle> SyncOracle for EngineGatedSyncOracle<Inner> {
+	fn is_major_syncing(&self) -> bool {
+		self.inner.is_major_syncing() || !(self.gate)()
+	}
+
+	fn is_offline(&self) -> bool {
+		self.inner.is_offline()
+	}
+}
+
+/// Drive both authoring workers until either exits. Each skips the slots its
+/// [`EngineGatedSyncOracle`] closes, so at most one of them authors on a given best block.
+pub async fn run_authoring_workers(
+	aura_worker: impl Future<Output = ()>,
+	babe_worker: impl Future<Output = ()>,
+) {
+	futures::pin_mut!(aura_worker, babe_worker);
+	match futures::future::select(aura_worker, babe_worker).await {
+		futures::future::Either::Left(_) => {
+			log::warn!(target: LOG_TARGET, "AURA authoring worker exited")
+		},
+		futures::future::Either::Right(_) => {
+			log::warn!(target: LOG_TARGET, "BABE authoring worker exited")
+		},
+	}
 }
 
 #[cfg(test)]
@@ -622,6 +657,156 @@ mod tests {
 	fn active_engine_at_defaults_to_aura_when_the_runtime_query_fails() {
 		let api = TestApi { engine: None };
 		assert_eq!(active_engine_at(&api, Default::default()), ActiveEngine::Aura);
+	}
+
+	#[test]
+	fn babe_authors_only_while_the_best_state_selects_babe_and_the_tree_is_seeded() {
+		let best = Hash::default();
+		let aura = TestApi { engine: Some(ActiveEngine::Aura) };
+		let babe = TestApi { engine: Some(ActiveEngine::Babe) };
+
+		assert!(babe_authors_child_of(&babe, best, |_| Ok(())));
+		assert!(!babe_authors_child_of(&babe, best, |_| Err("no epoch".into())));
+		assert!(!babe_authors_child_of(&aura, best, |_| panic!("no seeding before the flip")));
+	}
+
+	#[test]
+	fn neither_engine_authors_twice_for_the_same_best_state() {
+		let best = Hash::default();
+		for engine in [Some(ActiveEngine::Aura), Some(ActiveEngine::Babe), None] {
+			let api = TestApi { engine };
+			let aura = aura_authors_child_of(&api, best);
+			let babe = babe_authors_child_of(&api, best, |_| Ok(()));
+			assert!(aura != babe, "exactly one engine authors for {engine:?}");
+			assert_eq!(aura, engine != Some(ActiveEngine::Babe));
+		}
+	}
+
+	struct FixedOracle {
+		major_syncing: bool,
+		offline: bool,
+	}
+	impl SyncOracle for FixedOracle {
+		fn is_major_syncing(&self) -> bool {
+			self.major_syncing
+		}
+		fn is_offline(&self) -> bool {
+			self.offline
+		}
+	}
+
+	#[test]
+	fn gated_oracle_follows_the_gate_in_both_directions() {
+		let open = Arc::new(AtomicBool::new(false));
+		let gate: AuthoringGate = {
+			let open = open.clone();
+			Arc::new(move || open.load(Ordering::Acquire))
+		};
+		let oracle =
+			EngineGatedSyncOracle::new(FixedOracle { major_syncing: false, offline: false }, gate);
+
+		assert!(oracle.is_major_syncing());
+		open.store(true, Ordering::Release);
+		assert!(!oracle.is_major_syncing());
+		open.store(false, Ordering::Release);
+		assert!(oracle.is_major_syncing());
+	}
+
+	#[test]
+	fn gated_oracle_keeps_the_inner_answers_without_running_the_gate_during_major_sync() {
+		let syncing = EngineGatedSyncOracle::new(
+			FixedOracle { major_syncing: true, offline: true },
+			Arc::new(|| panic!("the gate must not run during a major sync")),
+		);
+		assert!(syncing.is_major_syncing());
+		assert!(syncing.is_offline());
+
+		let idle = EngineGatedSyncOracle::new(
+			FixedOracle { major_syncing: false, offline: false },
+			Arc::new(|| false),
+		);
+		assert!(!idle.is_offline());
+	}
+
+	#[test]
+	fn babe_gate_reads_the_best_block_once_per_slot_and_consults_aura_only_when_it_closes() {
+		let (unflipped, flipped) = (H256::repeat_byte(1), H256::repeat_byte(2));
+		let best = Arc::new(std::sync::Mutex::new(unflipped));
+		let (reads, aura_asked) = (
+			Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+			Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+		);
+		let gate = logging_handover_gate(
+			{
+				let (best, reads) = (best.clone(), reads.clone());
+				move || {
+					reads.fetch_add(1, Ordering::SeqCst);
+					*best.lock().unwrap()
+				}
+			},
+			move |at| at == flipped,
+			{
+				let aura_asked = aura_asked.clone();
+				move |at| {
+					aura_asked.fetch_add(1, Ordering::SeqCst);
+					at == unflipped
+				}
+			},
+		);
+
+		for (at, open, aura_calls) in
+			[(unflipped, false, 0), (flipped, true, 0), (flipped, true, 0), (unflipped, false, 1)]
+		{
+			*best.lock().unwrap() = at;
+			assert_eq!(gate(), open);
+			assert_eq!(aura_asked.load(Ordering::SeqCst), aura_calls);
+		}
+		assert_eq!(reads.load(Ordering::SeqCst), 4);
+	}
+
+	#[derive(Default)]
+	struct MemoryAux(std::sync::Mutex<std::collections::HashMap<Vec<u8>, Vec<u8>>>);
+
+	impl AuxStore for MemoryAux {
+		fn insert_aux<
+			'a,
+			'b: 'a,
+			'c: 'a,
+			I: IntoIterator<Item = &'a (&'c [u8], &'c [u8])>,
+			D: IntoIterator<Item = &'a &'b [u8]>,
+		>(
+			&self,
+			insert: I,
+			delete: D,
+		) -> sp_blockchain::Result<()> {
+			let mut map = self.0.lock().unwrap();
+			for (key, value) in insert {
+				map.insert(key.to_vec(), value.to_vec());
+			}
+			for key in delete {
+				map.remove(*key);
+			}
+			Ok(())
+		}
+
+		fn get_aux(&self, key: &[u8]) -> sp_blockchain::Result<Option<Vec<u8>>> {
+			Ok(self.0.lock().unwrap().get(key).cloned())
+		}
+	}
+
+	#[test]
+	fn flip_block_gets_zero_weight_only_when_it_has_none() {
+		let (aux, flip, recorded) =
+			(MemoryAux::default(), H256::repeat_byte(56), H256::repeat_byte(57));
+		let key = block_weight_key(recorded);
+		aux.insert_aux(&[(key.as_slice(), (7 as BabeBlockWeight).encode().as_slice())], &[])
+			.unwrap();
+
+		for at in [flip, recorded] {
+			ensure_zero_weight_at(&aux, at).unwrap();
+		}
+		assert_eq!(load_block_weight(&aux, flip).unwrap(), Some(0));
+		assert_eq!(load_block_weight(&aux, recorded).unwrap(), Some(7));
 	}
 
 	#[test]
