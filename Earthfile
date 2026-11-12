@@ -22,12 +22,7 @@ VERSION 0.8
 # daemon topology, at no cost (same-arch builds still share the cache).
 ARG --global CACHE_KEY=local
 
-# Set true when building on a CI runner. When true, targets declare NO persistent CACHE
-# mounts (cargo registry/git and /target), so every CI build is clean and nothing is served
-# from a shared, cross-run cache. Defaults false for local builds, which DO mount the caches
-# so cargo's incremental fingerprinting can reuse artifacts across runs. CI runs set this via
-# EARTHLY_BUILD_ARGS=CI=true (see .envrc and the rebuild-*-bot workflows), keyed off the CI
-# environment variable GitHub Actions always exports.
+# CI compiler mounts require an explicit trusted-runner opt-in.
 ARG --global CI=false
 ARG --global CI_CACHE=false
 ARG --global TOOLKIT_BUILD_JOBS=16
@@ -1321,10 +1316,8 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
-    # inside the container, so the private git dependencies are fetched there: +test-toolkit
-    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
-    # netrc for the duration of the run (never baked into the image).
+    # Archive outside /target so the binaries survive the compiler cache mount.
+    # with-git-creds removes credentials before the layer is saved.
     RUN --secret NODE_GIT_TOKEN mkdir -p /opt && \
         features="" && \
         if [ "$RUN_COMPACT_CONTRACT_TESTS" = "true" ]; then features="--features compact-contract-tests"; fi && \
@@ -1432,9 +1425,7 @@ build:
     FROM +build-prepare
     ARG TARGETARCH
     # Caching is gated on CI (see top of file). Local builds (CI=false) mount the cargo
-    # registry/git caches and a per-branch-scoped /target dir so cargo's incremental
-    # fingerprinting can skip unchanged crates across runs. A CI build (CI=true) declares
-    # none of them and compiles from scratch.
+    # registry/git caches and a scoped /target dir. CI requires CI_CACHE=true.
     IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
         CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry

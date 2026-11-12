@@ -123,10 +123,6 @@ jobs:
         env:
           RUST_BACKTRACE: "1"
           TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_DB_URL }}
-          # Right-size the faucet for --test-threads 16 (default is 4).
-          # With fewer workers than tests, parallel request_tokens calls
-          # queue, can push some seeds past the warmup quiescence window,
-          # and force those tests into their own full Preview replay.
           E2E_FEATURE: ${{ steps.vars.outputs.env }}
         run: |
           cargo test --release --test e2e_tests --no-default-features --features "$E2E_FEATURE" -- cnight::observation:: --no-capture --test-threads 16
