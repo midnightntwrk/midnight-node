@@ -252,6 +252,10 @@ pub enum InstallError {
 		"a ledger arena is already installed in this process (persistent: {persistent}); it is chosen once per process"
 	)]
 	AlreadyInstalled { persistent: bool },
+	#[error(
+		"another thread used the in-memory ledger arena while it was being replaced; the on-disk arena must be chosen before any ledger work starts"
+	)]
+	InUse,
 	#[error("cannot open the ledger arena database: {0}")]
 	Open(#[from] std::io::Error),
 }
@@ -260,14 +264,24 @@ pub enum InstallError {
 /// in-memory one. Fails once the installed arena holds any object (or is already on
 /// disk): objects keep a handle to the arena they were built in, and mixing them into
 /// the on-disk state would leave nodes that never reach the database.
+///
+/// Call it before any other thread touches ledger state. The storage crate cannot
+/// replace a default storage atomically, so a thread looking the arena up during the
+/// swap panics, and one that used the old arena makes this return
+/// [`InstallError::InUse`] instead of losing its nodes silently.
 pub fn install_persistent_storage(dir: &Path) -> Result<Arc<Storage<ToolkitDB>>, InstallError> {
 	static SWAP: std::sync::Mutex<()> = std::sync::Mutex::new(());
 	let _guard = SWAP.lock().unwrap_or_else(|e| e.into_inner());
+	let persistent = is_persistent();
+	let old = try_default_storage();
 	// Objects up to the storage crate's small-object limit are stored inline in their
 	// parent and carry their own data; only larger ones are tracked by the arena.
-	let persistent = is_persistent();
-	if persistent || try_default_storage().is_some_and(|s| s.arena.size() > 0) {
+	if persistent || old.as_ref().is_some_and(|s| s.arena.size() > 0) {
 		return Err(InstallError::AlreadyInstalled { persistent });
+	}
+	// Two handles: the storage crate's map and `old`. Any other is a thread mid-use.
+	if old.as_ref().is_some_and(|s| Arc::strong_count(s) > 2) {
+		return Err(InstallError::InUse);
 	}
 	// Open before dropping the in-memory arena, so a failed open leaves it in place.
 	let db = ToolkitDB::open_disk(dir)?;
@@ -275,6 +289,11 @@ pub fn install_persistent_storage(dir: &Path) -> Result<Arc<Storage<ToolkitDB>>,
 	let storage = set_default_storage(|| Storage::new(PERSISTENT_CACHE_SIZE, db))
 		.map_err(|_| InstallError::AlreadyInstalled { persistent: is_persistent() })?;
 	PERSISTENT.store(true, Ordering::SeqCst);
+	// A thread that looked the old arena up before the drop may still be using it.
+	// Once `old` is the last handle no thread can reach it again, so its size is final.
+	if old.is_some_and(|s| Arc::strong_count(&s) > 1 || s.arena.size() > 0) {
+		return Err(InstallError::InUse);
+	}
 	Ok(storage)
 }
 

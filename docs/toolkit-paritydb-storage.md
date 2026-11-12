@@ -62,6 +62,11 @@ handle to the arena they were built in, so an object built before the swap would
 reach the database. If the arena already holds objects, or the on-disk arena is already
 open, `init` returns an error instead of silently staying in memory.
 
+The storage crate cannot replace a default storage in one step, so `init` must run
+before any other thread touches ledger state. A thread that looks the arena up during
+the swap panics; one that is still using the old arena makes the swap fail with
+`InstallError::InUse`, so no ledger object is lost without an error.
+
 ### Persisting roots and collecting garbage
 
 The per-wallet cache files and the per-height ledger snapshot files stay. A snapshot file
