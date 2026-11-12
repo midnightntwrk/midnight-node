@@ -37,7 +37,7 @@ use crate::fetcher::{
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// 50 block times: past this, the chain has stalled or the indexer stopped following it.
-const MAX_INDEXER_TIP_AGE: Duration = Duration::from_secs(5 * 60);
+const MAX_INDEXER_TIP_AGE: Duration = Duration::from_mins(5);
 
 /// A warning when the indexer's tip is stale. Not an error: on a stalled chain, reading the
 /// indexer is still how you debug it.
