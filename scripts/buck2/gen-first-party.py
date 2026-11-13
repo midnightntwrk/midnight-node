@@ -391,13 +391,17 @@ NO_UNIT_TEST = {"sc-partner-chains-consensus-aura", "sc-partner-chains-consensus
 # Tests that need external infra (Docker/testcontainers, a live devnet, a Cardano
 # node) get a `ci-infra` label so the distributed CI can `buck2 test root//...
 # --exclude ci-infra`. They still run locally against the real stack.
-CI_INFRA_UNIT = {"partner-chains-db-sync-data-sources"}  # testcontainers → postgres
+CI_INFRA_UNIT = {
+    "partner-chains-db-sync-data-sources",  # testcontainers → postgres
+    "midnight-primitives-mainchain-follower",  # #[sqlx::test] → postgres (DATABASE_URL)
+}
 CI_INFRA_INTEGRATION = {
     ("partner-chains-cardano-offchain", "integration_tests"),  # Cardano node
     ("midnight-node-e2e", "e2e_tests"),                        # devnet
     ("midnight-node-toolkit", "single_tx"),                    # docker-compose
     ("midnight-node-toolkit", "toolkit_e2e"),                  # devnet / ledger static dir
     ("midnight-node-toolkit", "hardfork_e2e"),                 # docker-compose
+    ("midnight-node-toolkit", "indexer_show_wallet_e2e"),      # live indexer
     ("sc-partner-chains-consensus", "verifier_network"),        # substrate-test-runtime wasm
 }
 

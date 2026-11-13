@@ -167,5 +167,6 @@ rust_test(
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },
+    labels = ["ci-infra"],
     visibility = ["PUBLIC"],
 )

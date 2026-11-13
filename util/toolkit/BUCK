@@ -721,6 +721,7 @@ rust_test(
     named_deps = {
         "storage_sha2": "root//third-party:storage-sha2",
     },
+    labels = ["ci-infra"],
     visibility = ["PUBLIC"],
 )
 
