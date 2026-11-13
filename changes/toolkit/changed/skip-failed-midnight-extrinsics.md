@@ -8,4 +8,5 @@ extrinsic's storage, so its ledger never applies the transaction, but the toolki
 anyway. The fetcher now drops Midnight transactions whose extrinsic emitted
 `System.ExtrinsicFailed`.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2443
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2441
