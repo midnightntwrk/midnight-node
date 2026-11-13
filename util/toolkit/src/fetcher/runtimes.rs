@@ -11,6 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use strum::{EnumIter, IntoEnumIterator as _};
+use subxt::{
+	config::substrate::{ConsensusEngineId, DigestItem, SubstrateHeader},
+	utils::H256,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum RuntimeVersionError {
@@ -18,6 +22,8 @@ pub enum RuntimeVersionError {
 	InvalidProtocolVersion(parity_scale_codec::Error),
 	#[error("indexer received a block made with unsupported node version {0}")]
 	UnsupportedBlockVersion(u32),
+	#[error("block header is missing the MNSV runtime-version digest")]
+	MissingDigest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
@@ -28,6 +34,7 @@ pub enum RuntimeVersion {
 	V1_0_3,
 	V2_0_0,
 	V2_1_0,
+	V2_1_100,
 	V3_0_0,
 	V4_0_0,
 }
@@ -45,6 +52,7 @@ impl TryFrom<u32> for RuntimeVersion {
 			001_000_003 | 001_000_300 => Ok(Self::V1_0_3),
 			002_000_000 => Ok(Self::V2_0_0),
 			002_001_000 => Ok(Self::V2_1_0),
+			002_001_100 => Ok(Self::V2_1_100),
 			003_000_000 => Ok(Self::V3_0_0),
 			004_000_000 => Ok(Self::V4_0_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
@@ -62,6 +70,7 @@ impl RuntimeVersion {
 			Self::V1_0_3 => 001_000_003,
 			Self::V2_0_0 => 002_000_000,
 			Self::V2_1_0 => 002_001_000,
+			Self::V2_1_100 => 002_001_100,
 			Self::V3_0_0 => 003_000_000,
 			Self::V4_0_0 => 004_000_000,
 		}
@@ -70,18 +79,41 @@ impl RuntimeVersion {
 	pub fn latest_version() -> Self {
 		RuntimeVersion::iter().max().unwrap()
 	}
+
+	/// Extract the runtime version from a block header by parsing the `MNSV`
+	/// consensus digest written by the `version` pallet.
+	pub fn from_header(header: &SubstrateHeader<H256>) -> Result<Self, RuntimeVersionError> {
+		const VERSION_ID: ConsensusEngineId = *b"MNSV";
+		header
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| match item {
+				DigestItem::Consensus(id, data) if *id == VERSION_ID => {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				},
+				_ => None,
+			})
+			.ok_or(RuntimeVersionError::MissingDigest)?
+	}
 }
 
 impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
 	type Error = RuntimeVersionError;
 
-	fn try_from(mut value: &'a [u8]) -> Result<Self, Self::Error> {
-		use parity_scale_codec::Decode;
-		match u32::decode(&mut value) {
-			Ok(version) => Self::try_from(version),
-			Err(e) => Err(RuntimeVersionError::InvalidProtocolVersion(e)),
-		}
+	fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+		Self::try_from(decode_spec_version(value)?)
 	}
+}
+
+/// Decodes the raw `spec_version` carried by the `MNSV` digest.
+///
+/// [`RuntimeVersion`] buckets several spec versions into one variant and
+/// [`RuntimeVersion::to_spec_version`] cannot round-trip, so callers that must tell two
+/// runtimes inside a bucket apart use this instead.
+pub fn decode_spec_version(mut value: &[u8]) -> Result<u32, RuntimeVersionError> {
+	use parity_scale_codec::Decode;
+	u32::decode(&mut value).map_err(RuntimeVersionError::InvalidProtocolVersion)
 }
 
 pub trait MidnightMetadata {
@@ -187,6 +219,12 @@ impl_midnight_metadata!(
 );
 
 impl_midnight_metadata!(
+	MidnightMetadata2_1_100,
+	mn_meta_2_1_100,
+	midnight_node_metadata::midnight_metadata_2_1_100
+);
+
+impl_midnight_metadata!(
 	MidnightMetadata3_0_0,
 	mn_meta_3_0_0,
 	midnight_node_metadata::midnight_metadata_3_0_0
@@ -197,3 +235,34 @@ impl_midnight_metadata!(
 	mn_meta_4_0_0,
 	midnight_node_metadata::midnight_metadata_4_0_0
 );
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use parity_scale_codec::Encode;
+
+	/// Keying the tblock-correction lookup on the bucket would apply the first runtime
+	/// resolved in it to every other runtime in it.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn bucket_collapses_distinct_runtimes_but_raw_spec_version_does_not() {
+		assert_eq!(RuntimeVersion::try_from(001_000_003).unwrap(), RuntimeVersion::V1_0_3);
+		assert_eq!(RuntimeVersion::try_from(001_000_300).unwrap(), RuntimeVersion::V1_0_3);
+
+		// Lossy on the way back: a block that ran 001_000_300 reports as 001_000_003.
+		assert_eq!(RuntimeVersion::V1_0_3.to_spec_version(), 001_000_003);
+
+		// The digest still carries the real number.
+		assert_eq!(decode_spec_version(&001_000_300u32.encode()).unwrap(), 001_000_300);
+		assert_eq!(decode_spec_version(&001_000_000u32.encode()).unwrap(), 001_000_000);
+	}
+
+	/// Node 2.1.101 ships runtime 2.1.100, whose metadata differs from the 2.1.0 RCs'.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn runtime_2_1_100_round_trips() {
+		let version = RuntimeVersion::try_from(002_001_100).unwrap();
+		assert_eq!(version, RuntimeVersion::V2_1_100);
+		assert_eq!(version.to_spec_version(), 002_001_100);
+	}
+}

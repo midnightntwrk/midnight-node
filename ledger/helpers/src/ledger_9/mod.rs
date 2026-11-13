@@ -27,7 +27,7 @@ pub type MaintenanceVerifyingKey = ContractMaintenanceVerifyingKey;
 pub const CRATE_NAME: &str = "mn-ledger-9";
 pub use {
 	base_crypto, coin_structure_ledger_9 as coin_structure,
-	ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_9 as mn_ledger,
+	ledger_storage_ledger_9 as ledger_storage, midnight_serialize, mn_ledger_9 as mn_ledger,
 	onchain_runtime_ledger_9 as onchain_runtime, transient_crypto_ledger_9 as transient_crypto,
 	zkir, zswap_ledger_9 as zswap,
 };
@@ -118,7 +118,7 @@ pub use crate::ledger_9::{
 		curve::Fr,
 		encryption::PublicKey as EncryptionPublicKey,
 		fab::ValueReprAlignedValue,
-		merkle_tree::{MerklePath, MerkleTree, leaf_hash},
+		merkle_tree::{MerklePath, MerkleTree, MerkleTreeCollapsedUpdate, leaf_hash},
 		proofs::{
 			KeyLocation, ParamsProver, ParamsProverProvider, ProofPreimage, ProverKey,
 			ProvingKeyMaterial, Resolver as ResolverTrait, VerifierKey,

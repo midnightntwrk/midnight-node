@@ -24,7 +24,7 @@ use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
-	extensions::ExtensionsFactory,
+	extensions::{ExtensionsFactory, LedgerContextExecutor},
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
 	metrics_push::{MetricsPushConfig, run_metrics_push_task},
@@ -224,8 +224,8 @@ pub type HostFunctions = (
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
-/// required `HostFunctions`.
-pub type RuntimeExecutor = sc_executor::WasmExecutor<HostFunctions>;
+/// required `HostFunctions`, and marks block authoring and import for the ledger host functions.
+pub type RuntimeExecutor = LedgerContextExecutor<sc_executor::WasmExecutor<HostFunctions>>;
 
 pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, RuntimeExecutor>;
 pub(crate) type FullBackend = sc_service::TFullBackend<Block>;
@@ -314,7 +314,7 @@ pub fn new_partial(
 		})
 		.transpose()?;
 
-	let executor = sc_service::new_wasm_executor(&config.executor);
+	let executor = LedgerContextExecutor(sc_service::new_wasm_executor(&config.executor));
 
 	let mut db_config = config.db_config();
 	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
@@ -830,6 +830,23 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let prometheus_registry = config.prometheus_registry().cloned();
 	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
+
+	#[cfg(target_os = "linux")]
+	match prometheus_registry
+		.as_ref()
+		.map(crate::allocator_metrics::AllocatorMetrics::register)
+	{
+		Some(Ok(metrics)) => task_manager.spawn_handle().spawn(
+			"allocator-metrics",
+			None,
+			metrics.run(crate::allocator_metrics::DEFAULT_INTERVAL),
+		),
+		Some(Err(err)) => log::error!(
+			target: "prometheus",
+			"Failed to register allocator metrics: {err}",
+		),
+		None => {},
+	}
 
 	let subscription_metrics =
 		prometheus_registry.as_ref().and_then(|r| SubscriptionMetrics::register(r).ok());

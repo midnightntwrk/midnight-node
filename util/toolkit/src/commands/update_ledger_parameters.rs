@@ -178,8 +178,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(Box::new(e)))?
 		},
 		None => {
-			let call =
-				mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
+			// Unvalidated for the same reason as `MidnightNodeClient::get_ledger_parameters`.
+			let call = mn_meta::runtime_apis::RuntimeApi
+				.midnight_runtime_api()
+				.get_ledger_parameters()
+				.unvalidated();
 			api.at_current_block()
 				.await?
 				.runtime_apis()
