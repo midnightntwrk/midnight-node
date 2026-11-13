@@ -42,7 +42,7 @@ use crate::{RegistrationBatch, pallet};
 
 /// One operator's full key set, as the off-chain registration tool would hold it.
 struct Operator {
-	cold: ed25519::Pair,
+	spo_cold: ed25519::Pair,
 	cross_chain: ecdsa::Pair,
 	aura: sr25519::Pair,
 	babe: sr25519::Pair,
@@ -58,7 +58,7 @@ impl Operator {
 			bytes
 		};
 		Self {
-			cold: ed25519::Pair::from_seed(&derive(0)),
+			spo_cold: ed25519::Pair::from_seed(&derive(0)),
 			cross_chain: ecdsa::Pair::from_seed(&derive(1)),
 			aura: sr25519::Pair::from_seed(&derive(2)),
 			babe: sr25519::Pair::from_seed(&derive(3)),
@@ -68,7 +68,7 @@ impl Operator {
 	}
 
 	fn pool_id(&self) -> MainchainKeyHash {
-		StakePoolPublicKey(self.cold.public().0).hash()
+		StakePoolPublicKey(self.spo_cold.public().0).hash()
 	}
 
 	fn account_id(&self) -> AccountId {
@@ -105,7 +105,7 @@ impl Operator {
 
 		let mut datum = RegistrationDatum {
 			status: RegistrationStatus::Active,
-			cold_pub_key: StakePoolPublicKey(self.cold.public().0),
+			cold_pub_key: StakePoolPublicKey(self.spo_cold.public().0),
 			pool_signature: PoolSignatureBytes([0u8; 64]),
 			cross_chain_pub_key: CrossChainPublicKeyBytes(self.cross_chain.public().0),
 			cross_chain_signature: CrossChainSignatureBytes([0u8; 65]),
@@ -116,7 +116,7 @@ impl Operator {
 			midnight_primitives_candidate_registrations::RegistrationMessage::from_datum(&datum)
 				.to_signed_bytes();
 
-		datum.pool_signature = PoolSignatureBytes(self.cold.sign(&message).0);
+		datum.pool_signature = PoolSignatureBytes(self.spo_cold.sign(&message).0);
 		datum.cross_chain_signature = CrossChainSignatureBytes(self.cross_chain.sign(&message).0);
 
 		let proven: Vec<CandidateKey> = keys
@@ -165,11 +165,11 @@ impl KeyMaterial {
 	}
 }
 
-/// A deposit that stands a registration down.
+/// A deposit that inactivates a registration.
 ///
 /// A6 allows any registration datum with the inactive flag, not only a copy of
 /// the one being replaced; this builds the copy because that is the ordinary
-/// case. `an_inactivation_need_not_resemble_what_it_stands_down` covers the
+/// case. `an_inactivation_need_not_resemble_what_it_inactivates` covers the
 /// other one.
 fn inactive_deposit_of(operator: &Operator) -> RegistrationDatum {
 	RegistrationDatum { status: RegistrationStatus::Inactive, ..operator.register() }
@@ -532,59 +532,25 @@ fn an_inactive_registration_can_be_reactivated() {
 }
 
 #[test]
-fn an_inactivation_forgets_the_registration_it_stands_down() {
-	// The record describes one event, and after a stand-down that event is the
-	// inactivation. What was registered before is gone, including why it was
-	// invalid: an operator who withdrew is not asking about it any more.
-	new_test_ext().execute_with(|| {
-		let operator = Operator::from_seed(17);
-		let mut broken = operator.register();
-		broken.cross_chain_signature = CrossChainSignatureBytes([0u8; 65]);
-		assert_ok!(apply(vec![observed(broken, CardanoTxPosition::new(10, 0))]));
-		assert!(matches!(state_of(operator.pool_id()), RegistrationState::Invalid(_)));
-
-		let stand_down = observed(inactive_deposit_of(&operator), CardanoTxPosition::new(11, 0));
-		assert_ok!(apply(vec![stand_down.clone()]));
-
-		// Every field describes the inactivation, not the registration it
-		// replaced: no UTxO pointer left over from a spent output.
-		assert_eq!(
-			Registrations::<Test>::get(operator.pool_id()).unwrap(),
-			RegistrationRecord::Inactive {
-				cold_pub_key: StakePoolPublicKey(operator.cold.public().0),
-				cross_chain_pub_key: CrossChainPublicKeyBytes(operator.cross_chain.public().0),
-				observed_at: CardanoTxPosition::new(11, 0),
-				utxo: stand_down.utxo,
-			}
-		);
-	});
-}
-
-#[test]
-fn an_inactivation_need_not_resemble_what_it_stands_down() {
-	// A6 lets the spending transaction deposit any registration output with
-	// the inactive flag, not a copy of the one it replaces. Nothing in it is
-	// admitted: it stands the pool down, and that is all it does.
+fn an_inactivation_need_not_resemble_what_it_inactivates() {
 	new_test_ext().execute_with(|| {
 		let operator = Operator::from_seed(210);
 		assert_ok!(apply(vec![observed(operator.register(), CardanoTxPosition::new(10, 0))]));
-		let registered_with = operator.cross_chain.public().0;
 
-		// Stand down with wholly different key material.
+		// Inactivate with wholly different key material.
 		let mut other = Operator::from_seed(211);
-		other.cold = operator.cold;
-		let stand_down = observed(inactive_deposit_of(&other), CardanoTxPosition::new(11, 0));
-		assert_ok!(apply(vec![stand_down.clone()]));
+		other.spo_cold = operator.spo_cold;
+		let inactivate = observed(inactive_deposit_of(&other), CardanoTxPosition::new(11, 0));
+		assert_ok!(apply(vec![inactivate.clone()]));
 
 		// The pool is down, and the account kept is the one its session keys
 		// are bound under — from the registration, not from this deposit.
 		assert_eq!(
 			Registrations::<Test>::get(operator.pool_id()).unwrap(),
 			RegistrationRecord::Inactive {
-				cold_pub_key: StakePoolPublicKey(operator.cold.public().0),
-				cross_chain_pub_key: CrossChainPublicKeyBytes(registered_with),
+				cold_pub_key: StakePoolPublicKey(operator.spo_cold.public().0),
 				observed_at: CardanoTxPosition::new(11, 0),
-				utxo: stand_down.utxo,
+				utxo: inactivate.utxo,
 			}
 		);
 		assert!(pallet::Pallet::<Test>::active_candidates().is_empty());
@@ -595,7 +561,7 @@ fn an_inactivation_need_not_resemble_what_it_stands_down() {
 fn an_inactive_deposit_for_an_unknown_pool_is_ignored() {
 	// Observation can be configured to start after a registration was
 	// deposited, so its inactivation may be the first the pallet hears of
-	// that pool. Nothing to stand down, nothing broken, carry on.
+	// that pool. Nothing to inactivate, nothing broken, carry on.
 	new_test_ext().execute_with(|| {
 		let stranger = Operator::from_seed(15);
 		let inactive = observed(inactive_deposit_of(&stranger), CardanoTxPosition::new(10, 0));
@@ -605,12 +571,6 @@ fn an_inactive_deposit_for_an_unknown_pool_is_ignored() {
 
 		assert_ok!(apply(vec![inactive.clone(), follower_event]));
 
-		System::assert_has_event(
-			Event::<Test>::InactivationIgnored { pool_id: stranger.pool_id(), utxo: inactive.utxo }
-				.into(),
-		);
-		// No record is invented for the stranger, and the rest of the batch
-		// ran: the cursor is past both deposits.
 		assert!(Registrations::<Test>::get(stranger.pool_id()).is_none());
 		assert_eq!(state_of(follower.pool_id()), RegistrationState::Active);
 		assert_eq!(RegistrationCount::<Test>::get(), 1);
@@ -624,7 +584,7 @@ fn a_halt_keeps_everything_applied_before_it() {
 		let good = Operator::from_seed(19);
 		let stale = Operator::from_seed(21);
 
-		// Stand `stale` down, so a second inactive deposit for it halts.
+		// Inactivate `stale`, so a second inactive deposit for it halts.
 		assert_ok!(apply(vec![observed(stale.register(), CardanoTxPosition::new(9, 0))]));
 		assert_ok!(apply(vec![observed(
 			inactive_deposit_of(&stale),
@@ -684,9 +644,6 @@ fn an_invalid_registration_supersedes_an_active_one() {
 
 #[test]
 fn a_pool_may_repair_an_invalid_registration_in_place() {
-	// An Invalid record is still active on Cardano, and an active deposit may
-	// now replace an active one — so a typo'd registration costs one Cardano
-	// transaction to correct, not a stand-down and a re-registration.
 	new_test_ext().execute_with(|| {
 		let operator = Operator::from_seed(23);
 		let mut broken = operator.register();
@@ -848,8 +805,7 @@ fn validate_registration_answers_without_changing_anything() {
 fn rotating_the_cross_chain_key_requires_rotating_every_session_key() {
 	// `purge_keys` is never called, so the old account still holds the old
 	// keys. A pool that rotates its cross-chain key but keeps a session key
-	// collides with itself — and must be told that, not that someone else
-	// took its key.
+	// collides with itself.
 	new_test_ext().execute_with(|| {
 		let mut operator = Operator::from_seed(90);
 		assert_ok!(apply(vec![observed(operator.register(), CardanoTxPosition::new(10, 0))]));
@@ -866,9 +822,7 @@ fn rotating_the_cross_chain_key_requires_rotating_every_session_key() {
 
 		assert_eq!(
 			state_of(operator.pool_id()),
-			RegistrationState::Invalid(
-				RegistrationInvalidReason::SessionKeyHeldByPreviousRegistration(GRANDPA.0)
-			)
+			RegistrationState::Invalid(RegistrationInvalidReason::SessionKeyReuse)
 		);
 		// The key is still the first account's, and the rejected registration
 		// bound nothing.
@@ -902,16 +856,15 @@ fn rotating_the_cross_chain_key_with_every_session_key_succeeds() {
 
 #[test]
 fn a_session_key_is_never_released_from_the_account_that_registered_it() {
-	// The cost of never calling `purge_keys`, pinned as intended behaviour
-	// rather than left to be discovered: a key that has been registered once
-	// is spent, for its own pool and for everyone else.
+	// A session key that has been registered once is spent, for its own pool and for everyone else,
+	// unless cross-chain key is the same.
 	new_test_ext().execute_with(|| {
 		let mut operator = Operator::from_seed(101);
 		let spent_grandpa = operator.grandpa;
 		assert_ok!(apply(vec![observed(operator.register(), CardanoTxPosition::new(10, 0))]));
 		let first_account = operator.account_id();
 
-		// The pool stands down and re-registers under a new cross-chain key
+		// The pool inactivates and re-registers under a new cross-chain key
 		// with wholly fresh session keys, which is the supported path.
 		assert_ok!(apply(vec![observed(
 			inactive_deposit_of(&operator),
@@ -1423,25 +1376,21 @@ fn a_refused_registration_carries_no_session_keys() {
 		broken.cross_chain_signature = CrossChainSignatureBytes([0u8; 65]);
 		assert_ok!(apply(vec![observed(broken, CardanoTxPosition::new(10, 0))]));
 
-		// An Invalid record has no `session_keys` field to be wrong about, and
-		// still carries the datum's own bytes to read back.
-		let RegistrationRecord::Invalid { keys, reason, .. } =
+		let RegistrationRecord::Invalid { reason, .. } =
 			Registrations::<Test>::get(operator.pool_id()).unwrap()
 		else {
 			panic!("a refused registration is Invalid");
 		};
 		assert_eq!(reason, RegistrationInvalidReason::InvalidCrossChainSignature);
-		assert_eq!(keys.len(), 4);
 		assert!(pallet::Pallet::<Test>::active_candidates().is_empty());
 	});
 }
 
 #[test]
 fn a_pool_that_stood_down_still_collides_with_its_own_old_keys() {
-	// Standing down releases nothing: the keys stay bound to the account the
+	// Inactivating releases nothing: the keys stay bound to the account the
 	// registration derived. A pool that comes back under a new cross-chain key
-	// while keeping one of them collides with itself, and must be told that
-	// rather than being pointed at a squatter.
+	// while keeping one of them collides with itself.
 	new_test_ext().execute_with(|| {
 		let mut operator = Operator::from_seed(200);
 		assert_ok!(apply(vec![observed(operator.register(), CardanoTxPosition::new(10, 0))]));
@@ -1460,9 +1409,7 @@ fn a_pool_that_stood_down_still_collides_with_its_own_old_keys() {
 
 		assert_eq!(
 			state_of(operator.pool_id()),
-			RegistrationState::Invalid(
-				RegistrationInvalidReason::SessionKeyHeldByPreviousRegistration(GRANDPA.0)
-			)
+			RegistrationState::Invalid(RegistrationInvalidReason::SessionKeyReuse)
 		);
 	});
 }

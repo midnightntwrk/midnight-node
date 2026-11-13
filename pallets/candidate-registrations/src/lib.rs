@@ -42,7 +42,7 @@
 //!
 //! An invalid registration is still stored. A Registration Token is reserved
 //! for SPOs, so the map holds at most one record per pool whether or not that
-//! pool registeration is valid. User can read back exactly what was wrong with it.
+//! pool registeration is valid. User can read back what was wrong with it.
 //!
 //! ## Session keys
 //!
@@ -53,14 +53,13 @@
 //! rotation. The pallet deliberately keeps no cross-chain-key-to-session-key
 //! index of its own: `pallet_session` already is that index.
 //!
-//! `purge_keys` is never called, so a session key is never released from the
-//! account it was bound to. Two consequences follow, and both are deliberate:
-//! a key that has been registered once can never be registered again by
+//! `purge_keys` is never called, so a session key is not necessarily released
+//! from the account it was bound to. Two consequences follow:
+//! a key that has been registered once can, possibly, never be registered again by
 //! anyone else, and rotating the cross-chain key — which moves the account the
 //! keys hang on — requires rotating every session key with it. A registration
 //! that rotates only the cross-chain key collides with the pool's *own*
-//! previous registration, and is told so by name rather than being reported as
-//! another pool's reuse.
+//! previous registration.
 //!
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -92,11 +91,10 @@ pub mod pallet {
 	use frame_support::sp_runtime::TransactionOutcome;
 	use frame_support::storage::transactional::with_transaction;
 	use midnight_primitives_candidate_registrations::{
-		CARDANO_BECH32_ADDRESS_MAX_LENGTH, CardanoTxPosition, CrossChainAccount,
-		CrossChainPublicKeyBytes, KeyCollision, MAX_REGISTRATION_EVENTS_PER_BLOCK,
-		ObservedRegistration, POLICY_ID_LENGTH, RegistrationDatum, RegistrationInvalidReason,
-		RegistrationMessage, RegistrationRecord, RegistrationState, RegistrationStatus,
-		SessionKeyAuthority,
+		CARDANO_BECH32_ADDRESS_MAX_LENGTH, CardanoTxPosition, CrossChainAccount, KeyCollision,
+		MAX_REGISTRATION_EVENTS_PER_BLOCK, ObservedRegistration, POLICY_ID_LENGTH,
+		RegistrationDatum, RegistrationInvalidReason, RegistrationMessage, RegistrationRecord,
+		RegistrationState, RegistrationStatus, SessionKeyAuthority,
 	};
 	use sidechain_domain::MainchainKeyHash;
 	use sp_runtime::traits::OpaqueKeys;
@@ -184,24 +182,9 @@ pub mod pallet {
 			/// The output carrying the inactive datum.
 			utxo: sidechain_domain::UtxoId,
 		},
-		/// An inactive deposit for a pool this chain has no record of.
-		///
-		/// Harmless and expected: observation can be configured to start
-		/// after a registration was deposited, in which case its inactivation
-		/// is the first the pallet hears of that pool. Announced rather than
-		/// silent so an operator can tell this apart from an inactivation
-		/// that was supposed to land.
-		InactivationIgnored {
-			/// blake2b-224 of the pool's cold key.
-			pool_id: MainchainKeyHash,
-			/// The output carrying the inactive datum.
-			utxo: sidechain_domain::UtxoId,
-		},
-		/// An inactive deposit against a pool that is already inactive. A7
-		/// says the output that would carry it cannot be spent, so one
-		/// appearing here says an assumption broke — most likely the minting
-		/// policy let something through. Processing stops at this deposit
-		/// rather than guessing what it meant.
+		/// State transition that Cardano Cardano should not let to
+		/// happen, so it deliberately stops registrations
+		/// processing - it means there is a bug to fix in some place.
 		IllegalStateTransition {
 			/// blake2b-224 of the pool's cold key.
 			pool_id: MainchainKeyHash,
@@ -435,7 +418,7 @@ pub mod pallet {
 			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 
-			// Unreachable through the inherent, like the limit check above:
+			// Unreachable through the inherent:
 			// `proposable_batch` refuses a batch that does not start at the
 			// cursor and ascend from there. Kept as the assertion that says so.
 			let prev_position = NextCardanoPosition::<T>::get();
@@ -446,11 +429,7 @@ pub mod pallet {
 			InherentExecutedThisBlock::<T>::put(true);
 
 			// A halt leaves the cursor on the offending deposit rather than
-			// past it: nothing already applied is replayed, and the deposit
-			// that broke an assumption is the first thing re-presented once
-			// the cause is fixed. Until then the batch stalls here every
-			// block, loudly. Block production is unaffected — a wedged
-			// observer must never be able to stop the chain.
+			// past it.
 			let mut applied = 0u32;
 			let mut cursor = next_position;
 			for registration in registrations.iter() {
@@ -473,7 +452,7 @@ pub mod pallet {
 	/// Whether the batch may carry on past a deposit.
 	#[derive(PartialEq, Eq)]
 	enum Applied {
-		/// Nothing was contradicted; apply the next deposit.
+		/// Everthing works as expected, continue.
 		Continue,
 		/// A deposit contradicted something Cardano was supposed to guarantee.
 		/// Stop, and leave the cursor pointing at it.
@@ -516,19 +495,7 @@ pub mod pallet {
 		/// must not accept from someone else either.
 		///
 		/// `None` means the node handed over an observation it was not supposed
-		/// to build. The node bounds its query by the limit this runtime
-		/// publishes through `CandidateRegistrationsApi`; one that did not is a
-		/// node that does not support its runtime, which is a bug in the node
-		/// layer. The runtime does not try to repair it — it cannot, since a
-		/// node wrong about this may be wrong about more — it refuses the
-		/// observation whole: nothing proposed, nothing required, nothing
-		/// accepted from anyone else.
-		///
-		/// What stops is registration processing. The cursor stays put and the
-		/// backlog waits for a node that bounds its query. Block production is
-		/// untouched, because refusing here is what keeps the oversized batch
-		/// away from [`Call::apply_registrations`], whose limit check would
-		/// fail a mandatory call and take the author's block down with it.
+		/// to build.
 		fn proposable_batch(
 			observation: RegistrationsObservation,
 		) -> Option<(RegistrationBatch, CardanoTxPosition)> {
@@ -546,14 +513,7 @@ pub mod pallet {
 				return None;
 			}
 
-			// Deposits are the stable Cardano prefix since the cursor, in
-			// Cardano order. The node has that from its indexer; the runtime
-			// has the cursor. Checking it here is what keeps a replayed deposit
-			// from reaching `apply_one`, where an Active datum overwrites
-			// whatever the pool's record currently says — reactivating a pool
-			// that stood down, or rewinding a key rotation to the superseded
-			// keys. "Newest wins" is positional within the batch; it is this
-			// check that makes the batch's order mean anything.
+			// Keep ordering, prevent double observations.
 			let cursor = NextCardanoPosition::<T>::get();
 			let mut expected_from = cursor;
 			for registration in observation.registrations.iter() {
@@ -647,12 +607,11 @@ pub mod pallet {
 		///
 		/// The match is the state machine written out. An active deposit is
 		/// always allowed: a pool may register, re-register over whatever it
-		/// last posted, or come back after standing down. An inactive deposit
-		/// is applied when the pool has something to stand down, and ignored
-		/// when this chain has never heard of it — observation can be
-		/// configured to start after a registration was deposited. What is
-		/// left is an inactive deposit against an already-inactive pool, which
-		/// A7 says cannot be built, so processing stops rather than guessing.
+		/// last posted, or come back after being inactive. An inactive deposit
+		/// is applied when the pool has something to inactivate, and ignored
+		/// when this chain has never heard of it. What is left is an inactive
+		/// deposit against an already-inactive pool, which is against assumptions,
+		/// so processing stops.
 		fn apply_one(observed: &ObservedRegistration) -> Applied {
 			let pool_id = observed.datum.pool_id();
 			let current = Registrations::<T>::get(pool_id);
@@ -660,38 +619,27 @@ pub mod pallet {
 			match (&current, observed.datum.status) {
 				// Newest attributed registration wins, whatever it replaces:
 				// nothing, a live registration, one this pallet refused, or
-				// one the pool stood down.
+				// one the pool inactivated.
 				(_, RegistrationStatus::Active) => {
 					Self::register(pool_id, observed, current.is_some())
 				},
 
-				// Standing down a pool that is already down. A7 says the
-				// output that would carry it cannot be spent.
+				// Inactivating a pool that is already down.
 				(Some(RegistrationRecord::Inactive { .. }), RegistrationStatus::Inactive) => {
 					Self::halt_on_illegal_transition(pool_id, observed, current)
 				},
 
-				// Standing down whatever the pool last registered. Whether
-				// those keys ever worked makes no difference to its right to
-				// stand them down.
-				(Some(record), RegistrationStatus::Inactive) => {
-					Self::inactivate(pool_id, observed, *record.cross_chain_pub_key())
-				},
+				// Inactivating whatever the pool last registered.
+				(Some(_), RegistrationStatus::Inactive) => Self::inactivate(pool_id, observed),
 
-				// Standing down something this chain never saw. Expected, not
-				// broken: observation can be configured to start after a
-				// registration was deposited, and then its inactivation is the
-				// first the pallet hears of that pool.
+				// Inactivating something this chain never saw. Covers scenario when someone
+				// registered before the observability started and inactivated after.
 				(None, RegistrationStatus::Inactive) => {
 					log::debug!(
 						target: "candidate-registrations",
 						"Ignoring inactivation at {} for unknown pool {pool_id}",
 						observed.position,
 					);
-					Self::deposit_event(Event::<T>::InactivationIgnored {
-						pool_id,
-						utxo: observed.utxo,
-					});
 					Applied::Continue
 				},
 			}
@@ -699,24 +647,10 @@ pub mod pallet {
 
 		/// An inactive deposit. The pallet keeps only the state the latest
 		/// event left behind, and for this event that is `Inactive`.
-		///
-		/// A6 lets the spending transaction deposit any registration output
-		/// with the inactive flag, not a copy of the one it replaces, so
-		/// nothing in the deposit is admitted and nothing from the previous
-		/// record is carried forward — a record that mixed the two would
-		/// describe a UTxO that does not match the keys beside it. What
-		/// survives is the pool, where this was observed, and the account its
-		/// session keys are still bound under: standing down releases nothing,
-		/// and a pool that returns under a new cross-chain key has to be told
-		/// it collided with its own old keys.
-		fn inactivate(
-			pool_id: MainchainKeyHash,
-			observed: &ObservedRegistration,
-			cross_chain_pub_key: CrossChainPublicKeyBytes,
-		) -> Applied {
+		fn inactivate(pool_id: MainchainKeyHash, observed: &ObservedRegistration) -> Applied {
 			Registrations::<T>::insert(
 				pool_id,
-				RegistrationRecord::<KeysOf<T>>::inactivated(observed, cross_chain_pub_key),
+				RegistrationRecord::<KeysOf<T>>::inactivated(observed),
 			);
 			Self::deposit_event(Event::<T>::Inactivated { pool_id, utxo: observed.utxo });
 			Applied::Continue
@@ -782,13 +716,8 @@ pub mod pallet {
 			Applied::Continue
 		}
 
-		/// The checks, in order. The order is a security property, not a
-		/// presentational choice: each step is more expensive than the last,
-		/// and only the last one writes.
-		///
-		/// The keys returned are the ones `bind_session_keys` committed to
-		/// `pallet_session`, so what a record stores and what the session
-		/// index holds come from the same assembly.
+		/// The checks, in order. The order is a security property, each step is more expensive
+		/// than the last, and only the last one writes.
 		fn check(datum: &RegistrationDatum) -> Result<KeysOf<T>, RegistrationInvalidReason> {
 			// Phase A — free. No crypto, no state read, no state change.
 			validation::check_canonical_keys(&datum.keys)?;
@@ -812,8 +741,7 @@ pub mod pallet {
 			// see a conflict. `pallet_session` is the index of who holds which
 			// session key; asking it to bind these keys is how that question
 			// gets answered, and a rejection here is the conflict that would
-			// otherwise surface as a failed committee hand-off. Which key, and
-			// whose it is, is named afterwards.
+			// otherwise surface as a failed committee hand-off.
 			Self::bind_session_keys(datum, session_keys.clone())?;
 			Ok(session_keys)
 		}
@@ -846,39 +774,13 @@ pub mod pallet {
 			}
 		}
 
-		/// Which key the binding tripped over, and whose it is.
-		///
-		/// `bind` can only report that something collided. Saying which key and
-		/// with whom is the difference between an operator reading
-		/// "someone else holds your key" and reading the truth, which for the
-		/// likeliest mistake is that they still hold it themselves: rotating
-		/// the cross-chain key moves the account the session keys hang on, and
-		/// a key is never released from the account it was bound to, so every
-		/// session key has to rotate with it.
-		///
-		/// Runs after the failed binding has been rolled back, so every owner
-		/// read here is the one that was there beforehand. The pool's previous
-		/// record is still in storage: [`Self::register`] admits before it
-		/// inserts.
-		///
-		/// Keys are looked up by the datum's own bytes, which are the bytes
-		/// `OpaqueKeys::get_raw` yields for the assembled key — verification
-		/// has already established they are the right length for the scheme.
 		fn classify_collision(
 			datum: &RegistrationDatum,
 			account: &T::AccountId,
 		) -> RegistrationInvalidReason {
-			let previous = Registrations::<T>::get(datum.pool_id())
-				.map(|record| T::CrossChainAccount::account_id(record.cross_chain_pub_key()));
-
 			for key in datum.keys.iter() {
 				match T::SessionKeyAuthority::key_owner(key.id, key.bytes.as_slice()) {
 					Some(owner) if owner == *account => continue,
-					Some(owner) if Some(&owner) == previous.as_ref() => {
-						return RegistrationInvalidReason::SessionKeyHeldByPreviousRegistration(
-							key.id,
-						);
-					},
 					Some(_) => return RegistrationInvalidReason::SessionKeyReuse,
 					None => continue,
 				}

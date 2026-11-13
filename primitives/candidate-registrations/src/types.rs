@@ -282,15 +282,8 @@ pub enum RegistrationInvalidReason {
 	InvalidKeyProof(KeyTypeIdBytes),
 	/// `cross_chain_signature` did not verify against `cross_chain_pub_key`.
 	InvalidCrossChainSignature,
-	/// A session key in this registration is bound to another pool's account.
+	/// A session key in this registration is bound to another cross-chain key.
 	SessionKeyReuse,
-	/// A session key is still bound to this pool's own previous registration.
-	///
-	/// Rotating the cross-chain key changes the account the session keys hang
-	/// on, and a key is never released from the account it was bound to, so a
-	/// cross-chain key rotation requires rotating every session key with it.
-	/// Names the first key that was not rotated.
-	SessionKeyHeldByPreviousRegistration(KeyTypeIdBytes),
 	/// `pallet_session` refused the keys although no key in the registration is
 	/// held by anyone else — so the refusal was not key reuse at all.
 	SessionBindingFailed,
@@ -342,12 +335,7 @@ impl RegistrationState {
 	Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo, MaxEncodedLen,
 )]
 pub enum RegistrationRecord<Keys> {
-	/// Admitted. The pool is a candidate as of the block this was applied in.
-	///
-	/// Only what the chain itself needs. The datum this was admitted from —
-	/// the posted key list with its proofs, and both signatures over the
-	/// registration message — is at `utxo`, where it was verified from, so
-	/// there is nothing to gain from a second copy of it here.
+	/// Admitted. The pool is a valid candidate.
 	Active {
 		/// The pool's cold verification key, whose hash keys this record.
 		cold_pub_key: StakePoolPublicKey,
@@ -355,54 +343,27 @@ pub enum RegistrationRecord<Keys> {
 		cross_chain_pub_key: CrossChainPublicKeyBytes,
 		/// The session keys this registration proved possession of, as they
 		/// were assembled and bound at admission.
-		///
-		/// The operative key set, and the one the committee hand-off is
-		/// handed. Kept rather than rebuilt from the datum on demand: a second
-		/// assembly is a second chance to disagree with the one whose result
-		/// is bound in `pallet_session`.
 		session_keys: Keys,
 		/// Where the registration was observed.
 		observed_at: CardanoTxPosition,
 		/// The output that carried it, and still carries the datum.
 		utxo: UtxoId,
 	},
-	/// Admitted and kept for the operator to inspect, but not a candidate.
+	/// Invalid registration trace, kept for the operator to inspect, but not a candidate.
 	Invalid {
 		/// The pool's cold verification key, whose hash keys this record.
 		cold_pub_key: StakePoolPublicKey,
-		/// The key the candidate's `AccountId` would have been derived from.
-		cross_chain_pub_key: CrossChainPublicKeyBytes,
-		/// The pool's signature over the registration message, as posted.
-		pool_signature: PoolSignatureBytes,
-		/// The registrant's signature over the registration message, as posted.
-		cross_chain_signature: CrossChainSignatureBytes,
-		/// The registered keys, in the order the datum carried them.
-		///
-		/// Kept here, unlike on an admitted registration, because this is the
-		/// record an operator reads to find out what went wrong: `reason`
-		/// names a key type, and the bytes beside it are the answer.
-		keys: CandidateKeys,
-		/// What was wrong with it.
+		/// What was wrong with it. Data is to be read from Cardano.
 		reason: RegistrationInvalidReason,
 		/// Where the registration was observed.
 		observed_at: CardanoTxPosition,
 		/// The output that carried it.
 		utxo: UtxoId,
 	},
-	/// The pool stood its registration down on Cardano.
-	///
-	/// Only what the stand-down itself establishes: which pool, the account
-	/// its session keys are still bound under — nothing releases them — and
-	/// where the inactivation was observed. What was registered before is
-	/// forgotten, including why it was invalid: an operator who stood a
-	/// registration down is not asking about it any more.
+	/// The pool inactivated its registration on Cardano.
 	Inactive {
 		/// The pool's cold verification key, whose hash keys this record.
 		cold_pub_key: StakePoolPublicKey,
-		/// The key the account holding this pool's last session keys was
-		/// derived from. Kept so a pool that comes back under a new
-		/// cross-chain key can be told it collided with its own old keys.
-		cross_chain_pub_key: CrossChainPublicKeyBytes,
 		/// Where the inactivation was observed.
 		observed_at: CardanoTxPosition,
 		/// The output that carried the inactivation.
@@ -427,10 +388,6 @@ impl<Keys> RegistrationRecord<Keys> {
 			},
 			Err(reason) => Self::Invalid {
 				cold_pub_key: datum.cold_pub_key.clone(),
-				cross_chain_pub_key: datum.cross_chain_pub_key,
-				pool_signature: datum.pool_signature,
-				cross_chain_signature: datum.cross_chain_signature,
-				keys: datum.keys.clone(),
 				reason,
 				observed_at: observed.position,
 				utxo: observed.utxo,
@@ -439,17 +396,9 @@ impl<Keys> RegistrationRecord<Keys> {
 	}
 
 	/// The record an inactivation leaves behind.
-	///
-	/// `cross_chain_pub_key` comes from the record being stood down, not from
-	/// the deposit: the deposit need not resemble it, and what matters is the
-	/// account the session keys are bound under.
-	pub fn inactivated(
-		observed: &ObservedRegistration,
-		cross_chain_pub_key: CrossChainPublicKeyBytes,
-	) -> Self {
+	pub fn inactivated(observed: &ObservedRegistration) -> Self {
 		Self::Inactive {
 			cold_pub_key: observed.datum.cold_pub_key.clone(),
-			cross_chain_pub_key,
 			observed_at: observed.position,
 			utxo: observed.utxo,
 		}
@@ -468,16 +417,6 @@ impl<Keys> RegistrationRecord<Keys> {
 	/// Whether this record makes its pool eligible for committee selection.
 	pub fn is_active(&self) -> bool {
 		matches!(self, Self::Active { .. })
-	}
-
-	/// The key the account this pool's session keys are bound under was
-	/// derived from.
-	pub fn cross_chain_pub_key(&self) -> &CrossChainPublicKeyBytes {
-		match self {
-			Self::Active { cross_chain_pub_key, .. }
-			| Self::Invalid { cross_chain_pub_key, .. }
-			| Self::Inactive { cross_chain_pub_key, .. } => cross_chain_pub_key,
-		}
 	}
 
 	/// Where the event behind this record was observed.
