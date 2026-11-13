@@ -49,7 +49,7 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-wait_for_unfinalized_block http://localhost:9944 1
+wait_for_toolkit_ready http://localhost:9944
 
 # Run toolkit commands
 echo "📦 Running toolkit contract tests..."

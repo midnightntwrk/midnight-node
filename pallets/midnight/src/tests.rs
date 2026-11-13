@@ -715,16 +715,74 @@ fn declared_node_count_is_capped() {
 fn the_node_cap_binds_before_the_item_cap() {
 	use sp_core::Get;
 
-	// Lower bound on nodes per operation; ledger_9's
-	// `byte_limited_payload_cannot_declare_unbounded_work` asserts at least 4.
-	const NODES_PER_OPERATION: u32 = 4;
-	let nodes = <<Test as crate::Config>::MaxTransactionNodes as Get<u32>>::get();
-	let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
-	let operations_admitted = nodes / NODES_PER_OPERATION;
+	mock::new_test_ext().execute_with(|| {
+		let items = <<Test as crate::Config>::MaxDecodedTxItems as Get<u32>>::get();
+		assert!(crate::MaxTransactionNodes::<Test>::get() / crate::NODES_PER_OPERATION < items);
 
-	assert!(
-		items > operations_admitted,
-		"MaxDecodedTxItems ({items}) binds before MaxTransactionNodes admits \
-		 {operations_admitted} operations",
-	);
+		let too_many = items * crate::NODES_PER_OPERATION;
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many),
+			crate::Error::<Test>::MaxTransactionNodesExceedsItemCap
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), too_many - 1));
+	});
+}
+
+#[test]
+fn governance_can_lower_the_node_cap() {
+	mock::new_test_ext().execute_with(|| {
+		let mut tx = b"midnight:transaction[v12](proof):".to_vec();
+		tx.extend(((100u16 << 2) | 0b01).to_le_bytes());
+
+		frame_support::assert_noop!(
+			mock::Midnight::set_max_transaction_nodes(RuntimeOrigin::none(), 99),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		assert_ok!(mock::Midnight::set_max_transaction_nodes(RawOrigin::Root.into(), 99));
+		assert_matches!(
+			mock::Midnight::get_decoded_transaction(&tx),
+			Err(LedgerApiError::Transaction(TransactionError::Malformed(
+				MalformedError::TransactionTooLarge
+			)))
+		);
+	});
+}
+
+#[test]
+fn tx_cost_bounded_by_normal_dispatch_budget() {
+	// send_mn_transaction is DispatchClass::Normal (the default).
+	// Normal extrinsics are limited to NORMAL_DISPATCH_RATIO (75%) of max_block.
+	//
+	// get_transaction_cost maps ledger normalized cost to Substrate weight by
+	// scaling against a weight budget. That budget must be the Normal dispatch
+	// class max_total, not max_block, otherwise:
+	// - A tx at >75% of any ledger dimension gets weight exceeding the Normal cap
+	// - Substrate rejects it even though the ledger considers it valid
+	// - post_block_update fullness for user-only blocks can never exceed ~75%
+	//
+	// The maximum possible gas_cost is the budget parameter itself (when a tx
+	// saturates a ledger dimension). Verify real transactions are within bounds.
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		let gas_cost = mock::Midnight::get_transaction_cost(&tx).unwrap();
+
+		let weights =
+			<<Test as frame_system::Config>::BlockWeights as frame_support::traits::Get<
+				frame_system::limits::BlockWeights,
+			>>::get();
+		let normal_budget = weights
+			.get(frame_support::dispatch::DispatchClass::Normal)
+			.max_total
+			.unwrap_or(weights.max_block)
+			.ref_time();
+
+		assert!(
+			gas_cost <= normal_budget,
+			"Transaction gas cost ({gas_cost}) exceeds Normal dispatch budget ({normal_budget}). \
+			 get_transaction_cost must scale against the Normal class budget, not max_block."
+		);
+	});
 }

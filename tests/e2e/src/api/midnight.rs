@@ -381,10 +381,10 @@ impl MidnightClient {
                 .await;
 
                 match probe {
-                    Ok((head_num, watermark)) if watermark >= target => {
+                    Ok((head_num, watermark)) if watermark > target => {
                         tracing::info!(
                             "await_cnight_observations: watermark @ midnight #{head_num} \
-                             = {} >= target {}; scanning past blocks",
+                             = {} > target {}; scanning past blocks",
                             watermark,
                             target,
                         );
@@ -558,10 +558,13 @@ impl MidnightClient {
     }
 
     /// Binary-search for the smallest Midnight block `M` where the
-    /// `nextCardanoPosition` watermark is at least `target`. Such an
+    /// `nextCardanoPosition` watermark is past `target`. Such an
     /// `M` is the Midnight block whose `process_tokens` extrinsic
-    /// crossed `target` (the previous block's watermark was strictly
-    /// less than `target`, by monotonicity).
+    /// finished `target` (the previous block's watermark was at most
+    /// `target`, by monotonicity). A watermark *equal* to `target` is not
+    /// enough: the cursor can rest inside that block when a cost-bounded
+    /// batch is cut mid-transaction, leaving its remaining creates for a
+    /// later Midnight block.
     async fn binary_search_watermark(
         &self,
         target: u64,
@@ -572,7 +575,7 @@ impl MidnightClient {
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
             let wm = self.read_next_cardano_position_at(mid).await?;
-            if wm >= target {
+            if wm > target {
                 hi = mid;
             } else {
                 lo = mid + 1;
@@ -730,11 +733,13 @@ impl MidnightClient {
             .block_number())
     }
 
-    /// Subscribe to the bridge handler extrinsic, skipping any block at or before `min_block_number`.
+    /// Return the first finalized block after `min_block_number` whose bridge
+    /// handler data satisfies `matches`.
     pub async fn subscribe_to_c2m_bridge_transfers(
         &self,
         timeout_duration: Duration,
         min_block_number: u64,
+        matches: impl Fn(&C2MBridgePalletCalls) -> bool,
     ) -> Result<C2MBridgePalletCalls, Box<dyn std::error::Error>> {
         tracing::info!("Subscribing for C-to-M transfer extrinsic");
         let mut blocks_sub = self.online_client().stream_blocks().await?;
@@ -786,7 +791,9 @@ impl MidnightClient {
                     transfers,
                     system_transactions_applied,
                 };
-                return Ok(result);
+                if matches(&result) {
+                    return Ok(result);
+                }
             }
             Err("Did not find bridge extrinsics".into())
         };

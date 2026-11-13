@@ -22,6 +22,7 @@ earthly -P +rebuild-all-genesis-states    # Rebuild all network genesis states
 earthly +node-image                       # Build node Docker image
 earthly +toolkit-image                    # Build toolkit image
 earthly doc                               # List all available targets
+earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 ```
 
 **Buck2 (the CI build system):** cargo is still the daily driver; buck2 is what CI builds and
@@ -49,6 +50,11 @@ fixtures); a test that reads `res/`, `docs/` etc. must list them as `resources` 
 - `/bot rebuild-metadata` - Rebuild runtime metadata
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks
 - `/bot cargo-fmt` - Run cargo fmt
+
+CI prepares local e2e test binaries alongside node-image builds on the existing
+self-hosted pool. Fork PRs retain inline compilation. The local environment CI
+check retains the complete suite and its existing execution settings. See
+`docs/ci/pr-critical-path.md` for timing and coverage validation.
 
 **E2E tests (just):**
 ```bash

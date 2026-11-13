@@ -176,6 +176,10 @@ pub struct Source {
 		global = true
 	)]
 	pub indexer_concurrency: std::num::NonZeroUsize,
+	/// Indexer path only: always replay the chain-wide DUST event log, instead of rebuilding each
+	/// wallet's DUST from an indexer snapshot where the indexer supports it.
+	#[arg(long, env = "MN_INDEXER_NO_FAST_SYNC", global = true)]
+	pub no_fast_sync: bool,
 }
 
 #[derive(Error, Debug)]

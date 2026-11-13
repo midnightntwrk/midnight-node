@@ -199,6 +199,7 @@ mod tests {
 			network: "undeployed".to_string(),
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+			no_fast_sync: false,
 		}
 	}
 
@@ -367,6 +368,7 @@ mod tests {
 			network: "undeployed".to_string(),
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+			no_fast_sync: false,
 		};
 		let src = TxGenerator::source(source, false).await.expect("build source");
 		let mut source_blocks = src.get_txs().await.expect("get_txs");
