@@ -10437,7 +10437,6 @@ dependencies = [
  "sp-core",
  "sp-io",
  "sp-runtime",
- "test-log",
 ]
 
 [[package]]

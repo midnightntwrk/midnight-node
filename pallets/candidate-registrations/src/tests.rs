@@ -1096,7 +1096,7 @@ fn an_observation_the_node_did_not_bound_is_refused_whole() {
 
 		// And not accepted from a node that did propose it.
 		let call =
-			pallet::Pallet::<Test>::create_inherent(&inherent_data(&observation_of(limit as u8)))
+			pallet::Pallet::<Test>::create_inherent(&inherent_data(&observation_of(limit() as u8)))
 				.expect("the limit itself is proposable");
 		assert_eq!(
 			pallet::Pallet::<Test>::check_inherent(&call, &data),

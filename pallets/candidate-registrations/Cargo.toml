@@ -21,7 +21,6 @@ serde_valid = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io.workspace = true
-test-log.workspace = true
 
 [features]
 default = ["std"]
