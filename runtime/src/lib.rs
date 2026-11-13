@@ -110,6 +110,7 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod beefy;
+pub mod candidate_registrations;
 pub mod check_call_filter;
 mod constants;
 mod currency;

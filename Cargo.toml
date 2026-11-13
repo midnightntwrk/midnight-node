@@ -9,6 +9,7 @@ members = [
     "pallets/midnight",
     "pallets/c2m-bridge",
     "pallets/consensus-engine",
+    "pallets/candidate-registrations",
     "pallets/cnight-observation",
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
@@ -17,6 +18,7 @@ members = [
     "pallets/throttle",
     "pallets/version",
     "primitives/beefy",
+    "primitives/candidate-registrations",
     "primitives/ics-observation",
     "primitives/reserve-observation",
     "primitives/midnight",
@@ -142,6 +144,7 @@ pallet-midnight = { path = "pallets/midnight", default-features = false }
 pallet-midnight-system = { path = "pallets/midnight-system", default-features = false }
 pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false }
 pallet-c2m-bridge = { path = "pallets/c2m-bridge", default-features = false }
+pallet-candidate-registrations = { path = "pallets/candidate-registrations", default-features = false }
 pallet-cnight-observation = { path = "pallets/cnight-observation", default-features = false }
 pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", default-features = false }
 pallet-version = { path = "pallets/version", default-features = false }
@@ -158,6 +161,7 @@ midnight-primitives = { path = "primitives/midnight", default-features = false }
 midnight-primitives-beefy = { path = "primitives/beefy", default-features = false }
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
+midnight-primitives-candidate-registrations = { path = "primitives/candidate-registrations", default-features = false }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-reserve-observation = { path = "primitives/reserve-observation", default-features = false }
