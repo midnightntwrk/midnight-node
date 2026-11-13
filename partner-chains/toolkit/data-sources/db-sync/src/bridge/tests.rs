@@ -1,7 +1,10 @@
 extern crate alloc;
 
+use crate::block::BlocksCache;
 use crate::bridge::cache::CachedTokenBridgeDataSourceImpl;
 use crate::{BlockDataSourceImpl, DbSyncBlockDataSourceConfig, TokenBridgeDataSourceImpl};
+use chrono::TimeDelta;
+use db_sync_sqlx::BlockNumber;
 use hex_literal::hex;
 use sidechain_domain::byte_string::ByteString;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -15,6 +18,7 @@ use sp_partner_chains_bridge::{
 use sqlx::PgPool;
 use std::str::FromStr;
 use std::sync::Arc;
+use time_source::MockedTimeSource;
 
 fn token_policy_id() -> PolicyId {
 	PolicyId(hex!("500000000000000000000000000000000000434845434b504f494e69"))
@@ -493,4 +497,161 @@ with_migration_versions_and_caching! {
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(3)))
 	}
+}
+
+// 2022-04-21T17:36:10Z, the time of the latest block in both block fixtures.
+const LATEST_BLOCK_TIME_MILLIS: u64 = 1650562570000;
+
+fn blocks_source(
+	pool: PgPool,
+	epoch_config: MainchainEpochConfig,
+	security_parameter: u32,
+	min_slot_boundary: TimeDelta,
+	max_slot_boundary: TimeDelta,
+	block_stability_margin: u32,
+	current_time_millis: u64,
+) -> Arc<BlockDataSourceImpl> {
+	Arc::new(BlockDataSourceImpl::new(
+		pool,
+		security_parameter,
+		min_slot_boundary,
+		max_slot_boundary,
+		epoch_config,
+		block_stability_margin,
+		100,
+		100,
+		BlocksCache::new_arc_mutex(),
+		None,
+		Arc::new(MockedTimeSource { current_time_millis }),
+	))
+}
+
+// Maps the bridge fixture's slots (100000 at block 0) to its block times.
+fn bridge_fixture_epoch_config() -> MainchainEpochConfig {
+	MainchainEpochConfig {
+		first_epoch_timestamp_millis: Timestamp::from_unix_millis(1650472080000),
+		epoch_duration_millis: Duration::from_millis(1000 * 1000),
+		first_epoch_number: 0,
+		first_slot_number: 100000,
+		slot_duration_millis: Duration::from_millis(1000),
+	}
+}
+
+fn all_bridge_transfers() -> Vec<BridgeTransferV1<ByteString>> {
+	vec![
+		reserve_transfer(),
+		user_transfer_1(),
+		user_transfer_2(),
+		invalid_transfer_1(),
+		invalid_transfer_2(),
+		complex_transfer(),
+		reserve_and_user_tx_reserve_transfer(),
+		reserve_and_user_tx_user_transfer(),
+	]
+}
+
+fn block_6_hash() -> McBlockHash {
+	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000006"))
+}
+
+fn block_5_hash() -> McBlockHash {
+	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000005"))
+}
+
+// The latest block is 5. With security parameter 2 and stability window [5000s, 1667s] before
+// the current time, the stable tip is block 3.
+#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
+async fn cache_resolves_latest_stable_block_from_current_time(pool: PgPool) {
+	let blocks = blocks_source(
+		pool.clone(),
+		main_chain_epoch_config(),
+		2,
+		TimeDelta::seconds(1667),
+		TimeDelta::seconds(5000),
+		0,
+		LATEST_BLOCK_TIME_MILLIS,
+	);
+	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
+
+	let stable_tip = source.get_latest_stable_block().await.unwrap();
+
+	assert_eq!(stable_tip, Some(BlockNumber(3)));
+}
+
+// The latest block, 8, is at 17:36:10. At 17:40:00 the 2001s stability window admits block 6
+// (17:02:50), which measuring from the latest block's time would not. The lookahead from block 4
+// therefore reaches block 6.
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
+async fn cache_lookahead_is_measured_from_current_time(pool: PgPool) {
+	let blocks = blocks_source(
+		pool.clone(),
+		bridge_fixture_epoch_config(),
+		0,
+		TimeDelta::seconds(2001),
+		TimeDelta::days(30),
+		0,
+		1650562800000,
+	);
+	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
+
+	let (transfers, _) = (&source as &dyn TokenBridgeDataSource<ByteString>)
+		.get_transfers(
+			main_chain_scripts(),
+			BridgeDataCheckpoint::Block(McBlockNumber(0)),
+			32,
+			block_6_hash(),
+		)
+		.await
+		.unwrap();
+
+	assert_eq!(transfers, all_bridge_transfers());
+	assert_eq!(source.get_latest_stable_block().await.unwrap(), Some(BlockNumber(6)));
+}
+
+// The latest block is 8. With security parameter 2 the stable tip is block 6, whatever the
+// stability margin, so the lookahead from block 4 reaches block 6.
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
+async fn cache_lookahead_ignores_stability_margin(pool: PgPool) {
+	let blocks = blocks_source(
+		pool.clone(),
+		bridge_fixture_epoch_config(),
+		2,
+		TimeDelta::zero(),
+		TimeDelta::days(30),
+		4,
+		LATEST_BLOCK_TIME_MILLIS,
+	);
+	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
+
+	assert_eq!(source.get_latest_stable_block().await.unwrap(), Some(BlockNumber(6)));
+}
+
+// The latest block is 8, so with security parameter 4 the stable tip is block 4. A requested block
+// above it, such as a parent's reference not verified against this node's Db-Sync, is still served.
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
+async fn cache_serves_a_requested_block_above_the_stable_tip(pool: PgPool) {
+	let blocks = blocks_source(
+		pool.clone(),
+		bridge_fixture_epoch_config(),
+		4,
+		TimeDelta::zero(),
+		TimeDelta::days(30),
+		0,
+		LATEST_BLOCK_TIME_MILLIS,
+	);
+	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
+	assert_eq!(source.get_latest_stable_block().await.unwrap(), Some(BlockNumber(4)));
+
+	let (transfers, new_checkpoint) = (&source as &dyn TokenBridgeDataSource<ByteString>)
+		.get_transfers(
+			main_chain_scripts(),
+			BridgeDataCheckpoint::Block(McBlockNumber(0)),
+			32,
+			block_5_hash(),
+		)
+		.await
+		.unwrap();
+
+	assert!(!transfers.is_empty());
+	assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(5)))
 }
