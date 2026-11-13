@@ -45,6 +45,8 @@ mod benchmarking;
 pub mod weights;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use super::*;
 	use crate::weights::WeightInfo;
@@ -460,8 +462,10 @@ pub mod pallet {
 			let technical_committee_authorities: BoundedVec<
 				(T::AccountId, MainchainMember),
 				T::TechnicalCommitteeMaxMembers,
-			> = Self::decode_auth_members(fed_auth_data.technical_committee_authorities.authorities)
-				.ok()?;
+			> = Self::decode_auth_members(
+				fed_auth_data.technical_committee_authorities.authorities,
+			)
+			.ok()?;
 
 			let has_empty_members =
 				council_authorities.is_empty() || technical_committee_authorities.is_empty();

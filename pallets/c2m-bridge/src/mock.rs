@@ -25,6 +25,8 @@ pub type MaxTxLength = ConstU32<1024>;
 pub const TEST_MINIMAL_TRANSFER_CSTARS: u128 = 99;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod mock_pallet {
 	use super::*;
 	use crate::MinBridgeAmountProvider;

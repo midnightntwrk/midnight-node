@@ -321,10 +321,9 @@ pub mod authority_keys {
 			let queued_keys: Vec<(
 				<Runtime as pallet_session::Config>::ValidatorId,
 				PreUpgradeSessionKeys,
-			)> =
-				frame_support::storage::unhashed::get_or_default(&pallet_session::QueuedKeys::<
-					Runtime,
-				>::hashed_key());
+			)> = frame_support::storage::unhashed::get_or_default(&pallet_session::QueuedKeys::<
+				Runtime,
+			>::hashed_key());
 
 			Ok((current, next, next_keys, queued_keys).encode())
 		}

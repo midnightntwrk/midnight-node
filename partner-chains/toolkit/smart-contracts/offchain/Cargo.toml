@@ -21,7 +21,6 @@ cbor_event = { workspace = true }
 partner-chains-plutus-data = { workspace = true }
 fraction = { workspace = true }
 hex = { workspace = true }
-hex-literal = { workspace = true }
 log = { workspace = true }
 minicbor = { workspace = true }
 ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
@@ -41,6 +40,7 @@ proptest = { workspace = true }
 pretty_assertions = { workspace = true }
 testcontainers = { workspace = true, features = ["blocking"] }
 itertools = { workspace = true, features = ["use_std"] }
+hex-literal = { workspace = true }
 
 [lib]
 doctest = false

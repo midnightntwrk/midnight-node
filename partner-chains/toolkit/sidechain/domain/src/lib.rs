@@ -22,7 +22,6 @@ use byte_string_derive::byte_string;
 use core::{
 	fmt::{Display, Formatter},
 	ops::Deref,
-	u32,
 };
 use crypto::blake2b;
 use derive_more::{From, Into};

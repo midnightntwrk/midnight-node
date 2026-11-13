@@ -68,7 +68,8 @@ where
 		_self_implicit: Self::Implicit,
 		_inherited_implication: &impl Implication,
 		_source: TransactionSource,
-	) -> sp_runtime::traits::ValidateResult<Self::Val, <T as frame_system::Config>::RuntimeCall> {
+	) -> sp_runtime::traits::ValidateResult<Self::Val, <T as frame_system::Config>::RuntimeCall>
+	{
 		let Some(who) = origin.as_system_origin_signer() else {
 			// Not a signed transaction — skip throttle check
 			return Ok((ValidTransaction::default(), None, origin));

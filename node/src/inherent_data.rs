@@ -65,7 +65,8 @@ const DEFAULT_CARDANO_CHECK_BACKOFF: Duration = Duration::from_secs(5);
 /// re-checks Cardano before giving up and propagating the error.
 const DEFAULT_CARDANO_CHECK_MAX_RETRIES: u32 = 60;
 
-#[allow(clippy::too_many_arguments)]
+// redundant_field_names: clippy 1.100 lints `derive(new)` output.
+#[allow(clippy::too_many_arguments, clippy::redundant_field_names)]
 #[derive(new)]
 pub(crate) struct ProposalCIDP<T> {
 	config: CreateInherentDataConfig,
@@ -201,7 +202,8 @@ where
 	}
 }
 
-#[allow(clippy::too_many_arguments)]
+// redundant_field_names: clippy 1.100 lints `derive(new)` output.
+#[allow(clippy::too_many_arguments, clippy::redundant_field_names)]
 #[derive(new)]
 pub struct VerifierCIDP<T> {
 	config: CreateInherentDataConfig,

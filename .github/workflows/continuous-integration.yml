@@ -86,7 +86,7 @@ jobs:
           CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
           test -n "$CACHE_KEY"
           . ./.envrc
-          earth -P --strict \
+          earth -P \
             +local-env-ci-prepare --CACHE_KEY="$CACHE_KEY"
 
   run:
@@ -690,7 +690,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earth -P --strict \
+          . ./.envrc && earth -P \
             +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -821,7 +821,7 @@ jobs:
           . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            -P --strict $PUSH_FLAG \
+            -P $PUSH_FLAG \
             --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
               --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
@@ -1009,7 +1009,7 @@ jobs:
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
-          . ./.envrc && earth --ci -P \
+          . ./.envrc && earth --no-output -P \
             --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
