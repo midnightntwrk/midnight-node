@@ -14,13 +14,11 @@
 //! Chain-spec shape for the pallet's genesis.
 
 use alloc::string::String;
-use midnight_primitives_candidate_registrations::{
-	CardanoTxPosition, DEFAULT_REGISTRATION_EVENTS_PER_BLOCK,
-};
+use midnight_primitives_candidate_registrations::CardanoTxPosition;
 use serde::{Deserialize, Serialize};
 
 /// Where on Cardano registrations live, and where observation starts.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "std", derive(serde_valid::Validate))]
 pub struct CandidateRegistrationsGenesis {
 	/// Bech32 address of the candidates validator.
@@ -35,18 +33,4 @@ pub struct CandidateRegistrationsGenesis {
 
 	/// First Cardano transaction to observe.
 	pub next_cardano_position: CardanoTxPosition,
-
-	/// Registration events the runtime accepts per block.
-	pub registration_events_per_block: u32,
-}
-
-impl Default for CandidateRegistrationsGenesis {
-	fn default() -> Self {
-		Self {
-			validator_address: String::new(),
-			registration_policy_id: [0u8; 28],
-			next_cardano_position: CardanoTxPosition::default(),
-			registration_events_per_block: DEFAULT_REGISTRATION_EVENTS_PER_BLOCK,
-		}
-	}
 }

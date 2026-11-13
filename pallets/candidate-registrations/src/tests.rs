@@ -16,10 +16,9 @@ use frame_support::traits::Hooks;
 use frame_support::{assert_noop, assert_ok, pallet_prelude::DispatchResultWithPostInfo};
 use midnight_primitives_candidate_registrations::{
 	CandidateKey, CandidateKeys, CardanoTxPosition, CrossChainAccount, CrossChainPublicKeyBytes,
-	CrossChainSignatureBytes, INHERENT_IDENTIFIER, InherentError,
-	MAX_REGISTRATION_EVENTS_PER_BLOCK, ObservedRegistration, PoolSignatureBytes, RegistrationDatum,
-	RegistrationInvalidReason, RegistrationRecord, RegistrationState, RegistrationStatus,
-	RegistrationsObservation, SessionKeyAuthority,
+	CrossChainSignatureBytes, INHERENT_IDENTIFIER, InherentError, ObservedRegistration,
+	PoolSignatureBytes, RegistrationDatum, RegistrationInvalidReason, RegistrationRecord,
+	RegistrationState, RegistrationStatus, RegistrationsObservation, SessionKeyAuthority,
 };
 use sidechain_domain::{MainchainKeyHash, StakePoolPublicKey, UtxoId};
 use sp_core::{
@@ -35,10 +34,13 @@ use sp_core::{
 use sp_runtime::traits::OpaqueKeys;
 
 use crate::mock::*;
-use crate::pallet::{
-	Error, Event, NextCardanoPosition, RegistrationCount, RegistrationEventsPerBlock, Registrations,
-};
+use crate::pallet::{Config, Error, Event, NextCardanoPosition, RegistrationCount, Registrations};
 use crate::{RegistrationBatch, pallet};
+
+/// Registration events one block may carry, as the mock runtime configures it.
+fn limit() -> u32 {
+	<Test as Config>::MaxRegistrationEventsPerBlock::get()
+}
 
 /// One operator's full key set, as the off-chain registration tool would hold it.
 struct Operator {
@@ -210,7 +212,7 @@ fn submit(
 ) -> DispatchResultWithPostInfo {
 	let result = pallet::Pallet::<Test>::apply_registrations(
 		frame_system::RawOrigin::None.into(),
-		RegistrationBatch::try_from(events).unwrap(),
+		RegistrationBatch::<Test>::try_from(events).expect("batch is within the per-block limit"),
 		next,
 	);
 	assert_count_matches_the_map();
@@ -264,7 +266,6 @@ fn genesis_seeds_the_observation_parameters() {
 			genesis_config().validator_address.into_bytes()
 		);
 		assert_eq!(pallet::RegistrationPolicyId::<Test>::get().to_vec(), vec![7u8; 28]);
-		assert_eq!(RegistrationEventsPerBlock::<Test>::get(), 4);
 		assert_eq!(RegistrationCount::<Test>::get(), 0);
 	});
 }
@@ -741,9 +742,9 @@ fn the_cursor_never_moves_backwards() {
 }
 
 #[test]
-fn a_batch_above_the_published_limit_is_refused() {
+fn a_batch_above_the_limit_is_not_a_call_that_can_be_built() {
 	new_test_ext().execute_with(|| {
-		let events: Vec<_> = (0..5u8)
+		let events: Vec<_> = (0..=limit() as u8)
 			.map(|seed| {
 				observed(
 					Operator::from_seed(40 + seed).register(),
@@ -752,11 +753,8 @@ fn a_batch_above_the_published_limit_is_refused() {
 			})
 			.collect();
 
-		// Genesis published a limit of four.
-		assert_noop!(
-			submit(events, CardanoTxPosition::new(10, 5)),
-			Error::<Test>::TooManyRegistrations
-		);
+		assert_eq!(events.len() as u32, limit() + 1);
+		assert!(RegistrationBatch::<Test>::try_from(events).is_err());
 	});
 }
 
@@ -765,13 +763,13 @@ fn only_one_inherent_runs_per_block() {
 	new_test_ext().execute_with(|| {
 		assert_ok!(pallet::Pallet::<Test>::apply_registrations(
 			frame_system::RawOrigin::None.into(),
-			RegistrationBatch::default(),
+			RegistrationBatch::<Test>::default(),
 			CardanoTxPosition::new(10, 0),
 		));
 		assert_noop!(
 			pallet::Pallet::<Test>::apply_registrations(
 				frame_system::RawOrigin::None.into(),
-				RegistrationBatch::default(),
+				RegistrationBatch::<Test>::default(),
 				CardanoTxPosition::new(10, 1),
 			),
 			Error::<Test>::InherentAlreadyExecuted
@@ -1088,8 +1086,7 @@ fn an_observation_the_node_did_not_bound_is_refused_whole() {
 	// runtime, so the runtime refuses the observation rather than trimming it
 	// to fit — it cannot trust the rest of what such a node reports either.
 	new_test_ext().execute_with(|| {
-		let limit = RegistrationEventsPerBlock::<Test>::get();
-		let data = inherent_data(&observation_of(limit as u8 + 1));
+		let data = inherent_data(&observation_of(limit() as u8 + 1));
 
 		assert!(pallet::Pallet::<Test>::create_inherent(&data).is_none());
 
@@ -1109,18 +1106,15 @@ fn an_observation_the_node_did_not_bound_is_refused_whole() {
 }
 
 #[test]
-fn the_published_limit_is_where_an_observation_stops_being_proposable() {
+fn max_registration_events_per_block_is_where_an_observation_stops_being_proposable() {
 	new_test_ext().execute_with(|| {
-		let limit = RegistrationEventsPerBlock::<Test>::get();
-		assert!(limit < MAX_REGISTRATION_EVENTS_PER_BLOCK, "the decode bound is not the limit");
-
 		assert!(
-			pallet::Pallet::<Test>::create_inherent(&inherent_data(&observation_of(limit as u8)))
+			pallet::Pallet::<Test>::create_inherent(&inherent_data(&observation_of(limit() as u8)))
 				.is_some()
 		);
 		assert!(
 			pallet::Pallet::<Test>::create_inherent(&inherent_data(&observation_of(
-				limit as u8 + 1
+				limit() as u8 + 1
 			)))
 			.is_none()
 		);
@@ -1129,25 +1123,20 @@ fn the_published_limit_is_where_an_observation_stops_being_proposable() {
 
 #[test]
 fn an_unbounded_observation_never_reaches_the_mandatory_call() {
-	// `TooManyRegistrations` would fail a `Mandatory` dispatch, which stops the
-	// author producing a block. Refusing at `create_inherent` is what keeps
-	// that arm unreachable: the batch that would trip it is never built into a
-	// call in the first place.
+	// A failing `Mandatory` dispatch stops the author producing a block, so an
+	// over-sized observation has to be stopped before it becomes a call. Two
+	// things stop it, and this pins both: `create_inherent` refuses it, and
+	// the batch it would have to be carried in cannot hold it anyway.
 	new_test_ext().execute_with(|| {
-		let limit = RegistrationEventsPerBlock::<Test>::get();
+		let limit = limit();
 		let data = inherent_data(&observation_of(limit as u8 + 1));
 
 		assert!(pallet::Pallet::<Test>::create_inherent(&data).is_none());
 
-		// Hand-built, the same batch is what the call refuses — the check is
-		// still there, it just cannot be reached through the inherent.
 		let events: Vec<_> = (0..=limit as u8)
 			.map(|i| observed(unverified_datum(i), CardanoTxPosition::new(10 + i as u32, 0)))
 			.collect();
-		assert_noop!(
-			submit(events, CardanoTxPosition::new(99, 0)),
-			Error::<Test>::TooManyRegistrations
-		);
+		assert!(RegistrationBatch::<Test>::try_from(events).is_err());
 	});
 }
 

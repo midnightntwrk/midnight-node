@@ -92,9 +92,9 @@ pub mod pallet {
 	use frame_support::storage::transactional::with_transaction;
 	use midnight_primitives_candidate_registrations::{
 		CARDANO_BECH32_ADDRESS_MAX_LENGTH, CardanoTxPosition, CrossChainAccount, KeyCollision,
-		MAX_REGISTRATION_EVENTS_PER_BLOCK, ObservedRegistration, POLICY_ID_LENGTH,
-		RegistrationDatum, RegistrationInvalidReason, RegistrationMessage, RegistrationRecord,
-		RegistrationState, RegistrationStatus, SessionKeyAuthority,
+		ObservedRegistration, POLICY_ID_LENGTH, RegistrationDatum, RegistrationInvalidReason,
+		RegistrationMessage, RegistrationRecord, RegistrationState, RegistrationStatus,
+		SessionKeyAuthority,
 	};
 	use sidechain_domain::MainchainKeyHash;
 	use sp_runtime::traits::OpaqueKeys;
@@ -117,10 +117,9 @@ pub mod pallet {
 	/// Cardano minting policy id, bounded for storage.
 	pub type BoundedPolicyId = BoundedVec<u8, ConstU32<POLICY_ID_LENGTH>>;
 
-	/// One block's batch of registration events, bounded so a hostile inherent
-	/// cannot make the runtime allocate without bound at decode time.
-	pub type RegistrationBatch =
-		BoundedVec<ObservedRegistration, ConstU32<MAX_REGISTRATION_EVENTS_PER_BLOCK>>;
+	/// One block's batch of registration events.
+	pub type RegistrationBatch<T> =
+		BoundedVec<ObservedRegistration, <T as Config>::MaxRegistrationEventsPerBlock>;
 
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 
@@ -145,6 +144,10 @@ pub mod pallet {
 		/// and waits for fix.
 		#[pallet::constant]
 		type MaxRegistrations: Get<u32>;
+
+		/// How many registration events one block may carry.
+		#[pallet::constant]
+		type MaxRegistrationEventsPerBlock: Get<u32>;
 
 		/// Derives a candidate's `AccountId` from their cross-chain key.
 		type CrossChainAccount: CrossChainAccount<Self::AccountId>;
@@ -212,12 +215,8 @@ pub mod pallet {
 		InherentAlreadyExecuted,
 		/// The inherent's cursor does not advance beyond the stored one.
 		CursorRegression,
-		/// The batch is larger than the per-block limit the runtime published.
-		TooManyRegistrations,
 		/// A Cardano address longer than the longest possible Bech32 one.
 		MaxCardanoAddressLengthExceeded,
-		/// A per-block limit of zero, or above the inherent's decode bound.
-		InvalidRegistrationEventsPerBlock,
 	}
 
 	/// What the pallet knows about each pool, keyed by blake2b-224 of its cold
@@ -248,26 +247,6 @@ pub mod pallet {
 	/// Policy id of the Registration Token.
 	#[pallet::storage]
 	pub type RegistrationPolicyId<T: Config> = StorageValue<_, BoundedPolicyId, ValueQuery>;
-
-	#[pallet::type_value]
-	/// Default for [`RegistrationEventsPerBlock`].
-	pub fn DefaultRegistrationEventsPerBlock() -> u32 {
-		midnight_primitives_candidate_registrations::DEFAULT_REGISTRATION_EVENTS_PER_BLOCK
-	}
-
-	/// Registration events the runtime accepts per block.
-	///
-	/// The node reads this to size its indexer query, so the limit lives in
-	/// consensus state rather than in the node's configuration: every node
-	/// bounds its observation the same way, and governance can retune it
-	/// without a release.
-	///
-	/// Bounding the query is the node's side of the contract. An observation
-	/// that exceeds this limit is refused whole rather than trimmed to fit —
-	/// see [`Pallet::proposable_batch`].
-	#[pallet::storage]
-	pub type RegistrationEventsPerBlock<T: Config> =
-		StorageValue<_, u32, ValueQuery, DefaultRegistrationEventsPerBlock>;
 
 	#[pallet::storage]
 	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
@@ -306,14 +285,6 @@ pub mod pallet {
 			RegistrationPolicyId::<T>::set(BoundedVec::truncate_from(
 				self.config.registration_policy_id.to_vec(),
 			));
-
-			let limit = self.config.registration_events_per_block;
-			assert!(
-				limit > 0 && limit <= MAX_REGISTRATION_EVENTS_PER_BLOCK,
-				"genesis: candidateRegistrations.config.registrationEventsPerBlock must be in \
-				 1..={MAX_REGISTRATION_EVENTS_PER_BLOCK}, got {limit}",
-			);
-			RegistrationEventsPerBlock::<T>::set(limit);
 
 			NextCardanoPosition::<T>::set(self.config.next_cardano_position);
 		}
@@ -397,25 +368,16 @@ pub mod pallet {
 		/// advances the cursor.
 		#[pallet::call_index(0)]
 		#[pallet::weight((
-			T::WeightInfo::apply_registrations(MAX_REGISTRATION_EVENTS_PER_BLOCK),
+			T::WeightInfo::apply_registrations(registrations.len() as u32),
 			DispatchClass::Mandatory
 		))]
 		pub fn apply_registrations(
 			origin: OriginFor<T>,
-			registrations: RegistrationBatch,
+			registrations: RegistrationBatch<T>,
 			next_position: CardanoTxPosition,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
 
-			// Unreachable through the inherent: `proposable_batch` refuses an
-			// unbounded observation before it can become a call, precisely so
-			// this check cannot fail a mandatory call and stop the author
-			// producing a block. Kept as the assertion that says so.
-			let count = registrations.len() as u32;
-			ensure!(
-				count <= RegistrationEventsPerBlock::<T>::get(),
-				Error::<T>::TooManyRegistrations
-			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 
 			// Unreachable through the inherent:
@@ -498,25 +460,27 @@ pub mod pallet {
 		/// to build.
 		fn proposable_batch(
 			observation: RegistrationsObservation,
-		) -> Option<(RegistrationBatch, CardanoTxPosition)> {
-			let limit = RegistrationEventsPerBlock::<T>::get();
+		) -> Option<(RegistrationBatch<T>, CardanoTxPosition)> {
 			let count = observation.registrations.len();
-			if count > limit as usize {
+			let next_position = observation.next_position;
+			let Ok(registrations) = RegistrationBatch::<T>::try_from(observation.registrations)
+			else {
 				log::error!(
 					target: "candidate-registrations",
-					"Observation carries {count} events against a published limit of {limit}: \
-					 this node did not bound its query by `registration_events_per_block`. \
+					"Observation carries {count} events against a published limit of {}: this \
+					 node did not bound its query by `max_registration_events_per_block`. \
 					 Refusing the observation. Registration processing stalls at {} until the \
 					 node is fixed; block production is unaffected.",
+					T::MaxRegistrationEventsPerBlock::get(),
 					NextCardanoPosition::<T>::get(),
 				);
 				return None;
-			}
+			};
 
 			// Keep ordering, prevent double observations.
 			let cursor = NextCardanoPosition::<T>::get();
 			let mut expected_from = cursor;
-			for registration in observation.registrations.iter() {
+			for registration in registrations.iter() {
 				if registration.position < expected_from {
 					log::error!(
 						target: "candidate-registrations",
@@ -530,23 +494,16 @@ pub mod pallet {
 				expected_from = registration.position.next();
 			}
 
-			if observation.next_position < expected_from {
+			if next_position < expected_from {
 				log::error!(
 					target: "candidate-registrations",
-					"Observation moves the cursor to {} without clearing its own last deposit \
-					 ({expected_from} or later). Refusing the observation.",
-					observation.next_position,
+					"Observation moves the cursor to {next_position} without clearing its own \
+					 last deposit ({expected_from} or later). Refusing the observation.",
 				);
 				return None;
 			}
 
-			let next_position = observation.next_position;
-			// Infallible while the limit is within the decode bound, which
-			// genesis enforces. If it ever is not, the conversion fails and the
-			// observation is refused the same way.
-			RegistrationBatch::try_from(observation.registrations)
-				.ok()
-				.map(|registrations| (registrations, next_position))
+			Some((registrations, next_position))
 		}
 
 		/// The record a pool currently holds, valid or not.

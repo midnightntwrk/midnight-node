@@ -45,22 +45,17 @@ pub use message::RegistrationMessage;
 pub use traits::{CrossChainAccount, KeyCollision, SessionKeyAuthority};
 pub use types::*;
 
-/// Hard ceiling on how many registration events one inherent may carry.
+/// How many registration events one block may carry.
 ///
-/// This is a decode bound, not the operating limit: it exists so that a
-/// malformed or hostile inherent cannot make the runtime allocate without
-/// bound. The limit that actually governs observation is held in runtime
-/// storage and published by [`CandidateRegistrationsApi`], so it can be
-/// retuned by governance without a release.
+/// The value runtimes give `Config::MaxRegistrationEventsPerBlock`. It is both
+/// the operating limit and the inherent's decode bound. The node reads it from
+/// [`CandidateRegistrationsApi`] rather than holding its own copy, so every
+/// node bounds its observation the way the runtime will enforce it.
+///
+/// It changes only when the runtime blob does. Registrations are rare — one
+/// Cardano transaction each, from a population capped by Cardano's pool count
+/// — so it would be hard for attackers to make the pallet lag in observability.
 pub const MAX_REGISTRATION_EVENTS_PER_BLOCK: u32 = 64;
-
-/// Registration events the runtime accepts per block until governance says
-/// otherwise.
-///
-/// Registrations are rare — one Cardano transaction each, from a population
-/// capped by Cardano's pool count — so a handful per block already drains the
-/// backlog faster than it can be filled.
-pub const DEFAULT_REGISTRATION_EVENTS_PER_BLOCK: u32 = 8;
 
 /// Default ceiling on how many pools the registration map may hold.
 ///
@@ -121,9 +116,9 @@ decl_runtime_apis! {
 		/// Cursor: the first Cardano transaction not yet applied.
 		fn next_cardano_position() -> CardanoTxPosition;
 
-		/// How many registration events the runtime will accept this block.
+		/// How many registration events the runtime will accept in one block.
 		/// The node uses it to size its indexer query.
-		fn registration_events_per_block() -> u32;
+		fn max_registration_events_per_block() -> u32;
 
 		/// Runs the full admission check against current state without
 		/// changing it, so an operator can find out whether a registration

@@ -57,6 +57,7 @@ impl frame_system::Config for Test {
 
 parameter_types! {
 	pub const MaxRegistrations: u32 = 3;
+	pub const MaxRegistrationEventsPerBlock: u32 = 4;
 }
 
 /// Stands in for the runtime's `impl_opaque_keys!` struct.
@@ -154,18 +155,17 @@ impl SessionKeyAuthority<AccountId> for MockSessionKeyAuthority {
 impl pallet_candidate_registrations::Config for Test {
 	type SessionKeyAuthority = MockSessionKeyAuthority;
 	type MaxRegistrations = MaxRegistrations;
+	type MaxRegistrationEventsPerBlock = MaxRegistrationEventsPerBlock;
 	type CrossChainAccount = TruncatingAccount;
 	type WeightInfo = ();
 }
 
-/// A genesis that points at a plausible validator address and admits four
-/// registration events per block.
+/// A genesis that points at a plausible validator address.
 pub fn genesis_config() -> CandidateRegistrationsGenesis {
 	CandidateRegistrationsGenesis {
 		validator_address: "addr_test1wztestvalidatoraddress".into(),
 		registration_policy_id: [7u8; 28],
 		next_cardano_position: Default::default(),
-		registration_events_per_block: 4,
 	}
 }
 

@@ -49,10 +49,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `n` is `[0, 64]`.
 	fn apply_registrations(n: u32) -> Weight {
 		// Fixed cost: InherentExecutedThisBlock (1R + 1W), NextCardanoPosition
-		// (1R + 1W), RegistrationEventsPerBlock (1R).
+		// (1R + 1W).
 		Weight::from_parts(15_000_000, 1500)
 			.saturating_add(Weight::from_parts(250_000_000, 500).saturating_mul(n.into()))
-			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().reads(3_u64.saturating_mul(n.into())))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64.saturating_mul(n.into())))
