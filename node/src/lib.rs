@@ -31,6 +31,7 @@ pub mod consensus_engine_dispatch;
 pub mod engine_digests;
 pub mod extensions;
 mod filtering_pool;
+pub mod flip_finality_hold;
 pub mod genesis;
 pub mod inherent_data;
 #[cfg(target_os = "linux")]

@@ -622,6 +622,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
 	serve_warp_ledger_sync: bool,
+	flip_finality_hold: Option<crate::flip_finality_hold::HoldParams>,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
@@ -1175,7 +1176,16 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			network,
 			sync: Arc::new(sync_service),
 			notification_service: grandpa_notification_service,
-			voting_rule: sc_consensus_grandpa::VotingRulesBuilder::default().build(),
+			// Hold finality below a pending AURA→BABE flip so `revert` can still undo it.
+			voting_rule: match flip_finality_hold {
+				Some(params) => sc_consensus_grandpa::VotingRulesBuilder::default()
+					.add(crate::flip_finality_hold::FlipFinalityHold::<FullBackend>::new(params))
+					.build(),
+				None => {
+					log::warn!("flip finality hold disabled (--no-flip-finality-hold)");
+					sc_consensus_grandpa::VotingRulesBuilder::default().build()
+				},
+			},
 			prometheus_registry,
 			shared_voter_state,
 			telemetry: telemetry.as_ref().map(|x| x.handle()),

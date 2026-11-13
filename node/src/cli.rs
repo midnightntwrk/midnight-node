@@ -61,6 +61,32 @@ pub struct RunMidnight {
 	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
+
+	/// Do not hold GRANDPA finality while an AURA→BABE flip is pending.
+	///
+	/// By default a voter keeps finality at the parent of the `schedule_flip` block until BABE
+	/// has authored a confirmed block, so the flip can still be reverted.
+	#[arg(long)]
+	pub no_flip_finality_hold: bool,
+
+	/// BABE blocks required on top of the first one before the flip finality hold lifts.
+	#[arg(long, default_value_t = crate::flip_finality_hold::DEFAULT_EXTRA_CONFIRMATIONS)]
+	pub flip_finality_hold_confirmations: u32,
+
+	/// Lift the flip finality hold once more than this many blocks are unfinalized, even if BABE
+	/// has not been confirmed yet.
+	#[arg(long, default_value_t = crate::flip_finality_hold::DEFAULT_MAX_UNFINALIZED_BLOCKS)]
+	pub flip_finality_hold_max_unfinalized: u32,
+}
+
+impl RunMidnight {
+	/// Parameters for the flip finality hold, or `None` when it is disabled.
+	pub fn flip_finality_hold(&self) -> Option<crate::flip_finality_hold::HoldParams> {
+		(!self.no_flip_finality_hold).then_some(crate::flip_finality_hold::HoldParams {
+			extra_confirmations: self.flip_finality_hold_confirmations,
+			max_unfinalized_blocks: self.flip_finality_hold_max_unfinalized,
+		})
+	}
 }
 
 #[derive(Debug, clap::Parser)]
