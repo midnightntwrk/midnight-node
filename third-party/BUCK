@@ -59150,6 +59150,41 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "6",
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :tikv-jemalloc-sys-0.6-build-script-run[out_dir])",
+    },
+    features = [
+        "background_threads_runtime_support",
+        "default",
+        "stats",
+        "unprefixed_malloc_on_supported_platforms",
+    ],
+    rustc_flags = ["@$(location :tikv-jemalloc-sys-0.6-build-script-run[rustc_flags])"],
+    visibility = [],
+    deps = [":libc-0.2"],
+)
+
+cargo.rust_binary(
+    name = "tikv-jemalloc-sys-0.6-build-script-build",
+    srcs = [":tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7.crate"],
+    crate = "build_script_build",
+    crate_root = "tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7.crate/build.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "tikv-jemalloc-sys-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7.crate",
+        "CARGO_PKG_AUTHORS": "Alex Crichton <alex@alexcrichton.com>:Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>:The TiKV Project Developers",
+        "CARGO_PKG_DESCRIPTION": "Rust FFI bindings to jemalloc\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/tikv/jemallocator",
+        "CARGO_PKG_NAME": "tikv-jemalloc-sys",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/tikv/jemallocator",
+        "CARGO_PKG_RUST_VERSION": "1.71.0",
+        "CARGO_PKG_VERSION": "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
         "background_threads_runtime_support",
@@ -59158,7 +59193,39 @@ cargo.rust_library(
         "unprefixed_malloc_on_supported_platforms",
     ],
     visibility = [],
-    deps = [":libc-0.2"],
+    deps = [":cc-1"],
+)
+
+buildscript_run(
+    name = "tikv-jemalloc-sys-0.6-build-script-run",
+    package_name = "tikv-jemalloc-sys",
+    buildscript_rule = ":tikv-jemalloc-sys-0.6-build-script-build",
+    env = {
+        "CARGO_MANIFEST_LINKS": "jemalloc",
+        "CARGO_PKG_AUTHORS": "Alex Crichton <alex@alexcrichton.com>:Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>:The TiKV Project Developers",
+        "CARGO_PKG_DESCRIPTION": "Rust FFI bindings to jemalloc\n",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/tikv/jemallocator",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/tikv/jemallocator",
+        "CARGO_PKG_RUST_VERSION": "1.71.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+        "CC": "/usr/bin/clang",
+        "CXX": "/usr/bin/clang++",
+        "NUM_JOBS": "4",
+        "OPT_LEVEL": "3",
+    },
+    features = [
+        "background_threads_runtime_support",
+        "default",
+        "stats",
+        "unprefixed_malloc_on_supported_platforms",
+    ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
 )
 
 alias(

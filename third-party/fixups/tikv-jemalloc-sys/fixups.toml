@@ -13,4 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-buildscript.run = false
+# tikv-jemalloc-sys compiles the vendored jemalloc C library in its build script
+# (sh configure && make), emitting cargo:rustc-link-lib=static=jemalloc plus a
+# link-search path. Run it like the other C -sys crates (aws-lc-sys, ring) so
+# libjemalloc.a is built and linked into node:midnight-node-bin; a bare
+# `buildscript.run = false` dropped the allocator and left mallocx/sdallocx/
+# rallocx/mallctl* undefined at link. make comes from the base rust image's
+# build-essential; clang from buck2/Earthfile. NUM_JOBS is set explicitly
+# because build.rs reads it with expect_env and panics when it is absent.
+cargo_env = true
+
+[buildscript.run]
+rustc_link_lib = true
+rustc_link_search = true
+
+[buildscript.run.env]
+OPT_LEVEL = "3"
+NUM_JOBS = "4"
+CC = "/usr/bin/clang"
+CXX = "/usr/bin/clang++"
