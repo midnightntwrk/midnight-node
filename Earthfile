@@ -753,7 +753,12 @@ node-ci-image-single-platform:
     ARG SUBWASM_VERSION=0.21.3
     # renovate: datasource=crate packageName=aiken
     ARG AIKEN_VERSION=1.1.19
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION && \
+    # subwasm's lock pins trie-db 0.29.1, which rustc 1.100 rejects (never-type fallback,
+    # rust-lang/rust#148922); 0.29.2 is the patch release that fixes it.
+    RUN git clone --depth 1 --branch v$SUBWASM_VERSION https://github.com/chevdor/subwasm /tmp/subwasm && \
+        cargo update --manifest-path /tmp/subwasm/Cargo.toml -p trie-db@0.29.1 --precise 0.29.2 && \
+        cargo install --locked --path /tmp/subwasm/cli && \
+        rm -rf /tmp/subwasm && \
         cargo install --locked cargo-shear --version 1.9.1 && \
         cargo install sqlx-cli --no-default-features --features rustls,postgres && \
         cargo install aiken --version $AIKEN_VERSION --locked && \
