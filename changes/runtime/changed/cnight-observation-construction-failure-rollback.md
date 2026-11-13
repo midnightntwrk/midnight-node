@@ -13,3 +13,5 @@ create.
 
 A create whose owner key is not a valid DUST public key is still skipped. Registration
 datums are user input, and no owner is recorded for it.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2442
