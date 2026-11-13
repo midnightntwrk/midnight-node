@@ -171,7 +171,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
+    FROM rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -845,8 +845,8 @@ prep-no-copy:
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
-    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
+    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    # FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
 
@@ -1505,14 +1505,14 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.98.1) for deterministic builds.
+# Note: srtool uses its own pinned Rust version (currently 1.100.0) for deterministic builds.
 # The project's rust-toolchain.toml is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified, but keep it in step with
 # rust-toolchain.toml anyway.
 srtool-build:
     # Tag shape for srtool is: `<rust version>-<srtool version>`
     # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
-    ARG SRTOOL_TAG=1.98.1-0.18.5
+    ARG SRTOOL_TAG=1.100.0-0.18.6
     FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
@@ -1551,7 +1551,7 @@ srtool-build:
 srtool-info:
     # Tag shape for srtool is: `<rust version>-<srtool version>`
     # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
-    ARG SRTOOL_TAG=1.98.1-0.18.5
+    ARG SRTOOL_TAG=1.100.0-0.18.6
     FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root

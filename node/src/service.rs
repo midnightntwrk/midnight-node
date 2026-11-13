@@ -681,7 +681,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		sc_consensus_beefy::communication::request_response::BeefyJustifsRequestHandler::new::<
 			_,
 			Network,
-		>(&genesis_hash, config.chain_spec.fork_id(), client.clone(), prometheus_registry.clone());
+		>(
+			&genesis_hash, config.chain_spec.fork_id(), client.clone(), prometheus_registry.clone()
+		);
 
 	// enable beefy
 	let (beefy_notification_config, beefy_notification_service) =

@@ -31,7 +31,8 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 				| RuntimeCall::TechnicalCommittee(_)
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
-				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
+				)
+				| RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
 		)
 	}
 }
@@ -51,9 +52,11 @@ impl Contains<RuntimeCall> for InherentCalls {
 			RuntimeCall::Timestamp(pallet_timestamp::Call::set { .. })
 				| RuntimeCall::SessionCommitteeManagement(
 					pallet_session_validator_management::Call::set { .. }
-				) | RuntimeCall::CNightObservation(
-				pallet_cnight_observation::Call::process_tokens { .. }
-			) | RuntimeCall::Bridge(pallet_partner_chains_bridge::Call::handle_transfers { .. })
+				)
+				| RuntimeCall::CNightObservation(
+					pallet_cnight_observation::Call::process_tokens { .. }
+				)
+				| RuntimeCall::Bridge(pallet_partner_chains_bridge::Call::handle_transfers { .. })
 				| RuntimeCall::FederatedAuthorityObservation(
 					pallet_federated_authority_observation::Call::reset_members { .. }
 				)

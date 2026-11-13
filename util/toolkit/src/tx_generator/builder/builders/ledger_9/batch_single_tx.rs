@@ -222,7 +222,11 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 				// serialize, emitted from single_tx.rs/transaction.rs/tx_serialization.rs) with
 				// this transfer's index, so a report script can correlate per-phase timings back
 				// to a single tx even though transfers build concurrently on one thread.
-				.instrument(tracing::debug_span!("transfer", index, total = num_transfers))
+				.instrument(tracing::debug_span!(
+					"transfer",
+					index,
+					total = num_transfers
+				))
 			})
 			.collect();
 		let mut stream = futures::stream::iter(futures).buffered(self.concurrency);
