@@ -30,8 +30,6 @@ ws_root = meta["workspace_root"]
 # flags, so the shared non-clippy build is unaffected.)
 with open(os.path.join(ws_root, "Cargo.toml"), "rb") as _f:
     _ws_lints = tomllib.load(_f).get("workspace", {}).get("lints", {})
-
-
 def _lint_flags():
     lvl = {"allow": "-A", "warn": "-W", "deny": "-D", "forbid": "-F"}
     rows, order = [], 0
@@ -43,25 +41,17 @@ def _lint_flags():
             order += 1
     rows.sort(key=lambda r: (r[0], r[1]))
     return [f for _, _, f in rows]
-
-
 LINT_FLAGS = _lint_flags()
 _lint_optin = {}
-
-
 def opts_into_workspace_lints(pkg):
     mp = pkg["manifest_path"]
     if mp not in _lint_optin:
         try:
             with open(mp, "rb") as f:
-                _lint_optin[mp] = (
-                    tomllib.load(f).get("lints", {}).get("workspace") is True
-                )
+                _lint_optin[mp] = tomllib.load(f).get("lints", {}).get("workspace") is True
         except Exception:
             _lint_optin[mp] = False
     return _lint_optin[mp]
-
-
 # (name, req, source) -> third-party manifest key, written by gen-third-party.py
 keymap = json.load(open(os.path.join(ws_root, "third-party", "keys.json")))
 members = set(meta["workspace_members"])
@@ -77,16 +67,11 @@ resolve_by_id = {n["id"]: n for n in meta["resolve"]["nodes"]}
 # no wasm-deps target). First-party deps are left as-is — buck's platform
 # transition rebuilds them for wasm32, and they carry the same `select()`.
 _wasm_sidecar = os.path.join(ws_root, "wasm-deps", "first-party-wasm.json")
-wasm_features_map = (
-    json.load(open(_wasm_sidecar)) if os.path.exists(_wasm_sidecar) else {}
-)
+wasm_features_map = json.load(open(_wasm_sidecar)) if os.path.exists(_wasm_sidecar) else {}
 wasm_names = set()
 _wasm_buck = os.path.join(ws_root, "wasm-deps", "BUCK")
 if os.path.exists(_wasm_buck):
-    wasm_names = set(
-        re.findall(r'^    name = "([^"]+)"', open(_wasm_buck).read(), re.M)
-    )
-
+    wasm_names = set(re.findall(r'^    name = "([^"]+)"', open(_wasm_buck).read(), re.M))
 
 def to_wasm_dep(label, wasm_dep_names, label_pkg):
     """Map a std dep label to its wasm variant, or None to drop it. A dep is kept
@@ -102,10 +87,8 @@ def to_wasm_dep(label, wasm_dep_names, label_pkg):
         return f"root//wasm-deps:{key}" if key in wasm_names else None
     return label
 
-
 def underscore(s):
     return s.replace("-", "_")
-
 
 def _format_ledger_version(version, source):
     """Mirror of ledger/helpers/build.rs::format_version — the build script
@@ -113,7 +96,7 @@ def _format_ledger_version(version, source):
     running it under buck."""
     if not source or not source.startswith("git+"):
         return version
-    git = source[len("git+") :]
+    git = source[len("git+"):]
     locator, _, commit = git.partition("#")
     commit = commit or "unknown"
     label = ""
@@ -125,13 +108,10 @@ def _format_ledger_version(version, source):
                 break
     return f"{version} ({label}rev: {commit})"
 
-
 def _ledger_helpers_env(pkg, node):
-    aliases = [
-        ("mn_ledger", "LEDGER_7_VERSION"),
-        ("mn_ledger_8", "LEDGER_8_VERSION"),
-        ("mn_ledger_9", "LEDGER_9_VERSION"),
-    ]
+    aliases = [("mn_ledger", "LEDGER_7_VERSION"),
+               ("mn_ledger_8", "LEDGER_8_VERSION"),
+               ("mn_ledger_9", "LEDGER_9_VERSION")]
     env = {}
     for alias, var in aliases:
         rd = next((d for d in node["deps"] if d["name"] == alias), None)
@@ -140,7 +120,6 @@ def _ledger_helpers_env(pkg, node):
         dp = pkg_by_id[rd["pkg"]]
         env[var] = _format_ledger_version(dp["version"], dp.get("source"))
     return env
-
 
 # package name -> fn(pkg, node) producing extra compile-time env that a build.rs
 # would otherwise set. Lets us skip running the script under buck.
@@ -221,15 +200,15 @@ TEST_RESOURCES = {
     # docs_tests reads res/cfg, the runtime/node/metadata manifests, README, toolkit
     # source and docs/*.md - all from the real in-place tree via its root() walk. Listed
     # here only to declare them as inputs (so a version bump re-runs the drift test).
-    "docs": "[\n"
-    '        "root//res:cfg-default",\n'
-    '        "root//runtime:lib-rs",\n'
-    '        "root//runtime:cargo-toml",\n'
-    '        "root//node:cargo-toml",\n'
-    '        "root//metadata:cargo-toml",\n'
-    '        "root//:readme",\n'
-    '        "root//util/toolkit:fetcher-runtimes",\n'
-    '    ] + glob(["*.md"])',
+    "docs": '[\n'
+            '        "root//res:cfg-default",\n'
+            '        "root//runtime:lib-rs",\n'
+            '        "root//runtime:cargo-toml",\n'
+            '        "root//node:cargo-toml",\n'
+            '        "root//metadata:cargo-toml",\n'
+            '        "root//:readme",\n'
+            '        "root//util/toolkit:fetcher-runtimes",\n'
+            '    ] + glob(["*.md"])',
 }
 
 # Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
@@ -250,24 +229,24 @@ _TOOLKIT_RES = (
 TEST_TARGET_RESOURCES = {
     # node unit-test reads res/cfg/*.toml, docs/openrpc.json and res/mock-bridge-data/
     # from the in-place tree; listed as inputs for cache-correctness.
-    "midnight-node-unit-test": "[\n"
-    '        "root//docs:openrpc-json",\n'
-    '        "root//res:fg-cfg",\n'
-    '        "root//res:fg-mock-bridge-data",\n'
-    "    ]",
+    "midnight-node-unit-test": '[\n'
+        '        "root//docs:openrpc-json",\n'
+        '        "root//res:fg-cfg",\n'
+        '        "root//res:fg-mock-bridge-data",\n'
+        '    ]',
     # cached_context reads test-data/genesis/genesis_block_undeployed.mn at runtime
     # (via CARGO_MANIFEST_DIR, resolved at runtime after the env!-> std::env::var fix).
     "midnight-node-toolkit-cached_context": 'glob(["test-data/genesis/**"])',
     # toolkit unit tests read test-data/** (same-package, via manifest_dir()) and a broad
     # res/ set (via test_paths::res()'s walk to the real tree).
-    "midnight-node-toolkit-unit-test": "[\n"
-    + _TOOLKIT_RES
-    + '    ] + glob(["test-data/**"])',
+    "midnight-node-toolkit-unit-test":
+        '[\n' + _TOOLKIT_RES + '    ] + glob(["test-data/**"])',
     # cli_tests (trycmd) chdirs to CARGO_MANIFEST_DIR (util/toolkit) and runs the README +
     # tests/cmd/*.toml cases, which exec the toolkit bin and read ../../res/... from the
     # real tree. The corpus is same-package; the res block is the shared input set.
-    "midnight-node-toolkit-cli_tests": "[\n" + _TOOLKIT_RES + '        "README.md",\n'
-    '    ] + glob(["tests/cmd/*.toml"])',
+    "midnight-node-toolkit-cli_tests":
+        '[\n' + _TOOLKIT_RES + '        "README.md",\n'
+        '    ] + glob(["tests/cmd/*.toml"])',
 }
 
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
@@ -291,17 +270,22 @@ MAPPED_SRCS_EXTERNAL = {
     # dir, so node switches to the repo-mirroring prefix (src -> node/src, the
     # genesis blob at res/genesis/...) and the `../../../res/...` path resolves.
     "midnight-node": {
-        "root//res:genesis-state-preview": "res/genesis/genesis_state_preview.mn",
+        "root//res:genesis-state-preview":
+            "res/genesis/genesis_state_preview.mn",
     },
     "midnight-node-toolkit": {
         "root//:COMPACTC_VERSION": "COMPACTC_VERSION",
         "root//node:cargo-toml": "node/Cargo.toml",
-        "root//res:test-contract-addr": "res/test-contract/contract_address_undeployed.mn",
+        "root//res:test-contract-addr":
+            "res/test-contract/contract_address_undeployed.mn",
         # cli_tests (trycmd) fixtures the README examples + tomls read via
         # `../../res/…` (CWD = crate dir). Mapped so they land at __srcs/res/….
-        "root//res:test-contract-tx1": "res/test-contract/contract_tx_1_deploy_undeployed.mn",
-        "root//res:genesis-block-undeployed": "res/genesis/genesis_block_undeployed.mn",
-        "root//res:serialized-tx": "res/test-tx-deserialize/serialized_tx.mn",
+        "root//res:test-contract-tx1":
+            "res/test-contract/contract_tx_1_deploy_undeployed.mn",
+        "root//res:genesis-block-undeployed":
+            "res/genesis/genesis_block_undeployed.mn",
+        "root//res:serialized-tx":
+            "res/test-tx-deserialize/serialized_tx.mn",
     },
 }
 
@@ -410,11 +394,11 @@ NO_UNIT_TEST = {"sc-partner-chains-consensus-aura", "sc-partner-chains-consensus
 CI_INFRA_UNIT = {"partner-chains-db-sync-data-sources"}  # testcontainers → postgres
 CI_INFRA_INTEGRATION = {
     ("partner-chains-cardano-offchain", "integration_tests"),  # Cardano node
-    ("midnight-node-e2e", "e2e_tests"),  # devnet
-    ("midnight-node-toolkit", "single_tx"),  # docker-compose
-    ("midnight-node-toolkit", "toolkit_e2e"),  # devnet / ledger static dir
-    ("midnight-node-toolkit", "hardfork_e2e"),  # docker-compose
-    ("sc-partner-chains-consensus", "verifier_network"),  # substrate-test-runtime wasm
+    ("midnight-node-e2e", "e2e_tests"),                        # devnet
+    ("midnight-node-toolkit", "single_tx"),                    # docker-compose
+    ("midnight-node-toolkit", "toolkit_e2e"),                  # devnet / ledger static dir
+    ("midnight-node-toolkit", "hardfork_e2e"),                 # docker-compose
+    ("sc-partner-chains-consensus", "verifier_network"),        # substrate-test-runtime wasm
 }
 
 # Extra src globs a crate's TEST targets need (test-data include_str!'d only by
@@ -453,18 +437,15 @@ SRCS_HOOKS = {
     "midnight-ledger-unsafe-helpers": ['glob(["graphql/**"])'],
 }
 
-
 def member_rel(pkg):
     d = os.path.dirname(pkg["manifest_path"])
     return os.path.relpath(d, ws_root)
-
 
 def lib_target(pkg):
     for t in pkg["targets"]:
         if any(k in ("lib", "rlib", "proc-macro") for k in t["kind"]):
             return t
     return None
-
 
 # extern-name -> third-party key: build from the same rules gen-third-party used
 # (rename or name), so keys agree by construction.
@@ -476,7 +457,6 @@ def dep_label(dep_pkg, extern_name):
     # external: reindeer emits a top-level alias per manifest key; our manifest
     # keys were rename-or-name, and extern_name == underscore(key) for renames.
     return f"root//third-party:{extern_name.replace('_','-')}", None
-
 
 def compute_deps(pkg, node, include_dev):
     """Return (deps, named, label_pkg) for a target. include_dev adds dev-deps."""
@@ -513,10 +493,8 @@ def compute_deps(pkg, node, include_dev):
                 deps.append(label)
         else:
             if dl:
-                key = keymap.get(
-                    f'{dl["name"]}|{dl["req"]}|{dl["source"]}',
-                    dl.get("rename") or dl["name"],
-                )
+                key = keymap.get(f'{dl["name"]}|{dl["req"]}|{dl["source"]}',
+                                 dl.get("rename") or dl["name"])
             else:
                 key = extern.replace("_", "-")
             label = f"root//third-party:{key}"
@@ -549,69 +527,45 @@ def gen_buck(pkg, prefix=""):
     dev_deps, dev_named, _ = compute_deps(pkg, node, include_dev=True)
     extra_env = ENV_HOOKS.get(pkg["name"], lambda p, n: {})(pkg, node)
     out = []
-    out.append(
-        "# @generated by scripts/buck2/gen-first-party.py — edit and regen there.\n"
-    )
+    out.append("# @generated by scripts/buck2/gen-first-party.py — edit and regen there.\n")
     if has_build and pkg["name"] not in ENV_HOOKS:
-        out.append(
-            "# NOTE: this crate has a build.rs which is NOT run under buck2 yet.\n"
-        )
+        out.append("# NOTE: this crate has a build.rs which is NOT run under buck2 yet.\n")
 
     def emit_list_field(field, std_vals, wasm_vals, quote='"{}"'):
         # Emit a list-valued field, as a `select()` on cpu:wasm32 when a wasm
         # variant is supplied and differs, else a plain list.
         def block(indent, vals):
             for v in vals:
-                out.append(f"{indent}{quote.format(v)},\n")
-
+                out.append(f'{indent}{quote.format(v)},\n')
         if wasm_vals is None or sorted(wasm_vals) == sorted(std_vals):
             if std_vals:
-                out.append(f"    {field} = [\n")
-                block("        ", std_vals)
+                out.append(f"    {field} = [\n"); block("        ", std_vals)
                 out.append("    ],\n")
             return
         out.append(f"    {field} = select({{\n")
-        out.append('        "prelude//cpu:wasm32": [\n')
-        block("            ", sorted(wasm_vals))
+        out.append('        "prelude//cpu:wasm32": [\n'); block("            ", sorted(wasm_vals))
         out.append("        ],\n")
-        out.append('        "DEFAULT": [\n')
-        block("            ", std_vals)
+        out.append('        "DEFAULT": [\n'); block("            ", std_vals)
         out.append("        ],\n    }),\n")
 
     def emit_named_field(field, std_map, wasm_map):
         def block(indent, m):
             for k, v in sorted(m.items()):
                 out.append(f'{indent}"{k}": "{v}",\n')
-
         if wasm_map is None or wasm_map == std_map:
             if std_map:
-                out.append(f"    {field} = {{\n")
-                block("        ", std_map)
+                out.append(f"    {field} = {{\n"); block("        ", std_map)
                 out.append("    },\n")
             return
         out.append(f"    {field} = select({{\n")
-        out.append('        "prelude//cpu:wasm32": {\n')
-        block("            ", wasm_map)
+        out.append('        "prelude//cpu:wasm32": {\n'); block("            ", wasm_map)
         out.append("        },\n")
-        out.append('        "DEFAULT": {\n')
-        block("            ", std_map)
+        out.append('        "DEFAULT": {\n'); block("            ", std_map)
         out.append("        },\n    }),\n")
 
-    def emit_target(
-        rule,
-        name,
-        crate,
-        crate_root,
-        tdeps,
-        tnamed,
-        extra=(),
-        extra_globs=(),
-        wasm=None,
-        feats=None,
-        env_override=None,
-        labels=None,
-        rustc_flags=(),
-    ):
+    def emit_target(rule, name, crate, crate_root, tdeps, tnamed,
+                    extra=(), extra_globs=(), wasm=None, feats=None,
+                    env_override=None, labels=None, rustc_flags=()):
         out.append(f"{rule}(\n")
         out.append(f'    name = "{name}",\n')
         out.append(f'    crate = "{crate}",\n')
@@ -622,19 +576,13 @@ def gen_buck(pkg, prefix=""):
             # ../ include!s resolve. Own files -> <rel>/…, externals via labels.
             ext = "".join(
                 f'            ("{label}", "{dest}"),\n'
-                for label, dest in sorted(
-                    MAPPED_SRCS_EXTERNAL.get(pkg["name"], {}).items()
-                )
+                for label, dest in sorted(MAPPED_SRCS_EXTERNAL.get(pkg["name"], {}).items())
             )
             globs = '"src/**", "Cargo.toml"' + "".join(
-                f', "{g}"'
-                for g in tuple(extra_globs)
-                + tuple(PREFIX_DATA_GLOBS.get(pkg["name"], ()))
-            )
+                f', "{g}"' for g in tuple(extra_globs) + tuple(PREFIX_DATA_GLOBS.get(pkg["name"], ())))
             out.append("    mapped_srcs = dict(\n")
-            out.append(
-                f'        [(f, "{prefix}/" + f) for f in ' f"glob([{globs}])] + [\n"
-            )
+            out.append(f'        [(f, "{prefix}/" + f) for f in '
+                       f'glob([{globs}])] + [\n')
             out.append(ext)
             out.append("        ],\n    ),\n")
         else:
@@ -645,12 +593,9 @@ def gen_buck(pkg, prefix=""):
             srcs_expr = f'glob({base_globs}) + ["Cargo.toml"]'
             for frag in extra_srcs:
                 srcs_expr += " + " + frag
-            out.append(f"    srcs = {srcs_expr},\n")
-        emit_list_field(
-            "features",
-            feats if feats is not None else features,
-            wasm["features"] if wasm else None,
-        )
+            out.append(f'    srcs = {srcs_expr},\n')
+        emit_list_field("features", feats if feats is not None else features,
+                        wasm["features"] if wasm else None)
         vparts = (re.findall(r"\d+", pkg["version"]) + ["0", "0", "0"])[:3]
         out.append("    env = {\n")
         out.append(f'        "CARGO_MANIFEST_DIR": "{prefix or "."}",\n')
@@ -661,18 +606,10 @@ def gen_buck(pkg, prefix=""):
         out.append(f'        "CARGO_PKG_VERSION_MINOR": "{vparts[1]}",\n')
         out.append(f'        "CARGO_PKG_VERSION_PATCH": "{vparts[2]}",\n')
         # clap's #[command(author/about)] derive reads these at compile time
-        out.append(
-            f'        "CARGO_PKG_AUTHORS": {json.dumps(":".join(pkg.get("authors") or []))},\n'
-        )
-        out.append(
-            f'        "CARGO_PKG_DESCRIPTION": {json.dumps(pkg.get("description") or "")},\n'
-        )
-        out.append(
-            f'        "CARGO_PKG_REPOSITORY": {json.dumps(pkg.get("repository") or "")},\n'
-        )
-        out.append(
-            f'        "CARGO_PKG_HOMEPAGE": {json.dumps(pkg.get("homepage") or "")},\n'
-        )
+        out.append(f'        "CARGO_PKG_AUTHORS": {json.dumps(":".join(pkg.get("authors") or []))},\n')
+        out.append(f'        "CARGO_PKG_DESCRIPTION": {json.dumps(pkg.get("description") or "")},\n')
+        out.append(f'        "CARGO_PKG_REPOSITORY": {json.dumps(pkg.get("repository") or "")},\n')
+        out.append(f'        "CARGO_PKG_HOMEPAGE": {json.dumps(pkg.get("homepage") or "")},\n')
         env = dict(extra_env)
         if env_override:
             env.update(env_override)
@@ -685,16 +622,12 @@ def gen_buck(pkg, prefix=""):
         # (remote-cached) test action, so the action re-runs when a fixture changes. Only
         # test targets get these.
         if rule == "rust_test":
-            res_expr = TEST_TARGET_RESOURCES.get(name) or TEST_RESOURCES.get(
-                pkg["name"]
-            )
+            res_expr = TEST_TARGET_RESOURCES.get(name) or TEST_RESOURCES.get(pkg["name"])
             if res_expr:
-                out.append(f"    resources = {res_expr},\n")
+                out.append(f'    resources = {res_expr},\n')
         rflags = pkg_lints + list(rustc_flags)
         if rflags:
-            out.append(
-                "    rustc_flags = [" + ", ".join(f'"{x}"' for x in rflags) + "],\n"
-            )
+            out.append("    rustc_flags = [" + ", ".join(f'"{x}"' for x in rflags) + "],\n")
         for e in extra:
             out.append(e)
         emit_list_field("deps", tdeps, wasm["deps"] if wasm else None)
@@ -705,13 +638,11 @@ def gen_buck(pkg, prefix=""):
         out.append(")\n")
 
     def rel_root(t):
-        return pdir + os.path.relpath(
-            t["src_path"], os.path.dirname(pkg["manifest_path"])
-        )
+        return pdir + os.path.relpath(t["src_path"], os.path.dirname(pkg["manifest_path"]))
 
     if lt:
         is_proc = "proc-macro" in lt["kind"]
-        extra = ["    proc_macro = True,\n"] if is_proc else []
+        extra = ['    proc_macro = True,\n'] if is_proc else []
         # WASM variant (task #11): closure libs (not proc-macros — those build on
         # the host) get a `select()` swapping std deps/features for the no_std set.
         wasm_lib = None
@@ -719,48 +650,33 @@ def gen_buck(pkg, prefix=""):
             info = wasm_features_map[pkg["name"]]
             wset = set(info["deps"])
             wdeps = sorted({w for d in deps if (w := to_wasm_dep(d, wset, label_pkg))})
-            wnamed = {
-                k: w for k, v in named.items() if (w := to_wasm_dep(v, wset, label_pkg))
-            }
+            wnamed = {k: w for k, v in named.items()
+                      if (w := to_wasm_dep(v, wset, label_pkg))}
             wasm_lib = {"features": info["features"], "deps": wdeps, "named": wnamed}
-        emit_target(
-            "rust_library",
-            pkg["name"],
-            underscore(lt["name"]),
-            rel_root(lt),
-            deps,
-            named,
-            extra,
-            wasm=wasm_lib,
-        )
+        emit_target("rust_library", pkg["name"], underscore(lt["name"]),
+                    rel_root(lt), deps, named, extra, wasm=wasm_lib)
         # cdylib variant of the runtime for the on-chain wasm blob (task #12):
         # always the no_std wasm deps/features, shared linkage, and
         # `--cfg substrate_runtime` (so #[runtime_interface] emits wasm extern
         # stubs). Built for wasm32 via a configured_alias in the root BUCK.
         if pkg["name"] in WASM_CDYLIB and wasm_lib:
             out.append("\n")
-            emit_target(
-                "rust_library",
-                f"{pkg['name']}-wasm-cdylib",
-                underscore(lt["name"]),
-                rel_root(lt),
-                wasm_lib["deps"],
-                wasm_lib["named"],
-                extra=['    preferred_linkage = "shared",\n'],
-                rustc_flags=["--cfg", "substrate_runtime"],
-                feats=wasm_lib["features"],
-                # The cdylib IS the blob source — it must use the stub
-                # OUT_DIR, not runtime-wasm-binary-rs (which embeds this
-                # cdylib), else a configured-target cycle.
-                env_override={"OUT_DIR": "$(location root//:runtime-wasm-stub)"},
-            )
+            emit_target("rust_library", f"{pkg['name']}-wasm-cdylib",
+                        underscore(lt["name"]), rel_root(lt),
+                        wasm_lib["deps"], wasm_lib["named"],
+                        extra=['    preferred_linkage = "shared",\n'],
+                        rustc_flags=["--cfg", "substrate_runtime"],
+                        feats=wasm_lib["features"],
+                        # The cdylib IS the blob source — it must use the stub
+                        # OUT_DIR, not runtime-wasm-binary-rs (which embeds this
+                        # cdylib), else a configured-target cycle.
+                        env_override={"OUT_DIR": "$(location root//:runtime-wasm-stub)"})
     for b in bins:
         name = b["name"] if not lt or b["name"] != pkg["name"] else b["name"] + "-bin"
         bdeps = sorted(set(deps + ([f":{pkg['name']}"] if lt else [])))
         out.append("\n")
-        emit_target(
-            "rust_binary", name, underscore(b["name"]), rel_root(b), bdeps, named
-        )
+        emit_target("rust_binary", name, underscore(b["name"]), rel_root(b),
+                    bdeps, named)
 
     # ── tests ──────────────────────────────────────────────────────────────
     # Unit tests: recompile the lib crate with the test harness (runs #[test]
@@ -769,37 +685,19 @@ def gen_buck(pkg, prefix=""):
     test_globs = tuple(TEST_SRCS_HOOKS.get(pkg["name"], []))
     if lt and "proc-macro" not in lt["kind"] and pkg["name"] not in NO_UNIT_TEST:
         out.append("\n")
-        emit_target(
-            "rust_test",
-            f"{pkg['name']}-unit-test",
-            underscore(lt["name"]),
-            rel_root(lt),
-            dev_deps,
-            dev_named,
-            extra_globs=test_globs,
-            env_override=UNIT_TEST_ENV.get(pkg["name"]),
-            labels=["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else None,
-        )
+        emit_target("rust_test", f"{pkg['name']}-unit-test", underscore(lt["name"]),
+                    rel_root(lt), dev_deps, dev_named, extra_globs=test_globs,
+                    env_override=UNIT_TEST_ENV.get(pkg["name"]),
+                    labels=["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else None)
     for t in tests:
         tdeps = sorted(set(dev_deps + ([f":{pkg['name']}"] if lt else [])))
         out.append("\n")
-        emit_target(
-            "rust_test",
-            f"{pkg['name']}-{t['name']}",
-            underscore(t["name"]),
-            rel_root(t),
-            tdeps,
-            dev_named,
-            extra_globs=("tests/**",) + test_globs,
-            env_override=TEST_ENV_HOOKS.get((pkg["name"], t["name"])),
-            labels=(
-                ["ci-infra"]
-                if (pkg["name"], t["name"]) in CI_INFRA_INTEGRATION
-                else None
-            ),
-        )
+        emit_target("rust_test", f"{pkg['name']}-{t['name']}", underscore(t["name"]),
+                    rel_root(t), tdeps, dev_named,
+                    extra_globs=("tests/**",) + test_globs,
+                    env_override=TEST_ENV_HOOKS.get((pkg["name"], t["name"])),
+                    labels=["ci-infra"] if (pkg["name"], t["name"]) in CI_INFRA_INTEGRATION else None)
     return "".join(out)
-
 
 # Workspace members intentionally excluded from the buck2 build/test set. The
 # partner-chains demo node + runtime are an example that isn't part of the main
