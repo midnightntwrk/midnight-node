@@ -929,14 +929,24 @@ mod tests {
 		assert_eq!(decode_hex("0102").unwrap(), vec![1, 2]);
 	}
 
+	// buck2 runs tests in-place at the project root and sets MN_WORKSPACE_ROOT=".";
+	// cargo runs from the crate dir. Resolve the vendored graphql dir for both.
+	fn graphql_dir() -> std::path::PathBuf {
+		match std::env::var_os("MN_WORKSPACE_ROOT") {
+			Some(root) => std::path::PathBuf::from(root).join("ledger/helpers/unsafe/graphql"),
+			None => std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("graphql"),
+		}
+	}
+
 	/// The schema path the derives compile against must exist (the indexer submodule must be
 	/// checked out). This makes the requirement explicit rather than only a derive-macro error.
 	#[test]
 	fn schema_path_exists() {
-		let path = concat!(env!("CARGO_MANIFEST_DIR"), "/graphql/schema/indexer-4.4.graphql");
+		let path = graphql_dir().join("schema/indexer-4.4.graphql");
 		assert!(
-			std::path::Path::new(path).exists(),
-			"indexer schema not found at {path} — is the `indexer` submodule checked out?"
+			path.exists(),
+			"indexer schema not found at {} — is the `indexer` submodule checked out?",
+			path.display()
 		);
 	}
 
@@ -1100,9 +1110,9 @@ mod tests {
 	#[test]
 	fn documents_validate_against_every_vendored_schema() {
 		use apollo_compiler::{ExecutableDocument, Schema};
-		use std::{fs, path::Path};
+		use std::fs;
 
-		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
+		let dir = graphql_dir();
 		for name in SCHEMAS {
 			let path = dir.join("schema").join(name);
 			let schema = Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)

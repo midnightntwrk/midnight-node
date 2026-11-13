@@ -379,6 +379,9 @@ UNIT_TEST_ENV = {
     "midnight-node": {"MN_WORKSPACE_ROOT": "."},
     # toolkit unit tests reach res via test_paths::res() and build a LedgerContext.
     "midnight-node-toolkit": {"MN_WORKSPACE_ROOT": ".", "MIDNIGHT_PP": ".zk-params"},
+    # indexer_client schema-validation tests read graphql/ via env!(CARGO_MANIFEST_DIR)
+    # (buck's sandbox, gone at runtime); "." makes them read the real tree in-place.
+    "midnight-ledger-unsafe-helpers": {"MN_WORKSPACE_ROOT": "."},
 }
 
 # Crates to skip emitting a unit-test target for. sc-partner-chains-consensus and
