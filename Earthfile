@@ -1215,12 +1215,14 @@ test:
     # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
     # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
     # snapshot, which buildkit may export to the remote cache on success.
+    # Warm PostgreSQL once before parallel tests can each pull the missing image.
     WITH DOCKER
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
               echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
+            (docker image inspect postgres:17.2 >/dev/null 2>&1 || docker pull postgres:17.2) && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
