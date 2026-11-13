@@ -19,3 +19,9 @@ apart from dropping a deprecated `core::u32` import and new rustfmt output.
 Also sets cargo 1.100's `registry.global-min-publish-age = "7 days"` in
 `.cargo/config.toml`, matching dependabot's cooldown: new resolutions skip crate
 versions published in the last week (versions already in `Cargo.lock` are kept).
+
+`[workspace.lints.cargo]` now denies cargo 1.100's `unused_dependencies` and
+`unused_workspace_dependencies` (removing an unused `midnight-node-toolkit`
+workspace dependency and `sidechain-mc-hash`'s unused `derive-new`). The CI image
+now bakes in npm, `perl-Digest-SHA`, `cargo-hack` 0.6.46 and `cargo-shear` 1.6.6
+(its tag gains `-npm<version>`), so CI jobs no longer reinstall them per run.

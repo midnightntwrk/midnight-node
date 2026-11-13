@@ -16404,7 +16404,6 @@ name = "sidechain-mc-hash"
 version = "1.8.1"
 dependencies = [
  "async-trait",
- "derive-new",
  "log",
  "sc-partner-chains-consensus",
  "sidechain-domain",

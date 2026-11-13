@@ -76,7 +76,8 @@ jobs:
 
           RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
           COMPACTC_VERSION=$(cat COMPACTC_VERSION)
-          VERSION="${RUST_VERSION}-${COMPACTC_VERSION}"
+          NPM_VERSION=$(sed -n 's/^ARG --global NPM_VERSION=//p' Earthfile)
+          VERSION="${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           # Matches the SAVE IMAGE in +node-ci-image-single-platform: repo-named, because
           # GHCR_REGISTRY only isolates by owner.
