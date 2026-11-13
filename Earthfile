@@ -1510,9 +1510,10 @@ subwasm:
 # reproducibility - srtool's environment is fixed and verified, but keep it in step with
 # rust-toolchain.toml anyway.
 srtool-build:
-    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # Tag shape for srtool is: `<rust version>-<srtool version>@<digest>`; the digest
+    # pins the image, since a re-run of srtool's release workflow can move the tag.
     # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
-    ARG SRTOOL_TAG=1.100.0-0.18.6
+    ARG SRTOOL_TAG=1.100.0-0.18.6@sha256:b1407337a28e86c5122c5711415b2dff690ffe9d290fbe0889f8152c82575059
     FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
@@ -1549,9 +1550,10 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # Tag shape for srtool is: `<rust version>-<srtool version>@<digest>`; the digest
+    # pins the image, since a re-run of srtool's release workflow can move the tag.
     # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
-    ARG SRTOOL_TAG=1.100.0-0.18.6
+    ARG SRTOOL_TAG=1.100.0-0.18.6@sha256:b1407337a28e86c5122c5711415b2dff690ffe9d290fbe0889f8152c82575059
     FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
