@@ -19,7 +19,9 @@ chain-spec = [
     "sp-core/std",
     "sc-service",
     "sp-session-validator-management",
-    "sidechain-domain"
+    "sidechain-domain",
+    "serde",
+    "serde_json",
 ]
 test = ["chain-spec"]
 std = []
@@ -28,8 +30,8 @@ runtime-benchmarks = []
 [dependencies]
 hex-literal.workspace = true
 midnight-serialize.workspace = true
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["alloc"] }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, features = ["alloc"], optional = true }
 sp-core = { workspace = true, optional = true }
 sc-service = { workspace = true, optional = true }
 sp-session-validator-management = { workspace = true, optional = true }
