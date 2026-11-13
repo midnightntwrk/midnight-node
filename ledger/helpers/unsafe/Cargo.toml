@@ -47,9 +47,11 @@ tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
 
 [features]
 default = []
-erase-proof = []
 test-utils = []
-fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
+fixed-point-custom-serde = [
+    "mn-ledger-8/fixed-point-custom-serde",
+    "mn-ledger-9/fixed-point-custom-serde",
+]
 
 [dev-dependencies]
 apollo-compiler.workspace = true
