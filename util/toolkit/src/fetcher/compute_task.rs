@@ -254,6 +254,13 @@ impl ComputeTask {
 
 		let events = block.block.events().from_bytes(block.events.clone());
 
+		let failed = failed_extrinsics(
+			events
+				.iter()
+				.filter_map(Result::ok)
+				.map(|ev| (ev.pallet_name(), ev.event_name(), ev.phase())),
+		);
+
 		for ext in extrinsics.iter().filter_map(Result::ok) {
 			let Ok(call) = ext.decode_call_data_as::<M::Call>() else {
 				continue;
@@ -265,7 +272,11 @@ impl ComputeTask {
 				}
 				timestamp_ms = Some(ts);
 			} else if let Some(bytes) = M::send_mn_transaction(&call) {
-				transactions.push((ext_index, RawTransaction::Midnight(bytes)));
+				// A failed dispatch (e.g. `CallFiltered` in safe mode) rolls back storage, so the
+				// node's ledger never saw this transaction.
+				if !failed.contains(&ext_index) {
+					transactions.push((ext_index, RawTransaction::Midnight(bytes)));
+				}
 			} else if block_number == 0 {
 				// Genesis block: extract system transactions from extrinsics directly
 				// (genesis has no events since events are emitted during block execution)
@@ -325,5 +336,40 @@ impl ComputeTask {
 			state_root,
 			state: block.state.clone(),
 		})
+	}
+}
+
+/// Indices of the extrinsics whose dispatch failed, from `(pallet, event, phase)` triples.
+fn failed_extrinsics<'a>(
+	events: impl IntoIterator<Item = (&'a str, &'a str, subxt::events::Phase)>,
+) -> std::collections::HashSet<u32> {
+	events
+		.into_iter()
+		.filter_map(|(pallet, event, phase)| match phase {
+			subxt::events::Phase::ApplyExtrinsic(i)
+				if pallet == "System" && event == "ExtrinsicFailed" =>
+			{
+				Some(i)
+			},
+			_ => None,
+		})
+		.collect()
+}
+
+#[cfg(test)]
+mod tests {
+	use super::failed_extrinsics;
+	use subxt::events::Phase;
+
+	#[test]
+	fn only_failed_extrinsics_are_reported() {
+		let failed = failed_extrinsics([
+			("System", "ExtrinsicSuccess", Phase::ApplyExtrinsic(0)),
+			("System", "ExtrinsicFailed", Phase::ApplyExtrinsic(1)),
+			("Midnight", "TxApplied", Phase::ApplyExtrinsic(2)),
+			("System", "ExtrinsicSuccess", Phase::ApplyExtrinsic(2)),
+			("System", "ExtrinsicFailed", Phase::Finalization),
+		]);
+		assert_eq!(failed, [1].into());
 	}
 }
