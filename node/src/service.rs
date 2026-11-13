@@ -1060,8 +1060,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
 		})?;
 
-		// Both workers run; each one's gated sync oracle lets it author only while the best
-		// block's state selects its engine.
 		let authoring = crate::babe_authoring::run_authoring_workers(aura_worker, babe_worker);
 
 		// Authoring is essential: if it stops, the service goes down with it.
