@@ -8,6 +8,12 @@ timeout = 60
 [registries.crates-io]
 protocol = "sparse"
 
+# Supply-chain cooldown (cargo 1.100+), matching dependabot's 7 days. The resolver skips
+# crate versions newer than this unless they are already in Cargo.lock, so it only bites
+# on `cargo update`/`cargo add`. Git dependencies are not covered.
+[registry]
+global-min-publish-age = "7 days"
+
 [profile.release]
 debug = 1
 
