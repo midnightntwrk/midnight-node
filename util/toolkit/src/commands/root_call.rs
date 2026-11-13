@@ -82,8 +82,9 @@ pub struct RootCallArgs {
 	pub tc_keys: Vec<String>,
 
 	/// Encoded call as hex string (e.g., 0x...)
+	// Qualified path so clap's derive takes one hex value, not a list of `u8`s.
 	#[arg(long, conflicts_with = "encoded_call_file", value_parser = cli::hex_bytes)]
-	pub encoded_call: Option<Vec<u8>>,
+	pub encoded_call: Option<std::vec::Vec<u8>>,
 
 	/// Path to file containing the encoded call hex string
 	#[arg(long, conflicts_with = "encoded_call")]
@@ -460,4 +461,22 @@ async fn has_motion_close_weight_bound(
 		.iter()
 		.find(|v| v.name == "motion_close")
 		.is_some_and(|v| v.fields.len() > 1))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::RootCallArgs;
+	use clap::Parser;
+
+	#[derive(Parser)]
+	struct Cli {
+		#[command(flatten)]
+		args: RootCallArgs,
+	}
+
+	#[test]
+	fn encoded_call_parses_as_hex_bytes() {
+		let cli = Cli::try_parse_from(["root-call", "--encoded-call", "0x1401"]).unwrap();
+		assert_eq!(cli.args.encoded_call, Some(vec![0x14, 0x01]));
+	}
 }
