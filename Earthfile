@@ -1,5 +1,7 @@
 VERSION 0.8
 
+IMPORT ./buck2 AS buck2
+
 # Scopes the cargo build directory (`/target`) so PRs running on the same
 # self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
 # stable auto-generated cache id. Without scoping, an in-flight branch
@@ -1079,7 +1081,7 @@ check-deps:
     # shear
     RUN --secret NODE_GIT_TOKEN with-git-creds cargo shear
 
-# check-rust runs cargo fmt and clippy.
+# check-rust runs cargo fmt (clippy moved to buck2 - see +buck2-ci).
 planner:
     FROM +prep
     ARG TARGETARCH
@@ -1119,9 +1121,11 @@ check-rust:
 
     ENV CARGO_INCREMENTAL=0
 
-    # ensure runtime benchmark and try runtime features enable to check they compile.
-    # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
-    RUN --secret NODE_GIT_TOKEN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1 with-git-creds cargo clippy --workspace --all-targets --features runtime-benchmarks,try-runtime -- -D warnings
+    # clippy moved to buck2 (Earthfile +buck2-clippy over the first-party graph),
+    # which shares the warm build+test action cache; this job keeps only the fast
+    # cargo fmt check above. (main's with-git-creds/NODE_GIT_TOKEN on the old cargo
+    # clippy line is moot - the line is gone; buck2 gets its deps from the vendored
+    # third-party graph, not a live private-git fetch.)
 
     ENV SKIP_WASM_BUILD=1
 
@@ -2289,3 +2293,137 @@ images:
     FROM scratch
     BUILD +node-image
     BUILD +toolkit-image
+
+# buck2 build + test under a bazel-remote action cache (see buck2/Earthfile).
+# Replaces the retired rebuck2 distributed workflow: one buck2 run on a
+# self-hosted runner, the cache making it warm after the first lap.
+#buck2-src The buck2 source set, staged once for +buck2-prep and +buck2-reindeer
+buck2-src:
+    FROM scratch
+    # The cargo tree (as +prep) plus every buck2 input - the root BUCK +
+    # .buckconfig, platforms/toolchains, the generated third-party and wasm-deps
+    # graphs, the generators, and tools/wasm-compress. The `prelude` cell is
+    # `bundled` (buck2 ships it), so it is NOT copied.
+    COPY --keep-ts --dir \
+        .buckconfig BUCK Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml \
+        docs ledger LICENSE node pallets primitives README.md res runtime \
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION \
+        platforms toolchains third-party wasm-deps scripts tools /work/
+    SAVE ARTIFACT /work
+
+#buck2-prep Install the buck2 toolchain + stage sources + write .buckconfig.local
+buck2-prep:
+    FROM rust:1.98.1-trixie
+    DO buck2+INSTALL
+    WORKDIR /work
+    COPY --keep-ts --dir +buck2-src/work /
+    # No fixture staging step: buck2 runs tests in-place at the project root (this COPY'd
+    # tree), so they read the real res/, docs/, Cargo.toml directly. Each such file is
+    # listed as a `resources` input (gen-first-party.py TEST_RESOURCES /
+    # TEST_TARGET_RESOURCES) only so the cached test action re-runs when it changes.
+    DO --pass-args buck2+CONFIG
+
+#buck2-ci Build the deliverables then run the tests, both under the action cache
+buck2-ci:
+    FROM +buck2-prep
+    # Re-run the buck2 steps every CI run (pass --RUN_ID=$GITHUB_RUN_ID): Earthly's
+    # layer cache would otherwise skip them on an unchanged tree, but the point is
+    # to exercise buck2 against the bazel-remote action cache, which is what
+    # provides incrementality. Busting here (not in +buck2-prep) keeps the
+    # toolchain install + source stage cached.
+    ARG RUN_ID=0
+    RUN echo "buck2-ci run ${RUN_ID}"
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    DO --pass-args buck2+BUCK2 --mode=build \
+        --targets="root//node:midnight-node-bin root//util/toolkit:midnight-node-toolkit-bin root//:runtime-wasm"
+    DO --pass-args buck2+BUCK2 --mode=test \
+        --targets="root//..." \
+        --buck2_args="--target-platforms root//platforms:linux-x86_64 --exclude ci-infra $_wasm"
+
+#buck2-clippy clippy over the first-party graph (replaces cargo clippy in +check-rust)
+buck2-clippy:
+    FROM +buck2-prep
+    # Own job, not a step in +buck2-ci: clippy is non-essential, so a lint nit
+    # must not redden the build+test gate. Shares the bazel-remote action cache
+    # with +buck2-ci, so the dep rmetas build+test compiled are cache hits here;
+    # only the ~1900 first-party clippy-driver passes are this job's own work.
+    ARG RUN_ID=0
+    RUN echo "buck2-clippy run ${RUN_ID}"
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    # The src we own and actually build. From root//... drop: the vendored
+    # third-party/ + wasm-deps/ dirs (they live under the root cell, so root//...
+    # would otherwise lint 1915 crates incl. windows-only ones); the ci-infra
+    # targets build+test excludes; and relay/ - the midnight-beefy-relay binary
+    # is not a buck2 deliverable (build+test never compiles it) and its rs_merkle
+    # fork resolves to a third-party variant that fails rustc check (generic-array
+    # without more_lengths; see midnight-node-nits.md). Leaves 158 first-party
+    # targets; same platform + wasm shims as build/test so the shared rmetas line up.
+    DO --pass-args buck2+BUCK2 --mode=clippy \
+        --targets="root//... - root//third-party/... - root//wasm-deps/... - root//relay/... - attrfilter('labels', 'ci-infra', root//...)" \
+        --buck2_args="--target-platforms root//platforms:linux-x86_64 $_wasm"
+
+#buck2-test-one Build+test ONE target, for the local spike loop. Defaults to the
+# native arch (PLATFORM=linux-arm64) so it runs on an arm64 dev box via Earthbuild
+# with no x86 emulation; the CI jobs keep the linux-x86_64 pin for CAS alignment.
+buck2-test-one:
+    FROM +buck2-prep
+    ARG RUN_ID=0
+    ARG --required TARGET
+    ARG PLATFORM=linux-arm64
+    RUN echo "buck2-test-one run ${RUN_ID}"
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    DO --pass-args buck2+BUCK2 --mode=test \
+        --targets="$TARGET" \
+        --buck2_args="--target-platforms root//platforms:${PLATFORM} $_wasm"
+
+#buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
+buck2-reindeer:
+    FROM rust:1.98.1-trixie
+    # Upstream reindeer; what it lacks (facebookincubator/reindeer PRs 118, 119)
+    # is applied to its output by scripts/buck2/normalize-git-sources.py. Not on
+    # crates.io (that name is an unrelated crate), so pin a rev - and regenerate
+    # with this rev only: another reindeer diffs the graph.
+    ARG REINDEER_GIT=https://github.com/facebookincubator/reindeer
+    ARG REINDEER_REV=b15f92a7c0408f689997f1aae23a854fb4693e81
+    # python3 >= 3.11 (tomllib) for the generators; trixie ships 3.13.
+    RUN apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 && \
+        rm -rf /var/lib/apt/lists/*
+    RUN cargo install --git "$REINDEER_GIT" --rev "$REINDEER_REV" --locked reindeer
+    WORKDIR /work
+    COPY --keep-ts --dir +buck2-src/work /
+    # cargo's registry + git for `cargo metadata`, reindeer's own cargo homes for
+    # buckify: cold, that clones polkadot-sdk and fetches 1600 crates.
+    CACHE --sharing locked --id buck2-regen-cargo-registry /usr/local/cargo/registry
+    CACHE --sharing locked --id buck2-regen-cargo-git /usr/local/cargo/git
+    CACHE --sharing locked --id buck2-regen-third-party /work/third-party/.cargo
+    CACHE --sharing locked --id buck2-regen-wasm-deps /work/wasm-deps/.cargo
+    # Snapshot the staged tree (minus the caches) so the regen can be diffed.
+    RUN mkdir /tmp/before && \
+        tar -C /work --exclude=./third-party/.cargo --exclude=./wasm-deps/.cargo -cf - . | \
+        tar -C /tmp/before -xf - && \
+        touch /tmp/regen-stamp
+    RUN scripts/buck2/regen.sh
+
+#buck2-regen-tar The regenerated files, as a tar for +buck2-regen to unpack
+buck2-regen-tar:
+    FROM +buck2-reindeer
+    RUN find . -type f -newer /tmp/regen-stamp \
+            -not -path './third-party/.cargo/*' -not -path './wasm-deps/.cargo/*' \
+        | tar cf /regen.tar -T -
+    SAVE ARTIFACT /regen.tar
+
+#buck2-regen Regenerate the buck2 graph from the cargo workspace and write it back into the tree
+buck2-regen:
+    # Not `SAVE ARTIFACT /out/* AS LOCAL ./`: AS LOCAL of a directory replaces
+    # the host directory, deleting every file beside the regenerated ones
+    # (1486 tracked files, 2026-10-31). A tar unpacks only its members.
+    LOCALLY
+    COPY +buck2-regen-tar/regen.tar .buck2-regen.tar
+    RUN tar xf .buck2-regen.tar && rm .buck2-regen.tar
+
+#buck2-check-regen Fail if any @generated buck2 file is stale against the cargo workspace
+buck2-check-regen:
+    FROM +buck2-reindeer
+    # .cargo also skips the root cargo config dir, which nothing generates.
+    RUN diff -r --exclude=.cargo /tmp/before /work || { \
+        echo "buck2 graph is stale against the cargo workspace: run \`earth +buck2-regen\` and commit" >&2; exit 1; }

@@ -1,0 +1,25 @@
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# 	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# no_std wasm32: the `futures` umbrella's std-requiring features cannot be
+# satisfied on wasm32v1-none. sp-inherents' dev-dep pulls `futures` with
+# default-features = true (-> std, executor, futures-executor); `executor`
+# re-exports futures_executor::{block_on, LocalPool, ...}, all std-only, so with
+# std off they resolve to nothing (E0432). The no_std runtime imports no
+# futures:: item - it only needs the crate to compile - so drop every std-tied
+# feature and keep the alloc-level core (alloc + async-await). std/executor stay
+# on the host exec platforms.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std", "default", "executor", "futures-executor"]

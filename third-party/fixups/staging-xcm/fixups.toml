@@ -1,0 +1,31 @@
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# 	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Substrate/polkadot crate deriving Encode/Decode (parity-scale-codec): the derive
+# uses proc-macro-crate which reads CARGO_MANIFEST_DIR; buck2 doesn't set it by
+# default, so the derive can't resolve the codec crate and associated types go
+# missing (E0220/E0277 cascade). cargo_env supplies the CARGO_* vars.
+cargo_env = true
+
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
+[extra_mapped_srcs]
+"polkadot/xcm/docs/mermaid/location_hierarchy.mmd" = "docs/mermaid/location_hierarchy.mmd"
+"polkadot/xcm/docs/mermaid/structure.mmd" = "docs/mermaid/structure.mmd"
+"polkadot/xcm/docs/mermaid/transport_protocols.mmd" = "docs/mermaid/transport_protocols.mmd"
+"polkadot/xcm/docs/mermaid/universal_location.mmd" = "docs/mermaid/universal_location.mmd"
+"polkadot/xcm/docs/mermaid/usdt_location.mmd" = "docs/mermaid/usdt_location.mmd"

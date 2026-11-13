@@ -1,0 +1,35 @@
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# 	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# substrate-wasm-builder can't run under buck (spawns cargo) and drags in the
+# wasm-opt/binaryen cxx chain. Skip it; overlay the WASM_BINARY=None stub the
+# build script would emit. lib.rs does
+# `#[cfg(feature="std")] include!(concat!(env!("OUT_DIR"),"/wasm_binary.rs"))`,
+# resolved from the srcs-tree root (rustc CWD), so OUT_DIR must equal the
+# crate's manifest dir (where the overlay lands the stub).
+# OUT_DIR must equal this crate's CARGO_MANIFEST_DIR (where the overlay lands the
+# stub), so include!(OUT_DIR/wasm_binary.rs) resolves. The path's
+# `polkadot-sdk-<hash>` prefix is reindeer's git-fetch cell hash and moves on
+# every polkadot-sdk bump, but CARGO_MANIFEST_DIR (reindeer-computed) moves with
+# it while this static hash does not. The hash below is therefore only a seed:
+# scripts/buck2/normalize-wasm-stub-outdir.py (the last regen step) rewrites it in
+# the generated BUCK to match CARGO_MANIFEST_DIR, so a stale value here is
+# self-healed rather than a build break. See docs/buck2-notes.md.
+buildscript.run = false
+cargo_env = true
+overlay = "overlay"
+
+[env]
+OUT_DIR = "polkadot-sdk-a959d6a2230da379/substrate/utils/frame/storage-access-test-runtime"

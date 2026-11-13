@@ -1,0 +1,20 @@
+# earth config for the self-hosted runners (buck2.yml points EARTH_CONFIG here).
+# earth loads exactly one config and hashes its buildkit settings; a client whose
+# hash differs from the running daemon's restarts that daemon and cancels every
+# other job on it. The global block is a byte-for-byte copy of midnight-node's
+# .earthly/config.selfhosted.yml global block, the pool's main tenant, so the
+# earth-buildkitd this job runs on is shared, not fought over. Change it only in
+# lockstep with that file, and pin the same earth version those jobs use (v0.8.18).
+global:
+    buildkit_additional_args: ["-m", "180Gb"]
+    tls_enabled: false
+    disable_analytics: true
+    buildkit_max_parallelism: 16
+    # Matches the provisioned runner buildkitd's host-default config; an identical
+    # cache_size_pct keeps the settings hash the same across every earth job on the
+    # host, so the shared daemon is never restarted out from under a concurrent build.
+    cache_size_pct: 50
+    # The registry earth publishes for image export. "earth" and "earthly" both
+    # default to 127.0.0.1:8371, so earth-buildkitd (v0.8.18) cannot start beside
+    # the v0.8.16 earthly-buildkitd ("port is already allocated"). Move it.
+    local_registry_host: "tcp://127.0.0.1:8381"
