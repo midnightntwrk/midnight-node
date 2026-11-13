@@ -1130,6 +1130,10 @@ check-feature-unification:
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
+    # `--no-dev-deps` strips [dev-dependencies], so test-only workspace deps look unused;
+    # relax that one lint in this container's copy only (every other job still denies it).
+    RUN sed -i 's/^unused_workspace_dependencies = "deny"$/unused_workspace_dependencies = "warn"/' Cargo.toml && \
+        grep -q '^unused_workspace_dependencies = "warn"$' Cargo.toml
     RUN --secret NODE_GIT_TOKEN PACKAGES="$(node scripts/feature-unification-scope.ts \
             .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
         if [ -z "$PACKAGES" ]; then \
