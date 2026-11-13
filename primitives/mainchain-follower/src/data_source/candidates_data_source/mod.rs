@@ -407,50 +407,43 @@ pub async fn get_epoch_for_block_hash(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use ctor::{ctor, dtor};
 	use hex_literal::hex;
+	use sqlx::migrate::Migrator;
+	use std::path::Path;
 	use std::str::FromStr;
-	use std::sync::{OnceLock, mpsc};
-	use testcontainers_modules::postgres::Postgres;
-	use testcontainers_modules::testcontainers::{
-		Container, ImageExt,
-		bollard::query_parameters::{RemoveContainerOptions, StopContainerOptions},
-		core::client::docker_client_instance,
-		runners::SyncRunner,
+	use testcontainers::{
+		ContainerAsync, GenericImage, ImageExt,
+		core::{IntoContainerPort, WaitFor},
+		runners::AsyncRunner,
 	};
 
-	static POSTGRES: OnceLock<Container<Postgres>> = OnceLock::new();
+	const READY_MSG: &str = "database system is ready to accept connections";
 
-	// `sqlx::test` reads DATABASE_URL before any test code runs.
-	#[ctor]
-	fn on_startup() {
-		let postgres =
-			POSTGRES.get_or_init(|| Postgres::default().with_tag("17.2").start().unwrap());
-		let database_url = format!(
-			"postgres://postgres:postgres@127.0.0.1:{}/postgres",
-			postgres.get_host_port_ipv4(5432).unwrap()
+	/// Starts a Postgres owned by the calling test and applies db-sync test migrations.
+	/// The container is removed when the returned handle is dropped, including on panic.
+	async fn test_db(migrations: &str) -> (PgPool, ContainerAsync<GenericImage>) {
+		// The entrypoint logs the readiness message on stdout for its temporary init server
+		// and on stderr for the final one.
+		let container = GenericImage::new("postgres", "17.2")
+			.with_exposed_port(5432.tcp())
+			.with_wait_for(WaitFor::message_on_stderr(READY_MSG))
+			.with_wait_for(WaitFor::message_on_stdout(READY_MSG))
+			.with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+			.with_cmd(["postgres", "-c", "fsync=off"])
+			.start()
+			.await
+			.expect("failed to start postgres container");
+		let url = format!(
+			"postgres://postgres@{}:{}/postgres",
+			container.get_host().await.unwrap(),
+			container.get_host_port_ipv4(5432).await.unwrap()
 		);
-		unsafe {
-			std::env::set_var("DATABASE_URL", database_url);
-		}
-	}
-
-	// Statics are never dropped, so the container must be removed explicitly.
-	#[dtor]
-	fn on_shutdown() {
-		let (tx, rx) = mpsc::channel();
-		std::thread::spawn(move || {
-			let runtime =
-				tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-			runtime.block_on(async {
-				let docker = docker_client_instance().await.unwrap();
-				let id = POSTGRES.get().unwrap().id();
-				docker.stop_container(id, None::<StopContainerOptions>).await.unwrap();
-				docker.remove_container(id, None::<RemoveContainerOptions>).await.unwrap();
-				let _ = tx.send(());
-			});
-		});
-		let _: () = rx.recv().unwrap();
+		let pool = PgPool::connect(&url).await.unwrap();
+		let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+			.join("../../partner-chains/toolkit/data-sources/db-sync/testdata")
+			.join(migrations);
+		Migrator::new(dir).await.unwrap().run(&pool).await.unwrap();
+		(pool, container)
 	}
 
 	// Fixtures also hold a 2^64 integer datum and a 64-deep nested list datum at this address.
@@ -471,17 +464,15 @@ mod tests {
 		);
 	}
 
-	#[sqlx::test(
-		migrations = "../../partner-chains/toolkit/data-sources/db-sync/testdata/migrations-tx-in-enabled"
-	)]
-	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_enabled(pool: PgPool) {
+	#[tokio::test]
+	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_enabled() {
+		let (pool, _db) = test_db("migrations-tx-in-enabled").await;
 		undecodable_datums_do_not_fail_candidate_query(pool).await
 	}
 
-	#[sqlx::test(
-		migrations = "../../partner-chains/toolkit/data-sources/db-sync/testdata/migrations-tx-in-consumed"
-	)]
-	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_consumed(pool: PgPool) {
+	#[tokio::test]
+	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_consumed() {
+		let (pool, _db) = test_db("migrations-tx-in-consumed").await;
 		undecodable_datums_do_not_fail_candidate_query(pool).await
 	}
 }
