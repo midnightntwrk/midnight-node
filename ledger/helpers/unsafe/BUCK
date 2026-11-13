@@ -4,7 +4,7 @@ rust_library(
     crate = "midnight_ledger_unsafe_helpers",
     crate_root = "src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"],
+    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob(["graphql/**"]),
     features = [
         "fixed-point-custom-serde",
         "test-utils",
@@ -60,7 +60,7 @@ rust_test(
     crate = "midnight_ledger_unsafe_helpers",
     crate_root = "src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"],
+    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob(["graphql/**"]),
     features = [
         "fixed-point-custom-serde",
         "test-utils",
