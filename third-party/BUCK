@@ -2154,24 +2154,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "aws-lc-rs-1.17.0.crate",
-    sha256 = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00",
-    size_bytes = 239113,
-    strip_prefix = "aws-lc-rs-1.17.0",
-    urls = ["https://static.crates.io/crates/aws-lc-rs/1.17.0/download"],
+    name = "aws-lc-rs-1.19.0.crate",
+    sha256 = "048006790404103c488e6c5616b3e7e702a71292aadda08e8f7698a9e0d2eb53",
+    size_bytes = 256251,
+    strip_prefix = "aws-lc-rs-1.19.0",
+    urls = ["https://static.crates.io/crates/aws-lc-rs/1.19.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "aws-lc-rs-1",
-    srcs = [":aws-lc-rs-1.17.0.crate"],
+    srcs = [":aws-lc-rs-1.19.0.crate"],
     crate = "aws_lc_rs",
-    crate_root = "aws-lc-rs-1.17.0.crate/src/lib.rs",
+    crate_root = "aws-lc-rs-1.19.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "aws_lc_rs",
         "CARGO_CRATE_NAME": "aws_lc_rs",
-        "CARGO_MANIFEST_DIR": "aws-lc-rs-1.17.0.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-rs-1.19.0.crate",
         "CARGO_PKG_AUTHORS": "AWS-LibCrypto",
         "CARGO_PKG_DESCRIPTION": "aws-lc-rs is a cryptographic library using AWS-LC for its cryptographic operations. This library strives to be API-compatible with the popular Rust library named ring.",
         "CARGO_PKG_HOMEPAGE": "https://github.com/aws/aws-lc-rs",
@@ -2179,9 +2179,9 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "1.17.0",
+        "CARGO_PKG_VERSION": "1.19.0",
         "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "17",
+        "CARGO_PKG_VERSION_MINOR": "19",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
@@ -2191,30 +2191,30 @@ cargo.rust_library(
     ],
     visibility = [],
     deps = [
-        ":aws-lc-sys-0.41",
+        ":aws-lc-sys-0.47",
         ":zeroize-1",
     ],
 )
 
 http_archive(
-    name = "aws-lc-sys-0.41.0.crate",
-    sha256 = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4",
-    size_bytes = 9517046,
-    strip_prefix = "aws-lc-sys-0.41.0",
-    urls = ["https://static.crates.io/crates/aws-lc-sys/0.41.0/download"],
+    name = "aws-lc-sys-0.47.0.crate",
+    sha256 = "8bfbe32ac36b3c428696ce315464181bc4029d689fd58e3f2a4e58c252242f52",
+    size_bytes = 9737619,
+    strip_prefix = "aws-lc-sys-0.47.0",
+    urls = ["https://static.crates.io/crates/aws-lc-sys/0.47.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "aws-lc-sys-0.41",
-    srcs = [":aws-lc-sys-0.41.0.crate"],
+    name = "aws-lc-sys-0.47",
+    srcs = [":aws-lc-sys-0.47.0.crate"],
     crate = "aws_lc_sys",
-    crate_root = "aws-lc-sys-0.41.0.crate/src/lib.rs",
+    crate_root = "aws-lc-sys-0.47.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "aws_lc_sys",
         "CARGO_CRATE_NAME": "aws_lc_sys",
-        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.41.0.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.47.0.crate",
         "CARGO_PKG_AUTHORS": "AWS-LC",
         "CARGO_PKG_DESCRIPTION": "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -2222,28 +2222,28 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "0.41.0",
+        "CARGO_PKG_VERSION": "0.47.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "41",
+        "CARGO_PKG_VERSION_MINOR": "47",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-        "OUT_DIR": "$(location :aws-lc-sys-0.41-build-script-main-run[out_dir])",
+        "OUT_DIR": "$(location :aws-lc-sys-0.47-build-script-main-run[out_dir])",
     },
     features = ["prebuilt-nasm"],
-    rustc_flags = ["@$(location :aws-lc-sys-0.41-build-script-main-run[rustc_flags])"],
+    rustc_flags = ["@$(location :aws-lc-sys-0.47-build-script-main-run[rustc_flags])"],
     visibility = [],
 )
 
 cargo.rust_binary(
-    name = "aws-lc-sys-0.41-build-script-main",
-    srcs = [":aws-lc-sys-0.41.0.crate"],
+    name = "aws-lc-sys-0.47-build-script-main",
+    srcs = [":aws-lc-sys-0.47.0.crate"],
     crate = "build_script_main",
-    crate_root = "aws-lc-sys-0.41.0.crate/builder/main.rs",
+    crate_root = "aws-lc-sys-0.47.0.crate/builder/main.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "build-script-main",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.41.0.crate",
+        "CARGO_MANIFEST_DIR": "aws-lc-sys-0.47.0.crate",
         "CARGO_PKG_AUTHORS": "AWS-LC",
         "CARGO_PKG_DESCRIPTION": "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -2251,13 +2251,27 @@ cargo.rust_binary(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "0.41.0",
+        "CARGO_PKG_VERSION": "0.47.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "41",
+        "CARGO_PKG_VERSION_MINOR": "47",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["prebuilt-nasm"],
+    platform = {
+        "linux-arm64": dict(
+            deps = [":pkg-config-0.3"],
+        ),
+        "linux-x86_64": dict(
+            deps = [":pkg-config-0.3"],
+        ),
+        "macos-arm64": dict(
+            deps = [":pkg-config-0.3"],
+        ),
+        "macos-x86_64": dict(
+            deps = [":pkg-config-0.3"],
+        ),
+    },
     visibility = [],
     deps = [
         ":cc-1",
@@ -2268,11 +2282,11 @@ cargo.rust_binary(
 )
 
 buildscript_run(
-    name = "aws-lc-sys-0.41-build-script-main-run",
+    name = "aws-lc-sys-0.47-build-script-main-run",
     package_name = "aws-lc-sys",
-    buildscript_rule = ":aws-lc-sys-0.41-build-script-main",
+    buildscript_rule = ":aws-lc-sys-0.47-build-script-main",
     env = {
-        "CARGO_MANIFEST_LINKS": "aws_lc_0_41_0",
+        "CARGO_MANIFEST_LINKS": "aws_lc_0_47_0",
         "CARGO_PKG_AUTHORS": "AWS-LC",
         "CARGO_PKG_DESCRIPTION": "AWS-LC is a general-purpose cryptographic library maintained by the AWS Cryptography team for AWS and their customers. It іs based on code from the Google BoringSSL project and the OpenSSL project.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -2280,7 +2294,7 @@ buildscript_run(
         "CARGO_PKG_REPOSITORY": "https://github.com/aws/aws-lc-rs",
         "CARGO_PKG_RUST_VERSION": "1.71.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "41",
+        "CARGO_PKG_VERSION_MINOR": "47",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
         "OPT_LEVEL": "3",
@@ -2308,7 +2322,7 @@ buildscript_run(
     },
     rustc_link_lib = True,
     rustc_link_search = True,
-    version = "0.41.0",
+    version = "0.47.0",
 )
 
 http_archive(
@@ -4216,24 +4230,24 @@ buildscript_run(
 )
 
 http_archive(
-    name = "bollard-0.20.2.crate",
-    sha256 = "ee04c4c84f1f811b017f2fbb7dd8815c976e7ca98593de9c1e2afad0f636bff4",
-    size_bytes = 136021,
-    strip_prefix = "bollard-0.20.2",
-    urls = ["https://static.crates.io/crates/bollard/0.20.2/download"],
+    name = "bollard-0.21.1.crate",
+    sha256 = "dbe8358268799ebb3e4df23cb9d47f4c72bbc4f5247e2fa6a1bf7b6c0baea220",
+    size_bytes = 140271,
+    strip_prefix = "bollard-0.21.1",
+    urls = ["https://static.crates.io/crates/bollard/0.21.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "bollard-0.20",
-    srcs = [":bollard-0.20.2.crate"],
+    name = "bollard-0.21",
+    srcs = [":bollard-0.21.1.crate"],
     crate = "bollard",
-    crate_root = "bollard-0.20.2.crate/src/lib.rs",
+    crate_root = "bollard-0.21.1.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "bollard",
         "CARGO_CRATE_NAME": "bollard",
-        "CARGO_MANIFEST_DIR": "bollard-0.20.2.crate",
+        "CARGO_MANIFEST_DIR": "bollard-0.21.1.crate",
         "CARGO_PKG_AUTHORS": "Bollard contributors",
         "CARGO_PKG_DESCRIPTION": "An asynchronous Docker daemon API",
         "CARGO_PKG_HOMEPAGE": "https://github.com/fussybeaver/bollard",
@@ -4241,10 +4255,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/fussybeaver/bollard",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.20.2",
+        "CARGO_PKG_VERSION": "0.21.1",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "20",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_MINOR": "21",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -4301,7 +4315,7 @@ cargo.rust_library(
         ":async-stream-0.3",
         ":base64-0.22",
         ":bitflags-2",
-        ":bollard-buildkit-proto-0.7",
+        ":bollard-buildkit-proto-0.8",
         ":bollard-stubs-1",
         ":bytes-1",
         ":futures-core-0.3",
@@ -4316,7 +4330,7 @@ cargo.rust_library(
         ":log-0.4",
         ":num-0.4",
         ":pin-project-lite-0.2",
-        ":rand-0.9",
+        ":rand-0.10",
         ":rustls-0.23",
         ":rustls-native-certs-0.8",
         ":rustls-pki-types-1",
@@ -4336,24 +4350,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "bollard-buildkit-proto-0.7.0.crate",
-    sha256 = "85a885520bf6249ab931a764ffdb87b0ceef48e6e7d807cfdb21b751e086e1ad",
-    size_bytes = 84356,
-    strip_prefix = "bollard-buildkit-proto-0.7.0",
-    urls = ["https://static.crates.io/crates/bollard-buildkit-proto/0.7.0/download"],
+    name = "bollard-buildkit-proto-0.8.1.crate",
+    sha256 = "b5c97450e79c7c565302dd92e86b08823b47550fcb4fc5ce910194d1b087a1a3",
+    size_bytes = 84366,
+    strip_prefix = "bollard-buildkit-proto-0.8.1",
+    urls = ["https://static.crates.io/crates/bollard-buildkit-proto/0.8.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "bollard-buildkit-proto-0.7",
-    srcs = [":bollard-buildkit-proto-0.7.0.crate"],
+    name = "bollard-buildkit-proto-0.8",
+    srcs = [":bollard-buildkit-proto-0.8.1.crate"],
     crate = "bollard_buildkit_proto",
-    crate_root = "bollard-buildkit-proto-0.7.0.crate/src/lib.rs",
+    crate_root = "bollard-buildkit-proto-0.8.1.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "bollard_buildkit_proto",
         "CARGO_CRATE_NAME": "bollard_buildkit_proto",
-        "CARGO_MANIFEST_DIR": "bollard-buildkit-proto-0.7.0.crate",
+        "CARGO_MANIFEST_DIR": "bollard-buildkit-proto-0.8.1.crate",
         "CARGO_PKG_AUTHORS": "Bollard contributors",
         "CARGO_PKG_DESCRIPTION": "Protobuf definitions to interact with buildkit using Bollard",
         "CARGO_PKG_HOMEPAGE": "",
@@ -4361,46 +4375,41 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/fussybeaver/bollard",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.7.0",
+        "CARGO_PKG_VERSION": "0.8.1",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "7",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_MINOR": "8",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    features = [
-        "default",
-        "fetch",
-        "ureq",
-    ],
+    features = ["default"],
     visibility = [],
     deps = [
         ":prost-0.14",
         ":prost-types-0.14",
         ":tonic-0.14",
         ":tonic-prost-0.14",
-        ":ureq-3",
     ],
 )
 
 http_archive(
-    name = "bollard-stubs-1.52.1-rc.29.1.3.crate",
-    sha256 = "0f0a8ca8799131c1837d1282c3f81f31e76ceb0ce426e04a7fe1ccee3287c066",
-    size_bytes = 101924,
-    strip_prefix = "bollard-stubs-1.52.1-rc.29.1.3",
-    urls = ["https://static.crates.io/crates/bollard-stubs/1.52.1-rc.29.1.3/download"],
+    name = "bollard-stubs-1.53.1-rc.29.3.1.crate",
+    sha256 = "ce412eb6f7096743011dc3cb5c674caeb24ced61d8c498fe07cf7998a4fea889",
+    size_bytes = 104817,
+    strip_prefix = "bollard-stubs-1.53.1-rc.29.3.1",
+    urls = ["https://static.crates.io/crates/bollard-stubs/1.53.1-rc.29.3.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "bollard-stubs-1",
-    srcs = [":bollard-stubs-1.52.1-rc.29.1.3.crate"],
+    srcs = [":bollard-stubs-1.53.1-rc.29.3.1.crate"],
     crate = "bollard_stubs",
-    crate_root = "bollard-stubs-1.52.1-rc.29.1.3.crate/src/lib.rs",
+    crate_root = "bollard-stubs-1.53.1-rc.29.3.1.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "bollard_stubs",
         "CARGO_CRATE_NAME": "bollard_stubs",
-        "CARGO_MANIFEST_DIR": "bollard-stubs-1.52.1-rc.29.1.3.crate",
+        "CARGO_MANIFEST_DIR": "bollard-stubs-1.53.1-rc.29.3.1.crate",
         "CARGO_PKG_AUTHORS": "Bollard contributors",
         "CARGO_PKG_DESCRIPTION": "Stubs used for the Bollard rust async Docker client API",
         "CARGO_PKG_HOMEPAGE": "",
@@ -4408,11 +4417,11 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.52.1-rc.29.1.3",
+        "CARGO_PKG_VERSION": "1.53.1-rc.29.3.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "52",
+        "CARGO_PKG_VERSION_MINOR": "53",
         "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "rc.29.1.3",
+        "CARGO_PKG_VERSION_PRE": "rc.29.3.1",
     },
     features = [
         "base64",
@@ -4425,7 +4434,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":base64-0.22",
-        ":bollard-buildkit-proto-0.7",
+        ":bollard-buildkit-proto-0.8",
         ":bytes-1",
         ":prost-0.14",
         ":serde-1",
@@ -6434,6 +6443,82 @@ cargo.rust_library(
         ":toml-0.8",
         ":yaml-rust2-0.8",
     ],
+)
+
+http_archive(
+    name = "conquer-once-0.4.0.crate",
+    sha256 = "5d008a441c0f269f36ca13712528069a86a3e60dffee1d98b976eb3b0b2160b4",
+    size_bytes = 15986,
+    strip_prefix = "conquer-once-0.4.0",
+    urls = ["https://static.crates.io/crates/conquer-once/0.4.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "conquer-once-0.4",
+    srcs = [":conquer-once-0.4.0.crate"],
+    crate = "conquer_once",
+    crate_root = "conquer-once-0.4.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "conquer_once",
+        "CARGO_CRATE_NAME": "conquer_once",
+        "CARGO_MANIFEST_DIR": "conquer-once-0.4.0.crate",
+        "CARGO_PKG_AUTHORS": "Oliver Giersch",
+        "CARGO_PKG_DESCRIPTION": "Synchronization primitives for lazy and one-time initialization",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "conquer-once",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/oliver-giersch/conquer-once.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.4.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "std",
+    ],
+    visibility = [],
+    deps = [":conquer-util-0.3"],
+)
+
+http_archive(
+    name = "conquer-util-0.3.0.crate",
+    sha256 = "e763eef8846b13b380f37dfecda401770b0ca4e56e95170237bd7c25c7db3582",
+    size_bytes = 10019,
+    strip_prefix = "conquer-util-0.3.0",
+    urls = ["https://static.crates.io/crates/conquer-util/0.3.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "conquer-util-0.3",
+    srcs = [":conquer-util-0.3.0.crate"],
+    crate = "conquer_util",
+    crate_root = "conquer-util-0.3.0.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "conquer_util",
+        "CARGO_CRATE_NAME": "conquer_util",
+        "CARGO_MANIFEST_DIR": "conquer-util-0.3.0.crate",
+        "CARGO_PKG_AUTHORS": "Oliver Giersch",
+        "CARGO_PKG_DESCRIPTION": "utilities for concurrent and lock-free programming",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "conquer-util",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/oliver-giersch/conquer-util.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.3.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "3",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = ["back-off"],
+    visibility = [],
 )
 
 alias(
@@ -9273,94 +9358,6 @@ cargo.rust_library(
         "sha3",
         "x25519",
     ],
-    visibility = [],
-)
-
-alias(
-    name = "ctor",
-    actual = ":ctor-0.5",
-    visibility = ["PUBLIC"],
-)
-
-http_archive(
-    name = "ctor-0.5.0.crate",
-    sha256 = "67773048316103656a637612c4a62477603b777d91d9c62ff2290f9cde178fdb",
-    size_bytes = 14210,
-    strip_prefix = "ctor-0.5.0",
-    urls = ["https://static.crates.io/crates/ctor/0.5.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "ctor-0.5",
-    srcs = [":ctor-0.5.0.crate"],
-    crate = "ctor",
-    crate_root = "ctor-0.5.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "ctor",
-        "CARGO_CRATE_NAME": "ctor",
-        "CARGO_MANIFEST_DIR": "ctor-0.5.0.crate",
-        "CARGO_PKG_AUTHORS": "Matt Mastracci <matthew@mastracci.com>",
-        "CARGO_PKG_DESCRIPTION": "__attribute__((constructor)) for Rust",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "ctor",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/mmastrac/rust-ctor",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.5.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "__no_warn_on_missing_unsafe",
-        "default",
-        "dtor",
-        "proc_macro",
-    ],
-    visibility = [],
-    deps = [
-        ":ctor-proc-macro-0.0.6",
-        ":dtor-0.1",
-    ],
-)
-
-http_archive(
-    name = "ctor-proc-macro-0.0.6.crate",
-    sha256 = "e2931af7e13dc045d8e9d26afccc6fa115d64e115c9c84b1166288b46f6782c2",
-    size_bytes = 6435,
-    strip_prefix = "ctor-proc-macro-0.0.6",
-    urls = ["https://static.crates.io/crates/ctor-proc-macro/0.0.6/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "ctor-proc-macro-0.0.6",
-    srcs = [":ctor-proc-macro-0.0.6.crate"],
-    crate = "ctor_proc_macro",
-    crate_root = "ctor-proc-macro-0.0.6.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "ctor_proc_macro",
-        "CARGO_CRATE_NAME": "ctor_proc_macro",
-        "CARGO_MANIFEST_DIR": "ctor-proc-macro-0.0.6.crate",
-        "CARGO_PKG_AUTHORS": "Matt Mastracci <matthew@mastracci.com>",
-        "CARGO_PKG_DESCRIPTION": "proc-macro support for the ctor crate",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "ctor-proc-macro",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/mmastrac/rust-ctor",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.0.6",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "6",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["default"],
-    proc_macro = True,
     visibility = [],
 )
 
@@ -12328,83 +12325,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "dtor-0.1.1.crate",
-    sha256 = "404d02eeb088a82cfd873006cb713fe411306c7d182c344905e101fb1167d301",
-    size_bytes = 11375,
-    strip_prefix = "dtor-0.1.1",
-    urls = ["https://static.crates.io/crates/dtor/0.1.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "dtor-0.1",
-    srcs = [":dtor-0.1.1.crate"],
-    crate = "dtor",
-    crate_root = "dtor-0.1.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "dtor",
-        "CARGO_CRATE_NAME": "dtor",
-        "CARGO_MANIFEST_DIR": "dtor-0.1.1.crate",
-        "CARGO_PKG_AUTHORS": "Matt Mastracci <matthew@mastracci.com>",
-        "CARGO_PKG_DESCRIPTION": "__attribute__((destructor)) for Rust",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "dtor",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/mmastrac/rust-ctor",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.1.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "__no_warn_on_missing_unsafe",
-        "proc_macro",
-    ],
-    visibility = [],
-    deps = [":dtor-proc-macro-0.0.6"],
-)
-
-http_archive(
-    name = "dtor-proc-macro-0.0.6.crate",
-    sha256 = "f678cf4a922c215c63e0de95eb1ff08a958a81d47e485cf9da1e27bf6305cfa5",
-    size_bytes = 6448,
-    strip_prefix = "dtor-proc-macro-0.0.6",
-    urls = ["https://static.crates.io/crates/dtor-proc-macro/0.0.6/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "dtor-proc-macro-0.0.6",
-    srcs = [":dtor-proc-macro-0.0.6.crate"],
-    crate = "dtor_proc_macro",
-    crate_root = "dtor-proc-macro-0.0.6.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "dtor_proc_macro",
-        "CARGO_CRATE_NAME": "dtor_proc_macro",
-        "CARGO_MANIFEST_DIR": "dtor-proc-macro-0.0.6.crate",
-        "CARGO_PKG_AUTHORS": "Matt Mastracci <matthew@mastracci.com>",
-        "CARGO_PKG_DESCRIPTION": "proc-macro support for the dtor crate",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "dtor-proc-macro",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/mmastrac/rust-ctor",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.0.6",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "6",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["default"],
-    proc_macro = True,
-    visibility = [],
-)
-
-http_archive(
     name = "dummy-0.8.0.crate",
     sha256 = "1cac124e13ae9aa56acc4241f8c8207501d93afdd8d8e62f0c1f2e12f6508c65",
     size_bytes = 7683,
@@ -13702,22 +13622,21 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "14",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    features = ["std"],
+    features = [
+        "default",
+        "std",
+    ],
     platform = {
         "linux-arm64": dict(
-            features = ["default"],
             deps = [":libc-0.2"],
         ),
         "linux-x86_64": dict(
-            features = ["default"],
             deps = [":libc-0.2"],
         ),
         "macos-arm64": dict(
-            features = ["default"],
             deps = [":libc-0.2"],
         ),
         "macos-x86_64": dict(
-            features = ["default"],
             deps = [":libc-0.2"],
         ),
         "windows-gnu": dict(
@@ -14367,24 +14286,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "ferroid-0.8.9.crate",
-    sha256 = "bb330bbd4cb7a5b9f559427f06f98a4f853a137c8298f3bd3f8ca57663e21986",
-    size_bytes = 60841,
-    strip_prefix = "ferroid-0.8.9",
-    urls = ["https://static.crates.io/crates/ferroid/0.8.9/download"],
+    name = "ferroid-2.0.0.crate",
+    sha256 = "ee93edf3c501f0035bbeffeccfed0b79e14c311f12195ec0e661e114a0f60da4",
+    size_bytes = 64757,
+    strip_prefix = "ferroid-2.0.0",
+    urls = ["https://static.crates.io/crates/ferroid/2.0.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "ferroid-0.8",
-    srcs = [":ferroid-0.8.9.crate"],
+    name = "ferroid-2",
+    srcs = [":ferroid-2.0.0.crate"],
     crate = "ferroid",
-    crate_root = "ferroid-0.8.9.crate/src/lib.rs",
+    crate_root = "ferroid-2.0.0.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "ferroid",
         "CARGO_CRATE_NAME": "ferroid",
-        "CARGO_MANIFEST_DIR": "ferroid-0.8.9.crate",
+        "CARGO_MANIFEST_DIR": "ferroid-2.0.0.crate",
         "CARGO_PKG_AUTHORS": "Nick Angelou <angelou.nick@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "High-performance ULID and Snowflake-style IDs. Unique, monotonic, and lexicographically sortable IDs optimized for low-latency services and async workloads.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -14392,10 +14311,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/s0l0ist/ferroid/blob/main/crates/ferroid",
         "CARGO_PKG_RUST_VERSION": "1.85.1",
-        "CARGO_PKG_VERSION": "0.8.9",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "8",
-        "CARGO_PKG_VERSION_PATCH": "9",
+        "CARGO_PKG_VERSION": "2.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "2",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -14407,7 +14326,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":portable-atomic-1",
-        ":rand-0.9",
+        ":rand-0.10",
     ],
 )
 
@@ -28985,6 +28904,12 @@ cargo.rust_library(
     ],
 )
 
+alias(
+    name = "zkir-v3",
+    actual = ":midnight-zkir-3",
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "midnight-zkir-3.2.0.crate",
     sha256 = "af98c3ac618f44a609df4963db4be69bed74123a3111b5475e22a81cec4ad857",
@@ -35825,35 +35750,35 @@ buildscript_run(
 )
 
 http_archive(
-    name = "parse-display-0.9.1.crate",
-    sha256 = "914a1c2265c98e2446911282c6ac86d8524f495792c38c5bd884f80499c7538a",
-    size_bytes = 9456,
-    strip_prefix = "parse-display-0.9.1",
-    urls = ["https://static.crates.io/crates/parse-display/0.9.1/download"],
+    name = "parse-display-0.11.0.crate",
+    sha256 = "e78deb158fb1d73b29efb4b7e9b9860b78059c670de06bd28df8d0b458ded0eb",
+    size_bytes = 31546,
+    strip_prefix = "parse-display-0.11.0",
+    urls = ["https://static.crates.io/crates/parse-display/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "parse-display-0.9",
-    srcs = [":parse-display-0.9.1.crate"],
+    name = "parse-display-0.11",
+    srcs = [":parse-display-0.11.0.crate"],
     crate = "parse_display",
-    crate_root = "parse-display-0.9.1.crate/src/lib.rs",
-    edition = "2021",
+    crate_root = "parse-display-0.11.0.crate/src/lib.rs",
+    edition = "2024",
     env = {
         "CARGO_BIN_NAME": "parse_display",
         "CARGO_CRATE_NAME": "parse_display",
-        "CARGO_MANIFEST_DIR": "parse-display-0.9.1.crate",
+        "CARGO_MANIFEST_DIR": "parse-display-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "frozenlib",
         "CARGO_PKG_DESCRIPTION": "Procedural macro to implement Display and FromStr using common settings.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "parse-display",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/frozenlib/parse-display",
-        "CARGO_PKG_RUST_VERSION": "1.70.0",
-        "CARGO_PKG_VERSION": "0.9.1",
+        "CARGO_PKG_RUST_VERSION": "1.85.0",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "9",
-        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_MINOR": "11",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -35864,44 +35789,48 @@ cargo.rust_library(
     ],
     visibility = [],
     deps = [
-        ":parse-display-derive-0.9",
+        ":parse-display-derive-0.11",
         ":regex-1",
         ":regex-syntax-0.8",
     ],
 )
 
 http_archive(
-    name = "parse-display-derive-0.9.1.crate",
-    sha256 = "2ae7800a4c974efd12df917266338e79a7a74415173caf7e70aa0a0707345281",
-    size_bytes = 17258,
-    strip_prefix = "parse-display-derive-0.9.1",
-    urls = ["https://static.crates.io/crates/parse-display-derive/0.9.1/download"],
+    name = "parse-display-derive-0.11.0.crate",
+    sha256 = "8e95a50d1084dab562913062c4c34bb204b68fc6ec38a1395909ff5aaaf4f10a",
+    size_bytes = 21202,
+    strip_prefix = "parse-display-derive-0.11.0",
+    urls = ["https://static.crates.io/crates/parse-display-derive/0.11.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "parse-display-derive-0.9",
-    srcs = [":parse-display-derive-0.9.1.crate"],
+    name = "parse-display-derive-0.11",
+    srcs = [":parse-display-derive-0.11.0.crate"],
     crate = "parse_display_derive",
-    crate_root = "parse-display-derive-0.9.1.crate/src/lib.rs",
-    edition = "2021",
+    crate_root = "parse-display-derive-0.11.0.crate/src/lib.rs",
+    edition = "2024",
     env = {
         "CARGO_BIN_NAME": "parse_display_derive",
         "CARGO_CRATE_NAME": "parse_display_derive",
-        "CARGO_MANIFEST_DIR": "parse-display-derive-0.9.1.crate",
+        "CARGO_MANIFEST_DIR": "parse-display-derive-0.11.0.crate",
         "CARGO_PKG_AUTHORS": "frozenlib",
         "CARGO_PKG_DESCRIPTION": "Procedural macro to implement Display and FromStr using common settings.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "parse-display-derive",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/frozenlib/parse-display",
-        "CARGO_PKG_RUST_VERSION": "1.70.0",
-        "CARGO_PKG_VERSION": "0.9.1",
+        "CARGO_PKG_RUST_VERSION": "1.85.0",
+        "CARGO_PKG_VERSION": "0.11.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "9",
-        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_MINOR": "11",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = [
+        "default",
+        "std",
+    ],
     proc_macro = True,
     visibility = [],
     deps = [
@@ -43723,24 +43652,24 @@ alias(
 )
 
 http_archive(
-    name = "rustls-0.23.37.crate",
-    sha256 = "758025cb5fccfd3bc2fd74708fd4682be41d99e5dff73c377c0646c6012c73a4",
-    size_bytes = 372731,
-    strip_prefix = "rustls-0.23.37",
-    urls = ["https://static.crates.io/crates/rustls/0.23.37/download"],
+    name = "rustls-0.23.46.crate",
+    sha256 = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf",
+    size_bytes = 386227,
+    strip_prefix = "rustls-0.23.46",
+    urls = ["https://static.crates.io/crates/rustls/0.23.46/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "rustls-0.23",
-    srcs = [":rustls-0.23.37.crate"],
+    srcs = [":rustls-0.23.46.crate"],
     crate = "rustls",
-    crate_root = "rustls-0.23.37.crate/src/lib.rs",
+    crate_root = "rustls-0.23.46.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "rustls",
         "CARGO_CRATE_NAME": "rustls",
-        "CARGO_MANIFEST_DIR": "rustls-0.23.37.crate",
+        "CARGO_MANIFEST_DIR": "rustls-0.23.46.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Rustls is a modern TLS library written in Rust.",
         "CARGO_PKG_HOMEPAGE": "https://github.com/rustls/rustls",
@@ -43748,10 +43677,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/rustls/rustls",
         "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "0.23.37",
+        "CARGO_PKG_VERSION": "0.23.46",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "23",
-        "CARGO_PKG_VERSION_PATCH": "37",
+        "CARGO_PKG_VERSION_PATCH": "46",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -44066,24 +43995,24 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "rustls-webpki-0.103.13.crate",
-    sha256 = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e",
-    size_bytes = 87513,
-    strip_prefix = "rustls-webpki-0.103.13",
-    urls = ["https://static.crates.io/crates/rustls-webpki/0.103.13/download"],
+    name = "rustls-webpki-0.103.16.crate",
+    sha256 = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281",
+    size_bytes = 89984,
+    strip_prefix = "rustls-webpki-0.103.16",
+    urls = ["https://static.crates.io/crates/rustls-webpki/0.103.16/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "rustls-webpki-0.103",
-    srcs = [":rustls-webpki-0.103.13.crate"],
+    srcs = [":rustls-webpki-0.103.16.crate"],
     crate = "webpki",
-    crate_root = "rustls-webpki-0.103.13.crate/src/lib.rs",
+    crate_root = "rustls-webpki-0.103.16.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "webpki",
         "CARGO_CRATE_NAME": "webpki",
-        "CARGO_MANIFEST_DIR": "rustls-webpki-0.103.13.crate",
+        "CARGO_MANIFEST_DIR": "rustls-webpki-0.103.16.crate",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Web PKI X.509 Certificate Verification.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -44091,10 +44020,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/rustls/webpki",
         "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "0.103.13",
+        "CARGO_PKG_VERSION": "0.103.16",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "103",
-        "CARGO_PKG_VERSION_PATCH": "13",
+        "CARGO_PKG_VERSION_PATCH": "16",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -50991,6 +50920,50 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "3",
         "CARGO_PKG_VERSION_PATCH": "18",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "channel",
+        "default",
+        "iterator",
+    ],
+    visibility = [],
+    deps = [
+        ":libc-0.2",
+        ":signal-hook-registry-1",
+    ],
+)
+
+http_archive(
+    name = "signal-hook-0.4.6.crate",
+    sha256 = "49f7447afd772ca79ad17ae0a3972a6b0df0cb4b80990fd82707593e9e012a74",
+    size_bytes = 47274,
+    strip_prefix = "signal-hook-0.4.6",
+    urls = ["https://static.crates.io/crates/signal-hook/0.4.6/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "signal-hook-0.4",
+    srcs = [":signal-hook-0.4.6.crate"],
+    crate = "signal_hook",
+    crate_root = "signal-hook-0.4.6.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "signal_hook",
+        "CARGO_CRATE_NAME": "signal_hook",
+        "CARGO_MANIFEST_DIR": "signal-hook-0.4.6.crate",
+        "CARGO_PKG_AUTHORS": "Michal 'vorner' Vaner <vorner@vorner.cz>:Thomas Himmelstoss <thimm@posteo.de>",
+        "CARGO_PKG_DESCRIPTION": "Unix signal handling",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "signal-hook",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/vorner/signal-hook",
+        "CARGO_PKG_RUST_VERSION": "1.66",
+        "CARGO_PKG_VERSION": "0.4.6",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "4",
+        "CARGO_PKG_VERSION_PATCH": "6",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -58483,29 +58456,29 @@ cargo.rust_library(
 
 alias(
     name = "testcontainers",
-    actual = ":testcontainers-0.27",
+    actual = ":testcontainers-0.28",
     visibility = ["PUBLIC"],
 )
 
 http_archive(
-    name = "testcontainers-0.27.2.crate",
-    sha256 = "0bd36b06a2a6c0c3c81a83be1ab05fe86460d054d4d51bf513bc56b3e15bdc22",
-    size_bytes = 121574,
-    strip_prefix = "testcontainers-0.27.2",
-    urls = ["https://static.crates.io/crates/testcontainers/0.27.2/download"],
+    name = "testcontainers-0.28.0.crate",
+    sha256 = "6e2bbe381afaaa58ea610c5fc3ffb2184063a32b3e358a179f0b4865dd59934a",
+    size_bytes = 117959,
+    strip_prefix = "testcontainers-0.28.0",
+    urls = ["https://static.crates.io/crates/testcontainers/0.28.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
-    name = "testcontainers-0.27",
-    srcs = [":testcontainers-0.27.2.crate"],
+    name = "testcontainers-0.28",
+    srcs = [":testcontainers-0.28.0.crate"],
     crate = "testcontainers",
-    crate_root = "testcontainers-0.27.2.crate/src/lib.rs",
+    crate_root = "testcontainers-0.28.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "testcontainers",
         "CARGO_CRATE_NAME": "testcontainers",
-        "CARGO_MANIFEST_DIR": "testcontainers-0.27.2.crate",
+        "CARGO_MANIFEST_DIR": "testcontainers-0.28.0.crate",
         "CARGO_PKG_AUTHORS": "Thomas Eizinger:Artem Medvedev <i@ddtkey.com>:Mervyn McCreight",
         "CARGO_PKG_DESCRIPTION": "A library for integration-testing against docker containers from within Rust.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58513,91 +58486,48 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/testcontainers/testcontainers-rs",
         "CARGO_PKG_RUST_VERSION": "1.88",
-        "CARGO_PKG_VERSION": "0.27.2",
+        "CARGO_PKG_VERSION": "0.28.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "27",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_MINOR": "28",
+        "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
         "blocking",
+        "conquer-once",
         "default",
         "ring",
+        "signal-hook",
+        "watchdog",
     ],
     visibility = [],
     deps = [
         ":astral-tokio-tar-0.6",
         ":async-trait-0.1",
-        ":bollard-0.20",
+        ":bollard-0.21",
         ":bytes-1",
+        ":conquer-once-0.4",
         ":docker_credential-1",
         ":either-1",
         ":etcetera-0.11",
-        ":ferroid-0.8",
+        ":ferroid-2",
         ":futures-0.3",
         ":http-1",
         ":itertools-0.14",
         ":log-0.4",
         ":memchr-2",
-        ":parse-display-0.9",
+        ":parse-display-0.11",
         ":pin-project-lite-0.2",
         ":serde-1",
         ":serde_json-1",
         ":serde_with-3",
+        ":signal-hook-0.4",
         ":thiserror-2",
         ":tokio-1",
         ":tokio-stream-0.1",
         ":tokio-util-0.7",
         ":url-2",
     ],
-)
-
-alias(
-    name = "testcontainers-modules",
-    actual = ":testcontainers-modules-0.15",
-    visibility = ["PUBLIC"],
-)
-
-http_archive(
-    name = "testcontainers-modules-0.15.0.crate",
-    sha256 = "e5985fde5befe4ffa77a052e035e16c2da86e8bae301baa9f9904ad3c494d357",
-    size_bytes = 173276,
-    strip_prefix = "testcontainers-modules-0.15.0",
-    urls = ["https://static.crates.io/crates/testcontainers-modules/0.15.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "testcontainers-modules-0.15",
-    srcs = [":testcontainers-modules-0.15.0.crate"],
-    crate = "testcontainers_modules",
-    crate_root = "testcontainers-modules-0.15.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "testcontainers_modules",
-        "CARGO_CRATE_NAME": "testcontainers_modules",
-        "CARGO_MANIFEST_DIR": "testcontainers-modules-0.15.0.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Community maintained modules for Testcontainers for Rust",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "testcontainers-modules",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/testcontainers/testcontainers-rs-modules-community",
-        "CARGO_PKG_RUST_VERSION": "1.88",
-        "CARGO_PKG_VERSION": "0.15.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "15",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "blocking",
-        "default",
-        "postgres",
-        "ring",
-    ],
-    visibility = [],
-    deps = [":testcontainers-0.27"],
 )
 
 http_archive(
@@ -62966,97 +62896,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "ureq-3.3.0.crate",
-    sha256 = "dea7109cdcd5864d4eeb1b58a1648dc9bf520360d7af16ec26d0a9354bafcfc0",
-    size_bytes = 147997,
-    strip_prefix = "ureq-3.3.0",
-    urls = ["https://static.crates.io/crates/ureq/3.3.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "ureq-3",
-    srcs = [":ureq-3.3.0.crate"],
-    crate = "ureq",
-    crate_root = "ureq-3.3.0.crate/src/lib.rs",
-    edition = "2024",
-    env = {
-        "CARGO_BIN_NAME": "ureq",
-        "CARGO_CRATE_NAME": "ureq",
-        "CARGO_MANIFEST_DIR": "ureq-3.3.0.crate",
-        "CARGO_PKG_AUTHORS": "Martin Algesten <martin@algesten.se>:Jacob Hoffman-Andrews <ureq@hoffman-andrews.com>",
-        "CARGO_PKG_DESCRIPTION": "Simple, safe HTTP client",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "ureq",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/algesten/ureq",
-        "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "3.3.0",
-        "CARGO_PKG_VERSION_MAJOR": "3",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "_rustls",
-        "_tls",
-        "rustls-no-provider",
-    ],
-    visibility = [],
-    deps = [
-        ":base64-0.22",
-        ":log-0.4",
-        ":percent-encoding-2",
-        ":rustls-0.23",
-        ":rustls-pki-types-1",
-        ":ureq-proto-0.6",
-        ":utf8-zero-0.8",
-    ],
-)
-
-http_archive(
-    name = "ureq-proto-0.6.0.crate",
-    sha256 = "e994ba84b0bd1b1b0cf92878b7ef898a5c1760108fe7b6010327e274917a808c",
-    size_bytes = 61319,
-    strip_prefix = "ureq-proto-0.6.0",
-    urls = ["https://static.crates.io/crates/ureq-proto/0.6.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "ureq-proto-0.6",
-    srcs = [":ureq-proto-0.6.0.crate"],
-    crate = "ureq_proto",
-    crate_root = "ureq-proto-0.6.0.crate/src/lib.rs",
-    edition = "2024",
-    env = {
-        "CARGO_BIN_NAME": "ureq_proto",
-        "CARGO_CRATE_NAME": "ureq_proto",
-        "CARGO_MANIFEST_DIR": "ureq-proto-0.6.0.crate",
-        "CARGO_PKG_AUTHORS": "Martin Algesten <martin@algesten.se>",
-        "CARGO_PKG_DESCRIPTION": "ureq support crate",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "ureq-proto",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/algesten/ureq-proto",
-        "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "0.6.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "6",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["client"],
-    visibility = [],
-    deps = [
-        ":base64-0.22",
-        ":http-1",
-        ":httparse-1",
-        ":log-0.4",
-    ],
-)
-
-http_archive(
     name = "url-2.5.8.crate",
     sha256 = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed",
     size_bytes = 86512,
@@ -63135,45 +62974,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "6",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    visibility = [],
-)
-
-http_archive(
-    name = "utf8-zero-0.8.1.crate",
-    sha256 = "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e",
-    size_bytes = 13984,
-    strip_prefix = "utf8-zero-0.8.1",
-    urls = ["https://static.crates.io/crates/utf8-zero/0.8.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "utf8-zero-0.8",
-    srcs = [":utf8-zero-0.8.1.crate"],
-    crate = "utf8_zero",
-    crate_root = "utf8-zero-0.8.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "utf8_zero",
-        "CARGO_CRATE_NAME": "utf8_zero",
-        "CARGO_MANIFEST_DIR": "utf8-zero-0.8.1.crate",
-        "CARGO_PKG_AUTHORS": "Simon Sapin <simon.sapin@exyr.org>:Martin Algesten <martin@algesten.se>",
-        "CARGO_PKG_DESCRIPTION": "Zero-copy, incremental UTF-8 decoding with error handling",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "utf8-zero",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/algesten/utf8-zero",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.8.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "8",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "default",
-        "std",
-    ],
     visibility = [],
 )
 

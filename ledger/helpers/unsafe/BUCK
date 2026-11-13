@@ -23,6 +23,7 @@ rust_library(
     },
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//third-party:anyhow",
         "root//third-party:async-trait",
         "root//third-party:bech32",
         "root//third-party:bip32",
@@ -51,6 +52,7 @@ rust_library(
         "mn_ledger_8": "root//third-party:mn-ledger-8",
         "mn_ledger_9": "root//third-party:mn-ledger-9",
         "transient_crypto": "root//third-party:transient-crypto",
+        "zkir_v3": "root//third-party:zkir-v3",
     },
     visibility = ["PUBLIC"],
 )
@@ -80,6 +82,7 @@ rust_test(
     },
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//third-party:anyhow",
         "root//third-party:apollo-compiler",
         "root//third-party:async-trait",
         "root//third-party:bech32",
@@ -109,6 +112,7 @@ rust_test(
         "mn_ledger_8": "root//third-party:mn-ledger-8",
         "mn_ledger_9": "root//third-party:mn-ledger-9",
         "transient_crypto": "root//third-party:transient-crypto",
+        "zkir_v3": "root//third-party:zkir-v3",
     },
     visibility = ["PUBLIC"],
 )

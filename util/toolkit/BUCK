@@ -636,9 +636,9 @@ rust_test(
 )
 
 rust_test(
-    name = "midnight-node-toolkit-indexer_show_wallet_e2e",
-    crate = "indexer_show_wallet_e2e",
-    crate_root = "util/toolkit/tests/indexer_show_wallet_e2e.rs",
+    name = "midnight-node-toolkit-indexer_e2e",
+    crate = "indexer_e2e",
+    crate_root = "util/toolkit/tests/indexer_e2e.rs",
     edition = "2024",
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
@@ -721,7 +721,6 @@ rust_test(
     named_deps = {
         "storage_sha2": "root//third-party:storage-sha2",
     },
-    labels = ["ci-infra"],
     visibility = ["PUBLIC"],
 )
 
