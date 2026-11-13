@@ -42,6 +42,64 @@
       ]
     },
     {
+      "name": "midnight_queryContractState",
+      "summary": "Reads individual fields of a deployed contract's state.",
+      "description": "Each path is a list of keys that walks the contract's state tree, each key interpreted as the VM's `idx` instruction interprets it: an array index, map key, or merkle tree position depending on the node it is applied to. Only the nodes along each path are loaded. Returns one result per path, in input order: the leaf cell, null for a Null leaf (including an absent map key), or an error for a path that cannot be followed. A path must end at a cell or Null, not a collection. At most 100 paths of at most 16 keys each. If `at` is null, the best block is used.",
+      "params": [
+        {
+          "name": "contract_address",
+          "description": "Hex-encoded contract address",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "paths",
+          "description": "State tree paths to resolve",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/components/schemas/HexAlignedValue"
+              }
+            }
+          }
+        },
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "results",
+        "description": "Per-path results, in input order",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/StateQueryResult"
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/ContractStateQueryInvalidParams"
+        },
+        {
+          "$ref": "#/components/errors/ContractStateQueryInternalError"
+        }
+      ]
+    },
+    {
       "name": "midnight_zswapStateRoot",
       "summary": "Returns the Merkle root of the zswap (shielded transaction) state tree.",
       "description": "The root is returned as a byte array. If `at` is null, the best block is used.",
@@ -1494,6 +1552,48 @@
           }
         }
       },
+      "HexAlignedValue": {
+        "type": "string",
+        "description": "0x-prefixed hex of a tagged-serialized AlignedValue: the ASCII prefix `midnight:fab-aligned-value[v1]:` followed by the value's untagged encoding",
+        "pattern": "^0x([0-9a-fA-F]{2})+$"
+      },
+      "StateQueryResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The path resolved to a cell, or to Null (`value` is null)",
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HexAlignedValue"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "The path could not be followed (e.g. an array index out of bounds)",
+            "properties": {
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "LedgerStats": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "LedgerStats",
@@ -1805,6 +1905,20 @@
         "message": "Invalid params",
         "data": {
           "description": "Variants: UnableToGetBlock, BlockNotFound, UnableToGetLedgerState, UnableToDecodeTransactions, UnableToSerializeBlock, UnableToGetChainVersion"
+        }
+      },
+      "ContractStateQueryInvalidParams": {
+        "code": -32602,
+        "message": "Invalid params",
+        "data": {
+          "description": "Variants: TooManyQueries (more than 100 paths), BadContractAddress (address is not hex), UnknownBlock (the requested block hash is not known to this node), NoStateKey (the pallet holds no StateKey at that block), ContractNotPresent (no contract at that address at that block)"
+        }
+      },
+      "ContractStateQueryInternalError": {
+        "code": -32603,
+        "message": "Internal error",
+        "data": {
+          "description": "Variants: StateKeyUnavailable (reading the ledger StateKey from the trie failed — the expected result for a block outside a pruned node's retained state window), LedgerUnavailable (the arena could not resolve the state the StateKey points at)"
         }
       },
       "LedgerStatsInvalidParams": {
