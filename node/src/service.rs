@@ -54,7 +54,10 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-use crate::consensus_engine_dispatch::{EngineDispatchBlockImport, EngineDispatchVerifier};
+use crate::consensus_engine_dispatch::{
+	AuraWeightBlockImport, EngineDispatchBlockImport, EngineDispatchVerifier, in_block_gap,
+	parent_header_lookup,
+};
 use crate::engine_digests::EngineSlotExtractor;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
@@ -570,11 +573,18 @@ pub fn new_partial(
 				client.clone(),
 				babe_link.clone(),
 			)),
+			parent_header_lookup(client.clone()),
 			aura_verifier,
 			babe_verifier,
 		),
 		Box::new(crate::warp_ledger_sync::block_import::GatedBlockImport::new(
-			EngineDispatchBlockImport::new(grandpa_block_import.clone(), babe_block_import),
+			EngineDispatchBlockImport::new(
+				AuraWeightBlockImport::new(
+					grandpa_block_import.clone(),
+					in_block_gap(client.clone()),
+				),
+				babe_block_import,
+			),
 			recovery_gate.clone(),
 			backend.clone(),
 		)),
@@ -988,17 +998,24 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				slot_duration: sc_slot_config.slot_duration,
 				client: client.clone(),
 				select_chain: select_chain.clone(),
-				block_import,
+				// Own AURA blocks get the same zero BABE weight as imported ones.
+				block_import: AuraWeightBlockImport::new(
+					block_import,
+					in_block_gap(client.clone()),
+				),
 				proposer_factory: aura_proposer_factory,
 				create_inherent_data_providers: make_proposal_cidp(),
 				force_authoring,
 				backoff_authoring_blocks: backoff_authoring_blocks.clone(),
 				keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
-				// Wrapping oracle: keeps AURA from authoring until the warp-recovered ledger is
-				// verified; a no-op passthrough on full sync.
-				sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
-					sync_service.clone(),
-					warp_ledger_recovery_gate.clone(),
+				// Wrapping oracles: no AURA authoring until the warp-recovered ledger is verified
+				// (a no-op on full sync), nor while the best block's state selects BABE.
+				sync_oracle: crate::babe_authoring::EngineGatedSyncOracle::new(
+					crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+						sync_service.clone(),
+						warp_ledger_recovery_gate.clone(),
+					),
+					crate::babe_authoring::aura_authoring_gate(client.clone()),
 				),
 				justification_sync_link: sync_service.clone(),
 				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
@@ -1025,11 +1042,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			select_chain,
 			env: babe_proposer_factory,
 			block_import: babe_authoring_block_import,
-			// Same wrapping oracle as AURA: no BABE authoring until the warp-recovered ledger is
-			// verified; a no-op passthrough on full sync.
-			sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
-				sync_service.clone(),
-				warp_ledger_recovery_gate.clone(),
+			// Same wrapping oracles as AURA, gated on the best block's state selecting BABE.
+			sync_oracle: crate::babe_authoring::EngineGatedSyncOracle::new(
+				crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+					sync_service.clone(),
+					warp_ledger_recovery_gate.clone(),
+				),
+				crate::babe_authoring::babe_authoring_gate(client.clone(), babe_link.clone()),
 			),
 			justification_sync_link: sync_service.clone(),
 			create_inherent_data_providers: make_proposal_cidp(),
@@ -1041,20 +1060,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
 		})?;
 
-		// A single supervisor is the authoring gate: it drives AURA until the flip, seeds the
-		// BABE epoch tree, then drives BABE. Only one engine is polled at a time.
-		let authoring_supervisor = crate::babe_authoring::run_authoring_supervisor(
-			client.clone(),
-			babe_link,
-			aura_worker,
-			babe_worker,
-		);
+		let authoring = crate::babe_authoring::run_authoring_workers(aura_worker, babe_worker);
 
 		// Authoring is essential: if it stops, the service goes down with it.
 		task_manager.spawn_essential_handle().spawn_blocking(
 			"authoring-supervisor",
 			Some("block-authoring"),
-			authoring_supervisor,
+			authoring,
 		);
 
 		task_manager.spawn_handle().spawn(
@@ -1096,7 +1108,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			),
 		}
 	}
-	// Non-authorities need no flip watcher: the epoch tree they need to *import* the first BABE
+	// Non-authorities need no authoring gate: the epoch tree they need to *import* the first BABE
 	// block is seeded on the import path by `BabeEpochSeeder` (see `EngineDispatchVerifier`).
 
 	if enable_grandpa {
