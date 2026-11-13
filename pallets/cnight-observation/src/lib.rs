@@ -110,6 +110,19 @@ pub mod pallet {
 
 	struct CNightGeneratesDustEventSerialized(Vec<u8>);
 
+	/// Why `apply_observations` rolled its batch back.
+	enum BatchFailure {
+		Dispatch(DispatchError),
+		/// A spend's dust event, or the batch's system transaction, could not be built.
+		Construction,
+	}
+
+	impl From<DispatchError> for BatchFailure {
+		fn from(e: DispatchError) -> Self {
+			Self::Dispatch(e)
+		}
+	}
+
 	pub type BoundedCardanoAddress = BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>;
 
 	#[derive(
@@ -210,10 +223,11 @@ pub mod pallet {
 		/// once per block for as long as the gate holds; the exact versions are
 		/// in the node log.
 		ObservationsSkippedForMigration,
-		/// The ledger refused this block's cNIGHT-generates-DUST update as over the
-		/// block limit, so the native cost estimate disagrees with the ledger. The batch
-		/// was rolled back and `NextCardanoCursor` left unchanged: observation stalls
-		/// until a runtime upgrade fixes the estimate.
+		/// This block's cNIGHT-generates-DUST update could not be applied: either the
+		/// ledger refused it as over the block limit, so the native cost estimate
+		/// disagrees with the ledger, or it could not be constructed. The batch was
+		/// rolled back and `NextCardanoCursor` left unchanged: observation stalls until
+		/// a runtime upgrade fixes the cause.
 		ObservationsDeferred,
 	}
 
@@ -597,9 +611,10 @@ pub mod pallet {
 		fn apply_observations(
 			utxos: ObservationBatch,
 			next_cardano_position: CardanoPosition,
-		) -> DispatchResult {
+		) -> Result<(), BatchFailure> {
 			let prev = NextCardanoCursor::<T>::get();
-			ensure!(next_cardano_position >= prev.position, Error::<T>::CardanoPositionRegression);
+			let regression = DispatchError::from(Error::<T>::CardanoPositionRegression);
+			ensure!(next_cardano_position >= prev.position, regression);
 			if utxos
 				.windows(2)
 				.any(|pair| cmp_observed_utxos_by_data(&pair[0], &pair[1]).is_ge())
@@ -645,7 +660,7 @@ pub mod pallet {
 					},
 					ObservedUtxoData::AssetSpend(data) => {
 						log::debug!("Processing CNight Spend: {data:?}");
-						if let Some(event) = Self::handle_spend(now, data) {
+						if let Some(event) = Self::handle_spend(now, data)? {
 							events.push(event);
 						}
 					},
@@ -663,23 +678,27 @@ pub mod pallet {
 				let system_tx_result = LedgerApi::construct_cnight_generates_dust_system_tx(
 					events.into_iter().map(|e| e.0).collect(),
 				);
-				if let Ok(midnight_system_tx) = system_tx_result {
-					let system_transaction_hash =
-						<T as Config>::MidnightSystemTransactionExecutor::execute_system_transaction(midnight_system_tx)?;
+				let midnight_system_tx = system_tx_result.map_err(|e| {
+					log::error!(
+						"failed to construct the cNIGHT-generates-DUST system transaction: {e:?}"
+					);
+					BatchFailure::Construction
+				})?;
+				let system_transaction_hash =
+					<T as Config>::MidnightSystemTransactionExecutor::execute_system_transaction(
+						midnight_system_tx,
+					)?;
 
-					// Emit System Transaction for the indexer
-					let system_tx = SystemTransactionApplied {
-						header: CmstHeader {
-							block_hash: next_cardano_position.block_hash,
-							tx_index_in_block: next_cardano_position.tx_index_in_block,
-							utxo_offset,
-						},
-						system_transaction_hash,
-					};
-					Self::deposit_event(Event::<T>::SystemTransactionApplied(system_tx));
-				} else {
-					log::error!("Fatal: failed to construct ledger system transaction");
-				}
+				// Emit System Transaction for the indexer
+				let system_tx = SystemTransactionApplied {
+					header: CmstHeader {
+						block_hash: next_cardano_position.block_hash,
+						tx_index_in_block: next_cardano_position.tx_index_in_block,
+						utxo_offset,
+					},
+					system_transaction_hash,
+				};
+				Self::deposit_event(Event::<T>::SystemTransactionApplied(system_tx));
 			}
 			Ok(())
 		}
@@ -830,10 +849,12 @@ pub mod pallet {
 			}
 		}
 
+		/// `Err` when the Destroy event cannot be built: the owner is already taken, so
+		/// carrying on would drop the spend for good.
 		fn handle_spend(
 			cur_time: u64,
 			data: SpendData,
-		) -> Option<CNightGeneratesDustEventSerialized> {
+		) -> Result<Option<CNightGeneratesDustEventSerialized>, BatchFailure> {
 			let nonce = T::Hashing::hash(
 				&[b"asset_create", &data.utxo_tx_hash.0[..], &data.utxo_tx_index.to_be_bytes()[..]]
 					.concat(),
@@ -848,7 +869,7 @@ pub mod pallet {
 					hex::encode(data.utxo_tx_hash.0),
 					data.utxo_tx_index
 				);
-				return None;
+				return Ok(None);
 			};
 
 			let event = LedgerApi::construct_cnight_generates_dust_event(
@@ -860,10 +881,14 @@ pub mod pallet {
 			);
 
 			match event {
-				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
+				Ok(event_bytes) => Ok(Some(CNightGeneratesDustEventSerialized(event_bytes))),
 				Err(e) => {
-					Self::log_dust_event_failure(&data.utxo_tx_hash.0, data.utxo_tx_index, e);
-					None
+					log::error!(
+						"cNIGHT spend {}#{}: unable to construct CNightGeneratesDustEvent for its recorded owner: {e:?}",
+						hex::encode(data.utxo_tx_hash.0),
+						data.utxo_tx_index
+					);
+					Err(BatchFailure::Construction)
 				},
 			}
 		}
@@ -928,18 +953,27 @@ pub mod pallet {
 
 			let weight = Self::process_tokens_weight(&utxos);
 			// A failing Mandatory inherent halts the chain, so a block-limit refusal
-			// (the native estimate disagreeing with the ledger) rolls back instead.
+			// (the native estimate disagreeing with the ledger) and an update that
+			// cannot be constructed roll back instead.
 			let outcome =
 				with_storage_layer(|| Self::apply_observations(utxos, next_cardano_position));
 			match outcome {
 				Ok(()) => {},
-				Err(e) if T::MidnightSystemTransactionExecutor::is_block_limit_exceeded(&e) => {
+				Err(BatchFailure::Dispatch(e))
+					if T::MidnightSystemTransactionExecutor::is_block_limit_exceeded(&e) =>
+				{
 					log::error!(
 						"ObservationsDeferred: the ledger refused the cNIGHT-generates-DUST update as over the block limit although the batch was sized to fit; the native cost estimate disagrees with the ledger (bug). Batch rolled back, NextCardanoCursor unchanged."
 					);
 					Self::deposit_event(Event::<T>::ObservationsDeferred);
 				},
-				Err(e) => return Err(e.into()),
+				Err(BatchFailure::Dispatch(e)) => return Err(e.into()),
+				Err(BatchFailure::Construction) => {
+					log::error!(
+						"ObservationsDeferred: the cNIGHT-generates-DUST update could not be constructed (bug). Batch rolled back, NextCardanoCursor unchanged."
+					);
+					Self::deposit_event(Event::<T>::ObservationsDeferred);
+				},
 			}
 			Ok(PostDispatchInfo { actual_weight: Some(weight), pays_fee: Pays::No })
 		}

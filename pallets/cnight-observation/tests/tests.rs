@@ -2113,6 +2113,40 @@ fn batch_at_the_block_limit_applies() {
 	});
 }
 
+/// A spend whose Destroy event cannot be built must not consume the owner and
+/// move the cursor on: the ledger would never hear of the spend. The batch
+/// rolls back whole instead.
+#[test]
+fn spend_whose_dust_event_cannot_be_built_is_deferred_not_dropped() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (hash, index) = (tx_hash(2, 0), 0u16);
+		let nonce = BlakeTwo256::hash(
+			&[b"asset_create".as_slice(), &hash.0[..], &index.to_be_bytes()[..]].concat(),
+		);
+		// `handle_create` stores only keys that built an event, so plant one that does not.
+		let undecodable = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+		UtxoOwners::<Test>::insert(nonce, undecodable.clone());
+		let cursor_before = NextCardanoCursor::<Test>::get().position;
+
+		let spend = ObservedUtxo {
+			header: test_header(3, 0, 0, None),
+			data: ObservedUtxoData::AssetSpend(SpendData {
+				value: 100,
+				owner: cardano_reward_address(b"cardano1"),
+				utxo_tx_hash: hash,
+				utxo_tx_index: index,
+				spending_tx_hash: tx_hash(3, 0),
+			}),
+		};
+		dispatch_observations(vec![spend], test_position(4, 0));
+
+		assert!(observations_deferred());
+		assert_eq!(UtxoOwners::<Test>::get(nonce), Some(undecodable));
+		assert_eq!(NextCardanoCursor::<Test>::get().position, cursor_before);
+	});
+}
+
 /// Creates for `owner` at outputs `indices` of the one Cardano transaction at (2, 0).
 fn creates_in_one_tx(
 	owner: CardanoRewardAddressBytes,
