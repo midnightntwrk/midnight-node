@@ -11,8 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{RuntimeCall, RuntimeOrigin};
-use frame_support::{pallet_prelude::TransactionSource, traits::Contains};
+use super::{
+	Bridge, CNightObservation, FederatedAuthorityObservation, Runtime, RuntimeCall, RuntimeOrigin,
+	SessionCommitteeManagement, Timestamp,
+};
+use frame_support::{
+	pallet_prelude::TransactionSource,
+	traits::{Contains, PalletInfoAccess},
+};
+use pallet_tx_pause::RuntimeCallNameOf;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info::TypeInfo;
 use sp_runtime::{
@@ -37,13 +44,14 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 	}
 }
 
-/// The runtime's inherent calls, whitelisted in safe mode.
+/// The runtime's inherent calls, whitelisted in safe mode and exempt from `TxPause`.
 ///
-/// `BaseCallFilter` filters every non-Root origin, including the None origin inherents
-/// dispatch with. A filtered Mandatory inherent means `BadMandatory`, i.e. no valid blocks
-/// can be built, so every inherent must be whitelisted for the chain to stay live while
-/// safe mode is entered. `Midnight::send_mn_transaction` (the unsigned user-transaction
-/// entry point) is deliberately NOT listed: filtering user traffic is the point of safe mode.
+/// `BaseCallFilter` (safe mode and `TxPause`) filters every non-Root origin, including the
+/// None origin inherents dispatch with. A filtered Mandatory inherent means `BadMandatory`,
+/// i.e. no valid blocks can be built, and a paused inherent could never be unpaused, since
+/// `unpause` needs a block too. `Midnight::send_mn_transaction` (the unsigned
+/// user-transaction entry point) is deliberately NOT listed: filtering user traffic is the
+/// point of safe mode.
 pub struct InherentCalls;
 impl Contains<RuntimeCall> for InherentCalls {
 	fn contains(call: &RuntimeCall) -> bool {
@@ -61,6 +69,21 @@ impl Contains<RuntimeCall> for InherentCalls {
 					pallet_federated_authority_observation::Call::reset_members { .. }
 				)
 		)
+	}
+}
+
+/// The same calls by name, for `TxPause::WhitelistedCalls`. Must match the `matches!` above.
+impl Contains<RuntimeCallNameOf<Runtime>> for InherentCalls {
+	fn contains((pallet, call): &RuntimeCallNameOf<Runtime>) -> bool {
+		[
+			(Timestamp::name(), "set"),
+			(SessionCommitteeManagement::name(), "set"),
+			(CNightObservation::name(), "process_tokens"),
+			(Bridge::name(), "handle_transfers"),
+			(FederatedAuthorityObservation::name(), "reset_members"),
+		]
+		.iter()
+		.any(|(p, c)| p.as_bytes() == pallet.as_slice() && c.as_bytes() == call.as_slice())
 	}
 }
 
