@@ -405,6 +405,7 @@ CI_INFRA_INTEGRATION = {
     ("midnight-node-toolkit", "toolkit_e2e"),                  # devnet / ledger static dir
     ("midnight-node-toolkit", "hardfork_e2e"),                 # docker-compose
     ("midnight-node-toolkit", "indexer_show_wallet_e2e"),      # live indexer
+    ("midnight-node-toolkit", "indexer_e2e"),                  # live indexer
     ("sc-partner-chains-consensus", "verifier_network"),        # substrate-test-runtime wasm
 }
 
@@ -697,6 +698,14 @@ def gen_buck(pkg, prefix=""):
                     env_override=UNIT_TEST_ENV.get(pkg["name"]),
                     labels=["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else None)
     for t in tests:
+        # Skip integration tests whose required-features aren't in the resolved
+        # feature set, exactly as cargo does. pallet-midnight's persist_refcount
+        # needs `test-utils` (for pallet_midnight::mock, gated on it), which the
+        # default workspace build doesn't enable — so cargo never builds it and
+        # neither should buck2 (the lib dep carries no test-utils either).
+        req = t.get("required-features") or []
+        if any(f not in features for f in req):
+            continue
         tdeps = sorted(set(dev_deps + ([f":{pkg['name']}"] if lt else [])))
         out.append("\n")
         emit_target("rust_test", f"{pkg['name']}-{t['name']}", underscore(t["name"]),
