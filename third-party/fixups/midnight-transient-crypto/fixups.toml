@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
-# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
-# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
-# whole, since buck2 can't project a file through a symlink.
+# Non-.rs data file (include_bytes!) mapped as a crate sub-target src: buck2
+# prunes all but the .rs closure from a whole-crate src on remote workers, so
+# the file would otherwise vanish. Key = path inside the published .crate
+# (crate root after strip_prefix), value = dest under CARGO_MANIFEST_DIR.
 [extra_mapped_srcs]
-"transient-crypto/static/bls_midnight_2p14" = "static/bls_midnight_2p14"
+"static/bls_midnight_2p14" = "static/bls_midnight_2p14"
