@@ -565,24 +565,26 @@ pub(crate) async fn index_exists_unsafe(pool: &Pool<Postgres>, index_name: &str)
 mod tests {
 	use super::*;
 	use hex_literal::hex;
-	use sqlx::PgPool;
 
-	#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-	async fn tx_in_configuration_is_enabled_if_tx_in_table_exists(pool: PgPool) {
+	#[tokio::test]
+	async fn tx_in_configuration_is_enabled_if_tx_in_table_exists() {
+		let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 		let tx_in_config = TxInConfiguration::from_connection(&pool).await.unwrap();
 
 		assert_eq!(tx_in_config, TxInConfiguration::Enabled)
 	}
 
-	#[sqlx::test(migrations = false)]
-	async fn tx_in_configuration_is_consumed_if_tx_in_table_does_not_exist(pool: PgPool) {
+	#[tokio::test]
+	async fn tx_in_configuration_is_consumed_if_tx_in_table_does_not_exist() {
+		let (pool, _db) = crate::test_db::empty_test_db().await;
 		let tx_in_config = TxInConfiguration::from_connection(&pool).await.unwrap();
 
 		assert_eq!(tx_in_config, TxInConfiguration::Consumed)
 	}
 
-	#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-	async fn get_block_info_for_utxo_works(pool: PgPool) {
+	#[tokio::test]
+	async fn get_block_info_for_utxo_works() {
+		let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 		// utxo 1 of `consumed_tx_id` in test migration
 		let utxo = UtxoId::new(
 			hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"),
