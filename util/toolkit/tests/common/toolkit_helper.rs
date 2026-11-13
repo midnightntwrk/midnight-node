@@ -30,7 +30,7 @@ use midnight_node_toolkit::{
 	},
 	toolkit_js::{CircuitArgs, DeployArgs, RelativePath, ToolkitJs},
 	tx_generator::{
-		builder::{Builder, CustomContractArgs, FUNDING_SEED},
+		builder::{Builder, CustomContractArgs},
 		destination::Destination,
 		source::{FetchCacheConfig, Source},
 	},
@@ -142,7 +142,12 @@ impl ContractSession<'_> {
 		let out = self.read(private_state, call).await;
 		let tx = self
 			.helper
-			.send_intent(&out.intent, &self.compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+			.send_intent(
+				&out.intent,
+				&self.compiled_dir,
+				&self.helper.funding_seed,
+				Some(&out.zswap_state),
+			)
 			.await
 			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
 		for secret in secrets {
@@ -158,6 +163,8 @@ impl ContractSession<'_> {
 
 pub struct ToolkitTestHelper {
 	node_ws: String,
+	/// Pays fees and supplies coins for every transaction the helper builds.
+	pub funding_seed: String,
 	toolkit_js_path: PathBuf,
 	contracts_dir: PathBuf,
 	network: String,
@@ -214,10 +221,11 @@ fn compile_cache_key(source: &str, compactc_version: &str) -> String {
 }
 
 impl ToolkitTestHelper {
-	pub fn new(node_ws: &str) -> Self {
+	pub fn new(node_ws: &str, funding_seed: &str) -> Self {
 		let base = manifest_dir();
 		Self {
 			node_ws: node_ws.to_string(),
+			funding_seed: funding_seed.to_string(),
 			toolkit_js_path: std::env::var("TOOLKIT_JS_PATH")
 				.map(PathBuf::from)
 				.unwrap_or_else(|_| base.join(TOOLKIT_JS_RELATIVE_PATH)),
@@ -339,6 +347,10 @@ impl ToolkitTestHelper {
 		Source {
 			src_url: Some(self.node_ws.clone()),
 			fetch_concurrency: DEFAULT_FETCH_CONCURRENCY,
+			// Dust-warp stamps DUST spends with wall-clock time while proving against the
+			// finalized state; any DUST change in a not-yet-finalized block (another test's
+			// fee) then fails the spend with InvalidDustSpendProof.
+			dust_warp: false,
 			..default_source()
 		}
 	}
@@ -508,7 +520,7 @@ impl ToolkitTestHelper {
 
 	/// Compiles, configures, and deploys a test contract.
 	pub async fn deploy_contract(&self, spec: ContractSpec<'_>) -> (ContractSession<'_>, PathBuf) {
-		let coin_public = self.show_address_coin_public(FUNDING_SEED);
+		let coin_public = self.show_address_coin_public(&self.funding_seed);
 
 		let source = self.load_contract_file(&format!("{}/{}.compact", spec.dir, spec.source));
 		let compiled_dir = self
@@ -527,7 +539,7 @@ impl ToolkitTestHelper {
 			.await
 			.unwrap_or_else(|e| panic!("generate {} deploy intent failed: {e}", spec.dir));
 		let deploy_tx = self
-			.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+			.send_intent(&deploy.intent, &compiled_dir, &self.funding_seed, None)
 			.await
 			.unwrap_or_else(|e| panic!("send {} deploy intent failed: {e}", spec.dir));
 		for secret in spec.secrets {

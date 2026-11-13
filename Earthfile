@@ -277,6 +277,31 @@ rebuild-redemption-skeleton:
     RUN aiken build --trace-level verbose
     SAVE ARTIFACT plutus.json AS LOCAL tests/src/plutus.json
 
+# GENERATE_GENESIS writes out/genesis_{state,block}_${NETWORK}.mn from NETWORK's genesis configs,
+# funding the wallets in SEEDS_FILE if one is given.
+GENERATE_GENESIS:
+    FUNCTION
+    ARG --required NETWORK
+    ARG SEEDS_FILE
+    # undeployed's configs live in res/dev. Only deployed networks ship a cardano-tip.json.
+    RUN mkdir -p /genesis-config
+    IF [ "${NETWORK}" = "undeployed" ]
+        COPY res/dev/ledger-parameters-config.json res/dev/cnight-config.json res/dev/ics-config.json res/dev/reserve-config.json /genesis-config/
+    ELSE
+        COPY res/${NETWORK}/ledger-parameters-config.json res/${NETWORK}/cnight-config.json res/${NETWORK}/ics-config.json res/${NETWORK}/reserve-config.json /genesis-config/
+        COPY --if-exists res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
+    END
+    # Funded geneses skip the cardano tip and get the default Glacier Drop timestamp. Live preview and
+    # preprod were built that way, so passing the tip would stop their rebuilds matching the chain specs.
+    RUN /midnight-node-toolkit generate-genesis \
+        --network ${NETWORK} \
+        --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+        --cnight-generates-dust-config /genesis-config/cnight-config.json \
+        --ics-config /genesis-config/ics-config.json \
+        --reserve-config /genesis-config/reserve-config.json \
+        $(if [ -n "${SEEDS_FILE}" ]; then echo "--seeds-file ${SEEDS_FILE}"; \
+          elif [ -f /genesis-config/cardano-tip.json ]; then echo "--cardano-tip-config /genesis-config/cardano-tip.json"; fi)
+
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
@@ -302,23 +327,6 @@ rebuild-genesis-state:
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy genesis config files. undeployed's configs live in res/dev; every other network
-    # uses res/<network>. Only deployed networks ship a cardano-tip.json (genesis-spawned
-    # nets like local have no live tip), so copy it only if present.
-    RUN mkdir -p /genesis-config
-    IF [ "${NETWORK}" = "undeployed" ]
-        COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
-        COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
-        COPY res/dev/ics-config.json /genesis-config/ics-config.json
-        COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
-    ELSE
-        COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
-        COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
-        COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
-        COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
-        COPY --if-exists res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
-    END
-
     # wallet-seed-3 is the wallet Lace uses for testing.
     # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel
     RUN if [ "${NETWORK}" = "undeployed" ]; then \
@@ -337,25 +345,11 @@ rebuild-genesis-state:
     # - If FUND_FAUCET_WALLETS=false: generate genesis without faucet wallet funding (e.g., mainnet)
     # - If no seeds file and FUND_FAUCET_WALLETS=true: use existing genesis state
     IF [ "${FUND_FAUCET_WALLETS}" = "true" ] && [ -f /secrets/genesis-seeds.json ]
-        RUN /midnight-node-toolkit generate-genesis \
-            --network ${NETWORK} \
-            --seeds-file /secrets/genesis-seeds.json \
-            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-            --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json \
-            --reserve-config /genesis-config/reserve-config.json
+        DO +GENERATE_GENESIS --NETWORK=${NETWORK} --SEEDS_FILE=/secrets/genesis-seeds.json
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
-        # Only deployed networks pass a cardano-tip; genesis-spawned nets (local, undeployed)
-        # have no live tip, so add the flag only when the file is present.
-        RUN /midnight-node-toolkit generate-genesis \
-            --network ${NETWORK} \
-            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-            --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json \
-            --reserve-config /genesis-config/reserve-config.json \
-            $(if [ -f /genesis-config/cardano-tip.json ]; then echo "--cardano-tip-config /genesis-config/cardano-tip.json"; fi)
+        DO +GENERATE_GENESIS --NETWORK=${NETWORK}
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -523,6 +517,7 @@ rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed \
         --GENERATE_TEST_TXS=true
+    BUILD +rebuild-toolkit-test-genesis
 
 # rebuild-genesis-state-local rebuilds the genesis ledger state for the local network (local-environment).
 # The local network does not fund any faucet wallets at genesis - wallets are funded at runtime via the
@@ -573,6 +568,19 @@ rebuild-genesis-state-perfnet:
 rebuild-genesis-state-stagenet:
     BUILD +rebuild-genesis-state \
         --NETWORK=stagenet
+
+# rebuild-toolkit-test-genesis rebuilds the genesis that toolkit_e2e's shared node boots from: the
+# dev configs plus one funded wallet per seed in util/toolkit/test-data/genesis/toolkit-test/seeds.json.
+# The tests build their chain spec from it at run time, so no chainspec update is needed afterwards.
+rebuild-toolkit-test-genesis:
+    # Override with a pre-built registry image to skip rebuilding
+    ARG TOOLKIT_IMAGE=+toolkit-image
+    FROM ${TOOLKIT_IMAGE}
+    USER root
+    COPY util/toolkit/test-data/genesis/toolkit-test/seeds.json /seeds.json
+    DO +GENERATE_GENESIS --NETWORK=undeployed --SEEDS_FILE=/seeds.json
+    SAVE ARTIFACT out/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/toolkit-test/
+    SAVE ARTIFACT out/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/toolkit-test/
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
@@ -1270,17 +1278,36 @@ test-pallet-fixtures:
 
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
-# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
-build-test-toolkit:
-    ARG NATIVEARCH
+# Compiled Midnight Node Toolkit tests as a nextest archive. Needs no node image, so CI
+# builds it while the node builds; +test-toolkit then gets it from the shared BuildKit cache.
+toolkit-test-archive:
     FROM +prep
     ARG TARGETARCH
+    # Selects tests at compile time (the compact-contract-tests feature).
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
     IF [ "$CI" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
+    # x86-64-v3, not target-cpu=native: in CI the archive runs on a different runner than
+    # the one that built it. MIDNIGHT_LEDGER_EXPERIMENTAL is read by the ledger's `env!`.
+    RUN --secret NODE_GIT_TOKEN \
+        if [ "$TARGETARCH" = "amd64" ]; then export RUSTFLAGS="-C target-cpu=x86-64-v3 -C debuginfo=1"; \
+        else export RUSTFLAGS="-C debuginfo=1"; fi && \
+        FEATURES="" && \
+        if [ "$RUN_COMPACT_CONTRACT_TESTS" = "true" ]; then FEATURES="--features compact-contract-tests"; fi && \
+        MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest archive \
+            --release --locked -p midnight-node-toolkit $FEATURES \
+            --archive-file /toolkit-tests.tar.zst
+    SAVE ARTIFACT /toolkit-tests.tar.zst
+
+# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
+build-test-toolkit:
+    ARG NATIVEARCH
+    FROM +prep
+    ARG TARGETARCH
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
@@ -1307,8 +1334,6 @@ build-test-toolkit:
 
     # Test
     RUN mkdir /test-artifacts-toolkit
-    # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -1316,23 +1341,22 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
-    # inside the container, so the private git dependencies are fetched there: +test-toolkit
-    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
-    # netrc for the duration of the run (never baked into the image).
     COPY scripts/test-toolkit.sh /test-toolkit.sh
-    ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
+    ENTRYPOINT ["/test-toolkit.sh"]
     SAVE IMAGE
 
 test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
     # Optional: override the indexer e2e's indexer image (default in test-images.docker-compose.yml).
     ARG INDEXER_STANDALONE_IMAGE
-    ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
+
+    # Mounted with -v, not baked into test-toolkit:latest, so the per-commit archive isn't loaded into DinD.
+    COPY (+toolkit-test-archive/toolkit-tests.tar.zst --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) /toolkit-tests.tar.zst
 
     LET EXTRA_DOCKER_ENV=""
     IF [ -n "$NODE_IMAGE" ]
@@ -1343,9 +1367,6 @@ test-toolkit:
     END
     IF [ -n "$INDEXER_STANDALONE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE"
-    END
-    IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
-        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
     END
 
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
@@ -1359,7 +1380,7 @@ test-toolkit:
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
-            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1370,15 +1391,15 @@ test-toolkit:
                 -v /root/.docker:/root/.docker \
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -v /toolkit-tests.tar.zst:/toolkit-tests.tar.zst:ro \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-            RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1389,8 +1410,8 @@ test-toolkit:
                 -v /root/.docker:/root/.docker \
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -v /toolkit-tests.tar.zst:/toolkit-tests.tar.zst:ro \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                -e NODE_GIT_TOKEN \
                 $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
