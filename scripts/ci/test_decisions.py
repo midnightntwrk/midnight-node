@@ -1,0 +1,198 @@
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+import importlib.util
+import io
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import scope
+import fetch_metadata
+import trusted_cache
+
+ROOT = Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('faucet', ROOT / 'scripts/ci/faucet-preflight.py')
+faucet = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(faucet)
+
+
+class ScopeTests(unittest.TestCase):
+    def test_docs(self):
+        self.assertTrue(scope.documentation_only(['README.md', 'docs/a.md', 'changes/bug/a.md']))
+
+    def test_product_and_unknown_inputs(self):
+        for path in ['runtime/a.rs', 'Cargo.lock', '.github/workflows/a.yml',
+                     'docs/a.json', 'indexer', 'Earthfile', 'scripts/ci/scope.py']:
+            with self.subTest(path=path):
+                self.assertFalse(scope.documentation_only(['README.md', path]))
+        self.assertFalse(scope.documentation_only([]))
+
+    def test_failed_diff_runs_product_checks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            event, output = Path(temp) / 'event', Path(temp) / 'output'
+            event.write_text('{"pull_request":{"base":{"sha":"missing"}}}')
+            with patch.dict(os.environ, GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(output),
+                            GITHUB_EVENT_NAME='pull_request'), patch.object(
+                                scope.subprocess, 'check_output', side_effect=subprocess.CalledProcessError(1, 'git')):
+                scope.main()
+            self.assertEqual(output.read_text(), 'product=true\n')
+
+
+class ImagePlanTests(unittest.TestCase):
+    def plan(self, available, kind='main', **extra):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            docker = path / 'docker'
+            docker.write_text('#!/bin/bash\ncase "$4" in *toolkit*) [[ "$AVAILABLE" == all ]];; *) [[ "$AVAILABLE" != none ]];; esac || exit 1\nprintf "sha256:%064d\\n" 1\n')
+            docker.chmod(0o755)
+            output = path / 'output'
+            env = dict(os.environ, PATH=f'{temp}:{os.environ["PATH"]}', AVAILABLE=available,
+                       GITHUB_REPOSITORY='midnightntwrk/midnight-node', GITHUB_OUTPUT=str(output), **extra)
+            result = subprocess.run(['bash', str(ROOT / 'scripts/ci/image-plan.sh'), kind],
+                                    cwd=ROOT, env=env, text=True, capture_output=True)
+            return result, output.read_text() if output.exists() else ''
+
+    def test_main_needs_both_images(self):
+        for available in ['none', 'node']:
+            result, output = self.plan(available)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('runner=["self-hosted","tier:large"]', output)
+        result, output = self.plan('all')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('runner=["ubuntu-24.04"]', output)
+        self.assertIn('@sha256:', output)
+
+    def test_bot_only_needs_node(self):
+        result, output = self.plan('node', 'bot')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('runner=["ubuntu-24.04"]', output)
+
+    def test_force_build_and_missing_explicit_version(self):
+        result, output = self.plan('all', FORCE_REBUILD='true')
+        self.assertIn('runner=["self-hosted","tier:large"]', output)
+        result, _ = self.plan('none', 'bot', VERSION='missing')
+        self.assertNotEqual(result.returncode, 0)
+
+
+class FaucetTests(unittest.TestCase):
+    def ready(self, amounts):
+        return faucet.funding_ready([{'value': {'ada': {'lovelace': amount}}} for amount in amounts],
+                                    16, 250_000_000, 5_000_000)[0]
+
+    def test_existing_workers_need_no_prime_fee(self):
+        self.assertTrue(self.ready([250_000_000] * 16))
+
+    def test_priming_and_observed_insufficient_balance(self):
+        self.assertTrue(self.ready([4_005_000_000]))
+        self.assertFalse(self.ready([4_004_999_999]))
+        self.assertFalse(self.ready([3_936_000_000]))
+        self.assertFalse(self.ready([]))
+
+    def test_bad_amount_is_an_error(self):
+        for amount in [-1, '250000000', True]:
+            with self.assertRaises(ValueError):
+                self.ready([amount])
+
+    def test_source_settings(self):
+        with patch('os.getcwd', return_value=str(ROOT)):
+            endpoint, address, minimum, buffer = faucet.settings()
+        self.assertTrue(endpoint.startswith('wss://'))
+        self.assertTrue(address.startswith('addr_test'))
+        self.assertEqual((minimum, buffer), (250_000_000, 5_000_000))
+
+
+class TrustedCacheTests(unittest.TestCase):
+    def test_exact_key_and_trusted_branch(self):
+        def no_lookup(number):
+            self.fail('Branch caches do not need a PR lookup')
+        self.assertTrue(trusted_cache.trusted_hit(
+            [{'key': 'signed', 'ref': 'refs/heads/main'}], 'signed', 'org/repo', no_lookup))
+        self.assertFalse(trusted_cache.trusted_hit(
+            [{'key': 'signed-spoof', 'ref': 'refs/heads/main'}], 'signed', 'org/repo', no_lookup))
+
+    def test_fork_marker_cannot_satisfy_trusted_check(self):
+        entry = [{'key': 'signed', 'ref': 'refs/pull/42/merge'}]
+        self.assertFalse(trusted_cache.trusted_hit(entry, 'signed', 'org/repo', lambda _: 'fork/repo'))
+        self.assertTrue(trusted_cache.trusted_hit(entry, 'signed', 'org/repo', lambda _: 'org/repo'))
+
+    def test_unknown_ref_is_not_trusted(self):
+        self.assertFalse(trusted_cache.trusted_hit(
+            [{'key': 'signed', 'ref': 'refs/tags/v1'}], 'signed', 'org/repo', lambda _: 'org/repo'))
+
+    def test_api_failure_is_not_a_hit(self):
+        def unavailable(number):
+            raise subprocess.CalledProcessError(1, 'gh')
+        with self.assertRaises(subprocess.CalledProcessError):
+            trusted_cache.trusted_hit([{'key': 'signed', 'ref': 'refs/pull/42/merge'}],
+                                      'signed', 'org/repo', unavailable)
+
+
+class CompilerCacheTests(unittest.TestCase):
+    def cache_args(self, **overrides):
+        block = (ROOT / '.envrc').read_text().split('# Hosted and fork jobs keep clean compiler directories.\n', 1)[1].split('# Publish targets', 1)[0]
+        with tempfile.TemporaryDirectory() as temp:
+            awk = Path(temp) / 'awk'
+            awk.write_text('#!/bin/sh\necho test-cpu\n')
+            awk.chmod(0o755)
+            env = dict(os.environ, PATH=f'{temp}:{os.environ["PATH"]}', CI='true',
+                       RUNNER_ENVIRONMENT='self-hosted', CI_CACHE_TRUSTED='true',
+                       GITHUB_REPOSITORY='org/repo', GITHUB_REF='refs/heads/main',
+                       GITHUB_HEAD_REF='', CI_SOURCE_REF='', EARTHLY_BUILD_ARGS='')
+            env.update(overrides)
+            return subprocess.check_output(['bash', '-c', block + '\nprintf "%s" "$EARTHLY_BUILD_ARGS"'],
+                                            env=env, cwd=ROOT, text=True)
+
+    def test_bot_and_dispatch_source_ref_isolates_compiler_cache(self):
+        self.assertNotEqual(self.cache_args(CI_SOURCE_REF='branch-a'), self.cache_args(CI_SOURCE_REF='branch-b'))
+        self.assertEqual(self.cache_args(CI_SOURCE_REF='branch-a'), self.cache_args(GITHUB_HEAD_REF='branch-a'))
+
+    def test_untrusted_and_hosted_jobs_do_not_get_compiler_mounts(self):
+        self.assertEqual(self.cache_args(CI_CACHE_TRUSTED='false'), 'CI=true')
+        self.assertEqual(self.cache_args(RUNNER_ENVIRONMENT='github-hosted'), 'CI=true')
+
+
+class MetadataTests(unittest.TestCase):
+    def test_rpc_rejects_non_loopback_urls_before_connecting(self):
+        for url in ['file:///etc/passwd', 'https://127.0.0.1:1234', 'http://example.com:1234',
+                    'http://127.0.0.1', 'http://user@127.0.0.1:1234',
+                    'http://127.0.0.1:1234/path', 'http://127.0.0.1:1234?url=file:///x']:
+            with self.subTest(url=url), patch.object(fetch_metadata.http.client, 'HTTPConnection') as connection:
+                with self.assertRaises(ValueError):
+                    fetch_metadata.rpc(url, 'method', '0x')
+                connection.assert_not_called()
+
+    def test_rpc_loopback_response_and_redirect_rejection(self):
+        with patch.object(fetch_metadata.http.client, 'HTTPConnection') as connection:
+            response = io.BytesIO(b'{"result":"0x1234"}')
+            response.status = 200
+            connection.return_value.getresponse.return_value = response
+            self.assertEqual(fetch_metadata.rpc('http://127.0.0.1:1234', 'method', '0x'), b'\x12\x34')
+            connection.assert_called_once_with('127.0.0.1', 1234, timeout=30)
+            response.status = 302
+            with self.assertRaises(ValueError):
+                fetch_metadata.rpc('http://127.0.0.1:1234', 'method', '0x')
+            self.assertEqual(connection.return_value.close.call_count, 2)
+
+    def test_versioned_payload_and_length_validation(self):
+        self.assertEqual(fetch_metadata.decode_metadata(bytes.fromhex('01146d65746110'), 16), b'meta\x10')
+        for encoded in ['00', '01', '01146d6574610e', '01146d6574611000']:
+            with self.subTest(encoded=encoded), self.assertRaises(ValueError):
+                fetch_metadata.decode_metadata(bytes.fromhex(encoded), 16)
+
+    def test_compact_length_modes(self):
+        for encoded, expected in [('fc', 63), ('1901', 70), ('02000100', 16384), ('0300000040', 1073741824)]:
+            self.assertEqual(fetch_metadata.compact(bytes.fromhex(encoded)), (expected, b''))
+        with self.assertRaises(ValueError):
+            fetch_metadata.compact(bytes.fromhex('02'))
+
+    def test_latest_stable_version_matches_subxt(self):
+        with patch.object(fetch_metadata, 'rpc', side_effect=[
+            bytes.fromhex('0c0e00000010000000ffffffff'), bytes.fromhex('01146d65746110'),
+        ]) as rpc:
+            self.assertEqual(fetch_metadata.fetch('http://node'), b'meta\x10')
+        self.assertEqual(rpc.call_args.args, ('http://node', 'Metadata_metadata_at_version', '0x10000000'))

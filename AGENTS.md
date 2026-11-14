@@ -30,10 +30,13 @@ earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks
 - `/bot cargo-fmt` - Run cargo fmt
 
-CI prepares local e2e test binaries alongside node-image builds on the existing
-self-hosted pool. Fork PRs retain inline compilation. The local environment CI
+CI prepares local e2e and toolkit test binaries alongside node-image builds on the
+existing self-hosted pool. Trusted compiler caches are scoped by repository, branch,
+toolchain, CPU and target flavor. Documentation-only changes satisfy required
+checks on hosted runners; product changes retain the complete suites. Fork PRs retain inline compilation. The local environment CI
 check retains the complete suite and its existing execution settings. See
-`docs/ci/pr-critical-path.md` for timing and coverage validation.
+`docs/ci/pr-critical-path.md` for timing and coverage validation and
+`docs/ci/workflow-placement.md` for runner placement and cache policy.
 
 **E2E tests (just):**
 ```bash

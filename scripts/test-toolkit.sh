@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -euxo pipefail
+set -eu
 
 # Run Midnight Node Toolkit package tests
 # Note: We use cargo nextest directly instead of cargo llvm-cov because
@@ -21,12 +21,17 @@ set -euxo pipefail
 #
 # RUN_COMPACT_CONTRACT_TESTS (boolean, default false): "true" enables the slow
 # contract E2E tests via the compact-contract-tests feature (set by the workflow of the same name).
-FEATURES_ARG=""
+set --
 if [ "${RUN_COMPACT_CONTRACT_TESTS:-false}" = "true" ]; then
-    FEATURES_ARG="--features compact-contract-tests"
+    set -- --features compact-contract-tests
 fi
 
-MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest run \
-    --profile ci --release --locked \
-    ${FEATURES_ARG} \
-    -E 'package(midnight-node-toolkit)'
+if [ -f /opt/toolkit-tests.tar.zst ]; then
+    mkdir -p /tmp/toolkit-tests
+    MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest run --profile ci \
+        --archive-file /opt/toolkit-tests.tar.zst --workspace-remap "$PWD" \
+        --extract-to /tmp/toolkit-tests
+else
+    MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest run \
+        --profile ci --release --locked -p midnight-node-toolkit "$@"
+fi

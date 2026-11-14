@@ -25,7 +25,7 @@ concurrency:
 jobs:
   feature-unification:
     name: Feature Unification Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       # tree-cache-guard's `gh cache list` lookup needs the Actions scope;
@@ -50,6 +50,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       # No GHCR login: the build chain only pulls the public
       # midnightntwrk/midnight-node-ci image from docker.io.

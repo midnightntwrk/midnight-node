@@ -15,15 +15,26 @@ on:
         description: 'Optional node image version (e.g., "0.22.0") — sets --NODE_IMAGE on earthly'
         required: false
 
+env:
+  CI_CACHE_TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
 jobs:
-  rebuild-chainspec:
+  plan:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request && contains(github.event.comment.body, '/bot rebuild-chainspec'))
-    runs-on: [self-hosted, "tier:medium"]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      runner: ${{ steps.plan.outputs.runner }}
+      node_image: ${{ steps.plan.outputs.node_image }}
+      sha: ${{ steps.pr.outputs.sha }}
+      ref: ${{ steps.pr.outputs.ref }}
+      number: ${{ steps.pr.outputs.number }}
+      networks: ${{ steps.parse_comment.outputs.networks || github.event.inputs.networks }}
+      version: ${{ steps.parse_comment.outputs.version || github.event.inputs.version }}
     steps:
       - name: Check user permission
         if: github.event_name == 'issue_comment'
@@ -112,7 +123,8 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
+          persist-credentials: false
+          submodules: false
           ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -129,6 +141,40 @@ jobs:
             fi
           done
 
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+      - name: Checkout workflow tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .workflow-tools
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - id: plan
+        env:
+          VERSION: ${{ steps.parse_comment.outputs.version || github.event.inputs.version }}
+        run: bash .workflow-tools/scripts/ci/image-plan.sh bot
+
+  rebuild-chainspec:
+    needs: plan
+    env:
+      CI_SOURCE_REF: ${{ needs.plan.outputs.ref }}
+    runs-on: ${{ fromJSON(needs.plan.outputs.runner) }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.sha }}
+          submodules: ${{ runner.environment == 'self-hosted' }}
+          fetch-depth: 0
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
@@ -146,15 +192,12 @@ jobs:
       - name: Run rebuild-chainspec
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
-          NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
-          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
+          NETWORKS: ${{ needs.plan.outputs.networks }}
+          REUSED_NODE_IMAGE: ${{ needs.plan.outputs.node_image }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
           . ./.envrc
-          NODE_IMAGE="+node-image"
-          if [ -n "$VERSION" ]; then
-            NODE_IMAGE="midnightntwrk/midnight-node:$VERSION"
-            echo "Using node image: $NODE_IMAGE"
-          fi
+          NODE_IMAGE="${REUSED_NODE_IMAGE:-+node-image}"
 
           # Split networks and run earthly for each
           for network in $NETWORKS; do
@@ -166,7 +209,8 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: commit
         env:
-          NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+          PR_BRANCH: ${{ needs.plan.outputs.ref }}
+          NETWORKS: ${{ needs.plan.outputs.networks }}
         with:
           script: |
             const fs = require('fs');
@@ -221,8 +265,8 @@ jobs:
             `, {
               input: {
                 branch: {
-                  repositoryNameWithOwner: '${{ github.repository }}',
-                  branchName: '${{ steps.pr.outputs.ref }}'
+                  repositoryNameWithOwner: process.env.GITHUB_REPOSITORY,
+                  branchName: process.env.PR_BRANCH
                 },
                 message: {
                   headline: `chore: rebuild chainspec for ${networks}`
@@ -243,7 +287,7 @@ jobs:
         with:
           message: |
             :white_check_mark: Chainspec rebuild complete! Changes have been committed.
-          pr-number: ${{ steps.pr.outputs.number }}
+          pr-number: ${{ needs.plan.outputs.number }}
 
       - name: Post no-changes comment
         if: env.CHANGES_MADE == 'false'
@@ -251,7 +295,7 @@ jobs:
         with:
           message: |
             :white_check_mark: Chainspec rebuild complete. No changes detected.
-          pr-number: ${{ steps.pr.outputs.number }}
+          pr-number: ${{ needs.plan.outputs.number }}
 
       - name: Post failure comment
         if: failure()
@@ -259,4 +303,4 @@ jobs:
         with:
           message: |
             :x: Chainspec rebuild failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
-          pr-number: ${{ steps.pr.outputs.number }}
+          pr-number: ${{ needs.plan.outputs.number }}
