@@ -2,6 +2,14 @@ name: Tree Cache Guard
 description: Skip job if root tree hash has already passed this check
 
 inputs:
+  hmac-key:
+    description: Secret authenticating successful check markers
+    required: false
+    default: ''
+  tree-path:
+    description: Submodule directory for independently cached checks
+    required: false
+    default: ''
   check-name:
     description: Identifier for this check (defaults to job name)
     required: false
@@ -29,6 +37,15 @@ runs:
       shell: bash
       run: |
         tree=$(git rev-parse "HEAD^{tree}")
+        if [[ -n "$TREE_PATH" ]]; then
+          tree=$(printf '%s\n' "$(git -C "$TREE_PATH" rev-parse 'HEAD^{tree}')" \
+            "$(git hash-object .github/workflows/continuous-integration.yml .github/actions/tree-cache-guard/action.yml scripts/ci/trusted_cache.py .envrc)" | sha256sum | cut -d ' ' -f1)
+        fi
+        if [[ -z "$TREE_GUARD_HMAC" || "$EVENT_NAME" == schedule || "$EVENT_NAME" == workflow_dispatch || "$IS_FORK" == true ]]; then
+          echo 'hit=false' >> "$GITHUB_OUTPUT"
+          echo 'key=no-cache-untrusted-or-fresh' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
         echo "tree=${tree}" >> "$GITHUB_OUTPUT"
 
         # If the workflow was triggered from a different branch, the workflow
@@ -49,7 +66,9 @@ runs:
           matrix="${MATRIX_KEY// /-}"
           check="${check}-${matrix}"
         fi
-        key="passed-${check}-${tree}"
+        export CACHE_MESSAGE="${check}-${tree}"
+        signature=$(python3 -c 'import hashlib,hmac,os; print(hmac.new(os.environ["TREE_GUARD_HMAC"].encode(), os.environ["CACHE_MESSAGE"].encode(), hashlib.sha256).hexdigest())')
+        key="passed-v2-${check}-${tree}-${signature}"
 
         echo "key=${key}" >> "$GITHUB_OUTPUT"
 
@@ -59,10 +78,7 @@ runs:
         result=''
         err=$(mktemp)
         for attempt in 1 2 3; do
-          if out=$(gh cache list \
-                     --repo "$GITHUB_REPOSITORY" \
-                     --key  "${key}" \
-                     --json id --jq 'length' 2>"$err"); then
+          if out=$(python3 "$GITHUB_ACTION_PATH/../../../scripts/ci/trusted_cache.py" "$key" 2>"$err"); then
             result="${out//[[:space:]]/}"
             break
           fi
@@ -82,6 +98,10 @@ runs:
           echo "hit=false" >> "$GITHUB_OUTPUT"
         fi
       env:
+        TREE_GUARD_HMAC: ${{ inputs.hmac-key }}
+        TREE_PATH: ${{ inputs.tree-path }}
+        EVENT_NAME: ${{ github.event_name }}
+        IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         GH_TOKEN: ${{ github.token }}
         WORKFLOW_SHA: ${{ github.workflow_sha }}
         COMMIT_SHA: ${{ github.sha }}

@@ -6,11 +6,15 @@ on:
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - ".github/actions/**"
+      - "scripts/ci/**"
   push:
     branches: [main]
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - ".github/actions/**"
+      - "scripts/ci/**"
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -18,16 +22,20 @@ permissions: {}
 jobs:
   actionlint:
     name: Lint workflows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # no top level default permissions for security reasons
     permissions:
       contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - name: Run actionlint
         if: steps.guard.outputs.hit != 'true'
@@ -35,6 +43,9 @@ jobs:
         with:
           matcher: true # Enable GitHub annotations for errors
           fail-on-error: true # Fail CI when errors are found
+
+      - name: Test CI decision scripts
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

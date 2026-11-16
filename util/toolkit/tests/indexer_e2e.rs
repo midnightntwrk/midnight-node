@@ -426,7 +426,10 @@ fn unshielded_values(wallet: serde_json::Value) -> Vec<u64> {
 /// the fallback is silent apart from its warning, and would leave the fast-sync checks comparing
 /// the replay with itself.
 fn run_toolkit(env: &Env, args: &[&str]) -> (String, String) {
-	let output = Command::new(env!("CARGO_BIN_EXE_midnight-node-toolkit"))
+	// Nextest archives relocate binaries; cargo test keeps the compile-time path.
+	let binary = std::env::var("NEXTEST_BIN_EXE_midnight-node-toolkit")
+		.unwrap_or_else(|_| env!("CARGO_BIN_EXE_midnight-node-toolkit").to_owned());
+	let output = Command::new(binary)
 		.args(args)
 		// The fast-sync report is an info line from the helpers crate, which the default filter
 		// hides.

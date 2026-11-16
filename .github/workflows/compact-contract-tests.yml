@@ -24,7 +24,7 @@ env:
 jobs:
   toolkit-contract-e2e:
     name: Compact contract E2E
-    runs-on: [ self-hosted, "tier:large" ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
       FORCE_COLOR: 1
@@ -59,18 +59,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
-      # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
-      # but no certs are provisioned on the runner. Append tls_enabled: false
-      # to the workspace .earthly/config.yml so earthly skips TLS for its own
-      # buildkitd container.
-      - name: Disable earthly TLS (self-hosted runner has no certs)
-        run: |
-          echo "    tls_enabled: false" >> .earthly/config.yml
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
       - name: Run compact contract tests
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
-          # Self-hosted-runner-specific overrides - see continuous-integration.yml
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -85,5 +79,6 @@ jobs:
             -P --strict \
             --remote-cache="${GHCR_REGISTRY}/${GITHUB_REPOSITORY#*/}:cache-test-toolkit" \
             +test-toolkit \
-              --CACHE_KEY=compact-contract-tests \
-              --RUN_COMPACT_CONTRACT_TESTS=true
+              --CI_EXECUTION="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+              --RUN_COMPACT_CONTRACT_TESTS=true \
+            --TOOLKIT_BUILD_JOBS=2

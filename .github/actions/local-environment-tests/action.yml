@@ -103,7 +103,6 @@ runs:
       shell: bash
       env:
         CI_EXECUTION: ${{ inputs.ci-execution }}
-        GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         NODE_IMAGE: ${{ inputs.image }}
         TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
         INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
@@ -113,15 +112,12 @@ runs:
         DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
         NODE_GIT_TOKEN: ${{ inputs.node-git-token }}
       run: |
-        CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-        test -n "$CACHE_KEY"
         . ./.envrc
         earth -P \
           --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
           --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
           +local-env-ci \
           --CI_EXECUTION="$CI_EXECUTION" \
-          --CACHE_KEY="$CACHE_KEY" \
           --NODE_IMAGE="$NODE_IMAGE" \
           --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
           --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \

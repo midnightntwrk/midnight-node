@@ -6,29 +6,17 @@ VERSION 0.8
 # that's changed a pallet's trait surface can leak its build into the
 # next PR's job and cause spurious E0046 trait/impl mismatches.
 #
-# Default is constant so local invocations share one cache. CI must
-# override this with a per-branch value (passed via `--build-arg
-# CACHE_KEY=<sanitized PR head ref>`). The Earthly builtin
-# EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
-# leaves the workspace on the PR merge commit in detached-HEAD state, so
-# the builtin resolves to the literal string `HEAD` across every PR.
-#
-# The `/target` cache mounts also suffix the id with `-${TARGETARCH}` (e.g.
-# `target-<key>-amd64`). BuildKit cache-mount ids are NOT scoped by platform
-# (moby/buildkit#2598), so a daemon that ever builds more than one arch (e.g.
-# emulated multi-platform) would otherwise point both arches at the same native
-# `/target/release` and thrash each other's artifacts. Native per-arch runners
-# already isolate them today; the suffix makes this correct regardless of the
-# daemon topology, at no cost (same-arch builds still share the cache).
+# Local invocations share one namespace. Trusted CI uses .envrc's hash of
+# repository, source branch, toolchain, architecture and CPU model. Detached
+# checkout's EARTHLY_GIT_BRANCH is always HEAD and cannot isolate PRs.
+# Cache mount IDs also include target flavor and TARGETARCH: BuildKit does
+# not scope cache mounts by platform (moby/buildkit#2598).
 ARG --global CACHE_KEY=local
 
-# Set true when building on a CI runner. When true, targets declare NO persistent CACHE
-# mounts (cargo registry/git and /target), so every CI build is clean and nothing is served
-# from a shared, cross-run cache. Defaults false for local builds, which DO mount the caches
-# so cargo's incremental fingerprinting can reuse artifacts across runs. CI runs set this via
-# EARTHLY_BUILD_ARGS=CI=true (see .envrc and the rebuild-*-bot workflows), keyed off the CI
-# environment variable GitHub Actions always exports.
+# CI compiler mounts require an explicit trusted-runner opt-in.
 ARG --global CI=false
+ARG --global CI_CACHE=false
+ARG --global TOOLKIT_BUILD_JOBS=16
 
 # renovate: datasource=node-version depName=node versioning=node
 ARG --global NODEJS_VERSION=24.22.2
@@ -192,10 +180,10 @@ build-node-only:
     # `locked` sharing: concurrent builds on the same CACHE_KEY serialize rather than
     # clobber each other, and different branches get a different CACHE_KEY (see top of
     # file) so they never share /target at all.
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-build-node-only /target
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
@@ -258,11 +246,11 @@ rebuild-sqlx:
     ARG USEROS
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-rebuild-sqlx /target
     END
     COPY local-environment/localenv_postgres.password .
     RUN --secret NODE_GIT_TOKEN \
@@ -1074,7 +1062,7 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN cargo install cargo-shear --version 1.6.6 --locked
+    RUN cargo shear --version
 
     # shear
     RUN --secret NODE_GIT_TOKEN with-git-creds cargo shear
@@ -1083,11 +1071,11 @@ check-deps:
 planner:
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-planner /target
     END
     RUN --secret NODE_GIT_TOKEN with-git-creds cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
@@ -1096,9 +1084,9 @@ check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
     # COPY +planner/recipe.json /recipe.json
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
     END
 
     # Build dependencies - this is the caching Docker layer!
@@ -1106,9 +1094,11 @@ check-rust-prepare:
 
 check-rust:
     FROM +check-rust-prepare
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-clippy /target
     END
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
@@ -1131,9 +1121,9 @@ check-rust:
 # the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
     FROM +check-rust-prepare
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
     END
     # Scope tooling deps in their own layer so workspace edits don't reinstall.
     COPY scripts/package.json scripts/package-lock.json scripts/
@@ -1187,11 +1177,11 @@ test:
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-test /target
     END
 
     # Test
@@ -1234,8 +1224,8 @@ test:
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
-    # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
-    # SAVE ARTIFACT --if-exists ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+    RUN cp /target/nextest/ci/test-results-node.xml /test-artifacts/core-junit.xml
+    SAVE ARTIFACT /test-artifacts/core-junit.xml AS LOCAL ./test-artifacts/core-junit.xml
 
 # Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
 # These tests do NOT require toolkit-js
@@ -1243,11 +1233,11 @@ test-pallet-fixtures:
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-test-pallet-fixtures /target
     END
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
@@ -1272,14 +1262,15 @@ test-pallet-fixtures:
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 build-test-toolkit:
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-build-test-toolkit /target
     END
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
@@ -1316,21 +1307,29 @@ build-test-toolkit:
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
-    # Run Midnight Node Toolkit package tests only (requires toolkit-js). The tests compile
-    # inside the container, so the private git dependencies are fetched there: +test-toolkit
-    # forwards NODE_GIT_TOKEN into `docker run` and with-git-creds turns it into a transient
-    # netrc for the duration of the run (never baked into the image).
+    # Archive outside /target so the binaries survive the compiler cache mount.
+    # with-git-creds removes credentials before the layer is saved.
+    RUN --secret NODE_GIT_TOKEN mkdir -p /opt && \
+        features="" && \
+        if [ "$RUN_COMPACT_CONTRACT_TESTS" = "true" ]; then features="--features compact-contract-tests"; fi && \
+        MIDNIGHT_LEDGER_EXPERIMENTAL=1 CARGO_BUILD_JOBS=$TOOLKIT_BUILD_JOBS with-git-creds cargo nextest archive \
+            --release --locked -p midnight-node-toolkit $features \
+            --archive-file /opt/toolkit-tests.tar.zst && \
+        if [ "$CI" = "true" ] && [ "$CI_CACHE" != "true" ]; then \
+            rm -rf /target /usr/local/cargo/registry /usr/local/cargo/git; \
+        fi
     COPY scripts/test-toolkit.sh /test-toolkit.sh
     ENTRYPOINT ["with-git-creds", "/test-toolkit.sh"]
     SAVE IMAGE
 
 test-toolkit:
     ARG NATIVEARCH
+    ARG CI_EXECUTION=""
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     # Optional: override the indexer e2e's indexer image (default in test-images.docker-compose.yml).
     ARG INDEXER_STANDALONE_IMAGE
-    ARG RUN_COMPACT_CONTRACT_TESTS
+    ARG RUN_COMPACT_CONTRACT_TESTS=false
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
 
@@ -1357,9 +1356,10 @@ test-toolkit:
     # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
-                --load test-toolkit:latest=+build-test-toolkit \
+                --load test-toolkit:latest=(+build-test-toolkit --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS) \
                 --pull $NODE_IMAGE
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1377,8 +1377,9 @@ test-toolkit:
                 rm -f /root/.docker/config.json
         END
     ELSE
-        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+        WITH DOCKER --load test-toolkit:latest=(+build-test-toolkit --RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS)
             RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                echo "CI execution: $CI_EXECUTION" && \
                 if [ -n "$DOCKERHUB_TOKEN" ] && \
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -1403,8 +1404,8 @@ build-prepare:
     FROM +prep-no-copy
     # TODO: re-enable when chef is improved.
     # COPY +planner/recipe.json /recipe.json
-    # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+    # CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
 
     ARG EARTHLY_GIT_SHORT_HASH
     ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
@@ -1421,14 +1422,12 @@ build:
     FROM +build-prepare
     ARG TARGETARCH
     # Caching is gated on CI (see top of file). Local builds (CI=false) mount the cargo
-    # registry/git caches and a per-branch-scoped /target dir so cargo's incremental
-    # fingerprinting can skip unchanged crates across runs. A CI build (CI=true) declares
-    # none of them and compiles from scratch.
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # registry/git caches and a scoped /target dir. CI requires CI_CACHE=true.
+    IF [ "$CI" != "true" ] || [ "$CI_CACHE" = "true" ]
+        CACHE --sharing shared --id cargo-git-${CACHE_KEY} /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg-${CACHE_KEY} /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH}-build /target
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
@@ -2289,3 +2288,6 @@ images:
     FROM scratch
     BUILD +node-image
     BUILD +toolkit-image
+
+prepare-toolkit-tests:
+    BUILD +build-test-toolkit

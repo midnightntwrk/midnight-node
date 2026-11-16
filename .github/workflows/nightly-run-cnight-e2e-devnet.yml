@@ -30,6 +30,8 @@ jobs:
     container:
       image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
     timeout-minutes: 480
+    env:
+      E2E_FAUCET_WORKERS: "16"
 
     steps:
       - name: Resolve runtime settings
@@ -65,7 +67,8 @@ jobs:
           apt-get install -y --no-install-recommends \
             protobuf-compiler \
             postgresql-client \
-            pkg-config
+            pkg-config \
+            python3-websocket
           rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
           protoc --version
 
@@ -105,6 +108,9 @@ jobs:
           fi
           echo "ogmios handshake OK; node $spec"
 
+      - name: Check faucet funding before compiling
+        run: python3 scripts/ci/faucet-preflight.py
+
       # --release: the toolkit's chain replay is compute-bound; the dev
       # profile is ~50× slower (see tests/e2e/README.md).
       # --test-threads 16: all observation tests must run concurrently;
@@ -117,11 +123,6 @@ jobs:
         env:
           RUST_BACKTRACE: "1"
           TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_DB_URL }}
-          # Right-size the faucet for --test-threads 16 (default is 4).
-          # With fewer workers than tests, parallel request_tokens calls
-          # queue, can push some seeds past the warmup quiescence window,
-          # and force those tests into their own full Preview replay.
-          E2E_FAUCET_WORKERS: "16"
           E2E_FEATURE: ${{ steps.vars.outputs.env }}
         run: |
           cargo test --release --test e2e_tests --no-default-features --features "$E2E_FEATURE" -- cnight::observation:: --no-capture --test-threads 16
