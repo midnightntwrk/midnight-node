@@ -102,7 +102,7 @@ use crate::boundary::types::{
 };
 
 #[cfg(feature = "std")]
-use {crate::boundary::types::split_tag, lazy_static::lazy_static, moka::sync::Cache};
+use {crate::boundary::types::split_tag, moka::sync::Cache};
 
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
@@ -193,29 +193,33 @@ impl TxValidationCacheOutcome {
 /// Set this high to ensure that even large mempool sizes don't cause performance issues due to
 /// unnecessary revalidation.
 #[cfg(feature = "std")]
-const TX_VALIDATION_CACHE_CAPACITY: u64 = 2000;
+pub const TX_VALIDATION_CACHE_CAPACITY: u64 = 2000;
+
+/// Receipts shared by apply_transaction, validate_transaction, and
+/// validate_guaranteed_execution.
+///
+/// A receipt records what `well_formed` proved about a transaction at a given state and
+/// timestamp — never a validity verdict. Nothing that happens to the transaction afterwards
+/// falsifies it, so nothing invalidates a receipt: it is evicted by capacity, or when its
+/// state can no longer be loaded. Every read re-runs `well_formed` against a
+/// `RevalidationReference`, which skips the stateless checks (proofs included) and repeats
+/// only those that depend on what changed; callers then dry-run applicability themselves.
+///
+/// Caching the verdict instead would be unsound: the same transaction is valid or not
+/// depending on the fork, the timestamp, and how much of the block is already built, and
+/// `pre_dispatch` reads this cache while *importing* blocks.
+///
+/// Rejected and already-applied transactions keep their receipts for the same reason — a
+/// rejection is a fact about a state, not about the transaction, and a reorg that returns the
+/// transaction to the pool then revalidates it instead of re-verifying it from scratch.
+#[cfg(feature = "std")]
+pub struct TxValidationCache(Cache<TxValidationKey, ProofReceipt>);
 
 #[cfg(feature = "std")]
-lazy_static! {
-	/// Receipts shared by apply_transaction, validate_transaction, and
-	/// validate_guaranteed_execution.
-	///
-	/// A receipt records what `well_formed` proved about a transaction at a given state and
-	/// timestamp — never a validity verdict. Nothing that happens to the transaction afterwards
-	/// falsifies it, so nothing invalidates a receipt: it is evicted by capacity, or when its
-	/// state can no longer be loaded. Every read re-runs `well_formed` against a
-	/// `RevalidationReference`, which skips the stateless checks (proofs included) and repeats
-	/// only those that depend on what changed; callers then dry-run applicability themselves.
-	///
-	/// Caching the verdict instead would be unsound: the same transaction is valid or not
-	/// depending on the fork, the timestamp, and how much of the block is already built, and
-	/// `pre_dispatch` reads this cache while *importing* blocks.
-	///
-	/// Rejected and already-applied transactions keep their receipts for the same reason — a
-	/// rejection is a fact about a state, not about the transaction, and a reorg that returns the
-	/// transaction to the pool then revalidates it instead of re-verifying it from scratch.
-	static ref TX_VALIDATION_CACHE: Cache<TxValidationKey, ProofReceipt> =
-		Cache::builder().max_capacity(TX_VALIDATION_CACHE_CAPACITY).build();
+impl TxValidationCache {
+	pub fn new(capacity: u64) -> Self {
+		Self(Cache::builder().max_capacity(capacity).build())
+	}
 }
 
 #[cfg(feature = "std")]
@@ -378,6 +382,7 @@ where
 		crate::utils::find_crate_version(CRATE_NAME).unwrap_or(b"unknown".into())
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -386,6 +391,7 @@ where
 		should_skip_failed_segments: bool,
 		runtime_version: u32,
 		skew_tblock: bool,
+		cache: &TxValidationCache,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_processing_time = Instant::now();
@@ -427,6 +433,7 @@ where
 			&block_context,
 			&cache_key,
 			skew_tblock,
+			cache,
 		)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -586,7 +593,7 @@ where
 			metrics.observe_txs_processing_time(elapsed_time, tx_type);
 			metrics.observe_txs_size(tx_size as f64, tx_type);
 			cache_outcome.record_cache_metrics(metrics);
-			metrics.set_tx_validation_cache_size("strict", TX_VALIDATION_CACHE.entry_count());
+			metrics.set_tx_validation_cache_size("strict", cache.0.entry_count());
 		}
 		log::trace!(
 			target: LOG_TARGET,
@@ -751,6 +758,7 @@ where
 		)
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	pub fn validate_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
@@ -760,6 +768,7 @@ where
 		// The runtime's max weight as of now
 		max_weight: u64,
 		get_tx_details: bool,
+		cache: &TxValidationCache,
 	) -> Result<(Hash, Option<TransactionDetails>), LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_tx_validation_time = Instant::now();
@@ -778,8 +787,14 @@ where
 
 		// No `tblock` correction on the mempool path: `validate_unsigned` already skews the
 		// block context it passes here by `slot_duration * (1 + MaxSkippedSlots)`.
-		let cache_outcome =
-			Self::do_validate_transaction(&ledger, state_key, &tx, &block_context, &cache_key)?;
+		let cache_outcome = Self::do_validate_transaction(
+			&ledger,
+			state_key,
+			&tx,
+			&block_context,
+			&cache_key,
+			cache,
+		)?;
 
 		let tx_details = if get_tx_details {
 			let tx_gas_cost =
@@ -796,7 +811,7 @@ where
 			let elapsed_time = start_tx_validation_time.elapsed().as_secs_f64();
 			metrics.observe_txs_validating_time(elapsed_time, tx_type, cache_outcome.label());
 			cache_outcome.record_cache_metrics(metrics);
-			metrics.set_tx_validation_cache_size("strict", TX_VALIDATION_CACHE.entry_count());
+			metrics.set_tx_validation_cache_size("strict", cache.0.entry_count());
 		}
 
 		Ok((cache_key.tx_hash, tx_details))
@@ -817,6 +832,7 @@ where
 		block_context: BlockContext,
 		runtime_version: u32,
 		skew_tblock: bool,
+		cache: &TxValidationCache,
 	) -> Result<(), LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
@@ -836,12 +852,13 @@ where
 			&block_context,
 			&cache_key,
 			skew_tblock,
+			cache,
 		)?;
 
 		// Write Prometheus metrics
 		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
 			cache_outcome.record_cache_metrics(metrics);
-			metrics.set_tx_validation_cache_size("strict", TX_VALIDATION_CACHE.entry_count());
+			metrics.set_tx_validation_cache_size("strict", cache.0.entry_count());
 		}
 
 		Ok(())
@@ -1354,11 +1371,20 @@ where
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		skew_tblock: bool,
+		cache: &TxValidationCache,
 	) -> Result<(VerifiedTransaction<D>, TxValidationCacheOutcome), LedgerApiError> {
 		let tblock = well_formed_tblock(ledger, block_context, skew_tblock);
 		let block_tblock = Timestamp::from_secs(block_context.tblock);
 		let at = |tblock| {
-			Self::get_verified_transaction_at(ledger, state_key, tx, block_context, key, tblock)
+			Self::get_verified_transaction_at(
+				ledger,
+				state_key,
+				tx,
+				block_context,
+				key,
+				tblock,
+				cache,
+			)
 		};
 		match at(tblock) {
 			// The producer verified at whichever tblock its cache held, so a historical first
@@ -1375,10 +1401,11 @@ where
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		tblock: Timestamp,
+		cache: &TxValidationCache,
 	) -> Result<(VerifiedTransaction<D>, TxValidationCacheOutcome), LedgerApiError> {
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		let prev = TX_VALIDATION_CACHE.get(key).and_then(|receipt| {
+		let prev = cache.0.get(key).and_then(|receipt| {
 			if receipt.state_key == state_key {
 				let outcome = if receipt.tblock == tblock {
 					TxValidationCacheOutcome::StrictCacheHit
@@ -1395,7 +1422,7 @@ where
 						"Evicting validation receipt for {}: its state is gone ({e:?})",
 						hex::encode(key.tx_hash),
 					);
-					TX_VALIDATION_CACHE.invalidate(key);
+					cache.0.invalidate(key);
 					None
 				},
 			}
@@ -1414,7 +1441,8 @@ where
 				TxValidationCacheOutcome::CacheMiss,
 			),
 		};
-		TX_VALIDATION_CACHE
+		cache
+			.0
 			.insert(key.clone(), ProofReceipt { state_key: state_key.to_vec(), tblock });
 		Ok((verified_tx, outcome))
 	}
@@ -1448,6 +1476,7 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		key: &TxValidationKey,
+		cache: &TxValidationCache,
 	) -> Result<TxValidationCacheOutcome, LedgerApiError> {
 		let tx_hash_hex = hex::encode(tx.hash());
 		let (verified_tx, cache_outcome) = match Self::get_verified_transaction(
@@ -1457,6 +1486,7 @@ where
 			block_context,
 			key,
 			false,
+			cache,
 		) {
 			Ok(vt) => vt,
 			Err(e) => {
@@ -1510,9 +1540,17 @@ where
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		skew_tblock: bool,
+		cache: &TxValidationCache,
 	) -> Result<TxValidationCacheOutcome, LedgerApiError> {
-		let (verified_tx, cache_outcome) =
-			Self::get_verified_transaction(ledger, state_key, tx, block_context, key, skew_tblock)?;
+		let (verified_tx, cache_outcome) = Self::get_verified_transaction(
+			ledger,
+			state_key,
+			tx,
+			block_context,
+			key,
+			skew_tblock,
+			cache,
+		)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
@@ -1822,6 +1860,7 @@ mod tests {
 			.tagged_deserialize::<Transaction<TransactionSignature, DefaultDB>>(MAINNET_1788980_TX)
 			.expect("fixture deserializes");
 		let ledger = Ledger::new(LedgerState::new("mainnet"));
+		let cache = TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY);
 		let verify = |tblock, skew_tblock| {
 			let bc = BlockContext { tblock, last_block_time: 1784643552, ..Default::default() };
 			let result = Bridge::<TransactionSignature, DefaultDB>::get_verified_transaction(
@@ -1831,6 +1870,7 @@ mod tests {
 				&bc,
 				&TxValidationKey { runtime_version: 0, tx_hash: [0u8; 32] },
 				skew_tblock,
+				&cache,
 			);
 			format!("{:?}", result.map(|_| ()))
 		};
@@ -2145,6 +2185,7 @@ mod tests {
 
 		let mut test_ext = sp_io::TestExternalities::default();
 		let mut ext = test_ext.ext();
+		let cache = TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY);
 
 		let validate = TestBridge::validate_transaction(
 			&mut ext,
@@ -2154,6 +2195,7 @@ mod tests {
 			1,
 			1,
 			false,
+			&cache,
 		)
 		.unwrap_err();
 		assert!(is_too_large(&validate), "validate_transaction returned {validate:?}");
@@ -2165,6 +2207,7 @@ mod tests {
 			BlockContext::default(),
 			1,
 			false,
+			&cache,
 		)
 		.unwrap_err();
 		assert!(is_too_large(&guaranteed), "validate_guaranteed_execution returned {guaranteed:?}");
@@ -2194,6 +2237,7 @@ mod tests {
 
 		let mut test_ext = sp_io::TestExternalities::default();
 		let mut ext = test_ext.ext();
+		let cache = TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY);
 
 		let validate = TestBridge::validate_transaction(
 			&mut ext,
@@ -2203,6 +2247,7 @@ mod tests {
 			1,
 			1,
 			false,
+			&cache,
 		)
 		.unwrap_err();
 		assert_ne!(validate, transaction_too_large());
@@ -2214,6 +2259,7 @@ mod tests {
 			BlockContext::default(),
 			1,
 			false,
+			&cache,
 		)
 		.unwrap_err();
 		assert_ne!(guaranteed, transaction_too_large());

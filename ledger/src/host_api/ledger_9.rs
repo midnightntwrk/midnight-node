@@ -12,7 +12,7 @@
 // limitations under the License.
 
 #[cfg(feature = "std")]
-use crate::ledger_9::Bridge;
+use crate::ledger_9::{Bridge, TX_VALIDATION_CACHE_CAPACITY, TxValidationCache};
 use crate::{
 	boundary::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
@@ -35,6 +35,10 @@ use {
 
 #[cfg(feature = "std")]
 type Signature = crate::ledger_9::TransactionSignature;
+
+#[cfg(feature = "std")]
+static TX_VALIDATION_CACHE: std::sync::LazyLock<TxValidationCache> =
+	std::sync::LazyLock::new(|| TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY));
 
 // `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against
 // `Storage<D>`'s TypeId. The two storage modes register storages with different
@@ -103,6 +107,7 @@ fn apply_transaction_inner(
 			net_intra_tx_utxos,
 			runtime_version,
 			/* skew_tblock */ false,
+			&TX_VALIDATION_CACHE,
 		)
 	)
 }
@@ -133,6 +138,7 @@ fn validate_transaction_inner(
 			max_weight,
 			/* get_tx_details */ false,
 			check_utxos,
+			&TX_VALIDATION_CACHE,
 		)
 	)
 	.map(|(hash, _)| hash)
@@ -160,6 +166,7 @@ fn validate_guaranteed_execution_inner(
 			runtime_version,
 			/* skew_tblock */ false,
 			check_utxos,
+			&TX_VALIDATION_CACHE,
 		)
 	)
 }
