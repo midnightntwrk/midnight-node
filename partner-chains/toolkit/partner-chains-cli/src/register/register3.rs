@@ -122,13 +122,20 @@ fn show_registration_status(
 		anyhow::anyhow!("Unexpected error: could not convert temp dir name into OsString")
 	})?;
 	let node_executable = context.current_executable()?;
-	let command = format!(
-		"{} registration-status --mainchain-pub-key {} --mc-epoch-number {} --chain chain-spec.json --base-path {temp_dir_path}",
-		node_executable,
-		stake_pool_public_key.to_hex_string(),
-		mc_epoch_number
-	);
-	let output = context.run_command(&command)?;
+	let output = context.run_command(
+		&node_executable,
+		&[
+			"registration-status",
+			"--mainchain-pub-key",
+			&stake_pool_public_key.to_hex_string(),
+			"--mc-epoch-number",
+			&mc_epoch_number.to_string(),
+			"--chain",
+			"chain-spec.json",
+			"--base-path",
+			&temp_dir_path,
+		],
+	)?;
 	context.print("Registration status:");
 	context.print(&output);
 	Ok(())
@@ -325,7 +332,18 @@ mod tests {
 			MockIO::print("Registrations status for epoch 25:"),
 			MockIO::new_tmp_dir(),
 			MockIO::run_command(
-				"<mock executable> registration-status --mainchain-pub-key 0xcef2d1630c034d3b9034eb7903d61f419a3074a1ad01d4550cc72f2b733de6e7 --mc-epoch-number 25 --chain chain-spec.json --base-path /tmp/MockIOContext_tmp_dir",
+				&[
+					"<mock executable>",
+					"registration-status",
+					"--mainchain-pub-key",
+					"0xcef2d1630c034d3b9034eb7903d61f419a3074a1ad01d4550cc72f2b733de6e7",
+					"--mc-epoch-number",
+					"25",
+					"--chain",
+					"chain-spec.json",
+					"--base-path",
+					"/tmp/MockIOContext_tmp_dir",
+				],
 				"{\"epoch\":1,\"validators\":[{\"public_key\":\"cef2d1630c034d3b9034eb7903d61f419a3074a1ad01d4550cc72f2b733de6e7\",\"status\":\"Registered\"}]}",
 			),
 			MockIO::print("Registration status:"),

@@ -43,8 +43,7 @@ sp-partner-chains-bridge = { workspace = true, optional = true, features = ["std
 
 [dev-dependencies]
 tokio-test = "0.4.3"
-ctor = "0.5.0"
-testcontainers-modules = { version = "0.15", features = ["blocking", "postgres"] }
+testcontainers = { workspace = true, features = ["watchdog"] }
 pretty_assertions = { workspace = true }
 
 [features]

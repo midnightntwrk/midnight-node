@@ -35,8 +35,8 @@ pub use frame_support::{
 	parameter_types, storage,
 	traits::{
 		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EitherOfDiverse,
-		EqualPrivilegeOnly, InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing,
-		Randomness, StorageInfo,
+		EqualPrivilegeOnly, InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Randomness,
+		StorageInfo,
 	},
 	weights::{
 		IdentityFee, Weight,
@@ -300,7 +300,7 @@ macro_rules! runtime_version {
 			// The version of the runtime specification. A full node will not attempt to use its native
 			//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 			//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-			spec_version: 004_000_000,
+			spec_version: 003_000_000,
 			impl_version: 0,
 			apis: RUNTIME_API_VERSIONS,
 			transaction_version: 4,
@@ -736,7 +736,8 @@ impl pallet_tx_pause::Config for Runtime {
 	type RuntimeCall = RuntimeCall;
 	type PauseOrigin = EnsureRoot<AccountId>;
 	type UnpauseOrigin = EnsureRoot<AccountId>;
-	type WhitelistedCalls = Nothing;
+	// Inherents are required in every block, so they cannot be paused.
+	type WhitelistedCalls = check_call_filter::InherentCalls;
 	type MaxNameLen = ConstU32<256>;
 	type WeightInfo = weights::pallet_tx_pause::WeightInfo<Runtime>;
 }

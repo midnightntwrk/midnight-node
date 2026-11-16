@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use midnight_primitives_ledger::{
-	LedgerEphemeralExt, LedgerMetrics, LedgerMetricsExt, LedgerOnchainExt, LedgerStorage,
-	LedgerStorageExt,
+	LedgerEphemeralExt, LedgerMetrics, LedgerMetricsExt, LedgerOnchainExt, LedgerStatesExt,
+	LedgerStorage, LedgerStorageExt,
 };
 use sc_client_api::execution_extensions::ExtensionsFactory as ExtensionsFactoryT;
 use sc_executor::RuntimeVersionOf;
@@ -56,6 +56,7 @@ where
 		exts.register(LedgerMetricsExt::new(self.ledger_metrics.clone()));
 		exts.register(LedgerStorageExt::new(self.ledger_storage.clone()));
 		exts.register(LedgerEphemeralExt::default());
+		exts.register(LedgerStatesExt::default());
 
 		exts
 	}

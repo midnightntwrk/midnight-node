@@ -268,6 +268,7 @@ mod tests {
 				network: "undeployed".to_string(),
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -324,6 +325,7 @@ mod tests {
 				network: "undeployed".to_string(),
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -369,6 +371,7 @@ mod tests {
 				network: "undeployed".to_string(),
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,

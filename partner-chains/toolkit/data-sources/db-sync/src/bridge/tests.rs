@@ -191,13 +191,15 @@ macro_rules! with_migration_versions_and_caching {
 				#[allow(unused_imports)]
 				use pretty_assertions::assert_eq;
 
-				#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-enabled")]
-				async fn tx_in_enabled(pool: PgPool) {
+				#[tokio::test]
+				async fn tx_in_enabled() {
+					let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-enabled").await;
 					$name(&create_data_source(pool)).await
 				}
 
-				#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
-				async fn tx_in_consumed(pool: PgPool) {
+				#[tokio::test]
+				async fn tx_in_consumed() {
+					let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-consumed").await;
 					$name(&create_data_source(pool)).await
 				}
 			}
@@ -205,13 +207,15 @@ macro_rules! with_migration_versions_and_caching {
 			mod cached {
 				use super::*;
 
-				#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-enabled")]
-				async fn tx_in_enabled(pool: PgPool) {
+				#[tokio::test]
+				async fn tx_in_enabled() {
+					let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-enabled").await;
 					$name(&create_cached_source(pool)).await
 				}
 
-				#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
-				async fn tx_in_consumed(pool: PgPool) {
+				#[tokio::test]
+				async fn tx_in_consumed() {
+					let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-consumed").await;
 					$name(&create_cached_source(pool)).await
 				}
 			}
