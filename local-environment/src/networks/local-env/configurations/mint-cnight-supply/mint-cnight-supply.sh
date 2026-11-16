@@ -97,9 +97,10 @@ SEED_TX_ID=""
 for attempt in {1..15}; do
   cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
     --address "$FAUCET_ADDR" --output-text > /tmp/faucet_utxos.txt || true
-  # Pick the two largest pure-ADA UTxOs: "<hash> <ix> <n> lovelace + TxOutDatumNone" (NF==6).
+  # Pick the two largest pure-ADA UTxOs: "<hash> <ix> <n> lovelace + <no-datum>" (NF==6).
+  # cardano-cli >= 11.6 prints "NoDatum"; older versions print "TxOutDatumNone".
   read -r TX_IN COLLATERAL < <(/shared/busybox awk '
-    NR>2 && $4=="lovelace" && $6=="TxOutDatumNone" {
+    NR>2 && NF==6 && $4=="lovelace" && ($6=="NoDatum" || $6=="TxOutDatumNone") {
       v=$3+0; ref=$1"#"$2;
       if (v>m1) { m2=m1; u2=u1; m1=v; u1=ref }
       else if (v>m2) { m2=v; u2=ref }
@@ -214,7 +215,6 @@ cardano-cli latest transaction build \
   --testnet-magic "$NETWORK_MAGIC" \
   --tx-in "$SEED_TX_ID#2" \
   --tx-in "$SEED_TX_ID#3" \
-  --tx-in-collateral "$SEED_TX_ID#3" \
   --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_TRANSFER_STARS $POLICY_ID" \
   --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
   --metadata-json-file /tmp/faucet-bridge-metadata.json \
