@@ -198,20 +198,17 @@ pub const TX_VALIDATION_CACHE_CAPACITY: u64 = 2000;
 /// Receipts shared by apply_transaction, validate_transaction, and
 /// validate_guaranteed_execution.
 ///
-/// A receipt records what `well_formed` proved about a transaction at a given state and
-/// timestamp — never a validity verdict. Nothing that happens to the transaction afterwards
-/// falsifies it, so nothing invalidates a receipt: it is evicted by capacity, or when its
-/// state can no longer be loaded. Every read re-runs `well_formed` against a
+/// A receipt records that a transaction passed `well_formed` at a given state and timestamp.
+/// It says nothing about whether the transaction applies: callers dry-run that every time,
+/// because it depends on the fork, the timestamp, and how much of the block is already built,
+/// and `pre_dispatch` reads this cache while *importing* blocks.
+///
+/// A later rejection doesn't make a receipt false, so nothing invalidates one: it is evicted by
+/// capacity, or when its state can no longer be loaded. Rejected and already-applied
+/// transactions keep their receipts, so a reorg that returns one to the pool revalidates it
+/// instead of re-verifying its proofs. Every read re-runs `well_formed` against a
 /// `RevalidationReference`, which skips the stateless checks (proofs included) and repeats
-/// only those that depend on what changed; callers then dry-run applicability themselves.
-///
-/// Caching the verdict instead would be unsound: the same transaction is valid or not
-/// depending on the fork, the timestamp, and how much of the block is already built, and
-/// `pre_dispatch` reads this cache while *importing* blocks.
-///
-/// Rejected and already-applied transactions keep their receipts for the same reason — a
-/// rejection is a fact about a state, not about the transaction, and a reorg that returns the
-/// transaction to the pool then revalidates it instead of re-verifying it from scratch.
+/// only those that depend on what changed.
 #[cfg(feature = "std")]
 pub struct TxValidationCache(Cache<TxValidationKey, ProofReceipt>);
 
