@@ -616,6 +616,85 @@ fn babe_accepts_babe_only_block_with_unrelated_digest() {
 	});
 }
 
+// --- `Babe`: exactly one BABE pre-digest, decoding exactly ---
+
+#[test]
+fn babe_accepts_each_babe_pre_digest_variant() {
+	for digest in
+		[babe_pre_digest(1500), babe_primary_pre_digest(1500), babe_secondary_vrf_pre_digest(1500)]
+	{
+		new_test_ext().execute_with(|| {
+			put_engine_state(State::Babe);
+			start_block_with_logs(vec![digest, unrelated_pre_digest()]);
+			on_initialize();
+			assert_eq!(EngineState::<Test>::get(), State::Babe);
+		});
+	}
+}
+
+#[test]
+#[should_panic(
+	expected = "exactly one well-formed BABE pre-runtime digest required in state 'Babe'"
+)]
+fn babe_rejects_block_without_babe_pre_digest() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::Babe);
+		start_block_with_logs(vec![unrelated_pre_digest()]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(
+	expected = "exactly one well-formed BABE pre-runtime digest required in state 'Babe'"
+)]
+fn babe_rejects_babe_pre_digest_with_trailing_bytes_before_a_valid_one() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::Babe);
+		start_block_with_logs(vec![
+			babe_pre_digest_with_trailing_bytes(1500),
+			babe_pre_digest(1500),
+		]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(
+	expected = "exactly one well-formed BABE pre-runtime digest required in state 'Babe'"
+)]
+fn babe_rejects_duplicate_babe_pre_digest() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::Babe);
+		start_block_with_logs(vec![babe_pre_digest(1500), babe_primary_pre_digest(1500)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(
+	expected = "exactly one well-formed BABE pre-runtime digest required in state 'Babe'"
+)]
+fn babe_rejects_single_babe_pre_digest_with_trailing_bytes() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::Babe);
+		start_block_with_logs(vec![babe_pre_digest_with_trailing_bytes(1500)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(
+	expected = "exactly one well-formed BABE pre-runtime digest required in state 'Babe'"
+)]
+fn babe_rejects_undecodable_babe_pre_digest_beside_a_valid_one() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::Babe);
+		start_block_with_logs(vec![babe_pre_digest(1500), undecodable_babe_pre_digest()]);
+		on_initialize();
+	});
+}
+
 // --- malformed payloads: presence is keyed on the engine id, not on decoding ---
 //
 // `as_babe_pre_digest`/`as_aura_pre_digest` decode with `DecodeAll`, so they return
