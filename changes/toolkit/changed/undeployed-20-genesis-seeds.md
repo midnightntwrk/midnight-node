@@ -10,5 +10,5 @@ genesis instead of its own.
 
 Supersedes #1521.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2412
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1345
