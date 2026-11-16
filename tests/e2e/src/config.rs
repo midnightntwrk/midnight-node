@@ -44,6 +44,29 @@ fn plutus_path() -> String {
     p
 }
 
+// System parameters (D-parameter, T&C) the network under test was started with.
+// `SYSTEM_PARAMETERS_CONFIG` overrides it when the chain came from another
+// checkout's config, e.g. this suite run against a newer local-env.
+pub fn system_parameters_config_path() -> String {
+    if let Ok(path) = std::env::var("SYSTEM_PARAMETERS_CONFIG") {
+        return path;
+    }
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
+    let network = "local";
+    #[cfg(all(
+        feature = "qanet",
+        not(any(feature = "local", feature = "local-dev", feature = "local-ci"))
+    ))]
+    let network = "qanet";
+    #[cfg(all(
+        feature = "devnet",
+        not(any(feature = "local", feature = "local-dev", feature = "local-ci"))
+    ))]
+    let network = "devnet";
+    format!("{manifest_dir}/../../res/{network}/system-parameters-config.json")
+}
+
 #[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
 fn submodule_network() -> &'static str {
     #[cfg(feature = "qanet")]

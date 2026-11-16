@@ -215,7 +215,8 @@ async fn get_ariadne_parameters_returns_valid_structure() {
 /// TC-PC-003: Verify D-Parameter from pallet matches expected configuration.
 ///
 /// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
-/// In local environment, it's configured as (4, 1) - 4 permissioned, 1 registered.
+/// The expected value is read from the network's `system-parameters-config.json`
+/// (see `config::system_parameters_config_path`).
 #[e2e_test]
 async fn d_parameter_from_pallet_matches_config() {
     tracing::info!("=== TC-PC-003: D-Parameter Pallet Integration ===");
@@ -258,15 +259,25 @@ async fn d_parameter_from_pallet_matches_config() {
         "D-Parameter registered count should match between endpoints"
     );
 
-    // Local environment configures D-Parameter as (3, 0)
-    // 3 permissioned (Alice, Bob, Charlie) from qanet config
+    let path = config::system_parameters_config_path();
+    let cfg: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}")),
+    )
+    .unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"));
+    let expected = |field: &str| {
+        cfg["d_parameter"][field]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{path} has no d_parameter.{field}"))
+    };
     assert_eq!(
-        d_param.num_permissioned_candidates, 3,
-        "Permissioned count should match system-parameters config (expected 3)"
+        u64::from(d_param.num_permissioned_candidates),
+        expected("num_permissioned_candidates"),
+        "Permissioned count should match {path}"
     );
     assert_eq!(
-        d_param.num_registered_candidates, 0,
-        "Registered count should match system-parameters config (expected 0)"
+        u64::from(d_param.num_registered_candidates),
+        expected("num_registered_candidates"),
+        "Registered count should match {path}"
     );
 
     tracing::info!("✓ D-Parameter correctly sourced from pallet-system-parameters");
