@@ -39,7 +39,14 @@ use sp_runtime::{
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
 };
+use std::sync::atomic::{AtomicU32, Ordering};
 use test_log::test;
+
+static NEXT_SPEC_VERSION: AtomicU32 = AtomicU32::new(1_000_000);
+
+fn unique_spec_version() -> u32 {
+	NEXT_SPEC_VERSION.fetch_add(1, Ordering::Relaxed)
+}
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
@@ -53,6 +60,13 @@ fn init_ledger_state(block_context: BlockContext) {
 	mock::Midnight::initialize_state(UndeployedNetwork.id(), &state_key);
 	mock::System::set_block_number(1);
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
+}
+
+fn init_deploy_call() -> MidnightCall<Test> {
+	let (tx, block_context) =
+		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	init_ledger_state(block_context.into());
+	MidnightCall::send_mn_transaction { midnight_tx: tx }
 }
 
 fn process_block(block_number: u64, block_context: BlockContext) {
@@ -83,11 +97,10 @@ fn send_mn_transaction(tx: Vec<u8>) -> sp_runtime::DispatchResult {
 
 /// A block timestamp shortly after `block_context`'s, distinct on every call.
 ///
-/// The strict transaction-validation cache is a process-global static keyed by
-/// `(ledger state hash, tx hash, block timestamp)`, and every `tblock_correction` test below
-/// validates the same fixture against the same genesis state. Handing out a distinct block
-/// timestamp per assertion keeps them from serving each other's cached `well_formed` results —
-/// which would make an assertion pass without ever running the code it is testing. The
+/// The transaction-validation cache is a process-global static, and every `tblock_correction`
+/// test below validates the same fixture against the same genesis state. A strict hit needs the
+/// same state *and* timestamp, so handing out a distinct block timestamp per assertion forces at
+/// least a revalidation, which re-runs the time-dependent checks these tests exercise. The
 /// timestamps stay well inside the fixture's validity window.
 fn uncached_block_ts(block_context: &BlockContext) -> u64 {
 	static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(101);
@@ -205,17 +218,10 @@ fn test_get_unclaimed_amount_beneficiary_not_found() {
 
 #[test]
 fn test_validation_works() {
-	let (tx, block_context) =
-		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
-
-	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
-		init_ledger_state(block_context.into());
+		let call = init_deploy_call();
 
-		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
-			TransactionSource::External,
-			&call
-		));
+		assert_validate_unsigned_ok(&call);
 	})
 }
 
@@ -241,14 +247,9 @@ fn test_validation_fails() {
 
 #[test]
 fn test_pre_dispatch_accepts_valid_transaction() {
-	let (tx, block_context) =
-		midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
-
-	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
-		init_ledger_state(block_context.into());
+		let call = init_deploy_call();
 
-		// pre_dispatch should succeed for a valid transaction
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
 	})
 }
@@ -589,6 +590,233 @@ fn test_tblock_correction_does_not_affect_mempool_validation() {
 			TransactionSource::External,
 			&call
 		));
+	});
+}
+
+#[test]
+fn test_validation_cache_strict_hit() {
+	with_cache_test_env(|metrics| {
+		let call = init_deploy_call();
+
+		// miss
+		assert_validate_unsigned_ok(&call);
+
+		// strict
+		assert_validate_unsigned_ok(&call);
+
+		assert_cache_metrics(metrics, 1, 1, 0);
+
+		// Revalidation, not a strict hit: `validate_unsigned` skews its block context by
+		// `slot_duration * (1 + MaxSkippedSlots)` while `pre_dispatch` uses the block's own
+		// timestamp, so the cached entry was verified at a different tblock. Serving it as a
+		// strict hit is what let a transaction enter a block having only ever been checked
+		// against a future timestamp — see
+		// <https://github.com/midnightntwrk/midnight-node/issues/1924>. Revalidating re-runs the
+		// intent-TTL and dust-validity-window checks at the real tblock without redoing the ZK
+		// work.
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
+
+		assert_cache_metrics(metrics, 1, 1, 1);
+	});
+}
+
+/// Tests RevalidationHit: validate a transaction, change state via a system transaction,
+/// then revalidate — the cache detects stale state and uses RevalidationReference
+#[test]
+fn test_validation_cache_revalidation_hit() {
+	with_cache_test_env(|metrics| {
+		let (deploy_tx, block_context_deploy) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context_deploy.clone().into());
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: deploy_tx };
+
+		// miss
+		assert_validate_unsigned_ok(&call);
+
+		change_state_hash(block_context_deploy.clone().into());
+
+		// revalidate
+		assert_validate_unsigned_ok(&call);
+
+		change_state_hash(block_context_deploy.clone().into());
+
+		// revalidate
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
+
+		change_state_hash(block_context_deploy.into());
+
+		// revalidate
+		assert_validate_unsigned_ok(&call);
+
+		assert_cache_metrics(metrics, 1, 0, 3);
+	});
+}
+
+/// A revalidation hit must not short-circuit the guaranteed-execution dry-run.
+///
+/// `well_formed` never checks applicability — no double-spend, balance or dust-fee check, that is
+/// `apply_guaranteed_only`'s job — and `RevalidationReference` skips the stateless checks
+/// outright. So a transaction the last block already consumed still revalidates clean; only the
+/// dry-run notices. Without it the transaction survives in the pool, keeps being gossiped, and
+/// dies only at the producing node's `pre_dispatch`.
+#[test]
+fn test_revalidation_hit_still_dry_runs_guaranteed_execution() {
+	with_cache_test_env(|_metrics| {
+		let (deploy_tx, block_context_deploy) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context_deploy.into());
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: deploy_tx.clone() };
+
+		// miss — the transaction enters the pool
+		assert_validate_unsigned_ok(&call);
+
+		// A block applies it, consuming what its guaranteed segment spends.
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
+
+		// The state moved, so this is a revalidation hit — and it must be rejected.
+		assert!(
+			<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+				TransactionSource::External,
+				&call
+			)
+			.is_err(),
+			"an applied transaction must not survive revalidation in the pool"
+		);
+	});
+}
+
+/// A strict hit must not short-circuit the dry-run either: the cache entry is written before the
+/// dry-run, so a rejected transaction resubmitted at the same state and tblock hits it strictly.
+#[test]
+fn test_strict_hit_still_dry_runs_guaranteed_execution() {
+	with_cache_test_env(|_metrics| {
+		let (deploy_tx, block_context_deploy) =
+			midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context_deploy.into());
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: deploy_tx.clone() };
+		let validate = || {
+			<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+				TransactionSource::External,
+				&call,
+			)
+		};
+
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
+		assert!(validate().is_err(), "an applied transaction must be rejected");
+		assert!(validate().is_err(), "a rejected transaction must stay rejected on resubmission");
+	});
+}
+
+#[test]
+fn test_validation_cache_miss_after_runtime_version_change() {
+	with_cache_test_env(|metrics| {
+		let call = init_deploy_call();
+
+		// Populate cache under version A
+		assert_validate_unsigned_ok(&call);
+
+		// Bump runtime version — cache key changes
+		mock::TestSpecVersion::set(unique_spec_version());
+
+		// Same tx bytes, different runtime version → cache miss (not strict hit)
+		assert_validate_unsigned_ok(&call);
+
+		assert_cache_metrics(metrics, 2, 0, 0);
+	});
+}
+
+#[test]
+fn test_full_lifecycle_with_state_change() {
+	with_cache_test_env(|metrics| {
+		let (deploy_tx, block_context_deploy) =
+			midnight_ledger_unsafe_helpers::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context_deploy.clone().into());
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: deploy_tx.clone() };
+
+		// Step 1: Transaction enters mempool — full validation (cache miss)
+		assert_validate_unsigned_ok(&call);
+
+		change_state_hash(block_context_deploy.into());
+
+		// Step 2: Block author picks transaction — revalidation (stale cache)
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
+
+		// Step 3: Transaction applied to block — strict hit (cache updated by pre_dispatch)
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
+
+		assert_cache_metrics(metrics, 1, 1, 1);
+	});
+}
+
+/// Applies a system transaction that only modifies accounting fields (reserve_pool,
+/// block_reward_pool), changing state_hash(). This enables testing the RevalidationHit path.
+fn change_state_hash(block_context: BlockContext) {
+	use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
+
+	let sys_tx = midnight_ledger_unsafe_helpers::SystemTransaction::DistributeReserve { amount: 1 };
+	let serialized =
+		midnight_ledger_unsafe_helpers::serialize(&sys_tx).expect("system tx serialization");
+
+	let state_key: Vec<u8> = StateKey::<Test>::get();
+	let runtime_version = mock::TestSpecVersion::get();
+	let result = LedgerApi::apply_system_transaction(
+		&state_key,
+		&serialized,
+		block_context,
+		runtime_version,
+	)
+	.expect("system tx apply");
+
+	let new_key: frame_support::BoundedVec<_, super::StateKeyLength> =
+		result.state_root.try_into().expect("state key size");
+	StateKey::<Test>::put(new_key);
+}
+
+fn assert_cache_metrics(
+	handle: &mock::MetricsHandle,
+	expected_miss: u64,
+	expected_strict: u64,
+	expected_reval: u64,
+) {
+	let guard = handle.lock().unwrap();
+	let m = guard.as_ref().unwrap();
+	assert_eq!(
+		m.tx_validation_cache_misses.with_label_values(&[]).get(),
+		expected_miss,
+		"unexpected cache miss count"
+	);
+	assert_eq!(
+		m.tx_validation_cache_hits.with_label_values(&["strict"]).get(),
+		expected_strict,
+		"unexpected strict hit count"
+	);
+	assert_eq!(
+		m.tx_validation_cache_hits.with_label_values(&["revalidation"]).get(),
+		expected_reval,
+		"unexpected revalidation hit count"
+	);
+}
+
+fn assert_validate_unsigned_ok(call: &Call<Test>) {
+	assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+		TransactionSource::External,
+		call
+	));
+}
+
+fn with_cache_test_env(f: impl FnOnce(&mock::MetricsHandle)) {
+	let (mut ext, metrics) = mock::new_test_ext_with_metrics();
+	ext.execute_with(|| {
+		mock::TestSpecVersion::set(unique_spec_version());
+		f(&metrics);
 	});
 }
 
