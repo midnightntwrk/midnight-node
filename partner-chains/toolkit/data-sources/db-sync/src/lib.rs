@@ -202,9 +202,10 @@ pub(crate) mod test_db {
 			.start()
 			.await
 			.expect("failed to start postgres container");
+		// `get_host` returns "localhost", which can resolve to ::1, where Docker may publish
+		// 5432 on a different port than the IPv4 one read here.
 		let url = format!(
-			"postgres://postgres@{}:{}/postgres",
-			container.get_host().await.unwrap(),
+			"postgres://postgres@127.0.0.1:{}/postgres",
 			container.get_host_port_ipv4(5432).await.unwrap()
 		);
 		let pool = PgPool::connect(&url).await.unwrap();
