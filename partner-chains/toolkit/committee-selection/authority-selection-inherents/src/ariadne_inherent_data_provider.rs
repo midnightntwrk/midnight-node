@@ -261,6 +261,30 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn error_if_epoch_nonce_not_found() {
+		use crate::ariadne_inherent_data_provider::InherentProviderCreationError::InputsCreationError;
+		use crate::authority_selection_inputs::AuthoritySelectionInputsCreationError::EpochNonceNotFound;
+
+		let next_unset_epoch_number = ScEpochNumber(42);
+		let mc_reference_epoch = McEpochNumber(5);
+		let ariadne_idp = AriadneInherentDataProvider::new(
+			&client(next_unset_epoch_number),
+			&sc_slot_config(),
+			&epoch_config(),
+			H256::zero(),
+			// This is the slot that will be used to calculate current_epoch_number
+			Slot::from(400u64),
+			&MockAuthoritySelectionDataSource::default()
+				.with_permissioned_candidates(vec![Some(vec![]); 5])
+				.with_epoch_nonce(None),
+			mc_reference_epoch,
+		)
+		.await;
+
+		assert!(matches!(ariadne_idp, Err(InputsCreationError(EpochNonceNotFound(_)))));
+	}
+
+	#[tokio::test]
 	async fn ok_if_num_permissioned_candidates_zero_and_no_permissioned_candidate_list() {
 		let next_unset_epoch_number = ScEpochNumber(42);
 		let mc_reference_epoch = McEpochNumber(5);
