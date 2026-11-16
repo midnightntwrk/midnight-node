@@ -327,17 +327,10 @@ rebuild-genesis-state:
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # wallet-seed-3 is the wallet Lace uses for testing.
-    # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel
-    RUN if [ "${NETWORK}" = "undeployed" ]; then \
-            mkdir -p /secrets/; \
-            echo '{ \
-                "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001", \
-                "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002", \
-                "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003", \
-                "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9" \
-            }' > /secrets/genesis-seeds.json; \
-        fi
+    # wallet-seed-3 is the Lace test wallet, derived from the mnemonic "abandon" x23 + "diesel".
+    IF [ "${NETWORK}" = "undeployed" ]
+        COPY res/dev/undeployed-genesis-seeds.json /secrets/genesis-seeds.json
+    END
 
     RUN mkdir -p /res/genesis
     # Generate genesis with or without faucet wallet funding
@@ -517,7 +510,6 @@ rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
         --NETWORK=undeployed \
         --GENERATE_TEST_TXS=true
-    BUILD +rebuild-toolkit-test-genesis
 
 # rebuild-genesis-state-local rebuilds the genesis ledger state for the local network (local-environment).
 # The local network does not fund any faucet wallets at genesis - wallets are funded at runtime via the
@@ -568,19 +560,6 @@ rebuild-genesis-state-perfnet:
 rebuild-genesis-state-stagenet:
     BUILD +rebuild-genesis-state \
         --NETWORK=stagenet
-
-# rebuild-toolkit-test-genesis rebuilds the genesis that toolkit_e2e's shared node boots from: the
-# dev configs plus one funded wallet per seed in util/toolkit/test-data/genesis/toolkit-test/seeds.json.
-# The tests build their chain spec from it at run time, so no chainspec update is needed afterwards.
-rebuild-toolkit-test-genesis:
-    # Override with a pre-built registry image to skip rebuilding
-    ARG TOOLKIT_IMAGE=+toolkit-image
-    FROM ${TOOLKIT_IMAGE}
-    USER root
-    COPY util/toolkit/test-data/genesis/toolkit-test/seeds.json /seeds.json
-    DO +GENERATE_GENESIS --NETWORK=undeployed --SEEDS_FILE=/seeds.json
-    SAVE ARTIFACT out/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/toolkit-test/
-    SAVE ARTIFACT out/genesis_block_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/toolkit-test/
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
