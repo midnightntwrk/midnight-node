@@ -34,58 +34,33 @@ use std::{
 };
 use testcontainers::{
 	GenericImage, ImageExt,
-	core::{ContainerPort, WaitFor, wait::ExitWaitStrategy},
+	core::{ContainerPort, WaitFor},
 	runners::AsyncRunner,
 };
 use tokio::sync::OnceCell;
 
-/// Genesis of the shared node: the dev configs plus one funded wallet per seed in `seeds.json`.
-/// Rebuild with `earthly -P +rebuild-toolkit-test-genesis`.
-const GENESIS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/genesis/toolkit-test");
+const DEV_SEEDS_FILE: &str = "res/dev/undeployed-genesis-seeds.json";
 
-/// A genesis-funded seed no other test in this process has been given. Seeds are never handed
-/// out twice, because a test may change its seed's DUST registration.
+/// A dev-genesis-funded seed unique to the caller, since a test may change its seed's DUST
+/// registration. Each caller needs its own entry in `DEV_SEEDS_FILE`.
 fn funded_seed() -> String {
 	static SEEDS: LazyLock<Vec<String>> = LazyLock::new(|| {
 		let seeds: BTreeMap<String, String> = serde_json::from_str(include_str!(concat!(
 			env!("CARGO_MANIFEST_DIR"),
-			"/test-data/genesis/toolkit-test/seeds.json"
+			"/../../res/dev/undeployed-genesis-seeds.json"
 		)))
-		.expect("invalid toolkit-test seeds.json");
+		.expect("invalid dev genesis seeds file");
 		seeds.into_values().collect()
 	});
 	static NEXT: AtomicUsize = AtomicUsize::new(0);
 	let i = NEXT.fetch_add(1, Ordering::Relaxed);
 	SEEDS.get(i).cloned().unwrap_or_else(|| {
 		panic!(
-			"all {} toolkit-test genesis seeds are taken: add seeds to {GENESIS_DIR}/seeds.json \
-			 and run `earthly -P +rebuild-toolkit-test-genesis`",
+			"all {} dev genesis seeds are taken: add seeds to {DEV_SEEDS_FILE} and run \
+			 `earthly -P +rebuild-genesis-state-undeployed`",
 			SEEDS.len()
 		)
 	})
-}
-
-/// A dev chain spec on the toolkit-test genesis, built by the node under test so it carries
-/// that node's runtime. `build-spec` without `--chain` reads genesis from CHAINSPEC_GENESIS_*;
-/// a running `--dev` node would use its compiled-in genesis instead.
-async fn toolkit_test_chainspec() -> Vec<u8> {
-	let genesis = |file: &str| {
-		std::fs::read(format!("{GENESIS_DIR}/{file}"))
-			.unwrap_or_else(|e| panic!("failed to read {GENESIS_DIR}/{file}: {e}"))
-	};
-	let (name, tag) = test_image("midnight-node");
-	let container = GenericImage::new(name, tag)
-		.with_wait_for(WaitFor::exit(ExitWaitStrategy::new().with_exit_code(0)))
-		.with_env_var("CFG_PRESET", "dev")
-		.with_env_var("CHAINSPEC_GENESIS_STATE", "/genesis/genesis_state.mn")
-		.with_env_var("CHAINSPEC_GENESIS_BLOCK", "/genesis/genesis_block.mn")
-		.with_copy_to("/genesis/genesis_state.mn", genesis("genesis_state_undeployed.mn"))
-		.with_copy_to("/genesis/genesis_block.mn", genesis("genesis_block_undeployed.mn"))
-		.with_cmd(["build-spec"])
-		.start()
-		.await
-		.expect("build-spec failed");
-	container.stdout_to_vec().await.expect("failed to read build-spec output")
 }
 
 struct SharedNode {
@@ -106,14 +81,11 @@ async fn node_ws_url() -> &'static str {
 		.try_init();
 	&NODE
 		.get_or_init(|| async {
-			let chainspec = toolkit_test_chainspec().await;
 			let (name, tag) = test_image("midnight-node");
 			let container = GenericImage::new(name, tag)
 				.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 				.with_exposed_port(ContainerPort::Tcp(9944))
 				.with_env_var("CFG_PRESET", "dev")
-				.with_env_var("CHAIN", "/chainspec/chainspec.json")
-				.with_copy_to("/chainspec/chainspec.json", chainspec)
 				// Each toolkit command opens its own RPC client, outrunning the default cap of 100.
 				.with_env_var("APPEND_ARGS", "--rpc-max-connections 1000")
 				.start()
