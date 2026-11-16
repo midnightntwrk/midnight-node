@@ -503,8 +503,11 @@ with_migration_versions_and_caching! {
 	}
 }
 
-// 2022-04-21T17:36:10Z, the time of the latest block in both block fixtures.
+// 2022-04-21T17:36:10Z, the time of the latest block in the block fixture.
 const LATEST_BLOCK_TIME_MILLIS: u64 = 1650562570000;
+
+// 2022-04-21T17:52:50Z, the time of the latest block in the bridge fixture.
+const BRIDGE_LATEST_BLOCK_TIME_MILLIS: u64 = 1650563570000;
 
 fn blocks_source(
 	pool: PgPool,
@@ -564,8 +567,9 @@ fn block_5_hash() -> McBlockHash {
 
 // The latest block is 5. With security parameter 2 and stability window [5000s, 1667s] before
 // the current time, the stable tip is block 3.
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn cache_resolves_latest_stable_block_from_current_time(pool: PgPool) {
+#[tokio::test]
+async fn cache_resolves_latest_stable_block_from_current_time() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let blocks = blocks_source(
 		pool.clone(),
 		main_chain_epoch_config(),
@@ -582,19 +586,20 @@ async fn cache_resolves_latest_stable_block_from_current_time(pool: PgPool) {
 	assert_eq!(stable_tip, Some(BlockNumber(3)));
 }
 
-// The latest block, 8, is at 17:36:10. At 17:40:00 the 2001s stability window admits block 6
+// The latest block, 9, is at 17:52:50. At 18:00:00 the 3001s stability window admits block 6
 // (17:02:50), which measuring from the latest block's time would not. The lookahead from block 4
 // therefore reaches block 6.
-#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
-async fn cache_lookahead_is_measured_from_current_time(pool: PgPool) {
+#[tokio::test]
+async fn cache_lookahead_is_measured_from_current_time() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-consumed").await;
 	let blocks = blocks_source(
 		pool.clone(),
 		bridge_fixture_epoch_config(),
 		0,
-		TimeDelta::seconds(2001),
+		TimeDelta::seconds(3001),
 		TimeDelta::days(30),
 		0,
-		1650562800000,
+		1650564000000,
 	);
 	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
 
@@ -612,36 +617,38 @@ async fn cache_lookahead_is_measured_from_current_time(pool: PgPool) {
 	assert_eq!(source.get_latest_stable_block().await.unwrap(), Some(BlockNumber(6)));
 }
 
-// The latest block is 8. With security parameter 2 the stable tip is block 6, whatever the
+// The latest block is 9. With security parameter 3 the stable tip is block 6, whatever the
 // stability margin, so the lookahead from block 4 reaches block 6.
-#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
-async fn cache_lookahead_ignores_stability_margin(pool: PgPool) {
+#[tokio::test]
+async fn cache_lookahead_ignores_stability_margin() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-consumed").await;
 	let blocks = blocks_source(
 		pool.clone(),
 		bridge_fixture_epoch_config(),
-		2,
+		3,
 		TimeDelta::zero(),
 		TimeDelta::days(30),
 		4,
-		LATEST_BLOCK_TIME_MILLIS,
+		BRIDGE_LATEST_BLOCK_TIME_MILLIS,
 	);
 	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
 
 	assert_eq!(source.get_latest_stable_block().await.unwrap(), Some(BlockNumber(6)));
 }
 
-// The latest block is 8, so with security parameter 4 the stable tip is block 4. A requested block
+// The latest block is 9, so with security parameter 5 the stable tip is block 4. A requested block
 // above it, such as a parent's reference not verified against this node's Db-Sync, is still served.
-#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
-async fn cache_serves_a_requested_block_above_the_stable_tip(pool: PgPool) {
+#[tokio::test]
+async fn cache_serves_a_requested_block_above_the_stable_tip() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/bridge/migrations-tx-in-consumed").await;
 	let blocks = blocks_source(
 		pool.clone(),
 		bridge_fixture_epoch_config(),
-		4,
+		5,
 		TimeDelta::zero(),
 		TimeDelta::days(30),
 		0,
-		LATEST_BLOCK_TIME_MILLIS,
+		BRIDGE_LATEST_BLOCK_TIME_MILLIS,
 	);
 	let source = CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, 32);
 	assert_eq!(source.get_latest_stable_block().await.unwrap(), Some(BlockNumber(4)));
