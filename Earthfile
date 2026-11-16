@@ -1202,7 +1202,7 @@ test:
     # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
     # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
     # snapshot, which buildkit may export to the remote cache on success.
-    WITH DOCKER
+    WITH DOCKER --pull postgres:17.2
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
