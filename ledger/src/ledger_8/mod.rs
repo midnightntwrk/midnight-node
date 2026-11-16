@@ -784,14 +784,21 @@ where
 
 		// No `tblock` correction on the mempool path: `validate_unsigned` already skews the
 		// block context it passes here by `slot_duration * (1 + MaxSkippedSlots)`.
-		let cache_outcome = Self::do_validate_transaction(
+		let cache_outcome = Self::do_validate_guaranteed_execution(
 			&ledger,
 			state_key,
 			&tx,
 			&block_context,
 			&cache_key,
+			false,
 			cache,
+			"from mempool",
 		)?;
+		log::info!(
+			target: LOG_TARGET,
+			"📋 Validated transaction {} for mempool",
+			hex::encode(cache_key.tx_hash)
+		);
 
 		let tx_details = if get_tx_details {
 			let tx_gas_cost =
@@ -850,6 +857,7 @@ where
 			&cache_key,
 			skew_tblock,
 			cache,
+			"at pre-dispatch",
 		)?;
 
 		// Write Prometheus metrics
@@ -1463,66 +1471,8 @@ where
 		})
 	}
 
-	/// Validates a transaction for the mempool.
-	///
-	/// Uses the cache for revalidation of transactions already in the pool.
-	/// Returns the cache outcome indicating how validation was resolved.
-	fn do_validate_transaction(
-		ledger: &Ledger<D>,
-		state_key: &[u8],
-		tx: &Transaction<S, P, D>,
-		block_context: &BlockContext,
-		key: &TxValidationKey,
-		cache: &TxValidationCache,
-	) -> Result<TxValidationCacheOutcome, LedgerApiError> {
-		let tx_hash_hex = hex::encode(tx.hash());
-		let (verified_tx, cache_outcome) = match Self::get_verified_transaction(
-			ledger,
-			state_key,
-			tx,
-			block_context,
-			key,
-			false,
-			cache,
-		) {
-			Ok(vt) => vt,
-			Err(e) => {
-				log::warn!(
-					target: LOG_TARGET,
-					"🚫 Rejected transaction {} from mempool: {e}",
-					tx_hash_hex
-				);
-				return Err(e);
-			},
-		};
-
-		// Dry-run even on a strict hit. A hit only vouches for `well_formed`, which never checks
-		// applicability (double-spends, balances, dust fees), and the entry is written before
-		// this dry-run, so it may belong to a transaction that failed it.
-		let ctx = ledger.get_transaction_context(block_context.clone())?;
-
-		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)
-		{
-			Ok(()) => {
-				log::info!(
-					target: LOG_TARGET,
-					"📋 Validated transaction {} for mempool",
-					tx_hash_hex
-				);
-				Ok(cache_outcome)
-			},
-			Err(reason) => {
-				log::warn!(
-					target: LOG_TARGET,
-					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason}",
-					tx_hash_hex
-				);
-				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))
-			},
-		}
-	}
-
-	/// Validates transaction application, with caching.
+	/// Validates transaction application, with caching. Shared by the mempool and
+	/// `pre_dispatch`; `stage` only words the rejection logs.
 	///
 	/// Uses `get_verified_transaction` to get a cached or freshly computed
 	/// `VerifiedTransaction`, then dry-runs guaranteed execution (via the
@@ -1530,6 +1480,7 @@ where
 	/// transaction can enter a block.
 	///
 	/// Returns the cache outcome indicating how validation was resolved.
+	#[allow(clippy::too_many_arguments)]
 	fn do_validate_guaranteed_execution(
 		ledger: &Ledger<D>,
 		state_key: &[u8],
@@ -1538,7 +1489,9 @@ where
 		key: &TxValidationKey,
 		skew_tblock: bool,
 		cache: &TxValidationCache,
+		stage: &'static str,
 	) -> Result<TxValidationCacheOutcome, LedgerApiError> {
+		let tx_hash_hex = hex::encode(tx.hash());
 		let (verified_tx, cache_outcome) = Self::get_verified_transaction(
 			ledger,
 			state_key,
@@ -1547,8 +1500,17 @@ where
 			key,
 			skew_tblock,
 			cache,
-		)?;
+		)
+		.inspect_err(|e| {
+			log::warn!(
+				target: LOG_TARGET,
+				"🚫 Rejected transaction {tx_hash_hex} {stage}: {e}",
+			);
+		})?;
 
+		// Dry-run even on a strict hit. A hit only vouches for `well_formed`, which never checks
+		// applicability (double-spends, balances, dust fees), and the entry is written before
+		// this dry-run, so it may belong to a transaction that failed it.
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
 		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)
@@ -1557,8 +1519,7 @@ where
 			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
-					"🚫 Rejecting transaction {} at pre-dispatch: guaranteed execution would fail: {reason}",
-					hex::encode(tx.hash())
+					"🚫 Rejected transaction {tx_hash_hex} {stage}: guaranteed execution would fail: {reason}",
 				);
 				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))
 			},
