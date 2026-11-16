@@ -715,10 +715,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
+          persist-credentials: false
 
       # Lookup only, against test-toolkit's key: a tree test-toolkit already passed needs no archive.
       - id: guard
-        uses: ./.github/actions/tree-cache-guard
+        uses: ./.github/actions/tree-cache-guard # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           check-name: test-toolkit
 
