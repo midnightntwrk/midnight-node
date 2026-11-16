@@ -482,6 +482,37 @@ with_migration_versions_and_caching! {
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(9)))
 	}
 
+	// A checkpoint ahead of the observed Cardano block must not move back to that block, or the
+	// transfers between the two would be handled although the checkpoint has already passed them.
+	async fn keeps_block_checkpoint_ahead_of_current_block(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(4));
+		let current_mc_block = block_2_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![]);
+		assert_eq!(new_checkpoint, data_checkpoint)
+	}
+
+	async fn keeps_tx_checkpoint_ahead_of_current_block(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// `user_transfer_2_tx` is in block 4
+		let data_checkpoint = BridgeDataCheckpoint::Tx(user_transfer_2_tx());
+		let current_mc_block = block_3_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![]);
+		assert_eq!(new_checkpoint, data_checkpoint)
+	}
+
 	async fn utxos_from_checkpoint_block_are_not_included_in_result(data_source: &dyn TokenBridgeDataSource<ByteString>) {
 		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(2));
 		let current_mc_block = block_3_hash();

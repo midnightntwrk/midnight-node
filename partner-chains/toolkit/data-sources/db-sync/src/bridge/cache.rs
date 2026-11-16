@@ -139,6 +139,12 @@ observed_async_trait!(
 
 			let resolved_checkpoint = self.resolve_data_checkpoint(&data_checkpoint).await?;
 
+			// Moving a checkpoint ahead of `to_block` back to it would return transfers it has
+			// already passed.
+			if resolved_checkpoint.get_block_number() > to_block {
+				return Ok((vec![], data_checkpoint));
+			}
+
 			let max_txs = max_txs_to_read(max_transfers);
 
 			let txs = match self.try_serve_from_cache(&resolved_checkpoint, to_block, max_txs).await
