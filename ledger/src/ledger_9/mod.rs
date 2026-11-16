@@ -88,7 +88,7 @@ use {
 		dust::InitialNonce,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
-			LedgerState, MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker,
+			LedgerState, MaintenanceUpdate, OutputInstructionUnshielded, ProofKind, ProofMarker,
 			SignatureKind, SingleUpdate, Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 		verify::StateReference,
@@ -223,14 +223,14 @@ impl TxValidationCache {
 }
 
 #[cfg(feature = "std")]
-pub struct Bridge<S: SignatureKind<D>, D: DB> {
-	_phantom: core::marker::PhantomData<(S, D)>,
+pub struct Bridge<S: SignatureKind<D>, D: DB, P = ProofMarker> {
+	_phantom: core::marker::PhantomData<(S, D, P)>,
 }
 
 #[cfg(feature = "std")]
-impl<S: SignatureKind<D> + std::fmt::Debug, D: DB> Bridge<S, D>
+impl<S: SignatureKind<D> + std::fmt::Debug, D: DB, P: ProofKind<D>> Bridge<S, D, P>
 where
-	mn_ledger_local::structure::Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
+	mn_ledger_local::structure::Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	D::Hasher: OutputSizeUser<OutputSize = U32>,
 {
 	pub fn set_default_storage(mut externalities: &mut dyn Externalities) {
@@ -412,7 +412,7 @@ where
 			"⏱️  Deserializing tx (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize::<Transaction<S, P, D>>(tx_serialized)?;
 		let tx_hash = tx.hash();
 		log::info!(
 			target: LOG_TARGET,
@@ -789,7 +789,7 @@ where
 			ledger.state.parameters.limits.transaction_byte_limit,
 			tx_serialized,
 		)?;
-		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, P, D>>(tx_serialized)?;
 
 		let cache_key = TxValidationKey { runtime_version, tx_hash: tx.hash() };
 
@@ -853,7 +853,7 @@ where
 			ledger.state.parameters.limits.transaction_byte_limit,
 			tx_serialized,
 		)?;
-		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx_serialized)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, P, D>>(tx_serialized)?;
 
 		let cache_key = TxValidationKey { runtime_version, tx_hash: tx.hash() };
 
@@ -910,7 +910,7 @@ where
 			))
 		};
 		let api = api::new();
-		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(transaction_bytes)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, P, D>>(transaction_bytes)?;
 		let hash = tx.hash();
 		let operations = tx.calls_and_deploys(None).try_fold(Vec::new(), |mut acc, cd| {
 			if acc.len() >= max_items as usize {
@@ -1176,7 +1176,7 @@ where
 		max_weight: u64,
 	) -> Result<GasCost, LedgerApiError> {
 		let api = api::new();
-		let tx = api.tagged_deserialize_input::<Transaction<S, D>>(tx)?;
+		let tx = api.tagged_deserialize_input::<Transaction<S, P, D>>(tx)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let cost =
@@ -1290,7 +1290,7 @@ where
 	}
 
 	fn get_transaction_details(
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		_ledger: &Ledger<D>,
 		tx_gas_cost: GasCost,
 	) -> Result<TransactionDetails, LedgerApiError> {
@@ -1359,7 +1359,7 @@ where
 		}
 	}
 
-	fn get_tx_type(tx: &Transaction<S, D>) -> &'static str {
+	fn get_tx_type(tx: &Transaction<S, P, D>) -> &'static str {
 		match tx.0 {
 			mn_ledger_local::structure::Transaction::Standard(_) => "standard",
 			mn_ledger_local::structure::Transaction::ClaimRewards(_) => "claim_rewards",
@@ -1381,7 +1381,7 @@ where
 	fn get_verified_transaction(
 		ledger: &Ledger<D>,
 		state_key: &[u8],
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		skew_tblock: bool,
@@ -1433,7 +1433,7 @@ where
 	}
 
 	fn is_well_formed(
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		ref_state: &impl StateReference<D>,
 		block_timestamp: Timestamp,
 	) -> Result<VerifiedTransaction<D>, LedgerApiError> {
@@ -1455,7 +1455,7 @@ where
 	/// so a transaction it would reject after apply never enters a block.
 	fn check_guaranteed_utxos(
 		ledger: &Ledger<D>,
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		after: &LedgerState<D>,
 	) -> Result<(), LedgerApiError> {
 		let initial_utxos_size = ledger.state.utxo.utxos.size();
@@ -1472,7 +1472,7 @@ where
 	fn do_validate_transaction(
 		ledger: &Ledger<D>,
 		state_key: &[u8],
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		check_utxos: bool,
@@ -1541,7 +1541,7 @@ where
 	fn do_validate_guaranteed_execution(
 		ledger: &Ledger<D>,
 		state_key: &[u8],
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		block_context: &BlockContext,
 		key: &TxValidationKey,
 		skew_tblock: bool,
@@ -1922,7 +1922,7 @@ mod tests {
 
 	/// The tag prefix plus `body_len` zero bytes. `well_formed` measures only the body.
 	fn tagged_zeros(body_len: usize) -> Vec<u8> {
-		let tag = <Transaction<TransactionSignature, DefaultDB> as Tagged>::tag();
+		let tag = <Transaction<TransactionSignature, ProofMarker, DefaultDB> as Tagged>::tag();
 		let mut bytes = format!("{}{tag}:", midnight_serialize_local::GLOBAL_TAG).into_bytes();
 		bytes.resize(bytes.len() + body_len, 0);
 		bytes
@@ -1935,7 +1935,7 @@ mod tests {
 	#[test]
 	fn split_tag_finds_the_real_tags() {
 		let tags = [
-			<Transaction<TransactionSignature, DefaultDB> as Tagged>::tag(),
+			<Transaction<TransactionSignature, ProofMarker, DefaultDB> as Tagged>::tag(),
 			<SystemTransaction as Tagged>::tag(),
 		];
 		for tag in tags {
@@ -1987,7 +1987,7 @@ mod tests {
 			midnight_node_res::undeployed::transactions::DEPLOY_TX,
 		);
 		let base = api
-			.tagged_deserialize::<Transaction<TransactionSignature, DefaultDB>>(&base)
+			.tagged_deserialize::<Transaction<TransactionSignature, ProofMarker, DefaultDB>>(&base)
 			.expect("DEPLOY_TX deserializes");
 		let LedgerTransaction::Standard(standard) = base.0 else {
 			panic!("DEPLOY_TX is a standard transaction");
