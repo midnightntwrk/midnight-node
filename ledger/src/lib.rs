@@ -29,6 +29,9 @@ pub mod json;
 #[cfg(feature = "std")]
 mod utils;
 
+#[cfg(feature = "std")]
+pub mod ephemeral;
+
 pub mod host_api;
 
 pub mod ledger_8;
@@ -69,7 +72,7 @@ macro_rules! bridge_arena_call {
 	($ver:ident, $unified:expr, $method:ident ( $($arg:expr),* )) => {{
 		type DbSeparate = $ver::ledger_storage_local::db::ParityDb;
 		type DbUnified = $ver::ledger_storage_local::db::ParityDb<
-			sha2::Sha256,
+			storage_sha2::Sha256,
 			$ver::ledger_storage_local::db::paritydb::OwnedDb,
 			{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
 		>;
@@ -247,7 +250,7 @@ pub fn import_verified_ledger_snapshot(
 /// (`ledger-state[v13]`) genesis and only upgrades to v9 later via the runtime
 /// migration. Seeding must therefore match the genesis version (the genesis
 /// block runs under the old WASM and expects the old-format arena root), not the
-/// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
+/// latest. v8 and v9 share one `storage-core` arena, so a v8-seeded arena is exactly
 /// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
 /// latest version (`ledger_9`), preserving the prior default behaviour.
 #[cfg(feature = "std")]
@@ -335,7 +338,7 @@ mod tests {
 					panic!("Failed to create dir {}, err {}", db_path.display(), err)
 				});
 
-				let db = ParityDb::<sha2::Sha256>::open(&db_path);
+				let db = ParityDb::<storage_sha2::Sha256>::open(&db_path);
 
 				Storage::new(0, db)
 			});

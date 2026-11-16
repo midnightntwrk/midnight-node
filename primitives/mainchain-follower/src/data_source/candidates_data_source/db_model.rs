@@ -11,41 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use cardano_serialization_lib::{
-	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
-};
+use crate::db::{DbDatum, DbDatumIfValid};
+use cardano_serialization_lib::PlutusData;
 use db_sync_sqlx::{Address, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
 use log::info;
 use sidechain_domain::{McTxHash, UtxoId, UtxoIndex};
-use sqlx::error::BoxDynError;
-use sqlx::postgres::PgTypeInfo;
-use sqlx::types::JsonValue;
-use sqlx::{Decode, PgPool, Pool, Postgres};
+use sqlx::{PgPool, Pool, Postgres};
 use std::cell::OnceCell;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-/// Wraps PlutusData to provide sqlx::Decode and sqlx::Type implementations
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DbDatum(pub PlutusData);
-
-impl sqlx::Type<Postgres> for DbDatum {
-	fn type_info() -> <Postgres as sqlx::Database>::TypeInfo {
-		PgTypeInfo::with_name("JSONB")
-	}
-}
-
-impl<'r> Decode<'r, Postgres> for DbDatum
-where
-	JsonValue: Decode<'r, Postgres>,
-{
-	fn decode(value: <Postgres as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-		let value: JsonValue = <JsonValue as Decode<Postgres>>::decode(value)?;
-		let datum = encode_json_value_to_plutus_datum(value, DetailedSchema);
-		Ok(DbDatum(datum?))
-	}
-}
 
 /// Error type returned by Db-Sync based data sources
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -206,6 +181,7 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
+	#[sqlx(try_from = "DbDatumIfValid")]
 	pub datum: Option<DbDatum>,
 	pub tx_inputs: Vec<String>,
 }
@@ -365,7 +341,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index) ORDER BY consumes_tx.hash, consumes_tx_in.tx_out_index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
@@ -413,7 +389,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index) ORDER BY consumes_tx.hash, consumes_tx_out.index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id

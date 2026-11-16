@@ -1,4 +1,4 @@
-FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:68b1e82cd69ade271c092bc1959fa6fc820945d0c8dbb7a88cf6c1824a184688
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:c25add18b6c35620a6e096ef03ecbafbcaed993281ad227792f67c324980011b
 
 ENV BASE_PATH=/node/chain
 ENV RPC_PORT=9944
@@ -8,7 +8,7 @@ ENV RUST_BACKTRACE=1
 # curl to enable compose healthchecks
 # Package versions are tied to the base image — update when bumping the base digest
 RUN microdnf -y install \
-    ca-certificates-2025.2.76 \
+    ca-certificates-2025.2.76-1.0.amzn2023.0.4 \
     curl-minimal-8.21.0 \
     tar-1.34 \
     procps-ng-3.3.17 \

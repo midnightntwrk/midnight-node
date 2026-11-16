@@ -37,7 +37,7 @@ use sidechain_mc_hash::McHashDataSource;
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
 use sidechain_mc_hash::McHashInherentError;
 use sidechain_slots::ScSlotConfig;
-use sp_api::ProvideRuntimeApi;
+use sp_api::{CallApiAt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_consensus_aura::Slot;
 use sp_inherents::CreateInherentDataProviders;
@@ -81,7 +81,7 @@ pub(crate) struct ProposalCIDP<T> {
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, ()> for ProposalCIDP<T>
 where
-	T: ProvideRuntimeApi<Block> + Send + Sync + 'static,
+	T: ProvideRuntimeApi<Block> + CallApiAt<Block> + Send + Sync + 'static,
 	T: HeaderBackend<Block>,
 	T::Api: SessionValidatorManagementApi<
 			Block,
@@ -234,7 +234,7 @@ impl<T> Clone for VerifierCIDP<T> {
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
 where
-	T: ProvideRuntimeApi<Block> + Send + Sync + HeaderBackend<Block> + 'static,
+	T: ProvideRuntimeApi<Block> + CallApiAt<Block> + Send + Sync + HeaderBackend<Block> + 'static,
 	T::Api: SessionValidatorManagementApi<
 			Block,
 			CommitteeMember<CrossChainPublic, SessionKeys>,

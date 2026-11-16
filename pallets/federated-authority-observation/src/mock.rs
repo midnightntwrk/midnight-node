@@ -13,7 +13,7 @@
 
 use crate as pallet_federated_authority_observation;
 use frame_support::{derive_impl, parameter_types, traits::NeverEnsureOrigin};
-use frame_system::{EnsureNone, EnsureRoot};
+use frame_system::EnsureRoot;
 use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
 use sp_runtime::{BuildStorage, traits::IdentityLookup};
 
@@ -69,7 +69,7 @@ impl pallet_membership::Config<pallet_membership::Instance1> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = EnsureNone<Self::AccountId>;
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = MembershipHandler<Test, Council>;
 	type MembershipChanged = MembershipHandler<Test, Council>;
@@ -100,7 +100,7 @@ impl pallet_membership::Config<pallet_membership::Instance2> for Test {
 	type AddOrigin = NeverEnsureOrigin<()>;
 	type RemoveOrigin = NeverEnsureOrigin<()>;
 	type SwapOrigin = NeverEnsureOrigin<()>;
-	type ResetOrigin = EnsureNone<Self::AccountId>;
+	type ResetOrigin = EnsureRoot<Self::AccountId>;
 	type PrimeOrigin = NeverEnsureOrigin<()>;
 	type MembershipInitialized = MembershipHandler<Test, TechnicalCommittee>;
 	type MembershipChanged = MembershipHandler<Test, TechnicalCommittee>;

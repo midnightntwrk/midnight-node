@@ -12,11 +12,12 @@
 // limitations under the License.
 
 use crate::{
-	MidnightCNightObservationDataSource, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
-	RegistrationData, UtxoIndexInTx,
+	MidnightCNightObservationDataSource, ObservationBound, ObservedUtxo, ObservedUtxoData,
+	ObservedUtxoHeader, RegistrationData, UtxoIndexInTx,
 };
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	ObservationBatch, ObservedUtxos,
 };
 use sidechain_domain::{McBlockHash, McTxHash};
 
@@ -110,9 +111,10 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		&self,
 		_config: &CNightAddresses,
 		start: &CardanoPosition,
+		_start_offset: u32,
 		_current_tip: McBlockHash,
-		_capacity: usize,
-		_spec_version: u32,
+		_bound: &ObservationBound,
+		spec_version: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Calculate deterministic end position
 		let mut end = start.clone();
@@ -121,7 +123,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		end.block_hash = McBlockHash(Self::deterministic_hash(end.block_number, 0));
 
 		// Return deterministic UTXOs - same data on all nodes for the same block
-		let utxos = Self::deterministic_utxos(start);
+		let utxos = ObservationBatch::new(Self::deterministic_utxos(start), spec_version);
 
 		Ok(ObservedUtxos { start: start.clone(), end, utxos })
 	}
@@ -177,12 +179,26 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start,
+				0,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start,
+				0,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 
@@ -214,12 +230,26 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start1, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start1,
+				0,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start2, McBlockHash([0u8; 32]), 100, 0)
+			.get_utxos_up_to_capacity(
+				&config,
+				&start2,
+				0,
+				McBlockHash([0u8; 32]),
+				&ObservationBound::Count(100),
+				0,
+			)
 			.await
 			.unwrap();
 

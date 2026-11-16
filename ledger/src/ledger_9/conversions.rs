@@ -81,6 +81,8 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 			Ti::RewardTooSmall { .. } => Ie::RewardTooSmall,
 			Ti::DivideByZero => Ie::DivideByZero,
 			Ti::MerkleTreeError(..) => Ie::MerkleTreeError,
+			Ti::BridgeClaimTooSmall { .. } => Ie::BridgeClaimTooSmall,
+			Ti::ContractTooManyOperations { .. } => Ie::ContractTooManyOperations,
 			other => {
 				log::warn!("Unmapped TransactionInvalid variant: {other:?}");
 				Ie::UnknownError
@@ -159,6 +161,11 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				FeeCalculationError::BlockLimitExceeded => {
 					FeeCalculationErrorCode::BlockLimitExceeded
 				},
+				FeeCalculationError::RepeatedEntries => FeeCalculationErrorCode::RepeatedEntries,
+				other => {
+					log::warn!("Unmapped FeeCalculationError variant: {other:?}");
+					FeeCalculationErrorCode::Unknown
+				},
 			}),
 			Mt::InvalidDustRegistrationSignature { .. } => Me::InvalidDustRegistrationSignature,
 			Mt::InvalidDustSpendProof { .. } => Me::InvalidDustSpendProof,
@@ -171,6 +178,9 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 				},
 				MalformedContractDeploy::IncorrectChargedState => {
 					MalformedContractDeployErrorCode::IncorrectChargedState
+				},
+				MalformedContractDeploy::TooManyOperations { .. } => {
+					MalformedContractDeployErrorCode::TooManyOperations
 				},
 				other => {
 					log::warn!("Unmapped MalformedContractDeploy variant: {other:?}");
@@ -246,6 +256,11 @@ impl<D: DB> From<MalformedTransaction<D>> for MalformedError {
 			Mt::OutputsNotSorted(..) => Me::OutputsNotSorted,
 			Mt::DuplicateInputs(..) => Me::DuplicateInputs,
 			Mt::InputsSignaturesLengthMismatch { .. } => Me::InputsSignaturesLengthMismatch,
+			Mt::TooManyPublicInputs { .. } => Me::TooManyPublicInputs,
+			Mt::TranscriptGasExceedsBlockLimits { .. } => Me::TranscriptGasExceedsBlockLimits,
+			Mt::ContractDustTransfer { .. } => Me::ContractDustTransfer,
+			Mt::RepeatedCommitteeSignature { .. } => Me::RepeatedCommitteeSignature,
+			Mt::RepeatedDustRegistration { .. } => Me::RepeatedDustRegistration,
 			other => {
 				log::warn!("Unmapped MalformedTransaction variant: {other:?}");
 				Me::UnknownError

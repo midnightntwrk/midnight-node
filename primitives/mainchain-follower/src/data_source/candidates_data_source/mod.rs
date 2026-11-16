@@ -403,3 +403,77 @@ pub async fn get_epoch_for_block_hash(
 		.await?
 		.map(|e| McEpochNumber(e.0)))
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use hex_literal::hex;
+	use sqlx::migrate::Migrator;
+	use std::path::Path;
+	use std::str::FromStr;
+	use testcontainers::{
+		ContainerAsync, GenericImage, ImageExt,
+		core::{IntoContainerPort, WaitFor},
+		runners::AsyncRunner,
+	};
+
+	const READY_MSG: &str = "database system is ready to accept connections";
+
+	/// Starts a Postgres owned by the calling test and applies db-sync test migrations.
+	/// The container is removed when the returned handle is dropped, including on panic.
+	async fn test_db(migrations: &str) -> (PgPool, ContainerAsync<GenericImage>) {
+		// The entrypoint logs the readiness message on stdout for its temporary init server
+		// and on stderr for the final one.
+		let container = GenericImage::new("postgres", "17.2")
+			.with_exposed_port(5432.tcp())
+			.with_wait_for(WaitFor::message_on_stderr(READY_MSG))
+			.with_wait_for(WaitFor::message_on_stdout(READY_MSG))
+			.with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+			.with_cmd(["postgres", "-c", "fsync=off"])
+			.start()
+			.await
+			.expect("failed to start postgres container");
+		// `get_host` returns "localhost", which can resolve to ::1, where Docker may publish
+		// 5432 on a different port than the IPv4 one read here.
+		let url = format!(
+			"postgres://postgres@127.0.0.1:{}/postgres",
+			container.get_host_port_ipv4(5432).await.unwrap()
+		);
+		let pool = PgPool::connect(&url).await.unwrap();
+		let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+			.join("../../partner-chains/toolkit/data-sources/db-sync/testdata")
+			.join(migrations);
+		Migrator::new(dir).await.unwrap().run(&pool).await.unwrap();
+		(pool, container)
+	}
+
+	// Fixtures also hold a 2^64 integer datum and a 64-deep nested list datum at this address.
+	async fn undecodable_datums_do_not_fail_candidate_query(pool: PgPool) {
+		let source = CandidatesDataSourceImpl::new(pool, None).await.unwrap();
+		let candidates = source
+			.get_candidates(McEpochNumber(191), MainchainAddress::from_str("script_addr").unwrap())
+			.await
+			.unwrap();
+		let mut keys: Vec<_> = candidates.iter().map(|c| c.mainchain_pub_key().0).collect();
+		keys.sort();
+		assert_eq!(
+			keys,
+			vec![
+				hex!("bfbee74ab533f40979101057f96de62e95233f2a5216eb16b54106f09fd7350d"),
+				hex!("cfbee74ab533f40979101057f96de62e95233f2a5216eb16b54106f09fd7350d"),
+			]
+		);
+	}
+
+	#[tokio::test]
+	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_enabled() {
+		let (pool, _db) = test_db("migrations-tx-in-enabled").await;
+		undecodable_datums_do_not_fail_candidate_query(pool).await
+	}
+
+	#[tokio::test]
+	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_consumed() {
+		let (pool, _db) = test_db("migrations-tx-in-consumed").await;
+		undecodable_datums_do_not_fail_candidate_query(pool).await
+	}
+}

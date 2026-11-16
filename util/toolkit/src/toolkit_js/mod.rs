@@ -76,6 +76,7 @@ pub enum Command {
 	Deploy(DeployArgs),
 	Circuit {
 		args: CircuitArgs,
+		network: String,
 		input_zswap_state: Option<RelativePath>,
 		ledger_parameters: RelativePath,
 	},
@@ -90,9 +91,6 @@ pub struct CircuitArgs {
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
 	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,
-	/// Target network
-	#[arg(long, default_value = "undeployed")]
-	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
@@ -276,8 +274,8 @@ impl ToolkitJs {
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
-			Command::Circuit { args, input_zswap_state, ledger_parameters } => {
-				self.execute_circuit(args, input_zswap_state, ledger_parameters)
+			Command::Circuit { args, network, input_zswap_state, ledger_parameters } => {
+				self.execute_circuit(args, &network, input_zswap_state, ledger_parameters)
 			},
 			Command::Maintain(command) => self.execute_maintain(command),
 		}
@@ -346,6 +344,7 @@ impl ToolkitJs {
 	pub fn execute_circuit(
 		&self,
 		args: CircuitArgs,
+		network: &str,
 		input_zswap_state: Option<RelativePath>,
 		ledger_parameters: RelativePath,
 	) -> Result<(), ToolkitJsError> {
@@ -379,7 +378,7 @@ impl ToolkitJs {
 			&input_ledger_parameters,
 		];
 		if self.needs_legacy_network_flag() {
-			cmd_args.extend_from_slice(&["--network", &args.network]);
+			cmd_args.extend_from_slice(&["--network", network]);
 		}
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {

@@ -20,8 +20,15 @@
         "aura": {
           "authorities": []
         },
-        "grandpa": {
-          "authorities": []
+        "babe": {
+          "authorities": [],
+          "epochConfig": {
+            "c": [
+              1,
+              4
+            ],
+            "allowed_slots": "PrimaryAndSecondaryVRFSlots"
+          }
         },
         "sidechain": {
           "genesisUtxo": "0000000000000000000000000000000000000000000000000000000000000000#0",
@@ -71,39 +78,42 @@
             41,
             58,
             0,
-            179,
-            153,
-            76,
-            132,
-            154,
-            208,
-            88,
-            155,
-            197,
-            179,
-            194,
-            46,
-            25,
-            68,
-            2,
-            153,
-            216,
-            196,
-            1,
-            237,
-            233,
-            24,
-            153,
-            5,
-            61,
-            203,
-            124,
+            51,
+            29,
+            205,
+            113,
             235,
+            132,
+            72,
+            240,
+            212,
+            211,
+            142,
+            17,
+            83,
+            141,
+            27,
+            55,
+            113,
+            56,
+            196,
             238,
-            66,
-            206,
-            232
+            63,
+            198,
+            132,
+            38,
+            232,
+            197,
+            151,
+            179,
+            246,
+            82,
+            26,
+            42
           ]
+        },
+        "grandpa": {
+          "authorities": []
         },
         "sessionCommitteeManagement": {
           "initialAuthorities": [
@@ -112,7 +122,9 @@
                 "id": "KWBJCFSE2SZUiEhhTbL6vTW71WpABUXsBkAN6SCFdcub8Yz4W",
                 "keys": {
                   "aura": "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
-                  "grandpa": "5EmZ3vxkGEVjcTNvCt8bLN3hY5DqPKJ1gvRvnxZFcetqkGLm"
+                  "grandpa": "5EmZ3vxkGEVjcTNvCt8bLN3hY5DqPKJ1gvRvnxZFcetqkGLm",
+                  "babe": "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
+                  "beefy": "KWBJCFSE2SZUiEhhTbL6vTW71WpABUXsBkAN6SCFdcub8Yz4W"
                 }
               }
             },
@@ -121,7 +133,9 @@
                 "id": "KWE4aogM7533QGnCcVbviF96x5Xs7cEwJQY4iocGQuWU3FDcn",
                 "keys": {
                   "aura": "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
-                  "grandpa": "5F3JDGSM8EYKG6h1b7NmAEwwjEWbeoceJp1WfYQfNS6TtMZj"
+                  "grandpa": "5F3JDGSM8EYKG6h1b7NmAEwwjEWbeoceJp1WfYQfNS6TtMZj",
+                  "babe": "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
+                  "beefy": "KWE4aogM7533QGnCcVbviF96x5Xs7cEwJQY4iocGQuWU3FDcn"
                 }
               }
             },
@@ -130,7 +144,9 @@
                 "id": "KWCCcbpNMY46M79KcwVvYKimntzCixbbAsPk9tCrT3H1w3n8R",
                 "keys": {
                   "aura": "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
-                  "grandpa": "5HiCVz6nUqPBznrBrxzr6CD4CJNP6CQNAPP8ChBKLAFHTnnP"
+                  "grandpa": "5HiCVz6nUqPBznrBrxzr6CD4CJNP6CQNAPP8ChBKLAFHTnnP",
+                  "babe": "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
+                  "beefy": "KWCCcbpNMY46M79KcwVvYKimntzCixbbAsPk9tCrT3H1w3n8R"
                 }
               }
             },
@@ -139,7 +155,9 @@
                 "id": "KW9cAQRoPXFxNyhUfCnJYc3gA3KPBoC5JLEyBo7i24a1nWSAM",
                 "keys": {
                   "aura": "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
-                  "grandpa": "5Ch6sdsd98grj3WroSpaAiV4awpHEchoLu9RKN41PWQwx28t"
+                  "grandpa": "5Ch6sdsd98grj3WroSpaAiV4awpHEchoLu9RKN41PWQwx28t",
+                  "babe": "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
+                  "beefy": "KW9cAQRoPXFxNyhUfCnJYc3gA3KPBoC5JLEyBo7i24a1nWSAM"
                 }
               }
             },
@@ -148,7 +166,9 @@
                 "id": "KW3SLTJQ82b4GKi4vjqTTr8YrfDoi9hdpjjZygGvmRWU8NiNU",
                 "keys": {
                   "aura": "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
-                  "grandpa": "5FTay3ZiQgtBtWmHCtXgggF6D1414GdziLnwUKnK6yDUCR6y"
+                  "grandpa": "5FTay3ZiQgtBtWmHCtXgggF6D1414GdziLnwUKnK6yDUCR6y",
+                  "babe": "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
+                  "beefy": "KW3SLTJQ82b4GKi4vjqTTr8YrfDoi9hdpjjZygGvmRWU8NiNU"
                 }
               }
             },
@@ -157,7 +177,9 @@
                 "id": "KW3JHdizpVr8HSMtwtFQZRgRepBmM9H831ABr8o96VXP4x2qj",
                 "keys": {
                   "aura": "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH",
-                  "grandpa": "5HnpFQnj7eW4oaQhSFV2u8kD9UQTR6HpJHHFvnYBMGMe74Lo"
+                  "grandpa": "5HnpFQnj7eW4oaQhSFV2u8kD9UQTR6HpJHHFvnYBMGMe74Lo",
+                  "babe": "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH",
+                  "beefy": "KW3JHdizpVr8HSMtwtFQZRgRepBmM9H831ABr8o96VXP4x2qj"
                 }
               }
             },
@@ -166,7 +188,9 @@
                 "id": "KW9HQ65ExPkW7GNBejwHHJGRWUN3G6L3wDH7GHuUEPUzC6st5",
                 "keys": {
                   "aura": "5E7x3Hcp5cZjtKw2K3No55Vb7fZf7f61vxJjTWxBLUgNLqkM",
-                  "grandpa": "5Ca7tsWzMfJb6JreGXf9ZMvqh6z2Cyvn8ZSrNFwB1ExpLYcm"
+                  "grandpa": "5Ca7tsWzMfJb6JreGXf9ZMvqh6z2Cyvn8ZSrNFwB1ExpLYcm",
+                  "babe": "5E7x3Hcp5cZjtKw2K3No55Vb7fZf7f61vxJjTWxBLUgNLqkM",
+                  "beefy": "KW9HQ65ExPkW7GNBejwHHJGRWUN3G6L3wDH7GHuUEPUzC6st5"
                 }
               }
             }
@@ -198,77 +222,19 @@
           },
           "marker": null
         },
-        "palletSession": {
-          "keys": [],
-          "nonAuthorityKeys": []
-        },
         "txPause": {
           "paused": []
         },
+        "safeMode": {
+          "enteredUntil": null
+        },
         "beefy": {
-          "authorities": [
-            "KWBJCFSE2SZUiEhhTbL6vTW71WpABUXsBkAN6SCFdcub8Yz4W",
-            "KWE4aogM7533QGnCcVbviF96x5Xs7cEwJQY4iocGQuWU3FDcn",
-            "KWCCcbpNMY46M79KcwVvYKimntzCixbbAsPk9tCrT3H1w3n8R",
-            "KW9cAQRoPXFxNyhUfCnJYc3gA3KPBoC5JLEyBo7i24a1nWSAM",
-            "KW3SLTJQ82b4GKi4vjqTTr8YrfDoi9hdpjjZygGvmRWU8NiNU",
-            "KW3JHdizpVr8HSMtwtFQZRgRepBmM9H831ABr8o96VXP4x2qj",
-            "KW9HQ65ExPkW7GNBejwHHJGRWUN3G6L3wDH7GHuUEPUzC6st5"
-          ],
+          "authorities": [],
           "genesisBlock": 1
         },
         "session": {
-          "initialValidators": [
-            [
-              "5CxuaKqvaX6QvkSkqQcAHbTQBbyYdRWyoNsgUkEFmHPQ1811",
-              {
-                "aura": "5C7YHsmaHMJkzwTwyMpsva8gFtjUgXrkSFamudJURY3uqfnH",
-                "grandpa": "5EmZ3vxkGEVjcTNvCt8bLN3hY5DqPKJ1gvRvnxZFcetqkGLm"
-              }
-            ],
-            [
-              "5DtbwGz4VjpjBruikJZwGBvfNrB3tsbpjAYRcfkv2iCbFx4S",
-              {
-                "aura": "5FL5CmhWB12r2WsZQbT5aLTtC8od6oCj67o5U4KJRn7ntEf8",
-                "grandpa": "5F3JDGSM8EYKG6h1b7NmAEwwjEWbeoceJp1WfYQfNS6TtMZj"
-              }
-            ],
-            [
-              "5HgwDfFo7msuQ3ZcjDe1tNTM4UEebQbPh7jZu4hJeb2eXp17",
-              {
-                "aura": "5C4mYKeM1LdnrQQanNmaTdvEQ1hCxa543Ti8aJa9zyYNox1h",
-                "grandpa": "5HiCVz6nUqPBznrBrxzr6CD4CJNP6CQNAPP8ChBKLAFHTnnP"
-              }
-            ],
-            [
-              "5FbTDnFb6rtzWy6YEk3R14F3ofo8uF1UyPbSNbA4uQV1fKt9",
-              {
-                "aura": "5FRUHY2qhqxo3xNfewrcmjZD6ZzXCTQ32EV1FXHxEYhwPELf",
-                "grandpa": "5Ch6sdsd98grj3WroSpaAiV4awpHEchoLu9RKN41PWQwx28t"
-              }
-            ],
-            [
-              "5EFAPuM4NzUT5JKAsirVQZXb6Eh6MC18FySKCNnBAApLTtag",
-              {
-                "aura": "5FnkTSNPBDwWetwvi3oYVTYQJzA3ESLrPdSqb3kMeTedC2Kc",
-                "grandpa": "5FTay3ZiQgtBtWmHCtXgggF6D1414GdziLnwUKnK6yDUCR6y"
-              }
-            ],
-            [
-              "5GX9Cjt7eVC5Yth2kvLkWQQ4HwZwdS2iU49MrdfyCLEB3TgD",
-              {
-                "aura": "5CQ9rYTT6Bywme2aryqVk9MmvcmpZmEwcGb3sjcTDPemZiWH",
-                "grandpa": "5HnpFQnj7eW4oaQhSFV2u8kD9UQTR6HpJHHFvnYBMGMe74Lo"
-              }
-            ],
-            [
-              "5CGGCfucjDVCPzsAqXkmYBeVHJ96uW7dQxAAbkFWpATy1bKU",
-              {
-                "aura": "5E7x3Hcp5cZjtKw2K3No55Vb7fZf7f61vxJjTWxBLUgNLqkM",
-                "grandpa": "5Ca7tsWzMfJb6JreGXf9ZMvqh6z2Cyvn8ZSrNFwB1ExpLYcm"
-              }
-            ]
-          ]
+          "keys": [],
+          "nonAuthorityKeys": []
         },
         "bridge": {
           "mainChainScripts": {
@@ -284,6 +250,7 @@
           "subminimalTransfersConfig": {
             "subminimal_transfers_flush_threshold": 500000
           },
+          "approvedTxs": [],
           "marker": null
         },
         "council": {
