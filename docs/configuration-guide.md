@@ -131,16 +131,7 @@ Each chain requires a genesis ledger state. All test networks contain a set of s
 
 **Important:** Before generating ledger state, you must first generate the config files (`cnight-config.json`, `ics-config.json`) from their corresponding address files. See [Genesis Generation Guide](genesis/README.md) for the complete dependency sequence.
 
-The exception to this is the `undeployed` network, which uses the following well-known seeds:
-
-```json
-{
-    "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001",
-    "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002",
-    "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003",
-    "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9"
-}
-```
+The exception to this is the `undeployed` network, which funds the well-known seeds in [`res/dev/undeployed-genesis-seeds.json`](../res/dev/undeployed-genesis-seeds.json). `wallet-seed-0` to `wallet-seed-2` are `0x…01` to `0x…03`, and `wallet-seed-3` is the Lace test wallet. From `wallet-seed-4` on, `wallet-seed-N` is `0x…20NN` (e.g. `wallet-seed-17` = `0x…2017`), which keeps them clear of seeds tests rely on being unfunded (`0x…05`, and the `0x…10`, `0x…11`, … outputs of `generate-txs batches`).
 
 Genesis is rebuilt using the toolkit's `generate-genesis` command:
 
