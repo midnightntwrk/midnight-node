@@ -14,19 +14,24 @@
 
 set -euxo pipefail
 
-# Run Midnight Node Toolkit package tests
-# Note: We use cargo nextest directly instead of cargo llvm-cov because
-# llvm-cov applies -C instrument-coverage to WASM builds, which fails
-# since WASM doesn't support profiler_builtins
-#
-# RUN_COMPACT_CONTRACT_TESTS (boolean, default false): "true" enables the slow
-# contract E2E tests via the compact-contract-tests feature (set by the workflow of the same name).
-FEATURES_ARG=""
-if [ "${RUN_COMPACT_CONTRACT_TESTS:-false}" = "true" ]; then
-    FEATURES_ARG="--features compact-contract-tests"
-fi
+# The archive from +toolkit-test-archive fixes the feature set (RUN_COMPACT_CONTRACT_TESTS is a build ARG).
+ARCHIVE=/toolkit-tests.tar.zst
+EXTRACT_DIR=/tmp/toolkit-tests
 
-MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest run \
-    --profile ci --release --locked \
-    ${FEATURES_ARG} \
-    -E 'package(midnight-node-toolkit)'
+# toolkit_e2e's tests share one node and a pool of genesis-funded seeds, so they must run in
+# one process: libtest, not nextest's process per test.
+mkdir -p "$EXTRACT_DIR"
+cargo nextest list --archive-file "$ARCHIVE" --workspace-remap / --extract-to "$EXTRACT_DIR" > /dev/null
+E2E_BIN=$(find "$EXTRACT_DIR/target/release/deps" -maxdepth 1 -type f -executable -name 'toolkit_e2e-*')
+
+cargo nextest run --profile ci --workspace-remap / \
+    --binaries-metadata "$EXTRACT_DIR/target/nextest/binaries-metadata.json" \
+    --cargo-metadata "$EXTRACT_DIR/target/nextest/cargo-metadata.json" \
+    --target-dir-remap "$EXTRACT_DIR/target" \
+    -E 'not binary(toolkit_e2e)' &
+NEXTEST_PID=$!
+
+status=0
+(cd /util/toolkit && "$E2E_BIN" --test-threads=16 2>&1 | sed -u 's/^/[toolkit_e2e] /') || status=1
+wait "$NEXTEST_PID" || status=1
+exit "$status"
