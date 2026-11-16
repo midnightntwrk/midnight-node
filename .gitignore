@@ -112,3 +112,4 @@ toolkit-image.tar
 
 # component-rn-draft working dir
 .rn-drafts/
+/toolkit-tests.tar.zst
