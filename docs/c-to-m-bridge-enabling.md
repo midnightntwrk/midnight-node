@@ -71,6 +71,30 @@ Cardano. One of:
 Pick a checkpoint at or before the first bridge transfer you want observed; anything
 locked *before* the checkpoint is not seen.
 
+### Check the checkpoint before submitting
+
+> **A `Tx` checkpoint that Db-Sync does not know halts the chain.** Every validator
+> fails to build bridge inherent data, so no block is produced, including the one that
+> would carry a corrected `setMainChainScripts`. Recovery needs a node-side fix.
+
+For a `Tx(<mc_tx_hash>)` checkpoint, confirm the transaction exists on the Cardano
+network the chain observes. Run this against a fully synced Db-Sync for that network:
+
+```sql
+SELECT block.block_no
+FROM tx JOIN block ON block.id = tx.block_id
+WHERE tx.hash = decode('<mc_tx_hash hex, no 0x>', 'hex');
+```
+
+It must return exactly one row. No row means a wrong hash or the wrong Cardano network:
+do not submit.
+
+On nodes without
+[midnight-node#2369](https://github.com/midnightntwrk/midnight-node/pull/2369), the
+checkpoint must also be at or below the stable Cardano tip (Cardano tip minus
+`cardano_security_parameter` blocks). A checkpoint above it is moved back to the stable
+tip in the next block, and transfers it was meant to skip are observed again.
+
 ### Running the call
 
 Same mechanics as the approval step in the walkthrough
