@@ -383,6 +383,30 @@ commands skip it.
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
 
+#### Faucet
+
+`-p withfaucet` (`npm run run:local-env-with-faucet`) adds the
+[faucet](https://github.com/midnightntwrk/midnight-faucet-api), dispensing from the
+`0x..01` wallet that `init-mnight-faucet` funds (see below). It starts the indexer stack
+too, plus `proof-server` (`:6300`), `faucet-postgres` and `faucet` (`:5300` API + UI,
+`:9696` metrics). Images come from `FAUCET_IMAGE` and `PROOF_SERVER_IMAGE` in
+`.env.default`; override them like any other image.
+
+- **UI:** <http://localhost:5300/?isTesting=true>. `isTesting` swaps in Cloudflare's
+  always-pass Turnstile test key; the browser still needs internet access to load it.
+- **Scripted drop:**
+
+  ```bash
+  curl -s localhost:5300/v1/drips -H 'X-API-Key: local-env' -H 'Content-Type: application/json' \
+    -d '{"recipientAddress":"mn_addr_local1…","network":"midnight_local","token":"tNIGHT"}'
+  ```
+
+  The key defaults to `local-env`; set `FAUCET_THIRD_PARTY_API_KEY` to change it.
+
+- **Older faucet images:** v1.2.1 and earlier never drip on a fresh chain; drips stay
+  `PENDING` ([midnight-wallet#924](https://github.com/midnightntwrk/midnight-wallet/issues/924)).
+  Don't override `FAUCET_IMAGE` with one of them.
+
 #### cNIGHT bridge funding
 
 The `local` network ships an **unfunded** genesis (no faucet wallets), so all NIGHT

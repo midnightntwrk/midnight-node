@@ -14,7 +14,8 @@
 //! Ledger-9 dry-run validation of the guaranteed transaction segment.
 //!
 //! Uses ledger 9's split-phase `apply_guaranteed_only` API so validation does not
-//! execute the fallible segment.
+//! execute the fallible segment, and hands back the post-guaranteed state so the
+//! caller can check its UTXO integrity before accepting the transaction.
 
 #![cfg(feature = "std")]
 
@@ -22,15 +23,17 @@ use crate::ledger_9::{
 	ledger_storage_local::db::DB,
 	mn_ledger_local::{
 		error::TransactionInvalid,
-		semantics::TransactionContext,
+		semantics::{GuaranteedApplyResult, TransactionContext},
 		structure::{LedgerState, VerifiedTransaction},
 	},
 };
 
+/// The [`GuaranteedApplyResult`] derefs to the post-guaranteed state, which the
+/// caller checks for UTXO integrity.
 pub fn validate_guaranteed_execution<D: DB>(
 	state: &LedgerState<D>,
 	verified_tx: VerifiedTransaction<D>,
 	ctx: &TransactionContext<D>,
-) -> Result<(), TransactionInvalid<D>> {
-	state.apply_guaranteed_only(verified_tx, ctx).map(|_| ())
+) -> Result<GuaranteedApplyResult<D>, TransactionInvalid<D>> {
+	state.apply_guaranteed_only(verified_tx, ctx)
 }

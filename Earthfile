@@ -812,9 +812,9 @@ node-ci-image-single-platform:
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
 
     # Portability + compiler-version check (runs for both source and fetched builds;
-    # also the first run of a source bundle outside nix): compactc --version reports
-    # the bare semver with no tree-hash suffix, so compare against the version prefix.
-    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+    # also the first run of a source bundle outside nix): compactc --version leads with
+    # the bare semver (0.35.0+ appends a commit and date), so compare its first word.
+    RUN got="$(/compact-home/compactc --version | cut -d" " -f1)" && want="${COMPACTC_VERSION%%-*}" && \
         test "$got" = "$want" || \
         { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 
@@ -1258,11 +1258,12 @@ test-pallet-fixtures:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Limit compilation as well as execution to the fixture tests' library.
+    # Limit compilation as well as execution to the fixture tests' targets.
+    # `persist_refcount` needs `test-utils` (its `required-features`), or cargo silently skips it.
     WITH DOCKER
         RUN --secret NODE_GIT_TOKEN MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest r --profile ci --locked \
-            --package pallet-midnight --lib \
-            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+            --package pallet-midnight --features test-utils --lib --test persist_refcount \
+            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/) | binary_id(pallet-midnight::persist_refcount)'
     END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
     # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
@@ -1327,6 +1328,8 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
+    # Optional: override the indexer e2e's indexer image (default in test-images.docker-compose.yml).
+    ARG INDEXER_STANDALONE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
@@ -1337,6 +1340,9 @@ test-toolkit:
     END
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+    IF [ -n "$INDEXER_STANDALONE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE"
     END
     IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
@@ -1811,7 +1817,9 @@ fix-lock-npm:
     # is what resolves fresh versions.
     COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/.npmrc ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
-    RUN npm install
+    # Lockfile resolution needs no lifecycle scripts, and util/toolkit-js's postinstall
+    # (scripts/vendor-wasm.mjs) is not copied here, so it would fail.
+    RUN npm install --ignore-scripts
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
 
 # fix-lock-js regenerates all npm lockfiles
@@ -1854,7 +1862,7 @@ local-env-e2e:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN --secret NODE_GIT_TOKEN with-git-creds cargo test --test e2e_tests -- --test-threads=6 --nocapture
+    RUN --secret NODE_GIT_TOKEN E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests -- --test-threads=16 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -1948,22 +1956,30 @@ start-local-env-with-indexer-ci:
     RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
-# Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN
-# inside earthly's nested dockerd, so each job gets its own netns and the
-# local-environment-tests job can drop the repo-wide host-port serialization. FROM +prep
-# for the in-place e2e `cargo test` (node/npm + the docker compose-v2 plugin ship in +prep);
-# the COPYs + MIDNIGHT_RESERVE_CONTRACTS_PATH + ARCHITECTURE=linux/$USERARCH below replicate
-# what the host LOCALLY path gets from .envrc/worktree (each was a real bring-up failure when
-# missing). Locally proven via the save→load twin +local-env-full-ci-localimg; this
-# registry-`--pull` form first runs in CI.
-local-env-ci:
+# Preparation has no node-image dependency, so CI can overlap it with the build.
+local-env-ci-prepare:
     FROM +prep
+    # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
+    # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
+    COPY --dir local-environment .
+    COPY --dir midnight-reserve-contracts .
+    COPY --dir scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
+    SAVE IMAGE
+
+# Each invocation gets its own nested Docker daemon and chain state.
+local-env-ci:
+    FROM +local-env-ci-prepare
     ARG NODE_IMAGE
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
     ARG TOOLKIT_IMAGE
     ARG USERARCH
+    ARG CI_EXECUTION=""
     # Fail early + kindly if any image ref is empty — otherwise `WITH DOCKER --pull` below
     # gets an empty arg and dies with the opaque "invalid reference format".
     RUN test -n "$NODE_IMAGE" && test -n "$TOOLKIT_IMAGE" && test -n "$INDEXER_API_IMAGE" \
@@ -1977,15 +1993,6 @@ local-env-ci:
         echo "    --WALLET_INDEXER_IMAGE=$GHCR_REGISTRY/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
-    # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
-    # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
-    COPY --dir local-environment .
-    COPY --dir midnight-reserve-contracts .
-    COPY --dir scripts .
-    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
-    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
-    ENV RUSTFLAGS="-C debuginfo=1"
-    RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
     # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
     # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
@@ -1998,6 +2005,7 @@ local-env-ci:
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            echo "CI execution: $CI_EXECUTION" && \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
                ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
               echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
@@ -2029,7 +2037,7 @@ local-env-ci:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
@@ -2096,7 +2104,7 @@ local-env-full-ci-localimg:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
@@ -2164,7 +2172,7 @@ local-env-oneshot:
             fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
-              with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+              E2E_FAUCET_WORKERS=16 with-git-creds cargo test --test e2e_tests --no-default-features --features local -- --test-threads=16 --nocapture ) && \
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360

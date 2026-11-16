@@ -1,0 +1,621 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! End-to-end tests for the indexer backend (`--indexer-url`, issue #1186).
+//!
+//! Each test spawns a dev `midnight-node` and an `indexer-standalone` on a shared Docker network
+//! (so the indexer reaches the node at `ws://<node>:9944`) and waits for the node to finalize and
+//! the indexer to catch up. `show-wallet` then runs for a funded genesis seed and must report
+//! non-empty shielded coins, unshielded UTXOs and dust UTXOs; `generate-txs single-tx` builds from
+//! indexer state and its transfer must show up in the destination's `show-wallet`, and
+//! `generate-txs batches` must land txs that spend outputs of txs built earlier in the same run.
+//!
+//! Each flow runs against both supported indexer lines: 4.4, and 4.3 on a ledger-8 chain.
+//!
+//! An uncached run is also the oracle for the incremental wallet cache: a cache-resumed sync must
+//! reproduce it exactly, and an entry filed under another chain must never be served.
+//!
+//! Every run must take the DUST fast sync (the local indexer serves it), and after DUST and NIGHT
+//! have been spent its wallets must equal the `--no-fast-sync` event replay's. A cached run must
+//! resume the fast sync from the last run's spend-chain frontier and still equal both.
+//!
+//! Like the other container tests in this crate it needs Docker plus the pinned node/indexer
+//! images (resolved via `test-images.docker-compose.yml`), so it only runs where those are
+//! available (CI / a local Docker host).
+
+mod common;
+
+use common::{test_image, wait_for_node::wait_for_finalized_block};
+use midnight_ledger_unsafe_helpers::IndexerClient;
+use midnight_ledger_unsafe_helpers::ledger_9::{
+	BuilderContext, DefaultDB, IndexerContext, IntoWalletAddress, UnshieldedWallet, WalletSeed,
+};
+use midnight_node_toolkit::client::MidnightNodeClient;
+use parity_scale_codec::Decode;
+use std::num::NonZeroUsize;
+use std::path::Path;
+use std::process::Command;
+use std::time::{Duration, Instant};
+use subxt::rpcs::methods::legacy::BlockNumber;
+use subxt::utils::H256;
+use testcontainers::{
+	ContainerAsync, GenericImage, ImageExt,
+	core::{ContainerPort, WaitFor},
+	runners::AsyncRunner,
+};
+
+/// Genesis seed funded with NIGHT/DUST in the `dev` (undeployed) preset — the same seed the
+/// `show_wallet` unit tests assert is funded.
+const FUNDED_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+/// Unfunded in the `dev` preset, so any UTXO it shows came from the test's transfer.
+const UNFUNDED_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000005";
+const NETWORK: &str = "undeployed";
+/// 32-byte (64 hex char) secret the indexer uses to encrypt its wallet session store. Any valid
+/// hex works for a throwaway standalone instance, but it MUST contain a non-digit hex char: the
+/// indexer's config loader does `try_parsing` on `APP__` env vars, so an all-numeric value is
+/// coerced to an integer and rejected ("expected a string for key INFRA.SECRET").
+const INDEXER_SECRET: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+/// A dev node plus an indexer that has caught up to the node's finalized tip. The containers stop
+/// when this is dropped.
+struct Env {
+	_node: ContainerAsync<GenericImage>,
+	_indexer: ContainerAsync<GenericImage>,
+	node_ws: String,
+	indexer_url: String,
+	dust_snapshots_verify: bool,
+}
+
+/// An indexer release line and a node build it supports, as `test-images.docker-compose.yml`
+/// services.
+#[derive(Clone, Copy)]
+struct IndexerLine {
+	name: &'static str,
+	node: &'static str,
+	indexer: &'static str,
+	/// False for an index-range `dustGenerations` (most of 4.3): its snapshots rarely verify, so
+	/// DUST fast sync falls back to the replay.
+	dust_snapshots_verify: bool,
+}
+
+const INDEXER_4_4: IndexerLine = IndexerLine {
+	name: "4-4",
+	node: "midnight-node-indexer-e2e",
+	indexer: "indexer-standalone",
+	dust_snapshots_verify: true,
+};
+/// A ledger-8 chain.
+const INDEXER_4_3: IndexerLine = IndexerLine {
+	name: "4-3",
+	node: "midnight-node-indexer-e2e-4-3",
+	indexer: "indexer-standalone-4-3",
+	dust_snapshots_verify: false,
+};
+
+/// `tag` keeps container names distinct between tests of this process run in parallel.
+async fn start_env(tag: &str, line: IndexerLine) -> Env {
+	// Unique names so concurrent runs don't collide on the shared network / container names.
+	let suffix = format!("{}-{tag}-{}", std::process::id(), line.name);
+	let network = format!("mn-indexer-e2e-{suffix}");
+	let node_name = format!("mn-node-{suffix}");
+
+	// --- node ---------------------------------------------------------------------------------
+	let (node_image, node_tag) = test_image(line.node);
+	let node = GenericImage::new(node_image, node_tag)
+		.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
+		.with_exposed_port(ContainerPort::Tcp(9944))
+		.with_env_var("CFG_PRESET", "dev")
+		.with_network(&network)
+		.with_container_name(&node_name)
+		.start()
+		.await
+		.expect("failed to start midnight-node container");
+
+	let node_rpc_port = node.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
+	let node_ws = format!("ws://127.0.0.1:{node_rpc_port}");
+	wait_for_finalized_block(&node_ws, 1, Duration::from_secs(90)).await;
+	let node_height = node_finalized_height(&node_ws).await;
+
+	// --- indexer ------------------------------------------------------------------------------
+	// The indexer reaches the node over the shared network by its container name.
+	let node_url = format!("ws://{node_name}:9944");
+	let (indexer_image, indexer_tag) = test_image(line.indexer);
+	let indexer = GenericImage::new(indexer_image, indexer_tag)
+		.with_exposed_port(ContainerPort::Tcp(8088))
+		.with_network(&network)
+		.with_env_var("APP__INFRA__SECRET", INDEXER_SECRET)
+		.with_env_var("APP__INFRA__NODE__URL", &node_url)
+		.with_env_var("APP__INFRA__SPO_NODE__URL", &node_url)
+		.with_env_var("APP__INFRA__SPO_NODE__BLOCKFROST_ID", "dummy-not-using-spo")
+		.start()
+		.await
+		.expect("failed to start indexer-standalone container");
+
+	let indexer_port = indexer.get_host_port_ipv4(8088).await.expect("failed to get indexer port");
+	let indexer_url = format!("http://127.0.0.1:{indexer_port}/api/v4");
+
+	// Wait until the indexer has caught up to the node's finalized tip, else balances read short.
+	// At least height 2: genesis has no `Timestamp::Now` in storage for the block-context check
+	// to compare a parent against.
+	wait_for_indexer_height(&indexer_url, node_height.max(2), Duration::from_secs(180)).await;
+
+	Env {
+		_node: node,
+		_indexer: indexer,
+		node_ws,
+		indexer_url,
+		dust_snapshots_verify: line.dust_snapshots_verify,
+	}
+}
+
+#[tokio::test]
+async fn indexer_show_wallet_reports_genesis_balances() {
+	let env = start_env("show", INDEXER_4_4).await;
+	assert_context_reads_match_node(&env.indexer_url, &env.node_ws).await;
+	show_wallet_reports_genesis_balances(&env).await;
+}
+
+#[tokio::test]
+async fn indexer_4_3_show_wallet_reports_genesis_balances() {
+	show_wallet_reports_genesis_balances(&start_env("show", INDEXER_4_3).await).await;
+}
+
+async fn show_wallet_reports_genesis_balances(env: &Env) {
+	let indexer_url = env.indexer_url.as_str();
+
+	// --- run show-wallet against the indexer --------------------------------------------------
+	// Baseline: caching disabled, so every stream drains from the origin.
+	let baseline = show_wallet(env, FUNDED_SEED, None);
+
+	let utxos = baseline["utxos"].as_array().expect("`utxos` should be an array");
+	let coins = baseline["coins"].as_object().expect("`coins` should be an object");
+	let dust = baseline["dust_utxos"].as_array().expect("`dust_utxos` should be an array");
+
+	assert!(!utxos.is_empty(), "expected non-empty unshielded UTXOs for funded seed");
+	assert!(!coins.is_empty(), "expected non-empty shielded coins for funded seed");
+	assert!(!dust.is_empty(), "expected non-empty dust UTXOs for funded seed");
+
+	// --- incremental wallet cache ---------------------------------------------------------------
+	let cache = tempfile::tempdir().expect("failed to create cache dir");
+	assert_eq!(
+		show_wallet(env, FUNDED_SEED, Some(cache.path())),
+		baseline,
+		"enabling the cache must not change the first (still cold) run's answer",
+	);
+	assert_eq!(
+		show_wallet(env, FUNDED_SEED, Some(cache.path())),
+		baseline,
+		"a cache-resumed sync must reproduce the full drain exactly",
+	);
+
+	// Entries are namespaced by block 1's hash, so one chain's state can never be served against
+	// another's indexer. Renaming that directory away must therefore force a full drain.
+	let chain_id = IndexerClient::new(indexer_url)
+		.expect("failed to build indexer client")
+		.block_hash_at(1)
+		.await
+		.expect("block 1 query failed")
+		.expect("indexer has not indexed block 1");
+	let chain_dir = cache.path().join(hex::encode(chain_id));
+	assert!(chain_dir.is_dir(), "cache must be namespaced by block 1's hash, found: {chain_dir:?}");
+	std::fs::rename(&chain_dir, cache.path().join("ff".repeat(32)))
+		.expect("failed to rename chain-id directory");
+
+	assert_eq!(
+		show_wallet(env, FUNDED_SEED, Some(cache.path())),
+		baseline,
+		"a cache entry under another chain id must be ignored, not served",
+	);
+	assert!(chain_dir.is_dir(), "the full-drain fallback must re-file its state under this chain");
+}
+
+#[tokio::test]
+async fn indexer_generate_txs_single_tx_reaches_destination() {
+	single_tx_reaches_destination(&start_env("gen", INDEXER_4_4).await).await;
+}
+
+#[tokio::test]
+async fn indexer_4_3_generate_txs_single_tx_reaches_destination() {
+	single_tx_reaches_destination(&start_env("gen", INDEXER_4_3).await).await;
+}
+
+async fn single_tx_reaches_destination(env: &Env) {
+	const AMOUNT: u64 = 1_000_000;
+
+	assert!(
+		unshielded_values(show_wallet(env, UNFUNDED_SEED, None)).is_empty(),
+		"the destination seed must start unfunded"
+	);
+
+	let destination =
+		UnshieldedWallet::default(WalletSeed::try_from_hex_str(UNFUNDED_SEED).unwrap())
+			.address(NETWORK)
+			.to_bech32();
+	transfer(&env, &destination, AMOUNT, 1).await;
+
+	// The transfer's fee spent the source's DUST, so its fast sync followed a spend chain.
+	assert_fast_sync_matches_replay(env, FUNDED_SEED);
+	// The rest checks fast-sync resumes, which need snapshots that verify.
+	if !env.dust_snapshots_verify {
+		return;
+	}
+
+	let cache = tempfile::tempdir().expect("failed to create cache dir");
+	let (_, first) = show_wallet_logged(env, FUNDED_SEED, Some(cache.path()));
+	assert!(!first.resumed, "an empty cache has no frontier to resume from");
+	let (_, idle) = show_wallet_logged(env, FUNDED_SEED, Some(cache.path()));
+	assert!(
+		idle.resumed && idle.pass_events.is_some(),
+		"a cached run must resume by a dust event pass"
+	);
+	assert!(
+		idle.rounds < first.rounds && idle.spends == 0,
+		"nothing was spent since the frontier, so the resume must skip the transfer's spend \
+		 (fresh {first:?}, resumed {idle:?})",
+	);
+
+	transfer(&env, &destination, AMOUNT, 2).await;
+	let (resumed_wallet, resumed) = show_wallet_logged(env, FUNDED_SEED, Some(cache.path()));
+	let (fresh_wallet, fresh) = show_wallet_logged(env, FUNDED_SEED, None);
+	eprintln!(
+		"[dust fast sync] after 1 transfer: fresh {first:?}, resumed {idle:?}; after 2: fresh \
+		 {fresh:?}, resumed {resumed:?}"
+	);
+	assert!(resumed.resumed && resumed.pass_events.is_some() && !fresh.resumed);
+	assert_eq!(resumed_wallet, fresh_wallet, "a resumed DUST fast sync must match a fresh one");
+	assert_eq!(
+		resumed_wallet,
+		show_wallet_with(env, FUNDED_SEED, None, &["--no-fast-sync"]).0,
+		"a resumed DUST fast sync must match the event replay",
+	);
+	assert!(
+		resumed.spends == 1 && fresh.spends == 2 && resumed.rounds < fresh.rounds,
+		"the resume must walk only the spend made since its frontier \
+		 (fresh {fresh:?}, resumed {resumed:?})",
+	);
+}
+
+/// Send `amount` NIGHT from the funded seed to `destination` and wait until the destination holds
+/// `count` UTXOs of that value. The indexer serves finalized blocks only, hence the polling.
+async fn transfer(env: &Env, destination: &str, amount: u64, count: usize) {
+	let amount_arg = amount.to_string();
+	run_toolkit(
+		env,
+		&[
+			"generate-txs",
+			"--indexer-url",
+			&env.indexer_url,
+			"--network",
+			NETWORK,
+			"--fetch-cache",
+			"inmemory",
+			"--dest-url",
+			&env.node_ws,
+			"single-tx",
+			"--source-seed",
+			FUNDED_SEED,
+			"--unshielded-amount",
+			&amount_arg,
+			"--destination-address",
+			destination,
+		],
+	);
+
+	let start = Instant::now();
+	loop {
+		let values = unshielded_values(show_wallet(env, UNFUNDED_SEED, None));
+		if values.iter().filter(|value| **value == amount).count() == count {
+			break;
+		}
+		assert!(
+			start.elapsed() < Duration::from_secs(180),
+			"destination never received transfer {count} of {amount}; its UTXOs: {values:?}"
+		);
+		tokio::time::sleep(Duration::from_secs(3)).await;
+	}
+}
+
+#[tokio::test]
+async fn indexer_generate_txs_batches_chain_within_a_run() {
+	batches_chain_within_a_run(&start_env("batches", INDEXER_4_4).await).await;
+}
+
+#[tokio::test]
+async fn indexer_4_3_generate_txs_batches_chain_within_a_run() {
+	batches_chain_within_a_run(&start_env("batches", INDEXER_4_3).await).await;
+}
+
+/// `batches` chains txs within one run: batch 1 spends UTXOs that the run's own initial tx created,
+/// so it only balances if the indexer context tracks the txs it has built.
+async fn batches_chain_within_a_run(env: &Env) {
+	const TOTAL: u64 = 10_000;
+	// Batch 0 pays the first two wallets, batch 1 moves their funds on to the last two.
+	// `batches` counts its seeds up from `…10` in *binary* (`Wallet::increment_seed`).
+	const BATCH_SEEDS: [&str; 4] = [
+		"0000000000000000000000000000000000000000000000000000000000000010",
+		"0000000000000000000000000000000000000000000000000000000000000011",
+		"0000000000000000000000000000000000000000000000000000000000000100",
+		"0000000000000000000000000000000000000000000000000000000000000101",
+	];
+
+	let total = TOTAL.to_string();
+	run_toolkit(
+		env,
+		&[
+			"generate-txs",
+			"--indexer-url",
+			&env.indexer_url,
+			"--network",
+			NETWORK,
+			"--fetch-cache",
+			"inmemory",
+			"--dest-url",
+			&env.node_ws,
+			"batches",
+			"--funding-seed",
+			FUNDED_SEED,
+			"--num-txs-per-batch",
+			"2",
+			// Concurrent builds race on the fee payer's DUST (replay path too) and the node rejects one.
+			"--concurrency",
+			"1",
+			"--num-batches",
+			"1",
+			"--initial-unshielded-intent-value",
+			&total,
+		],
+	);
+
+	let expected = [vec![], vec![], vec![TOTAL / 2], vec![TOTAL / 2]];
+	let start = Instant::now();
+	loop {
+		let values: Vec<Vec<u64>> = BATCH_SEEDS
+			.iter()
+			.map(|seed| unshielded_values(show_wallet(env, seed, None)))
+			.collect();
+		if values == expected {
+			break;
+		}
+		assert!(
+			start.elapsed() < Duration::from_secs(180),
+			"batch wallets never settled on {expected:?}; their UTXOs: {values:?}"
+		);
+		tokio::time::sleep(Duration::from_secs(3)).await;
+	}
+
+	// The funding seed paid fees in DUST and spent a genesis NIGHT, so one of its generations
+	// carries a decay time; the batch wallets' NIGHT is unregistered, which checks the empty case.
+	for seed in std::iter::once(&FUNDED_SEED).chain(&BATCH_SEEDS) {
+		assert_fast_sync_matches_replay(env, seed);
+	}
+}
+
+fn assert_fast_sync_matches_replay(env: &Env, seed: &str) {
+	assert_eq!(
+		show_wallet(env, seed, None),
+		show_wallet_with(env, seed, None, &["--no-fast-sync"]).0,
+		"DUST fast sync for {seed} must match the event replay",
+	);
+}
+
+fn unshielded_values(wallet: serde_json::Value) -> Vec<u64> {
+	wallet["utxos"]
+		.as_array()
+		.expect("`utxos` should be an array")
+		.iter()
+		.map(|u| u["value"].as_u64().expect("utxo `value` should be a u64"))
+		.collect()
+}
+
+/// Run the toolkit binary with `args`, panicking with its output on failure; returns stdout and
+/// stderr.
+///
+/// Where `env`'s DUST snapshots verify, also fails if the DUST fast sync fell back to the replay:
+/// the fallback is silent apart from its warning, and would leave the fast-sync checks comparing
+/// the replay with itself.
+fn run_toolkit(env: &Env, args: &[&str]) -> (String, String) {
+	let output = Command::new(env!("CARGO_BIN_EXE_midnight-node-toolkit"))
+		.args(args)
+		// The fast-sync report is an info line from the helpers crate, which the default filter
+		// hides.
+		.env("RUST_LOG", "warn,midnight_node_toolkit=info,midnight_ledger_unsafe_helpers=info")
+		.output()
+		.expect("failed to run midnight-node-toolkit");
+	let (stdout, stderr) =
+		(String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+	assert!(
+		output.status.success(),
+		"midnight-node-toolkit {args:?} failed (status {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+		output.status.code(),
+	);
+	assert!(
+		!env.dust_snapshots_verify
+			|| !stderr.contains("DUST fast sync failed")
+				&& !stderr.contains("DUST fast-sync probe failed"),
+		"midnight-node-toolkit {args:?} fell back to the DUST replay\nstderr:\n{stderr}",
+	);
+	(stdout.into_owned(), stderr.into_owned())
+}
+
+/// Run `show-wallet --indexer-url …` for `seed` and return its parsed JSON.
+///
+/// `cache_dir` enables the wallet cache under that directory; `None` disables it, which is what
+/// `--fetch-cache inmemory` means to the toolkit.
+fn show_wallet(env: &Env, seed: &str, cache_dir: Option<&Path>) -> serde_json::Value {
+	show_wallet_with(env, seed, cache_dir, &[]).0
+}
+
+/// What a run's DUST fast sync reported.
+#[derive(Debug)]
+struct FastSync {
+	resumed: bool,
+	/// Dust events read, if it resumed by an event pass.
+	pass_events: Option<u64>,
+	spends: u64,
+	rounds: u64,
+}
+
+/// [`show_wallet`], plus its DUST fast-sync report.
+fn show_wallet_logged(
+	env: &Env,
+	seed: &str,
+	cache_dir: Option<&Path>,
+) -> (serde_json::Value, FastSync) {
+	let (wallet, stderr) = show_wallet_with(env, seed, cache_dir, &[]);
+	let line = stderr
+		.lines()
+		.find(|line| line.contains("DUST fast sync at block"))
+		.unwrap_or_else(|| panic!("show-wallet logged no DUST fast sync\nstderr:\n{stderr}"));
+	let count = |unit: &str| -> u64 {
+		line.split(unit)
+			.next()
+			.and_then(|before| before.rsplit(' ').next())
+			.and_then(|n| n.parse().ok())
+			.unwrap_or_else(|| panic!("no `{unit}` count in {line:?}"))
+	};
+	let report = FastSync {
+		resumed: line.contains("resumed from block"),
+		pass_events: line.contains("by a pass over").then(|| count(" dust events")),
+		spends: count(" spends in"),
+		rounds: count(" rounds,"),
+	};
+	(wallet, report)
+}
+
+/// [`show_wallet`] with `extra` flags; also returns its stderr.
+fn show_wallet_with(
+	env: &Env,
+	seed: &str,
+	cache_dir: Option<&Path>,
+	extra: &[&str],
+) -> (serde_json::Value, String) {
+	let mut args = vec![
+		"show-wallet".to_string(),
+		"--indexer-url".to_string(),
+		env.indexer_url.clone(),
+		"--network".to_string(),
+		NETWORK.to_string(),
+		"--seed".to_string(),
+		seed.to_string(),
+	];
+	match cache_dir {
+		Some(dir) => args.extend([
+			"--ledger-state-db".to_string(),
+			dir.display().to_string(),
+			"--fetch-cache".to_string(),
+			format!("redb:{}", dir.join("fetch_cache.db").display()),
+		]),
+		None => args.extend(["--fetch-cache".to_string(), "inmemory".to_string()]),
+	}
+	args.extend(extra.iter().map(|flag| flag.to_string()));
+
+	let args: Vec<&str> = args.iter().map(String::as_str).collect();
+	let (stdout, stderr) = run_toolkit(env, &args);
+	let wallet = serde_json::from_str(&stdout)
+		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"));
+	(wallet, stderr)
+}
+
+/// `IndexerContext::ledger_parameters` / `latest_block_context` must agree with the node. Uses
+/// the ledger-9 context: the pinned node image tracks main.
+///
+/// The block context is checked against the node block its own `parent_block_hash` names, so the
+/// chain advancing between the two reads cannot race the comparison.
+async fn assert_context_reads_match_node(indexer_url: &str, node_ws: &str) {
+	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, NETWORK, NonZeroUsize::MIN)
+		.expect("failed to build indexer context");
+	let node = MidnightNodeClient::new(node_ws, Some(Duration::from_secs(30)))
+		.await
+		.expect("failed to connect to node");
+
+	assert_eq!(
+		ctx.ledger_parameters().await,
+		node.get_ledger_parameters().await.expect("node ledger parameters"),
+		"indexer ledger parameters must match the node's",
+	);
+
+	let block_ctx = ctx.latest_block_context().await;
+	let parent_hash = H256(block_ctx.parent_block_hash.0);
+	let parent = node
+		.rpc
+		.chain_get_header(Some(parent_hash))
+		.await
+		.expect("parent header query")
+		.expect("node does not know the indexer's parent block");
+	let child_hash = node
+		.rpc
+		.chain_get_block_hash(Some(BlockNumber::Number(parent.number + 1)))
+		.await
+		.expect("block hash query")
+		.expect("node has no block after the indexer's parent");
+
+	assert_eq!(block_ctx.last_block_time.to_secs(), node_timestamp_secs(&node, parent_hash).await);
+	assert_eq!(block_ctx.tblock.to_secs(), node_timestamp_secs(&node, child_hash).await);
+}
+
+/// `Timestamp::Now` at `hash`, read raw so it holds across runtime versions.
+async fn node_timestamp_secs(node: &MidnightNodeClient, hash: H256) -> u64 {
+	let key =
+		[sp_crypto_hashing::twox_128(b"Timestamp"), sp_crypto_hashing::twox_128(b"Now")].concat();
+	let raw = node
+		.api
+		.at_block(hash)
+		.await
+		.expect("node at_block")
+		.storage()
+		.fetch_raw(key)
+		.await
+		.expect("Timestamp::Now");
+	u64::decode(&mut &raw[..]).expect("decode Timestamp::Now") / 1000
+}
+
+/// Read the node's current finalized height (used as the indexer catch-up target).
+async fn node_finalized_height(ws_url: &str) -> u64 {
+	let client = MidnightNodeClient::new(ws_url, Some(Duration::from_secs(30)))
+		.await
+		.unwrap_or_else(|e| panic!("failed to connect to node {ws_url}: {e}"));
+	client
+		.get_finalized_height()
+		.await
+		.expect("failed to read node finalized height")
+}
+
+/// Poll the indexer's latest block until its height reaches `target`, or panic on timeout.
+async fn wait_for_indexer_height(indexer_url: &str, target: u64, timeout: Duration) {
+	let client = IndexerClient::new(indexer_url).expect("failed to build indexer client");
+	let start = Instant::now();
+	loop {
+		match client.latest_block().await {
+			Ok(block) if block.height >= target => {
+				eprintln!(
+					"[indexer] caught up: height {} >= target {target} ({:.1}s)",
+					block.height,
+					start.elapsed().as_secs_f32()
+				);
+				return;
+			},
+			Ok(block) => eprintln!(
+				"[indexer] height {} < target {target} ({:.1}s)",
+				block.height,
+				start.elapsed().as_secs_f32()
+			),
+			Err(e) => eprintln!("[indexer] block query not ready yet: {e}"),
+		}
+		if start.elapsed() >= timeout {
+			panic!("indexer did not reach height {target} within {timeout:?}");
+		}
+		tokio::time::sleep(Duration::from_secs(2)).await;
+	}
+}

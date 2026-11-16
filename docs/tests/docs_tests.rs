@@ -58,42 +58,57 @@ fn check_doc_files_are_linked_in_readme() {
 }
 
 #[test]
-fn check_metadata_package_version_matches_node_version() {
-	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
-	let node_manifest: Manifest =
-		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
+fn check_metadata_package_version_matches_runtime_version() {
+	// The metadata crate embeds the runtime's metadata, so it is keyed by the
+	// runtime, not the node: a node-only patch release leaves both untouched.
+	let runtime_manifest_str = std::fs::read_to_string("../runtime/Cargo.toml").unwrap();
+	let runtime_manifest: Manifest =
+		toml::from_str(&runtime_manifest_str).expect("Failed to parse runtime Cargo.toml");
 
 	let metadata_manifest_str = std::fs::read_to_string("../metadata/Cargo.toml").unwrap();
 	let metadata_manifest: Manifest =
 		toml::from_str(&metadata_manifest_str).expect("Failed to parse metadata Cargo.toml");
 
-	assert_eq!(node_manifest.package.version, metadata_manifest.package.version);
+	assert_eq!(
+		metadata_manifest.package.version, runtime_manifest.package.version,
+		"metadata/Cargo.toml version must match runtime/Cargo.toml version"
+	);
 }
 
 #[test]
-fn check_spec_version_matches_node_version() {
+fn check_node_version_is_at_or_after_spec_version() {
 	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
 	let node_manifest: Manifest =
 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
 
-	let runtime_spec_version = get_runtime_spec_version();
-
-	// Parse each part, separate with '.'
-	let v: Vec<u32> = runtime_spec_version.split('_').map(|s| s.parse().unwrap()).collect();
-	let spec_version = format!("{}.{}.{}", v[0], v[1], v[2]);
+	let spec: Vec<u32> =
+		get_runtime_spec_version().split('_').map(|s| s.parse().unwrap()).collect();
 
 	// Strip pre-release suffix (e.g., "-rc.1") from node version for comparison,
 	// since spec_version can only encode major.minor.patch
-	let node_version = node_manifest
+	let node: Vec<u32> = node_manifest
 		.package
 		.version
 		.split('-')
 		.next()
-		.expect("Node version should have at least the base version");
+		.expect("Node version should have at least the base version")
+		.split('.')
+		.map(|s| s.parse().unwrap())
+		.collect();
 
+	// A client-only release ships a newer node over an unchanged runtime, so the
+	// node may run ahead of spec_version on the patch digit - never behind it,
+	// and never on a different major.minor.
 	assert_eq!(
-		node_version, spec_version,
-		"Spec version does not match node version (ignoring pre-release suffix)"
+		(node[0], node[1]),
+		(spec[0], spec[1]),
+		"node major.minor must match runtime spec_version major.minor"
+	);
+	assert!(
+		node[2] >= spec[2],
+		"node patch version {} is behind runtime spec_version patch {}",
+		node[2],
+		spec[2]
 	);
 }
 

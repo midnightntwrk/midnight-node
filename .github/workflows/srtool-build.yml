@@ -40,7 +40,10 @@ on:
 jobs:
   srtool-build:
     name: Build deterministic WASM
-    runs-on: ubuntu-latest
+    # srtool compiles the whole runtime dependency tree inside one container. On the
+    # 4-core / 16 GB ubuntu-latest VM rustc is OOM-killed (SIGKILL) on the ledger crate
+    # now that it links ledger 8 and ledger 9 side by side; the 16-core runner has 64 GB.
+    runs-on: ubuntu-latest-16-core-x64
     timeout-minutes: 90
     permissions:
       contents: write       # Required for gh release upload

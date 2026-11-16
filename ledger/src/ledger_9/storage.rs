@@ -24,7 +24,7 @@ use crate::ledger_9::ledger_storage_local::{
 // (column offset 0) for `Separate`, or column offset = NUM_COLUMNS_POLKADOT
 // for `Unified`. Drop whichever exists.
 type DbSeparate = ParityDb;
-type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+type DbUnified = ParityDb<storage_sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
 pub fn drop_default_storage_if_exists() {
 	if try_get_default_storage::<DbSeparate>().is_some() {
@@ -139,6 +139,26 @@ where
 	bytes
 }
 
+/// Returns the persist refcount for the ledger state addressed by `state_key`,
+/// or `None` if the state is not currently a GC root (refcount zero).
+///
+/// Test-only. Hard-wired to `ParityDb`, matching `init_storage_paritydb_separate`.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
+	use crate::ledger_9::api::Ledger;
+	use crate::ledger_9::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		crate::ledger_9::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	default_storage::<ParityDb>()
+		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+}
+
 #[cfg(feature = "std")]
 pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	dir: P,
@@ -153,7 +173,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		std::fs::create_dir_all(dir.as_ref())
 			.unwrap_or_else(|_| panic!("Failed to create dir {}", dir.as_ref().display()));
 
-		let db = ParityDb::<sha2::Sha256>::open(dir.as_ref());
+		let db = ParityDb::<storage_sha2::Sha256>::open(dir.as_ref());
 		Storage::new(cache_size, db)
 	});
 	if res.is_err() {
@@ -186,7 +206,7 @@ pub fn init_storage_paritydb_unified<
 	};
 
 	let res = set_default_storage(|| {
-		let db = ParityDb::<sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
+		let db = ParityDb::<storage_sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
 		Storage::new(cache_size, db)
 	});
 	if res.is_err() {
@@ -195,7 +215,7 @@ pub fn init_storage_paritydb_unified<
 
 	alloc_with_initial_state::<
 		crate::ledger_9::TransactionSignature,
-		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
+		ParityDb<storage_sha2::Sha256, D, COLUMN_OFFSET>,
 	>(genesis_state)
 }
 

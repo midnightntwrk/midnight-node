@@ -69,6 +69,10 @@ pub struct ShowWalletArgs {
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	if let Some(indexer_url) = args.source.indexer_url.clone() {
+		return execute_indexer(args, &indexer_url).await;
+	}
+
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
@@ -154,6 +158,47 @@ pub async fn execute(
 		))
 	}
 }
+/// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
+/// than replaying blocks. Produces the same [`WalletInfoJson`] as the replay path. See issue #1186.
+async fn execute_indexer(
+	args: ShowWalletArgs,
+	indexer_url: &str,
+) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	use crate::tx_generator::indexer::{IndexerLedgerContext, sync_indexer};
+
+	let Some(scheme_seed) = args.seed.clone() else {
+		return Err("indexer-backed show-wallet requires --seed \
+		            (the --address path needs local ledger state)"
+			.into());
+	};
+	let (seed, scheme) = scheme_seed.resolve();
+
+	if args.dry_run {
+		log::info!("Dry-run: indexer show-wallet for seed {seed:?} ({scheme:?}) via {indexer_url}");
+		return Ok(ShowWalletResult::DryRun(()));
+	}
+
+	let schemes = WalletSchemes::from([(seed.clone(), scheme)]);
+	let synced =
+		sync_indexer(&args.source, indexer_url, std::slice::from_ref(&seed), &schemes).await?;
+	let result = match &synced.context {
+		IndexerLedgerContext::Ledger9(ctx) => {
+			use crate::commands::fork::ledger_9::show_wallet::show_wallet_from_indexer;
+			fork_wallet_result_v9(show_wallet_from_indexer(ctx, seed, args.debug).await)
+		},
+		IndexerLedgerContext::Ledger8(ctx) => {
+			use crate::commands::fork::ledger_8::show_wallet::show_wallet_from_indexer;
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					seed,
+				);
+			fork_wallet_result_v8(show_wallet_from_indexer(ctx, seed_v8, args.debug).await)
+		},
+	};
+	synced.save_cache().await;
+
+	Ok(result)
+}
 
 fn fork_wallet_result_v9(
 	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
@@ -219,6 +264,11 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -271,6 +321,11 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -312,6 +367,11 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 				replay_checkpoint_interval: 0,
+				indexer_url: None,
+				network: "undeployed".to_string(),
+				indexer_concurrency:
+					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+				no_fast_sync: false,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -330,5 +390,25 @@ mod tests {
 			"the ECDSA identity of the funded Schnorr seed 01 owns no NIGHT UTXOs (distinct \
 			 unshielded identity)"
 		);
+	}
+
+	/// `buffer_unordered(0)` polls nothing and hangs rather than erroring, so the CLI has to reject
+	/// a zero fan-out at parse time; `NonZeroUsize` is what makes that unrepresentable downstream.
+	#[test]
+	fn indexer_concurrency_rejects_zero() {
+		use clap::Parser;
+
+		#[derive(Parser)]
+		struct Cli {
+			#[command(flatten)]
+			args: ShowWalletArgs,
+		}
+
+		let parse = |n: &str| {
+			Cli::try_parse_from(["t", "--seed", &"0".repeat(64), "--indexer-concurrency", n])
+		};
+
+		assert!(parse("0").is_err(), "--indexer-concurrency 0 would hang the drain");
+		assert_eq!(parse("8").unwrap().args.source.indexer_concurrency.get(), 8);
 	}
 }
