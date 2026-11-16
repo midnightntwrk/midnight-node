@@ -25,8 +25,8 @@ use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
 	CARDANO_ASSET_NAME_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH, CardanoPosition,
-	CardanoRewardAddressBytes, DATA_ORDERED_UTXOS_SPEC_VERSION, DustPublicKeyBytes, ObservationBatch,
-	TimestampUnixMillis, UtxoIndexInTx,
+	CardanoRewardAddressBytes, DATA_ORDERED_UTXOS_SPEC_VERSION, DustPublicKeyBytes,
+	ObservationBatch, TimestampUnixMillis, UtxoIndexInTx,
 };
 use midnight_primitives_mainchain_follower::{
 	ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData,
