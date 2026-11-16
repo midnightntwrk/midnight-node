@@ -167,50 +167,47 @@ pub enum DataSourceError {
 }
 
 #[cfg(test)]
-mod tests {
-	use ctor::{ctor, dtor};
-	use std::sync::{OnceLock, mpsc};
-	use testcontainers_modules::postgres::Postgres;
-	use testcontainers_modules::testcontainers::{
-		Container, ImageExt,
-		bollard::query_parameters::{RemoveContainerOptions, StopContainerOptions},
-		core::client::docker_client_instance,
-		runners::SyncRunner,
+pub(crate) mod test_db {
+	use sqlx::{PgPool, migrate::Migrator};
+	use std::path::Path;
+	use testcontainers::{
+		ContainerAsync, GenericImage, ImageExt,
+		core::{IntoContainerPort, WaitFor},
+		runners::AsyncRunner,
 	};
 
-	static POSTGRES: OnceLock<Container<Postgres>> = OnceLock::new();
+	const READY_MSG: &str = "database system is ready to accept connections";
 
-	fn init_postgres() -> Container<Postgres> {
-		Postgres::default().with_tag("17.2").start().unwrap()
+	/// Postgres container owned by a single test. It is removed when dropped, including on panic.
+	pub(crate) type TestDb = ContainerAsync<GenericImage>;
+
+	/// Starts a fresh Postgres and applies the migrations from `migrations_dir`
+	/// (relative to the crate root).
+	pub(crate) async fn test_db(migrations_dir: &str) -> (PgPool, TestDb) {
+		let (pool, container) = empty_test_db().await;
+		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(migrations_dir);
+		Migrator::new(dir).await.unwrap().run(&pool).await.unwrap();
+		(pool, container)
 	}
 
-	#[ctor]
-	fn on_startup() {
-		let postgres = POSTGRES.get_or_init(init_postgres);
-		let database_url = &format!(
-			"postgres://postgres:postgres@127.0.0.1:{}/postgres",
-			postgres.get_host_port_ipv4(5432).unwrap()
+	pub(crate) async fn empty_test_db() -> (PgPool, TestDb) {
+		// The entrypoint logs the readiness message on stdout for its temporary init server
+		// and on stderr for the final one.
+		let container = GenericImage::new("postgres", "17.2")
+			.with_exposed_port(5432.tcp())
+			.with_wait_for(WaitFor::message_on_stderr(READY_MSG))
+			.with_wait_for(WaitFor::message_on_stdout(READY_MSG))
+			.with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+			.with_cmd(["postgres", "-c", "fsync=off"])
+			.start()
+			.await
+			.expect("failed to start postgres container");
+		let url = format!(
+			"postgres://postgres@{}:{}/postgres",
+			container.get_host().await.unwrap(),
+			container.get_host_port_ipv4(5432).await.unwrap()
 		);
-		// Needed for sqlx::test macro annotation
-		unsafe {
-			std::env::set_var("DATABASE_URL", database_url);
-		}
-	}
-
-	#[dtor]
-	fn on_shutdown() {
-		let (tx, rx) = mpsc::channel();
-		std::thread::spawn(move || {
-			let runtime =
-				tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-			runtime.block_on(async {
-				let docker = docker_client_instance().await.unwrap();
-				let id = POSTGRES.get().unwrap().id();
-				docker.stop_container(id, None::<StopContainerOptions>).await.unwrap();
-				docker.remove_container(id, None::<RemoveContainerOptions>).await.unwrap();
-				tx.send(());
-			});
-		});
-		let _: () = rx.recv().unwrap();
+		let pool = PgPool::connect(&url).await.unwrap();
+		(pool, container)
 	}
 }

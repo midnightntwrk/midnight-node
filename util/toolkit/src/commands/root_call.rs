@@ -18,16 +18,30 @@
 
 use std::str::FromStr;
 
+use std::collections::BTreeMap;
+
 use crate::cli_parsers as cli;
+use crate::client::MidnightNodeClientConfig;
 use clap::Args;
 use subxt::{
 	Metadata, OnlineClient, SubstrateConfig,
+	config::SubstrateExtrinsicParamsBuilder,
 	dynamic::{self, Value},
 	ext::scale_value::{Composite, scale::decode_as_type},
+	extrinsics::ExtrinsicEvents,
+	rpcs::{LegacyRpcMethods, RpcClient},
+	tx::Payload,
 	utils::H256,
 };
 use subxt_signer::sr25519::Keypair;
 use thiserror::Error;
+
+/// Next nonce this process will use per signer (sr25519 public key), so concurrent
+/// root calls in one process can share signers.
+// ponytail: a tx dropped after submit leaves a gap that stalls that signer's later
+// txs in this process; fine while a dropped governance tx already fails the call.
+static NEXT_NONCE: tokio::sync::Mutex<BTreeMap<[u8; 32], u64>> =
+	tokio::sync::Mutex::const_new(BTreeMap::new());
 
 /// Dev-network council member private keys (sr25519 seeds, hex). Ferdie, Dave, Eve.
 pub const DEFAULT_COUNCIL_KEYS: [&str; 3] = [
@@ -108,6 +122,8 @@ pub enum RootCallError {
 	TransactionFinalizedError(#[from] subxt::error::TransactionFinalizedSuccessError),
 	#[error("events error: {0}")]
 	EventsError(#[from] subxt::error::EventsError),
+	#[error("RPC error: {0}")]
+	RpcError(#[from] subxt::rpcs::Error),
 }
 
 pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -143,10 +159,12 @@ pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error
 
 	// Connect to the node
 	log::info!("Connecting to node at {}", args.rpc_url);
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client = RpcClient::from_insecure_url(&args.rpc_url).await?;
+	let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
+	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client).await?;
 
 	// Execute the governance flow
-	execute_governance_call(&api, &encoded_call, &council_keypairs, &tc_keypairs).await?;
+	execute_governance_call(&api, &rpc, &encoded_call, &council_keypairs, &tc_keypairs).await?;
 
 	log::info!("Call executed successfully through governance!");
 	Ok(())
@@ -182,8 +200,32 @@ fn decode_call_to_value(encoded_call: &[u8], metadata: &Metadata) -> Result<Valu
 	Ok(value.remove_context())
 }
 
+async fn submit_finalized(
+	api: &OnlineClient<SubstrateConfig>,
+	rpc: &LegacyRpcMethods<MidnightNodeClientConfig>,
+	call: &impl Payload,
+	signer: &Keypair,
+) -> Result<ExtrinsicEvents<SubstrateConfig>, RootCallError> {
+	let progress = {
+		let mut next_nonce = NEXT_NONCE.lock().await;
+		// subxt's default nonce is read from finalized state, and accountNextIndex
+		// lags the pool's async import of a tx submitted moments earlier, so neither
+		// alone stops two in-flight txs from one signer sharing a nonce.
+		let chain_nonce =
+			rpc.system_account_next_index(&signer.public_key().to_account_id()).await?;
+		let nonce =
+			chain_nonce.max(next_nonce.get(&signer.public_key().0).copied().unwrap_or_default());
+		let params = SubstrateExtrinsicParamsBuilder::new().nonce(nonce).build();
+		let progress = api.tx().await?.sign_and_submit_then_watch(call, signer, params).await?;
+		next_nonce.insert(signer.public_key().0, nonce + 1);
+		progress
+	};
+	Ok(progress.wait_for_finalized_success().await?)
+}
+
 async fn execute_governance_call(
 	api: &OnlineClient<SubstrateConfig>,
+	rpc: &LegacyRpcMethods<MidnightNodeClientConfig>,
 	encoded_call: &[u8],
 	council_keypairs: &[Keypair],
 	tc_keypairs: &[Keypair],
@@ -223,13 +265,8 @@ async fn execute_governance_call(
 		vec![Value::u128(2), fed_auth_call.clone(), Value::u128(10000)],
 	);
 
-	let council_propose_events = api
-		.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&council_proposal, council_proposer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
+	let council_propose_events =
+		submit_finalized(api, rpc, &council_proposal, council_proposer).await?;
 
 	let council_proposal_index = extract_proposal_index(&council_propose_events, "Council")?;
 	log::info!(
@@ -242,13 +279,14 @@ async fn execute_governance_call(
 	log::info!("Council members voting...");
 	for (i, voter) in council_keypairs.iter().take(2).enumerate() {
 		log::info!("Council vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
-		vote_on_proposal(api, voter, "Council", proposal_hash, council_proposal_index, true)
+		vote_on_proposal(api, rpc, voter, "Council", proposal_hash, council_proposal_index, true)
 			.await?;
 	}
 
 	// Step 4: Close Council proposal
 	log::info!("Closing Council proposal...");
-	close_proposal(api, council_proposer, "Council", proposal_hash, council_proposal_index).await?;
+	close_proposal(api, rpc, council_proposer, "Council", proposal_hash, council_proposal_index)
+		.await?;
 
 	// Step 5: Technical Committee proposes
 	log::info!("Technical Committee proposing federated motion approval...");
@@ -260,13 +298,7 @@ async fn execute_governance_call(
 		vec![Value::u128(2), fed_auth_call, Value::u128(10000)],
 	);
 
-	let tech_propose_events = api
-		.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&tech_proposal, tc_proposer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
+	let tech_propose_events = submit_finalized(api, rpc, &tech_proposal, tc_proposer).await?;
 
 	let tech_proposal_index = extract_proposal_index(&tech_propose_events, "TechnicalCommittee")?;
 	log::info!(
@@ -281,6 +313,7 @@ async fn execute_governance_call(
 		log::info!("TC vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
 		vote_on_proposal(
 			api,
+			rpc,
 			voter,
 			"TechnicalCommittee",
 			proposal_hash,
@@ -292,7 +325,7 @@ async fn execute_governance_call(
 
 	// Step 7: Close Technical Committee proposal
 	log::info!("Closing Technical Committee proposal...");
-	close_proposal(api, tc_proposer, "TechnicalCommittee", proposal_hash, tech_proposal_index)
+	close_proposal(api, rpc, tc_proposer, "TechnicalCommittee", proposal_hash, tech_proposal_index)
 		.await?;
 
 	log::info!("Federated authority motion approved by both councils!");
@@ -318,12 +351,7 @@ async fn execute_governance_call(
 	let close_motion_call = dynamic::tx("FederatedAuthority", "motion_close", motion_close_args);
 
 	// Anyone can close the motion, use first council member
-	api.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&close_motion_call, council_proposer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
+	submit_finalized(api, rpc, &close_motion_call, council_proposer).await?;
 
 	log::info!("Federated motion closed, call executed with Root origin!");
 
@@ -332,6 +360,7 @@ async fn execute_governance_call(
 
 async fn vote_on_proposal(
 	api: &OnlineClient<SubstrateConfig>,
+	rpc: &LegacyRpcMethods<MidnightNodeClientConfig>,
 	signer: &Keypair,
 	pallet: &str,
 	proposal_hash: H256,
@@ -348,18 +377,14 @@ async fn vote_on_proposal(
 		],
 	);
 
-	api.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&vote_call, signer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
+	submit_finalized(api, rpc, &vote_call, signer).await?;
 
 	Ok(())
 }
 
 async fn close_proposal(
 	api: &OnlineClient<SubstrateConfig>,
+	rpc: &LegacyRpcMethods<MidnightNodeClientConfig>,
 	signer: &Keypair,
 	pallet: &str,
 	proposal_hash: H256,
@@ -381,18 +406,13 @@ async fn close_proposal(
 		],
 	);
 
-	api.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&close_call, signer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
+	submit_finalized(api, rpc, &close_call, signer).await?;
 
 	Ok(())
 }
 
 fn extract_proposal_index(
-	events: &subxt::extrinsics::ExtrinsicEvents<SubstrateConfig>,
+	events: &ExtrinsicEvents<SubstrateConfig>,
 	pallet: &str,
 ) -> Result<u32, RootCallError> {
 	use parity_scale_codec::Decode;
