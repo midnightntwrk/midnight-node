@@ -264,7 +264,7 @@ jobs:
 
       - name: Install cosign
         if: vars.SIGNING_KMS_KEY != ''
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           # cosign v3 hard-rejects --tlog-upload=false; v2 supports keyed no-tlog signing.
           cosign-release: "v2.6.4"
@@ -776,7 +776,7 @@ jobs:
 
       - name: Install cosign
         if: vars.SIGNING_KMS_KEY != ''
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: "v2.6.4"
 
@@ -892,7 +892,7 @@ jobs:
 
       - name: Install cosign
         if: vars.SIGNING_KMS_KEY != ''
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: "v2.6.4"
 
