@@ -6,6 +6,7 @@
 #![deny(missing_docs)]
 
 pub mod byte_string;
+pub mod cardano_address;
 pub mod crypto;
 pub mod mainchain_epoch;
 
@@ -280,6 +281,14 @@ impl MainchainAddress {
 	pub fn bytes(&self) -> Vec<u8> {
 		self.0.to_vec()
 	}
+
+	/// Checks that this is a Cardano enterprise script address, see
+	/// [cardano_address::validate_enterprise_script_address].
+	pub fn validate_enterprise_script_address(
+		&self,
+	) -> Result<cardano_address::CardanoNetwork, cardano_address::CardanoAddressError> {
+		cardano_address::validate_enterprise_script_address(&self.0)
+	}
 }
 
 #[cfg(feature = "serde")]
@@ -306,9 +315,9 @@ impl serde::Serialize for MainchainAddress {
 	where
 		S: serde::Serializer,
 	{
-		let s = String::from_utf8(self.0.to_vec())
-			.unwrap_or_else(|_| panic!("MainchainAddressString is always properly encoded UTF-8"));
-		serializer.serialize_str(&s)
+		let s = core::str::from_utf8(&self.0)
+			.map_err(|_| serde::ser::Error::custom("MainchainAddress is not valid UTF-8"))?;
+		serializer.serialize_str(s)
 	}
 }
 
@@ -321,6 +330,8 @@ impl<'de> serde::Deserialize<'de> for MainchainAddress {
 	{
 		let s = String::deserialize(deserializer)?;
 		let bytes = sp_core::bytes::from_hex(&s).unwrap_or_else(|_| s.as_bytes().to_vec());
+		core::str::from_utf8(&bytes)
+			.map_err(|_| serde::de::Error::custom("MainchainAddress is not valid UTF-8"))?;
 		let bounded = BoundedVec::try_from(bytes)
 			.map_err(|_| serde::de::Error::custom("MainchainAddress is too long"))?;
 		Ok(MainchainAddress(bounded))

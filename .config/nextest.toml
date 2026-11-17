@@ -11,11 +11,12 @@ max-threads = 1
 filter = "test(generate_intent)"
 test-group = "toolkit-js"
 
-# Contract E2E tests all fund from the same FUNDING_SEED against a shared node
-# container; running them in parallel races on that wallet's UTXOs. Keep them serial.
-[test-groups.contract-e2e]
-max-threads = 1
+# Each of these tests starts its own Postgres container. Run unthrottled next to
+# the rest of the workspace, they starve each other and the containers hit
+# testcontainers' 60s startup timeout. Applies to every profile.
+[test-groups.postgres]
+max-threads = 8
 
-[[profile.ci.overrides]]
-filter = "test(bboard_private_witness_not_leaked) | test(counter_increment_e2e) | test(welcome_e2e) | test(tic_tac_toe_e2e) | test(dao_e2e) | test(battleship_e2e) | test(election_e2e) | test(shielded_pool_e2e) | test(ecdsa_contract_committees_e2e)"
-test-group = "contract-e2e"
+[[profile.default.overrides]]
+filter = "package(partner-chains-db-sync-data-sources) | package(midnight-primitives-mainchain-follower)"
+test-group = "postgres"

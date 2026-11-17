@@ -57,7 +57,8 @@
 //! in the same block (see below). If the last slot of an epoch is empty, migration is postponed
 //! to a later epoch-end block. After the flip (`Babe`) the check is
 //! mirrored: AURA pre-runtime digests are rejected, so a stray one cannot hijack slot/author
-//! extraction from a block that BABE authored. The migration initializes pallet-babe state and
+//! extraction from a block that BABE authored, and exactly one BABE pre-runtime digest that
+//! decodes exactly is required. The migration initializes pallet-babe state and
 //! transitions to the final state `Babe`. The first block of the next epoch is authored with
 //! BABE.
 //!
@@ -284,6 +285,11 @@ pub mod pallet {
 						!Self::has_pre_runtime_for(AURA_ENGINE_ID),
 						"AURA pre-runtime digest present in state 'Babe'",
 					);
+					// Same shape rule as before the flip: one BABE item, decoding exactly.
+					assert!(
+						Self::has_single_exact_babe_pre_digest(),
+						"exactly one well-formed BABE pre-runtime digest required in state 'Babe'",
+					);
 				},
 			}
 			<T as Config>::WeightInfo::on_initialize()
@@ -427,6 +433,16 @@ pub mod pallet {
 				.logs
 				.iter()
 				.any(|log| matches!(log.as_pre_runtime(), Some((id, _)) if id == engine_id))
+		}
+
+		/// Whether the current block's digest carries exactly one BABE pre-runtime item, counted
+		/// by engine id, that decodes exactly.
+		pub(crate) fn has_single_exact_babe_pre_digest() -> bool {
+			let digest = frame_system::Pallet::<T>::digest();
+			let mut items = digest.logs.iter().filter(
+				|log| matches!(log.as_pre_runtime(), Some((id, _)) if id == BABE_ENGINE_ID),
+			);
+			matches!((items.next(), items.next()), (Some(log), None) if log.as_babe_pre_digest().is_some())
 		}
 
 		/// Returns `true` when the current block's digest carries exactly one AURA and
