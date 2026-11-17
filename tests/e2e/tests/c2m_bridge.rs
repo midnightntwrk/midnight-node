@@ -102,6 +102,15 @@ async fn bridge_transfer_cnight_to_midnight_address() {
         .await
         .expect("Failed to read finalized head before submitting Cardano tx");
 
+    // The recipient can already have bridge history (local-env's mNIGHT faucet bridges to the
+    // same dev wallet), so the indexer asserts below compare against this snapshot.
+    #[cfg(feature = "indexer")]
+    let balance_baseline = indexer_client_ready()
+        .await
+        .bridge_balance(&recipient_address)
+        .await
+        .expect("Failed to read the recipient's indexer bridgeBalance before the transfer");
+
     cardano_client
         .submit_tx(prepared.signed_tx_bytes)
         .await
@@ -249,16 +258,16 @@ async fn bridge_transfer_cnight_to_midnight_address() {
             .await_bridge_balance_where(
                 &recipient_address,
                 |bb| {
-                    bb.deposited == BRIDGE_AMOUNT_STARS as u128
-                        && bb.claimed == 0
-                        && bb.balance == claimable
+                    bb.deposited == balance_baseline.deposited + BRIDGE_AMOUNT_STARS as u128
+                        && bb.claimed == balance_baseline.claimed
+                        && bb.balance == balance_baseline.balance + claimable
                 },
                 INDEXER_OBSERVATION_TIMEOUT,
             )
             .await
             .expect(
                 "indexer bridgeBalance did not converge to expected pre-claim state \
-                 (deposited=gross, claimed=0, balance=claimable post-fee)",
+                 (deposited +gross, claimed unchanged, balance +claimable post-fee)",
             );
         tracing::info!(
             ?balance_before_claim,
@@ -410,16 +419,20 @@ async fn bridge_transfer_cnight_to_midnight_address() {
         let balance_after_claim = indexer
             .await_bridge_balance_where(
                 &recipient_address,
-                |bb| bb.claimed == claimable && bb.balance == 0,
+                |bb| {
+                    bb.claimed == balance_baseline.claimed + claimable
+                        && bb.balance == balance_baseline.balance
+                },
                 INDEXER_OBSERVATION_TIMEOUT,
             )
             .await
             .expect(
                 "indexer bridgeBalance did not converge to post-claim state \
-                 (claimed=claimable, balance=0)",
+                 (claimed +claimable, balance back to its pre-transfer value)",
             );
         assert_eq!(
-            balance_after_claim.deposited, BRIDGE_AMOUNT_STARS as u128,
+            balance_after_claim.deposited,
+            balance_baseline.deposited + BRIDGE_AMOUNT_STARS as u128,
             "indexer bridgeBalance.deposited should remain at the gross deposit total post-claim"
         );
         tracing::info!(
