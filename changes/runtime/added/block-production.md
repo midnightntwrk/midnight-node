@@ -16,4 +16,4 @@ storage, no metadata change.
 - New crate `midnight-primitives-block-production` holds `OperatorId` and
   `Producer` (pinned SCALE encodings) and the `BlockProducer` interface.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2457
