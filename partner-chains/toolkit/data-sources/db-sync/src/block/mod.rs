@@ -125,6 +125,22 @@ impl BlockDataSourceImpl {
 		Ok(block.map(From::from))
 	}
 
+	/// Returns the latest Cardano block that [get_stable_block_for][Self::get_stable_block_for]
+	/// would accept now: [security_parameter][Self::security_parameter] blocks deep and within
+	/// the stability window before the current time. Unlike
+	/// [get_latest_stable_block_for][Self::get_latest_stable_block_for], it does not subtract
+	/// [block_stability_margin][Self::block_stability_margin].
+	pub async fn get_latest_stable_block_now(
+		&self,
+	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+		let now = Timestamp::new(self.time_source.get_current_time_millis());
+		let now = BlockDataSourceImpl::timestamp_to_db_type(now)?;
+		let latest = self.get_latest_block_info().await?;
+		let stable = latest.number.saturating_sub(self.security_parameter).into();
+		let block = self.get_latest_block(stable, now).await?;
+		Ok(block.map(From::from))
+	}
+
 	/// Finds a block by its `hash` and classifies it relative to `reference_timestamp`,
 	/// returning whether the block is unknown, found-but-not-yet-stable, or found-and-stable.
 	pub async fn get_stable_block_for(

@@ -15,10 +15,9 @@
 //! answer "which engine authored this block" and "in which slot".
 //!
 //! Everything that needs either answer — the import-queue dispatch, the partner-chains slot
-//! extractor, the parent-slot lookup for inherent data, the BABE epoch-tree seeder, the flip
-//! watcher — goes through [`authoring_engine`] / [`slot_of`] so that the decision is made exactly
-//! once, by the same rule, from the header alone (no state, no body: it must hold for warp and gap
-//! sync too).
+//! extractor, the parent-slot lookup for inherent data, the BABE epoch-tree seeder — goes through
+//! [`authoring_engine`] / [`slot_of`] so that the decision is made exactly once, by the same rule,
+//! from the header alone (no state, no body: it must hold for warp and gap sync too).
 //!
 //! # The rule
 //!
