@@ -26,9 +26,7 @@ checks every query document against all of them.
 
 An end-to-end test (`util/toolkit/tests/indexer_e2e.rs`) spins up a node plus
 `indexer-standalone` on a shared Docker network and asserts the synced wallet reports the funded
-genesis balances. It is gated behind `MN_RUN_INDEXER_E2E=1` until the `indexer-standalone` image is
-published and pinned in CI (set `--INDEXER_STANDALONE_IMAGE` on the `+test-toolkit` Earthly target,
-which then enables the test).
+genesis balances. It runs in CI as part of `+test-toolkit`.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2388
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1186

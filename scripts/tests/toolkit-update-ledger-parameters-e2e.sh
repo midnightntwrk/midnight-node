@@ -52,7 +52,7 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-if ! wait_for_unfinalized_block http://localhost:9944 2; then
+if ! wait_for_toolkit_ready http://localhost:9944; then
     echo "📋 Container status:"
     docker container inspect midnight-node --format '{{.State.Status}} - Exit code: {{.State.ExitCode}}' || true
     echo "📋 Container logs:"

@@ -16,7 +16,28 @@ services:
       guard:
         condition: service_completed_successfully
   indexer-standalone:
-    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:4.4.0-pre-alpha.11-l91r2-n2r1-bridge-and-events-epics-f5deb45}
+    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:4.4.101}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
+
+  # Bump together with `indexer-standalone`: must be a node build in that indexer's
+  # `NODE_VERSIONS`, not `midnight-node` (CI's fresh build). The indexer rejects unlisted versions
+  # and crashes at genesis on same-spec builds with other metadata.
+  midnight-node-indexer-e2e:
+    image: ${INDEXER_E2E_NODE_IMAGE:-midnightntwrk/midnight-node:2.1.101}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
+
+  # The 4.3 line, on a ledger-8 node. Same pairing rule as above.
+  indexer-standalone-4-3:
+    image: ${INDEXER_4_3_IMAGE:-midnightntwrk/indexer-standalone:4.3.800}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
+  midnight-node-indexer-e2e-4-3:
+    image: ${INDEXER_4_3_NODE_IMAGE:-midnightntwrk/midnight-node:1.0.400}
     depends_on:
       guard:
         condition: service_completed_successfully

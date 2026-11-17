@@ -41,7 +41,7 @@ use tokio_tungstenite::{
 	tungstenite::{Message, client::IntoClientRequest},
 };
 
-use crate::{DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
+use crate::{DustFrontierRaw, DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
 // Custom GraphQL scalars, resolved by name from this module scope by the `GraphQLQuery` derives
 // below. `HexEncoded` blobs are kept as hex strings and decoded to bytes here; `Unit` is the
@@ -54,6 +54,8 @@ type ViewingKey = String;
 type UnshieldedAddress = String;
 #[allow(non_camel_case_types)]
 type Unit = Option<bool>;
+#[allow(non_camel_case_types)]
+type DustAddress = String;
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -118,6 +120,46 @@ pub struct DustLedgerEvents;
 	response_derives = "Debug, Clone"
 )]
 pub struct ContractActionState;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/indexer.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct ZswapCollapsedUpdate;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/dust_fast_sync.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct DustSnapshotBlock;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/dust_generations.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct DustGenerations;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/dust_fast_sync.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct DustCommitmentCollapsedUpdate;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/dust_fast_sync.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct DustNullifierTransactions;
 
 #[derive(Debug, Error)]
 pub enum IndexerClientError {
@@ -222,6 +264,63 @@ pub struct DustLedgerEventData {
 	pub raw: Vec<u8>,
 }
 
+/// The block a DUST fast sync is pinned to, with the dust trees' sizes and roots there.
+#[derive(Debug, Clone)]
+pub struct DustSnapshot {
+	pub height: u64,
+	pub hash: [u8; 32],
+	/// Exclusive end of the dust commitment tree.
+	pub commitment_end_index: u64,
+	/// Exclusive end of the dust generation tree.
+	pub generation_end_index: u64,
+	/// Untagged-serialized commitment tree root.
+	pub commitment_root: Vec<u8>,
+	/// Untagged-serialized generation tree root.
+	pub generation_root: Vec<u8>,
+	/// A dust ledger-event id at or before the block's last dust event, if one is known.
+	pub event_cursor: Option<u64>,
+}
+
+/// An owned generation entry from `dustGenerations`, and the initial DUST output it created.
+#[derive(Debug, Clone)]
+pub struct DustGenerationEntry {
+	pub commitment_mt_index: u64,
+	pub generation_mt_index: u64,
+	/// NIGHT value backing the generation.
+	pub value: u128,
+	/// The initial DUST output's value.
+	pub initial_value: u128,
+	/// The generation's `InitialNonce`, which is also its outputs' `backing_night`.
+	pub backing_night: [u8; 32],
+	pub ctime_secs: u64,
+	/// Tagged `MerkleTreeCollapsedUpdate` filling the generation tree before this entry.
+	pub collapsed_update: Option<Vec<u8>>,
+}
+
+/// An item from the `dustGenerations` subscription.
+#[derive(Debug, Clone)]
+pub enum DustGenerationsEventData {
+	Entry(DustGenerationEntry),
+	/// An owned generation's decay time, set when its backing NIGHT was spent.
+	DtimeUpdate {
+		generation_mt_index: u64,
+		dtime_secs: u64,
+	},
+	/// The end of the snapshot, with the update filling the generation tree's remainder.
+	Progress {
+		collapsed_update: Option<Vec<u8>>,
+	},
+}
+
+/// A transaction from `dustNullifierTransactions`: one of the queried nullifiers, and the raw
+/// tagged ledger `Event`s of the transaction that revealed it.
+#[derive(Debug, Clone)]
+pub struct DustSpendData {
+	/// The nullifier as 32 little-endian bytes.
+	pub nullifier_le: Vec<u8>,
+	pub events: Vec<Vec<u8>>,
+}
+
 /// Per-seed resume point for `IndexerContext::init_wallets`: what a sync run consumed, and what
 /// the next one can therefore skip.
 ///
@@ -243,6 +342,48 @@ pub struct WalletSyncState {
 	pub dust_state: Option<DustLocalStateRaw>,
 	/// Last applied dust ledger-event `id`; resume is `+ 1`.
 	pub dust_event_id: u64,
+	/// Set instead of `dust_state` when DUST was fast-synced; the next fast sync resumes each
+	/// spend chain from it.
+	pub dust_frontier: Option<DustFrontierRaw>,
+}
+
+/// Which signature of the `@beta` `dustGenerations` subscription an indexer serves. Both stream
+/// the same `DustGenerationsEvent`s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DustGenerationsForm {
+	/// `dustGenerations(dustAddress, blockHash, dtimeCutoffHeight)`, indexer 4.4 (and 4.3.4–4.3.5):
+	/// a snapshot pinned to one block.
+	ByBlockHash,
+	/// `dustGenerations(dustAddress, startIndex, endIndex)`, other 4.3 releases: built from the
+	/// indexer's latest state, so its leaves can move past the requested block.
+	ByIndexRange,
+}
+
+// The indexer caps query depth at 15, which the stock introspection query exceeds.
+const DUST_FAST_SYNC_PROBE: &str = "{ \
+	subscription: __type(name: \"Subscription\") { fields { name args { name } } } \
+	query: __type(name: \"Query\") { fields { name } } }";
+
+/// The `dustGenerations` form, provided the indexer also serves the other two operations DUST fast
+/// sync needs; `None` means fast sync is unavailable.
+fn dust_generations_form(introspection: &Value) -> Option<DustGenerationsForm> {
+	let fields = |kind: &str| introspection[kind]["fields"].as_array().cloned().unwrap_or_default();
+	let has = |fields: &[Value], name: &str| fields.iter().any(|f| f["name"] == name);
+	let (subscriptions, queries) = (fields("subscription"), fields("query"));
+	if !has(&subscriptions, "dustNullifierTransactions")
+		|| !has(&queries, "dustCommitmentMerkleTreeUpdate")
+	{
+		return None;
+	}
+	let generations = subscriptions.iter().find(|f| f["name"] == "dustGenerations")?;
+	let args = generations["args"].as_array()?;
+	if has(args, "blockHash") {
+		Some(DustGenerationsForm::ByBlockHash)
+	} else if has(args, "startIndex") {
+		Some(DustGenerationsForm::ByIndexRange)
+	} else {
+		None
+	}
 }
 
 /// A GraphQL client targeting one indexer `api/v4` base URL.
@@ -336,6 +477,25 @@ impl IndexerClient {
 			.ok_or_else(|| IndexerClientError::Malformed("missing `data` in response".into()))
 	}
 
+	/// Introspect which DUST fast-sync operations this indexer serves (see
+	/// [`DustGenerationsForm`]).
+	pub async fn dust_generations_form(&self) -> IndexerResult<Option<DustGenerationsForm>> {
+		let body = json!({ "query": DUST_FAST_SYNC_PROBE });
+		let resp: Value = self
+			.http
+			.post(&self.http_url)
+			.json(&body)
+			.send()
+			.await?
+			.error_for_status()?
+			.json()
+			.await?;
+		if let Some(errors) = resp.get("errors").filter(|e| !e.is_null()) {
+			return Err(IndexerClientError::GraphQl(errors.to_string()));
+		}
+		Ok(dust_generations_form(&resp["data"]))
+	}
+
 	/// `connect(viewingKey, options)` — establish a wallet session, returns the session id.
 	pub async fn connect(
 		&self,
@@ -373,6 +533,14 @@ impl IndexerClient {
 		data.contract_action.map(|action| decode_hex(&action.state)).transpose()
 	}
 
+	/// `zswapMerkleTreeCollapsedUpdate` — the tagged zswap tree update over `start..=end`.
+	pub async fn zswap_collapsed_update(&self, start: u64, end: u64) -> IndexerResult<Vec<u8>> {
+		let variables =
+			zswap_collapsed_update::Variables { start_index: start as i64, end_index: end as i64 };
+		let data = self.run_query::<ZswapCollapsedUpdate>(variables).await?;
+		decode_hex(&data.zswap_merkle_tree_collapsed_update.update)
+	}
+
 	/// `block(offset: {height})` — that block's hash, or `None` if the indexer has not indexed it.
 	///
 	/// Block 1's hash is the chain identity the wallet cache keys on; `None` there means "cannot
@@ -383,6 +551,93 @@ impl IndexerClient {
 			return Ok(None);
 		};
 		Ok(Some(decode_hash(&block.hash)?))
+	}
+
+	/// `block(offset: {height})` with its dust tree sizes and roots.
+	pub async fn dust_snapshot(&self, height: u64) -> IndexerResult<DustSnapshot> {
+		let variables = dust_snapshot_block::Variables { height: height as i64 };
+		let block =
+			self.run_query::<DustSnapshotBlock>(variables).await?.block.ok_or_else(|| {
+				IndexerClientError::Malformed(format!("no block at height {height}"))
+			})?;
+		let root = |root: Option<String>, tree: &str| {
+			decode_hex(&root.ok_or_else(|| {
+				IndexerClientError::Malformed(format!("block {height} has no dust {tree} root"))
+			})?)
+		};
+		Ok(DustSnapshot {
+			height,
+			hash: decode_hash(&block.hash)?,
+			commitment_end_index: block.dust_commitment_end_index as u64,
+			generation_end_index: block.dust_generation_end_index as u64,
+			commitment_root: root(block.dust_commitment_merkle_tree_root, "commitment")?,
+			generation_root: root(block.dust_generation_merkle_tree_root, "generation")?,
+			event_cursor: None,
+		})
+	}
+
+	/// `dustCommitmentMerkleTreeUpdate` — the tagged dust commitment tree update over
+	/// `start..=end`.
+	pub async fn dust_commitment_collapsed_update(
+		&self,
+		start: u64,
+		end: u64,
+	) -> IndexerResult<Vec<u8>> {
+		let variables = dust_commitment_collapsed_update::Variables {
+			start_index: start as i64,
+			end_index: end as i64,
+		};
+		let data = self.run_query::<DustCommitmentCollapsedUpdate>(variables).await?;
+		decode_hex(&data.dust_commitment_merkle_tree_update.update)
+	}
+
+	/// Open `dustGenerations` for the bech32m `dust_address` at `snapshot`, in the indexer's
+	/// `form`.
+	pub async fn dust_generations(
+		&self,
+		form: DustGenerationsForm,
+		dust_address: &str,
+		snapshot: &DustSnapshot,
+	) -> IndexerResult<DustGenerationsStream> {
+		let body = DustGenerations::build_query(dust_generations::Variables {
+			dust_address: dust_address.to_owned(),
+			block_hash: hex::encode(snapshot.hash),
+			dtime_cutoff_height: 0,
+		});
+		let payload = match form {
+			DustGenerationsForm::ByBlockHash => json!({
+				"operationName": body.operation_name,
+				"query": body.query,
+				"variables": body.variables,
+			}),
+			DustGenerationsForm::ByIndexRange => json!({
+				"operationName": body.operation_name,
+				"query": index_range_dust_generations_query(body.query),
+				"variables": {
+					"dustAddress": dust_address,
+					"startIndex": 0,
+					// Inclusive; an empty tree has no index to name, so ask for none.
+					"endIndex": snapshot.generation_end_index.saturating_sub(1),
+				},
+			}),
+		};
+		Ok(DustGenerationsStream(self.open_subscription_payload(payload).await?))
+	}
+
+	/// Open `dustNullifierTransactions` for the exact `nullifiers` (32 LE bytes each) in blocks
+	/// `from_block..=to_block`. It completes once every match has been sent.
+	pub async fn dust_nullifier_transactions(
+		&self,
+		nullifiers: impl IntoIterator<Item = &[u8]>,
+		from_block: u64,
+		to_block: u64,
+	) -> IndexerResult<DustSpendStream> {
+		let variables = dust_nullifier_transactions::Variables {
+			prefixes: nullifiers.into_iter().map(hex::encode).collect(),
+			from_block: from_block as i64,
+			to_block: to_block as i64,
+		};
+		Ok(DustSpendStream(self.open_subscription::<DustNullifierTransactions>(variables).await?))
 	}
 
 	/// Open the `shieldedTransactions` subscription starting at zswap `index`.
@@ -441,12 +696,15 @@ impl IndexerClient {
 		variables: Q::Variables,
 	) -> IndexerResult<SubscriptionStream> {
 		let body = Q::build_query(variables);
-		let payload = json!({
+		self.open_subscription_payload(json!({
 			"operationName": body.operation_name,
 			"query": body.query,
 			"variables": body.variables,
-		});
+		}))
+		.await
+	}
 
+	async fn open_subscription_payload(&self, payload: Value) -> IndexerResult<SubscriptionStream> {
 		let mut request = self
 			.ws_url
 			.as_str()
@@ -614,6 +872,87 @@ impl DustStream {
 			})
 		}))
 	}
+}
+
+/// Typed view over the `dustGenerations` subscription.
+pub struct DustGenerationsStream(SubscriptionStream);
+
+impl DustGenerationsStream {
+	pub async fn next(&mut self) -> Option<IndexerResult<DustGenerationsEventData>> {
+		let data = self.0.next_data().await?;
+		Some(data.and_then(|v| {
+			let resp: dust_generations::ResponseData = serde_json::from_value(v)
+				.map_err(|e| IndexerClientError::Malformed(format!("dustGenerations: {e}")))?;
+			map_dust_generations(resp.dust_generations)
+		}))
+	}
+}
+
+/// Typed view over the `dustNullifierTransactions` subscription.
+pub struct DustSpendStream(SubscriptionStream);
+
+impl DustSpendStream {
+	pub async fn next(&mut self) -> Option<IndexerResult<DustSpendData>> {
+		let data = self.0.next_data().await?;
+		Some(data.and_then(|v| {
+			let resp: dust_nullifier_transactions::ResponseData = serde_json::from_value(v)
+				.map_err(|e| {
+					IndexerClientError::Malformed(format!("dustNullifierTransactions: {e}"))
+				})?;
+			let spend = resp.dust_nullifier_transactions;
+			Ok(DustSpendData {
+				nullifier_le: decode_hex(&spend.nullifier_le_bytes)?,
+				events: spend
+					.transaction
+					.dust_ledger_events
+					.iter()
+					.map(|e| decode_hex(&e.raw))
+					.collect::<IndexerResult<_>>()?,
+			})
+		}))
+	}
+}
+
+/// Rewrite the `DustGenerations` document for an indexer that only has the index-range form.
+fn index_range_dust_generations_query(query: &str) -> String {
+	query
+		.replace(
+			"$blockHash: HexEncoded!\n  $dtimeCutoffHeight: Int!",
+			"$startIndex: Int!\n  $endIndex: Int!",
+		)
+		.replace(
+			"blockHash: $blockHash\n    dtimeCutoffHeight: $dtimeCutoffHeight",
+			"startIndex: $startIndex\n    endIndex: $endIndex",
+		)
+}
+
+fn map_dust_generations(
+	node: dust_generations::DustGenerationsDustGenerations,
+) -> IndexerResult<DustGenerationsEventData> {
+	use dust_generations::DustGenerationsDustGenerations as Node;
+	let update = |u: Option<String>| u.map(|u| decode_hex(&u)).transpose();
+	let parse = |s: &str, field: &str| {
+		s.parse::<u128>()
+			.map_err(|e| IndexerClientError::Decode(format!("dust generation {field}: {e}")))
+	};
+	Ok(match node {
+		Node::DustGenerationsItem(i) => DustGenerationsEventData::Entry(DustGenerationEntry {
+			commitment_mt_index: i.commitment_mt_index as u64,
+			generation_mt_index: i.generation_mt_index as u64,
+			value: parse(&i.value, "value")?,
+			initial_value: parse(&i.initial_value, "initialValue")?,
+			backing_night: decode_hash(&i.backing_night)?,
+			ctime_secs: i.ctime as u64,
+			collapsed_update: update(i.collapsed_merkle_tree.map(|u| u.update))?,
+		}),
+		Node::DustGenerationDtimeUpdateItem(d) => DustGenerationsEventData::DtimeUpdate {
+			generation_mt_index: d.generation_mt_index as u64,
+			dtime_secs: d.new_dtime as u64,
+		},
+		Node::DustGenerationsProgress(p) => DustGenerationsEventData::Progress {
+			collapsed_update: update(p.collapsed_merkle_tree.map(|u| u.update))?,
+		},
+	})
 }
 
 fn map_latest_block(block: latest_block::LatestBlockBlock) -> IndexerResult<BlockInfo> {
@@ -787,6 +1126,11 @@ impl ShieldedCatchUp {
 /// Idle timeout for the dust ledger-events subscription, which has no progress heartbeat: here
 /// silence genuinely means "no more events", so it needs no margin over the server's interval.
 pub const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The most dust ledger-event ids a resumed DUST fast sync replays in one pass instead of walking
+/// nullifier rounds: about 3s at preview's ~0.6ms per event, or 20-60 rounds at 50-150ms each.
+/// The ids are shared with zswap events, so this overcounts dust events.
+pub const DUST_EVENT_PASS_LIMIT: u64 = 5_000;
 
 /// How often [`SyncProgress::log_until_done`] emits a one-line sync-progress heartbeat while a
 /// sync run drains the subscriptions.
@@ -1030,6 +1374,66 @@ mod tests {
 		}
 	}
 
+	/// Shapes taken from the live mainnet (index range) and preview (block hash) indexers.
+	#[test]
+	fn dust_generations_form_reads_the_subscription_args() {
+		let introspection = |generations_args: Value, queries: Value| {
+			json!({
+				"subscription": { "fields": [
+					{ "name": "dustGenerations", "args": generations_args },
+					{ "name": "dustNullifierTransactions", "args": [] },
+				]},
+				"query": { "fields": queries },
+			})
+		};
+		let queries = json!([{ "name": "dustCommitmentMerkleTreeUpdate" }]);
+		let by_hash = json!([{ "name": "dustAddress" }, { "name": "blockHash" }]);
+		let by_range = json!([{ "name": "dustAddress" }, { "name": "startIndex" }]);
+
+		assert_eq!(
+			dust_generations_form(&introspection(by_hash.clone(), queries.clone())),
+			Some(DustGenerationsForm::ByBlockHash)
+		);
+		assert_eq!(
+			dust_generations_form(&introspection(by_range, queries)),
+			Some(DustGenerationsForm::ByIndexRange)
+		);
+		assert_eq!(dust_generations_form(&introspection(by_hash, json!([]))), None);
+		assert_eq!(dust_generations_form(&json!({})), None);
+	}
+
+	#[test]
+	fn map_dust_generations_from_json() {
+		let v = json!({
+			"dustGenerations": {
+				"__typename": "DustGenerationsItem",
+				"commitmentMtIndex": 3,
+				"generationMtIndex": 2,
+				"value": "5000000",
+				"initialValue": "0",
+				"backingNight": "22".repeat(32),
+				"ctime": 1_700_000_000u64,
+				"collapsedMerkleTree": { "update": "0102" },
+			}
+		});
+		let resp: dust_generations::ResponseData = serde_json::from_value(v).unwrap();
+		match map_dust_generations(resp.dust_generations).unwrap() {
+			DustGenerationsEventData::Entry(DustGenerationEntry {
+				commitment_mt_index,
+				value,
+				backing_night,
+				collapsed_update,
+				..
+			}) => {
+				assert_eq!(commitment_mt_index, 3);
+				assert_eq!(value, 5_000_000);
+				assert_eq!(backing_night, [0x22; 32]);
+				assert_eq!(collapsed_update, Some(vec![1, 2]));
+			},
+			other => panic!("expected an entry, got {other:?}"),
+		}
+	}
+
 	#[test]
 	fn catch_up_waits_for_backlog_after_early_progress() {
 		let mut c = ShieldedCatchUp::new(0);
@@ -1094,21 +1498,35 @@ mod tests {
 		}
 	}
 
+	use apollo_compiler::ExecutableDocument;
+	use std::{fs, path::Path};
+
 	/// Vendored indexer schemas (`graphql/schema/`), i.e. the indexer versions this client supports.
 	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
+	/// Documents that only newer indexers accept, with the oldest schema each needs. All others must
+	/// validate against every schema.
+	const NEWER_ONLY: &[(&str, &str)] = &[("dust_generations.graphql", "indexer-4.4.graphql")];
+
+	fn vendored_schema(name: &str) -> apollo_compiler::validation::Valid<apollo_compiler::Schema> {
+		let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql/schema").join(name);
+		apollo_compiler::Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
+			.unwrap_or_else(|e| panic!("{name}: {}", e.errors))
+	}
 
 	#[test]
 	fn documents_validate_against_every_vendored_schema() {
-		use apollo_compiler::{ExecutableDocument, Schema};
-		use std::{fs, path::Path};
-
 		let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql");
-		for name in SCHEMAS {
-			let path = dir.join("schema").join(name);
-			let schema = Schema::parse_and_validate(fs::read_to_string(&path).unwrap(), &path)
-				.unwrap_or_else(|e| panic!("{name}: {}", e.errors));
+		for (i, name) in SCHEMAS.iter().enumerate() {
+			let schema = vendored_schema(name);
 			for doc in fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()) {
 				if doc.extension().is_none_or(|ext| ext != "graphql") {
+					continue;
+				}
+				let oldest = NEWER_ONLY
+					.iter()
+					.find(|(file, _)| doc.ends_with(file))
+					.map_or(0, |(_, schema)| SCHEMAS.iter().position(|s| s == schema).unwrap());
+				if i < oldest {
 					continue;
 				}
 				if let Err(e) = ExecutableDocument::parse_and_validate(
@@ -1119,6 +1537,19 @@ mod tests {
 					panic!("{} is invalid against {name}:\n{}", doc.display(), e.errors);
 				}
 			}
+		}
+	}
+
+	/// `DustGenerationsForm::ByIndexRange` sends this rewrite to 4.3 indexers.
+	#[test]
+	fn index_range_dust_generations_query_validates_on_indexer_4_3() {
+		let query = index_range_dust_generations_query(dust_generations::QUERY);
+		if let Err(e) = ExecutableDocument::parse_and_validate(
+			&vendored_schema("indexer-4.3.graphql"),
+			query,
+			"dust_generations.graphql",
+		) {
+			panic!("{}", e.errors);
 		}
 	}
 }
