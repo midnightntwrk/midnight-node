@@ -413,7 +413,7 @@ mod tests {
 	use std::str::FromStr;
 	use testcontainers::{
 		ContainerAsync, GenericImage, ImageExt,
-		core::{IntoContainerPort, WaitFor},
+		core::{IntoContainerPort, Mount, WaitFor},
 		runners::AsyncRunner,
 	};
 
@@ -429,6 +429,10 @@ mod tests {
 			.with_wait_for(WaitFor::message_on_stderr(READY_MSG))
 			.with_wait_for(WaitFor::message_on_stdout(READY_MSG))
 			.with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+			// Many of these start at once in CI. Skipping initdb's fsyncs and keeping the
+			// data on tmpfs cuts startup time and disk contention.
+			.with_env_var("POSTGRES_INITDB_ARGS", "--no-sync")
+			.with_mount(Mount::tmpfs_mount("/var/lib/postgresql/data"))
 			.with_cmd(["postgres", "-c", "fsync=off"])
 			.start()
 			.await

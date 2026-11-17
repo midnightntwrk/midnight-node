@@ -10,3 +10,13 @@ max-threads = 1
 [[profile.ci.overrides]]
 filter = "test(generate_intent)"
 test-group = "toolkit-js"
+
+# Each of these tests starts its own Postgres container. Run unthrottled next to
+# the rest of the workspace, they starve each other and the containers hit
+# testcontainers' 60s startup timeout. Applies to every profile.
+[test-groups.postgres]
+max-threads = 8
+
+[[profile.default.overrides]]
+filter = "package(partner-chains-db-sync-data-sources) | package(midnight-primitives-mainchain-follower)"
+test-group = "postgres"
