@@ -1,0 +1,24 @@
+[package]
+name = "midnight-primitives-block-production"
+version = "0.1.0"
+edition = "2024"
+description = "Who produced a block: identity types and the block producer interface"
+license-file.workspace = true
+
+[dependencies]
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+sidechain-domain.workspace = true
+authority-selection-inherents.workspace = true
+
+[dev-dependencies]
+hex-literal.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "sidechain-domain/std",
+    "authority-selection-inherents/std",
+]
