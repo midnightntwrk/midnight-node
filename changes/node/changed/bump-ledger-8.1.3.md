@@ -22,6 +22,6 @@ Crate versions: `midnight-ledger`/`midnight-zswap` 8.1.3,
 `base-crypto-1.1.0-rc.4`, `onchain-vm-4.0.0-rc.4`, `onchain-state-4.0.0-rc.5`,
 `crate-onchain-runtime-4.0.0-rc.5`; `midnight-proofs` 0.8.2.
 
-Backport of the ledger 8 bump from #2238 (release/node-1.0.400).
+Same change on release/node-2.1.0: #2254. Ledger 8 bump on release/node-1.0.400: #2238.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/2254
+PR: https://github.com/midnightntwrk/midnight-node/pull/2257

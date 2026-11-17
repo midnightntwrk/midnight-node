@@ -11,6 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use strum::{EnumIter, IntoEnumIterator as _};
+use subxt::{
+	config::substrate::{ConsensusEngineId, DigestItem, SubstrateHeader},
+	utils::H256,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum RuntimeVersionError {
@@ -18,6 +22,8 @@ pub enum RuntimeVersionError {
 	InvalidProtocolVersion(parity_scale_codec::Error),
 	#[error("indexer received a block made with unsupported node version {0}")]
 	UnsupportedBlockVersion(u32),
+	#[error("block header is missing the MNSV runtime-version digest")]
+	MissingDigest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
@@ -30,7 +36,6 @@ pub enum RuntimeVersion {
 	V2_1_0,
 	V2_1_100,
 	V3_0_0,
-	V4_0_0,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -48,7 +53,6 @@ impl TryFrom<u32> for RuntimeVersion {
 			002_001_000 => Ok(Self::V2_1_0),
 			002_001_100 => Ok(Self::V2_1_100),
 			003_000_000 => Ok(Self::V3_0_0),
-			004_000_000 => Ok(Self::V4_0_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -66,12 +70,28 @@ impl RuntimeVersion {
 			Self::V2_1_0 => 002_001_000,
 			Self::V2_1_100 => 002_001_100,
 			Self::V3_0_0 => 003_000_000,
-			Self::V4_0_0 => 004_000_000,
 		}
 	}
 
 	pub fn latest_version() -> Self {
 		RuntimeVersion::iter().max().unwrap()
+	}
+
+	/// Extract the runtime version from a block header by parsing the `MNSV`
+	/// consensus digest written by the `version` pallet.
+	pub fn from_header(header: &SubstrateHeader<H256>) -> Result<Self, RuntimeVersionError> {
+		const VERSION_ID: ConsensusEngineId = *b"MNSV";
+		header
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| match item {
+				DigestItem::Consensus(id, data) if *id == VERSION_ID => {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				},
+				_ => None,
+			})
+			.ok_or(RuntimeVersionError::MissingDigest)?
 	}
 }
 
@@ -205,12 +225,6 @@ impl_midnight_metadata!(
 	MidnightMetadata3_0_0,
 	mn_meta_3_0_0,
 	midnight_node_metadata::midnight_metadata_3_0_0
-);
-
-impl_midnight_metadata!(
-	MidnightMetadata4_0_0,
-	mn_meta_4_0_0,
-	midnight_node_metadata::midnight_metadata_4_0_0
 );
 
 #[cfg(test)]

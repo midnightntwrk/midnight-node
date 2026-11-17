@@ -15,7 +15,9 @@ use prometheus_endpoint::{
 	self as prometheus, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, PrometheusError,
 	Registry, U64,
 };
+use sp_externalities::{Externalities, ExternalitiesExt};
 use std::{
+	any::Any,
 	path::PathBuf,
 	sync::{Arc, Mutex},
 };
@@ -336,5 +338,40 @@ impl LedgerEphemeralExt {
 	/// Keep `state` alive under its serialized root `state_root`.
 	pub fn hold(&mut self, state_root: Vec<u8>, state: Box<dyn std::any::Any + Send>) {
 		self.0.push((state_root, state));
+	}
+}
+
+sp_externalities::decl_extension! {
+	/// Keeps a block's intra-block ledger states, which are never persisted, addressable.
+	///
+	/// The node registers one per runtime-API instance, so they live as long as the block's
+	/// execution. Not transactional on purpose: a FRAME storage rollback reverts `StateKey`
+	/// to a state still held here.
+	#[derive(Default)]
+	pub struct LedgerStatesExt(Vec<Box<dyn Any + Send>>);
+}
+
+impl LedgerStatesExt {
+	/// Hold `state` until [`Self::release_all`] or until the extension is dropped.
+	///
+	/// Where the node didn't register one (tests, benchmarks) it is registered here, and
+	/// then lives only as long as the current externalities.
+	pub fn hold(
+		mut ext: &mut dyn Externalities,
+		state: Box<dyn Any + Send>,
+	) -> Result<(), sp_externalities::Error> {
+		match ext.extension::<Self>() {
+			Some(held) => held.0.push(state),
+			None => ext.register_extension(Self(vec![state]))?,
+		}
+		Ok(())
+	}
+
+	/// Drop every held state. Call before the storage flush, or it writes them to disk
+	/// as garbage.
+	pub fn release_all(mut ext: &mut dyn Externalities) {
+		if let Some(held) = ext.extension::<Self>() {
+			held.0.clear();
+		}
 	}
 }

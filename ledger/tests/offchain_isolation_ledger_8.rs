@@ -102,8 +102,14 @@ fn run_block(genesis: &[u8], system_tx: &[u8], ctx: &BlockContext) -> Outputs {
 		host::apply_cnight_system_transaction(genesis, system_tx, ctx.clone(), RUNTIME_VERSION)
 			.unwrap();
 	let post_block = host::post_block_update(&applied_system.state_root, ctx.clone()).unwrap();
+	// During block execution the post-block update releases the block's intermediate states,
+	// so the second post-block variant runs on a sibling block from the same parent.
+	let sibling_system =
+		host::apply_cnight_system_transaction(genesis, system_tx, ctx.clone(), RUNTIME_VERSION)
+			.unwrap();
+	assert_eq!(sibling_system.state_root, applied_system.state_root);
 	let apply_post_block =
-		host::apply_post_block_update(&applied_system.state_root, ctx.clone()).unwrap();
+		host::apply_post_block_update(&sibling_system.state_root, ctx.clone()).unwrap();
 	host::flush_storage();
 
 	Outputs {
@@ -186,7 +192,8 @@ fn ledger_8_offchain_calls_match_block_execution_without_touching_shared_storage
 		"off-chain execution changed the persisted roots",
 	);
 	assert_eq!(flushes(&offchain_metrics), 0, "off-chain execution flushed");
-	assert_eq!(held(&mut offchain), Some(offchain_outputs.state_roots.len()));
+	// The sibling block's intermediate is held a second time.
+	assert_eq!(held(&mut offchain), Some(offchain_outputs.state_roots.len() + 1));
 
 	drop(offchain);
 	for key in &produced {
@@ -198,7 +205,11 @@ fn ledger_8_offchain_calls_match_block_execution_without_touching_shared_storage
 		run_block(&genesis, &system_tx, &ctx)
 	});
 	assert_eq!(offchain_outputs, onchain_outputs);
-	for key in &produced {
+	// Block execution persists only the post-block tips; the intra-block state (the first
+	// root) is held until the post-block update and then released, never stored for itself.
+	let durable: Vec<_> =
+		onchain_outputs.state_roots[1..].iter().flat_map(|r| nodes_of(r)).collect();
+	for key in &durable {
 		assert!(in_shared(key).0, "block execution did not store its state");
 	}
 	let roots_after = default_storage::<Shared>().with_backend(|backend| backend.get_roots());
