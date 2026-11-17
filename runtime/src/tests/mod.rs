@@ -882,20 +882,22 @@ mod block_producer {
 	}
 
 	#[test]
-	#[should_panic(expected = "Defensive failure")]
+	// Panics only where debug assertions are on; release builds get no producer.
+	#[cfg_attr(debug_assertions, should_panic(expected = "Defensive failure"))]
 	fn a_block_without_author_is_a_defensive_failure() {
 		sp_io::TestExternalities::default().execute_with(|| {
 			start_block(&[alice()], &[alice()], None);
-			BlockProducer::current();
+			assert_eq!(BlockProducer::current().producer, None);
 		});
 	}
 
 	#[test]
-	#[should_panic(expected = "Defensive failure")]
+	// Panics only where debug assertions are on; release builds get no producer.
+	#[cfg_attr(debug_assertions, should_panic(expected = "Defensive failure"))]
 	fn an_index_outside_the_committee_is_a_defensive_failure() {
 		sp_io::TestExternalities::default().execute_with(|| {
 			start_block(&[alice(), bob()], &[alice()], Some(1));
-			BlockProducer::current();
+			assert_eq!(BlockProducer::current().producer, None);
 		});
 	}
 }
