@@ -1,0 +1,184 @@
+name: Issue Label Check
+
+on:
+  # TODO: re-enable `issues` and `schedule` triggers after testing via `workflow_dispatch`.
+  # issues:
+  #   types: [opened, labeled, unlabeled]
+  # schedule:
+  #   - cron: "0 8 * * 1-5"
+  workflow_dispatch:
+
+# no top level default permissions for security reasons
+permissions: {}
+
+jobs:
+  check-single-issue:
+    name: Check issue labels
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check labels and comment
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const labels = context.payload.issue.labels.map(l => l.name);
+            const issueNumber = context.payload.issue.number;
+
+            const hasOrigin = labels.some(l => l.startsWith("origin:"));
+            const hasPriority = labels.some(l => l.startsWith("priority:"));
+            const hasComponent = labels.some(l => l.startsWith("component:"));
+
+            const missing = [];
+            if (!hasOrigin) missing.push("`origin:*`");
+            if (!hasPriority) missing.push("`priority:*`");
+            if (!hasComponent) missing.push("`component:*`");
+
+            const allGood = missing.length === 0;
+
+            let body;
+            if (allGood) {
+              body = [
+                "**Issue Checker Bot:** ✅ Issue has all required labels",
+                "",
+                "<details>",
+                "<summary>Details</summary>",
+                "",
+                "All required labels are present:",
+                `- Origin: ${labels.find(l => l.startsWith("origin:"))}`,
+                `- Priority: ${labels.find(l => l.startsWith("priority:"))}`,
+                `- Component: ${labels.find(l => l.startsWith("component:"))}`,
+                "",
+                "</details>",
+              ].join("\n");
+            } else {
+              body = [
+                `**Issue Checker Bot:** ⚠️ Issue is missing required labels: ${missing.join(", ")}`,
+                "",
+                "<details>",
+                "<summary>Details</summary>",
+                "",
+                "Every issue must have all of the following label types:",
+                "",
+                `- [${hasOrigin ? "x" : " "}] **Origin** — any label prefixed with \`origin:\``,
+                `- [${hasPriority ? "x" : " "}] **Priority** — any label prefixed with \`priority:\``,
+                `- [${hasComponent ? "x" : " "}] **Component** — any label prefixed with \`component:\``,
+                "",
+                "</details>",
+              ].join("\n");
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body.startsWith("**Issue Checker Bot:**"));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+            }
+
+  check-all-issues:
+    name: Check all open issues
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Check labels on all open issues
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+
+              const labels = issue.labels.map(l => l.name);
+              const hasOrigin = labels.some(l => l.startsWith("origin:"));
+              const hasPriority = labels.some(l => l.startsWith("priority:"));
+              const hasComponent = labels.some(l => l.startsWith("component:"));
+
+              const missing = [];
+              if (!hasOrigin) missing.push("`origin:*`");
+              if (!hasPriority) missing.push("`priority:*`");
+              if (!hasComponent) missing.push("`component:*`");
+
+              const allGood = missing.length === 0;
+
+              let body;
+              if (allGood) {
+                body = [
+                  "**Issue Checker Bot:** ✅ Issue has all required labels",
+                  "",
+                  "<details>",
+                  "<summary>Details</summary>",
+                  "",
+                  "All required labels are present:",
+                  `- Origin: ${labels.find(l => l.startsWith("origin:"))}`,
+                  `- Priority: ${labels.find(l => l.startsWith("priority:"))}`,
+                  `- Component: ${labels.find(l => l.startsWith("component:"))}`,
+                  "",
+                  "</details>",
+                ].join("\n");
+              } else {
+                body = [
+                  `**Issue Checker Bot:** ⚠️ Issue is missing required labels: ${missing.join(", ")}`,
+                  "",
+                  "<details>",
+                  "<summary>Details</summary>",
+                  "",
+                  "Every issue must have all of the following label types:",
+                  "",
+                  `- [${hasOrigin ? "x" : " "}] **Origin** — any label prefixed with \`origin:\``,
+                  `- [${hasPriority ? "x" : " "}] **Priority** — any label prefixed with \`priority:\``,
+                  `- [${hasComponent ? "x" : " "}] **Component** — any label prefixed with \`component:\``,
+                  "",
+                  "</details>",
+                ].join("\n");
+              }
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              const existing = comments.find(c => c.body.startsWith("**Issue Checker Bot:**"));
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body,
+                });
+              }
+            }
