@@ -387,6 +387,7 @@ fn dust_generations_form(introspection: &Value) -> Option<DustGenerationsForm> {
 }
 
 /// A GraphQL client targeting one indexer `api/v4` base URL.
+#[derive(Clone)]
 pub struct IndexerClient {
 	http: reqwest::Client,
 	/// HTTP endpoint, e.g. `http://host:8088/api/v4/graphql`.
@@ -396,20 +397,46 @@ pub struct IndexerClient {
 	project_id: Option<String>,
 }
 
-const BLOCKFROST_PROJECT_ID_ENV: &str = "BLOCKFROST_PROJECT_ID";
+/// Environment variable holding the Blockfrost API key.
+pub const BLOCKFROST_PROJECT_ID_ENV: &str = "BLOCKFROST_PROJECT_ID";
+
+/// A Blockfrost API key. Its `Debug` output is redacted so it cannot reach logs or error messages.
+#[derive(Clone)]
+pub struct BlockfrostProjectId(String);
+
+impl std::str::FromStr for BlockfrostProjectId {
+	type Err = std::convert::Infallible;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(Self(s.trim().to_owned()))
+	}
+}
+
+impl std::fmt::Debug for BlockfrostProjectId {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("BlockfrostProjectId(REDACTED)")
+	}
+}
 
 impl IndexerClient {
 	/// Build a client from an `api/v4` base URL, e.g. `http://127.0.0.1:8088/api/v4`.
 	///
 	/// The GraphQL endpoints (`/graphql`, `/graphql/ws`) are appended automatically, and the
 	/// WebSocket scheme is derived from the HTTP scheme (`http`→`ws`, `https`→`wss`).
-	/// A `*.blockfrost.io` URL needs `BLOCKFROST_PROJECT_ID`.
+	/// A `*.blockfrost.io` URL takes its API key from `BLOCKFROST_PROJECT_ID`.
 	pub fn new(base_url: &str) -> IndexerResult<Self> {
-		let project_id = std::env::var(BLOCKFROST_PROJECT_ID_ENV).ok();
-		Self::with_project_id(base_url, project_id.as_deref())
+		let project_id = std::env::var(BLOCKFROST_PROJECT_ID_ENV)
+			.ok()
+			.map(|id| BlockfrostProjectId(id.trim().to_owned()));
+		Self::with_project_id(base_url, project_id.as_ref())
 	}
 
-	fn with_project_id(base_url: &str, project_id: Option<&str>) -> IndexerResult<Self> {
+	/// Like [`new`](Self::new), but with the Blockfrost API key passed in rather than read from
+	/// the environment. The key is required for a `*.blockfrost.io` URL and ignored otherwise.
+	pub fn with_project_id(
+		base_url: &str,
+		project_id: Option<&BlockfrostProjectId>,
+	) -> IndexerResult<Self> {
 		let base = base_url.trim_end_matches('/');
 		let blockfrost = reqwest::Url::parse(base)
 			.ok()
@@ -430,12 +457,13 @@ impl IndexerClient {
 		};
 		let ws_url = format!("{ws_base}{ws_suffix}");
 
-		let project_id = match project_id {
+		let project_id = match project_id.map(|id| id.0.as_str()) {
 			_ if !blockfrost => None,
-			Some(id) => Some(id.trim().to_owned()),
-			None => {
+			Some(id) if !id.is_empty() => Some(id.to_owned()),
+			_ => {
 				return Err(IndexerClientError::Decode(format!(
-					"Blockfrost indexer URL needs {BLOCKFROST_PROJECT_ID_ENV} set"
+					"Blockfrost indexer URL needs an API key: pass --blockfrost-project-id or set \
+					 {BLOCKFROST_PROJECT_ID_ENV}"
 				)));
 			},
 		};
@@ -1253,13 +1281,22 @@ mod tests {
 	#[test]
 	fn blockfrost_url_uses_its_layout_and_requires_project_id() {
 		let base = "https://midnight-mainnet.blockfrost.io/api/v0";
-		let c = IndexerClient::with_project_id(base, Some("nightmainnetX")).unwrap();
+		let key: BlockfrostProjectId = " nightmainnetX\n".parse().unwrap();
+		let c = IndexerClient::with_project_id(base, Some(&key)).unwrap();
 		assert_eq!(c.http_url, base);
 		assert_eq!(c.ws_url, "wss://midnight-mainnet.blockfrost.io/api/v0/ws");
-		assert!(c.project_id.is_some());
+		assert_eq!(c.project_id.as_deref(), Some("nightmainnetX"));
 		assert!(IndexerClient::with_project_id(base, None).is_err());
-		let plain = IndexerClient::with_project_id("http://h/api/v4", Some("x")).unwrap();
+		let blank: BlockfrostProjectId = "  ".parse().unwrap();
+		assert!(IndexerClient::with_project_id(base, Some(&blank)).is_err());
+		let plain = IndexerClient::with_project_id("http://h/api/v4", Some(&key)).unwrap();
 		assert!(plain.project_id.is_none());
+	}
+
+	#[test]
+	fn blockfrost_project_id_debug_is_redacted() {
+		let key: BlockfrostProjectId = "nightmainnetSECRET".parse().unwrap();
+		assert!(!format!("{key:?}").contains("SECRET"));
 	}
 
 	#[test]

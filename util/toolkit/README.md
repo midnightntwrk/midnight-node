@@ -137,6 +137,44 @@ Wallet state reconstructed during block replay is cached per seed in `--ledger-s
 
 Replay verifies finalized history in proof-erased form (no zero-knowledge proof, signature or balancing re-verification) and instead compares the locally computed ledger state root with the on-chain `Midnight.StateKey` after every block; a mismatch aborts the replay. The toolkit is a testing tool that trusts the node it talks to, so there is no strict-verification mode.
 
+### Reading wallet state from an indexer
+
+Replaying every block from the node gets slower as the chain grows. With `--indexer-url` (`MN_INDEXER_URL`) the toolkit reads wallet state from a Midnight indexer's GraphQL API instead. Pass the indexer's `api/v4` base URL, and the network id with `--network` so the viewing key and addresses are derived for the right network:
+
+```bash
+midnight-node-toolkit show-wallet \
+  --indexer-url http://127.0.0.1:8088/api/v4 \
+  --network undeployed \
+  --seed 0000000000000000000000000000000000000000000000000000000000000001
+```
+
+`show-wallet` and `generate-txs` support this path, except `generate-txs send`, which forwards source blocks that the indexer path does not have. The node is still used to submit transactions (`--dest-url`). Only the Schnorr NIGHT identity is supported; an `ecdsa:` seed needs the block-replay path.
+
+| Option | Environment variable | Purpose |
+| --- | --- | --- |
+| `--indexer-url` | `MN_INDEXER_URL` | Indexer base URL. Selects the indexer path. |
+| `--network` | | Network id, e.g. `undeployed`, `preview`, `preprod`, `mainnet`. |
+| `--indexer-concurrency` | `MN_INDEXER_CONCURRENCY` | Wallets synced at once (default 4). Each holds three WebSocket subscriptions. |
+| `--no-fast-sync` | `MN_INDEXER_NO_FAST_SYNC` | Replay the full DUST event log instead of using an indexer snapshot. |
+| `--blockfrost-project-id` | `BLOCKFROST_PROJECT_ID` | Blockfrost API key. See below. |
+
+#### Using Blockfrost as the indexer
+
+[Blockfrost](https://docs.blockfrost.io/midnight/) hosts a Midnight indexer for `mainnet`, `preprod` and `preview`. Pass its URL, `https://midnight-<network>.blockfrost.io/api/v0`, as `--indexer-url`. The toolkit recognises a `*.blockfrost.io` host, uses Blockfrost's endpoint layout and sends the API key as the `project_id` header on both the HTTP and WebSocket connections.
+
+The API key is the project id of a Blockfrost project created for the same Midnight network as the URL. Supply it through the environment:
+
+```bash
+export BLOCKFROST_PROJECT_ID=<project id>
+
+midnight-node-toolkit show-wallet \
+  --indexer-url https://midnight-mainnet.blockfrost.io/api/v0 \
+  --network mainnet \
+  --seed <seed>
+```
+
+`--blockfrost-project-id <project id>` does the same and takes precedence over the environment variable, but a key passed as a flag is visible in the process list and shell history. A Blockfrost URL without a key fails before any request is made. The key is ignored for any other indexer URL.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console

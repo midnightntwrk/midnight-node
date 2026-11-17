@@ -320,6 +320,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
             no_fast_sync: false,
+            blockfrost_project_id: None,
         },
         destination: Destination {
             dest_urls: vec![],
