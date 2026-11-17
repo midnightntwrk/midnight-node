@@ -1222,11 +1222,23 @@ impl StreamProgress {
 		self.done.fetch_add(1, Ordering::Relaxed);
 	}
 
-	/// Render `scanned/target`, showing `…` for the target until the indexer reports one.
-	fn display(&self) -> String {
+	/// Render this stream's state for the progress line, given the number of wallets syncing.
+	///
+	/// A stream can finish without ever reporting counts (DUST fast sync reads a snapshot instead
+	/// of the event stream), so completion is shown as `done` rather than as a count.
+	fn display(&self, wallets: usize) -> String {
 		let scanned = self.scanned.load(Ordering::Relaxed);
 		let target = self.target.load(Ordering::Relaxed);
-		if target == 0 { format!("{scanned}/…") } else { format!("{scanned}/{target}") }
+		let done = self.done.load(Ordering::Relaxed);
+		if wallets > 0 && done >= wallets as u64 {
+			"done".to_owned()
+		} else if target > 0 {
+			format!("{scanned}/{target}")
+		} else if scanned > 0 {
+			format!("{scanned}/unknown")
+		} else {
+			"pending".to_owned()
+		}
 	}
 }
 
@@ -1252,9 +1264,9 @@ impl SyncProgress {
 				target: "midnight_node_toolkit::indexer",
 				"indexer: syncing {n} wallet(s) — shielded {}, unshielded {}, dust {} \
 				 ({done}/{streams} streams caught up)",
-				self.shielded.display(),
-				self.unshielded.display(),
-				self.dust.display(),
+				self.shielded.display(n),
+				self.unshielded.display(n),
+				self.dust.display(n),
 			);
 		}
 	}
@@ -1297,6 +1309,25 @@ mod tests {
 	fn blockfrost_project_id_debug_is_redacted() {
 		let key: BlockfrostProjectId = "nightmainnetSECRET".parse().unwrap();
 		assert!(!format!("{key:?}").contains("SECRET"));
+	}
+
+	#[test]
+	fn stream_progress_display_names_each_state() {
+		let stream = StreamProgress::default();
+		assert_eq!(stream.display(2), "pending");
+		let (mut scanned, mut target) = (0, 0);
+		stream.advance_scanned(&mut scanned, 7);
+		assert_eq!(stream.display(2), "7/unknown");
+		stream.advance_target(&mut target, 10);
+		assert_eq!(stream.display(2), "7/10");
+		stream.finish();
+		assert_eq!(stream.display(2), "7/10");
+		stream.finish();
+		assert_eq!(stream.display(2), "done");
+		// A stream that finishes without reporting counts, as DUST fast sync does.
+		let silent = StreamProgress::default();
+		silent.finish();
+		assert_eq!(silent.display(1), "done");
 	}
 
 	#[test]
