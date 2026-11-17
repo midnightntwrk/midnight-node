@@ -16,11 +16,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::serde_convert::{dust_generation_info_to_ser, qualified_dust_output_to_ser};
 use crate::commands::dust_balance::{DustBalanceJson, GenerationInfoPair};
-use ledger_helpers_local::{DefaultDB, DustOutput, Timestamp, WalletSeed};
+use ledger_helpers_local::{BuilderContext, DefaultDB, DustOutput, Timestamp, WalletSeed};
 use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
-pub fn dust_balance(
-	context: &ledger_helpers_local::context::LedgerContext<DefaultDB>,
+pub fn dust_balance<C: BuilderContext<DefaultDB>>(
+	context: &C,
 	seed: WalletSeed,
 ) -> Result<DustBalanceJson, Box<dyn std::error::Error + Send + Sync>> {
 	context.with_wallet_from_seed(seed, |wallet| {

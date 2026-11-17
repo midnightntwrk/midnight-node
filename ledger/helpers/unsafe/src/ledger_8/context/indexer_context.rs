@@ -44,8 +44,9 @@ use crate::ledger_8::{
 	MerkleTreeCollapsedUpdate, Offer, PedersenDowngradeable, ProofKind, ProofMarker,
 	PureGeneratorPedersen, QualifiedDustOutput, Resolver, SerdeTransaction, Serializable,
 	ShieldedWallet, Signature, SignatureKind, Sp, Storable, Tagged, Timestamp, Transaction,
-	UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet, WalletSeed, WalletState, ZswapChainState,
-	deserialize, deserialize_untagged, make_block_context, serialize_untagged,
+	UnshieldedSignatureScheme, UnshieldedTokenType, UnshieldedWallet, Utxo, Wallet, WalletSeed,
+	WalletState, ZswapChainState, deserialize, deserialize_untagged, make_block_context,
+	serialize_untagged,
 };
 use crate::{DustFrontierRaw, DustLocalStateRaw, UnshieldedUtxoRaw, ZswapWalletStateRaw};
 
@@ -178,7 +179,8 @@ impl<D: DB + Clone> IndexerContext<D> {
 }
 
 impl IndexerContext<DefaultDB> {
-	/// Connect to the indexer and sync each seed's wallet to the chain tip.
+	/// Connect to the indexer and sync each seed's wallet, under its unshielded signature scheme, to
+	/// the chain tip.
 	///
 	/// Seeds sync `wallet_sync_concurrency` at a time, and each seed's shielded / unshielded / dust
 	/// subscriptions drain concurrently, each on its own WebSocket.
@@ -189,7 +191,7 @@ impl IndexerContext<DefaultDB> {
 	/// self-identify, so the caller's cache key must guarantee it.
 	pub async fn init_wallets(
 		&self,
-		seeds: &[WalletSeed],
+		seeds: &[(WalletSeed, UnshieldedSignatureScheme)],
 		resume: &HashMap<WalletSeed, WalletSyncState>,
 	) -> Result<HashMap<WalletSeed, WalletSyncState>, BoxError> {
 		let event_cursor = self.dust_event_cursor().await;
@@ -207,9 +209,10 @@ impl IndexerContext<DefaultDB> {
 		// `log_until_done` loops forever; it is dropped the moment the work arm resolves, so the
 		// `select!` yields the work's result.
 		let synced = {
-			let work = stream::iter(seeds.iter().map(|seed| {
+			let work = stream::iter(seeds.iter().map(|(seed, scheme)| {
 				self.sync_wallet(
 					seed,
+					*scheme,
 					resume.get(seed),
 					&params,
 					tip_time,
@@ -288,6 +291,7 @@ impl IndexerContext<DefaultDB> {
 	async fn sync_wallet(
 		&self,
 		seed: &WalletSeed,
+		scheme: UnshieldedSignatureScheme,
 		resume: Option<&WalletSyncState>,
 		params: &LedgerParameters,
 		tip_time: Timestamp,
@@ -298,7 +302,7 @@ impl IndexerContext<DefaultDB> {
 		let mut wallet = Wallet {
 			root_seed: Some(seed.clone()),
 			shielded: ShieldedWallet::default(seed.clone()),
-			unshielded: UnshieldedWallet::default(seed.clone()),
+			unshielded: UnshieldedWallet::new(seed.clone(), scheme),
 			dust: DustWallet::default(seed.clone(), Some(params)),
 		};
 

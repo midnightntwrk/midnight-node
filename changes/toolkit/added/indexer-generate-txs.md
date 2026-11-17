@@ -9,7 +9,7 @@ block. Block context and ledger parameters come from one tip snapshot per build.
 `send` is not supported with `--indexer-url` (it forwards source blocks, which the indexer path
 has none of) and fails with a clear error.
 `register-dust-address` and contract calls with shielded inputs still hit the unimplemented
-`backs_dust_generation` / `zswap_state` indexer methods. Only Schnorr seeds are supported.
+`backs_dust_generation` / `zswap_state` indexer methods.
 
 `generate-intent circuit` now takes `--network` from the shared source arguments (same flag and
 default), since the two definitions clashed.

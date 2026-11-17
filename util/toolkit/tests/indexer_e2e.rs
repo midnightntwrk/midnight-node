@@ -40,7 +40,8 @@ mod common;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_ledger_unsafe_helpers::IndexerClient;
 use midnight_ledger_unsafe_helpers::ledger_9::{
-	BuilderContext, DefaultDB, IndexerContext, IntoWalletAddress, UnshieldedWallet, WalletSeed,
+	BuilderContext, DefaultDB, IndexerContext, IntoWalletAddress, UnshieldedSignatureScheme,
+	UnshieldedWallet, WalletSeed,
 };
 use midnight_node_toolkit::client::MidnightNodeClient;
 use parity_scale_codec::Decode;
@@ -325,6 +326,104 @@ async fn transfer(env: &Env, destination: &str, amount: u64, count: usize) {
 		);
 		tokio::time::sleep(Duration::from_secs(3)).await;
 	}
+}
+
+/// An `ecdsa:` seed syncs under its own NIGHT identity: a transfer to its ECDSA address shows up
+/// in its indexer-backed `show-wallet` exactly as in the replay path's, and not under the same
+/// seed's Schnorr identity.
+#[tokio::test]
+async fn indexer_show_wallet_ecdsa_seed_matches_replay() {
+	const AMOUNT: u64 = 1_000_000;
+	let env = start_env("ecdsa", INDEXER_4_4).await;
+	let ecdsa_seed = format!("ecdsa:{UNFUNDED_SEED}");
+
+	let destination = UnshieldedWallet::new(
+		WalletSeed::try_from_hex_str(UNFUNDED_SEED).unwrap(),
+		UnshieldedSignatureScheme::Ecdsa,
+	)
+	.address(NETWORK)
+	.to_bech32();
+	let amount = AMOUNT.to_string();
+	run_toolkit(
+		&env,
+		&[
+			"generate-txs",
+			"--indexer-url",
+			&env.indexer_url,
+			"--network",
+			NETWORK,
+			"--fetch-cache",
+			"inmemory",
+			"--dest-url",
+			&env.node_ws,
+			"single-tx",
+			"--source-seed",
+			FUNDED_SEED,
+			"--unshielded-amount",
+			&amount,
+			"--destination-address",
+			&destination,
+		],
+	);
+
+	let start = Instant::now();
+	let indexer = loop {
+		let wallet = show_wallet(&env, &ecdsa_seed, None);
+		let values = unshielded_values(wallet.clone());
+		if values.contains(&AMOUNT) {
+			break wallet;
+		}
+		assert!(
+			start.elapsed() < Duration::from_secs(180),
+			"the ECDSA identity never received the {AMOUNT} transfer; its UTXOs: {values:?}"
+		);
+		tokio::time::sleep(Duration::from_secs(3)).await;
+	};
+
+	let (stdout, _) = run_toolkit(
+		&env,
+		&[
+			"show-wallet",
+			"--src-url",
+			&env.node_ws,
+			"--seed",
+			&ecdsa_seed,
+			"--fetch-cache",
+			"inmemory",
+		],
+	);
+	let replay: serde_json::Value = serde_json::from_str(&stdout)
+		.unwrap_or_else(|e| panic!("failed to parse show-wallet JSON ({e}):\n{stdout}"));
+	assert_eq!(indexer["utxos"], replay["utxos"], "ECDSA UTXOs differ between indexer and replay");
+	assert!(
+		unshielded_values(show_wallet(&env, UNFUNDED_SEED, None)).is_empty(),
+		"the same seed's Schnorr identity must not see the ECDSA transfer"
+	);
+}
+
+#[tokio::test]
+async fn indexer_dust_balance_matches_replay() {
+	let env = start_env("dust", INDEXER_4_4).await;
+
+	let dust_balance = |source: &[&str]| -> serde_json::Value {
+		let mut args = vec!["dust-balance", "--seed", FUNDED_SEED, "--fetch-cache", "inmemory"];
+		args.extend(source);
+		let (stdout, _) = run_toolkit(&env, &args);
+		serde_json::from_str(&stdout)
+			.unwrap_or_else(|e| panic!("failed to parse dust-balance JSON ({e}):\n{stdout}"))
+	};
+	let replay = dust_balance(&["--src-url", &env.node_ws]);
+	let indexer = dust_balance(&["--indexer-url", &env.indexer_url, "--network", NETWORK]);
+
+	assert!(
+		!replay["generation_infos"].as_array().expect("array").is_empty(),
+		"funded seed must have dust outputs"
+	);
+	// `total` and `source` are evaluated at wall-clock time, so they differ between the two runs.
+	for field in ["generation_infos", "capacity"] {
+		assert_eq!(indexer[field], replay[field], "`{field}` differs between indexer and replay");
+	}
+	assert_ne!(indexer["total"], serde_json::json!(0), "indexer dust total must be non-zero");
 }
 
 #[tokio::test]
