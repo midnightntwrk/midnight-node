@@ -397,9 +397,6 @@ pub struct IndexerClient {
 	project_id: Option<String>,
 }
 
-/// Environment variable holding the Blockfrost API key.
-pub const BLOCKFROST_PROJECT_ID_ENV: &str = "BLOCKFROST_PROJECT_ID";
-
 /// A Blockfrost API key. Its `Debug` output is redacted so it cannot reach logs or error messages.
 #[derive(Clone)]
 pub struct BlockfrostProjectId(String);
@@ -423,16 +420,13 @@ impl IndexerClient {
 	///
 	/// The GraphQL endpoints (`/graphql`, `/graphql/ws`) are appended automatically, and the
 	/// WebSocket scheme is derived from the HTTP scheme (`http`→`ws`, `https`→`wss`).
-	/// A `*.blockfrost.io` URL takes its API key from `BLOCKFROST_PROJECT_ID`.
+	/// A `*.blockfrost.io` URL needs a key: use [`with_project_id`](Self::with_project_id).
 	pub fn new(base_url: &str) -> IndexerResult<Self> {
-		let project_id = std::env::var(BLOCKFROST_PROJECT_ID_ENV)
-			.ok()
-			.map(|id| BlockfrostProjectId(id.trim().to_owned()));
-		Self::with_project_id(base_url, project_id.as_ref())
+		Self::with_project_id(base_url, None)
 	}
 
-	/// Like [`new`](Self::new), but with the Blockfrost API key passed in rather than read from
-	/// the environment. The key is required for a `*.blockfrost.io` URL and ignored otherwise.
+	/// Like [`new`](Self::new), but with a Blockfrost API key. The key is required for a
+	/// `*.blockfrost.io` URL and ignored otherwise.
 	pub fn with_project_id(
 		base_url: &str,
 		project_id: Option<&BlockfrostProjectId>,
@@ -461,19 +455,20 @@ impl IndexerClient {
 			_ if !blockfrost => None,
 			Some(id) if !id.is_empty() => Some(id.to_owned()),
 			_ => {
-				return Err(IndexerClientError::Decode(format!(
+				return Err(IndexerClientError::Decode(
 					"Blockfrost indexer URL needs an API key: pass --blockfrost-project-id or set \
-					 {BLOCKFROST_PROJECT_ID_ENV}"
-				)));
+					 BLOCKFROST_PROJECT_ID"
+						.to_owned(),
+				));
 			},
 		};
 
 		let mut headers = reqwest::header::HeaderMap::new();
 		if let Some(id) = &project_id {
 			let mut value: reqwest::header::HeaderValue = id.parse().map_err(|_| {
-				IndexerClientError::Decode(format!(
-					"{BLOCKFROST_PROJECT_ID_ENV} is not a valid header"
-				))
+				IndexerClientError::Decode(
+					"Blockfrost project id is not a valid header value".to_owned(),
+				)
 			})?;
 			// Keeps the API key out of Debug output and client trace logs.
 			value.set_sensitive(true);
@@ -1299,6 +1294,7 @@ mod tests {
 		assert_eq!(c.ws_url, "wss://midnight-mainnet.blockfrost.io/api/v0/ws");
 		assert_eq!(c.project_id.as_deref(), Some("nightmainnetX"));
 		assert!(IndexerClient::with_project_id(base, None).is_err());
+		assert!(IndexerClient::new(base).is_err());
 		let blank: BlockfrostProjectId = "  ".parse().unwrap();
 		assert!(IndexerClient::with_project_id(base, Some(&blank)).is_err());
 		let plain = IndexerClient::with_project_id("http://h/api/v4", Some(&key)).unwrap();
