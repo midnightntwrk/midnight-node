@@ -115,6 +115,12 @@ observed_async_trait!(
 				},
 			};
 
+			// Moving a checkpoint ahead of the current block back to it would return transfers it
+			// has already passed.
+			if resolved_checkpoint.get_block_number() > current_mc_block.block_no {
+				return Ok((vec![], data_checkpoint));
+			}
+
 			let txs = get_bridge_txs(
 				self.db_sync_config.get_tx_in_config().await?,
 				&self.pool,

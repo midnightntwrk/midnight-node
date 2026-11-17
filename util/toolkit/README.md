@@ -723,12 +723,12 @@ $ midnight-node-toolkit show-wallet
   },
   "utxos": [
     {
-      "id": "25fe03f8906c9bd2a9db4f2690d2e9e4f17b4194cc41b79458076d8ae486afaf#0",
-      "initial_nonce": "adf6979ee2caf3662dabe4588eb2311de04e97293c6f96e366bd4a67034d87e7",
+      "id": "5bad509df7cbb4c04b2e12bf5f2426d17964559919351aa7a51c36cfef336189#0",
+      "initial_nonce": "5a3d3972fec6996314742627e71f5be90fab3369506b202999cc4e506e431f63",
       "value": 50000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
-      "intent_hash": "25fe03f8906c9bd2a9db4f2690d2e9e4f17b4194cc41b79458076d8ae486afaf",
+      "intent_hash": "5bad509df7cbb4c04b2e12bf5f2426d17964559919351aa7a51c36cfef336189",
       "output_number": 0
     },
 ...
@@ -737,11 +737,11 @@ $ midnight-node-toolkit show-wallet
     {
       "initial_value": 0,
       "dust_public": "73ff4aaccbb878703e922c8ab5da32a349ca7b5a6e0a2b0950ac68c6a3e273471a",
-      "nonce": "73b63b0719231dc4a8d61e46ed175ba0d1edc56dd8f1839039f3f56e49be042335",
+      "nonce": "7357d571e866c1d2fea299a54a8bde6edbfff7488cb8412c2ebe1dd7eca5f13114",
       "seq": 0,
       "ctime": 1754395200,
-      "backing_night": "10ba51819808fc09897af46574aa37b3fee89f7dc0dde00cae2924d09d3c33b5",
-      "mt_index": 1
+      "backing_night": "5a3d3972fec6996314742627e71f5be90fab3369506b202999cc4e506e431f63",
+      "mt_index": 3
     },
 ...
   ],
