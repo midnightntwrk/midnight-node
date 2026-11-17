@@ -9,4 +9,4 @@ like a missing one, instead of being sent as an empty header.
 
 The toolkit README gains a section on reading wallet state from an indexer, including Blockfrost.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/PRNUM
+PR: https://github.com/midnightntwrk/midnight-node/pull/2458
