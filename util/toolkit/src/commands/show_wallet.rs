@@ -269,6 +269,7 @@ mod tests {
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 				no_fast_sync: false,
+				blockfrost_project_id: None,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -331,6 +332,7 @@ mod tests {
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 				no_fast_sync: false,
+				blockfrost_project_id: None,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -377,6 +379,7 @@ mod tests {
 				indexer_concurrency:
 					midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 				no_fast_sync: false,
+				blockfrost_project_id: None,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,

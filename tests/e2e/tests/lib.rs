@@ -304,6 +304,7 @@ async fn run_warmup() {
             indexer_concurrency:
                 midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
             no_fast_sync: false,
+            blockfrost_project_id: None,
         },
         // e2e wallets are all Schnorr NIGHT identities; pair each seed with its scheme.
         seeds: seeds
@@ -393,6 +394,7 @@ pub(crate) async fn ensure_dev_wallet_funded() {
                 indexer_concurrency:
                     midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
                 no_fast_sync: false,
+                blockfrost_project_id: None,
             },
             seed: Some(midnight_node_toolkit::cli_parsers::SchemeSeed {
                 seed: seed.clone(),
@@ -450,6 +452,7 @@ fn live_source(url: &str) -> Source {
         indexer_concurrency:
             midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
         no_fast_sync: false,
+        blockfrost_project_id: None,
     }
 }
 
