@@ -449,6 +449,17 @@ fn observe(parent: &View) -> Kind {
 	assert_eq!(signer_babe, member.authority_keys().babe, "block {block}: committee view");
 	assert_eq!(session_view[index], signer, "block {block}: pallet_session view");
 
+	// Read after `Session::on_initialize`, so an epoch-opening block sees the committee it installs.
+	if parent.engine == ActiveEngine::Babe {
+		let attribution =
+			<BlockProducer as midnight_primitives_block_production::BlockProducer>::current();
+		assert_eq!(
+			attribution.producer,
+			Some(midnight_primitives_block_production::producer_of(member)),
+			"block {block}: block production view"
+		);
+	}
+
 	// Post-flip the signer's set is this block's current set everywhere.
 	if parent.engine == ActiveEngine::Babe {
 		assert_eq!(Session::validators()[index], signer, "block {block}");
