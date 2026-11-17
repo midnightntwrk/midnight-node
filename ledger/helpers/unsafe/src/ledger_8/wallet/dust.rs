@@ -98,6 +98,11 @@ impl<D: DB> DustWallet<D> {
 		self.spent_utxos = HashSet::new();
 	}
 
+	/// `None` for a watch-only wallet.
+	pub fn secret_key(&self) -> Option<&DustSecretKey> {
+		self.secret_key.as_deref()
+	}
+
 	pub fn replay_events<'a>(
 		&mut self,
 		events: impl IntoIterator<Item = &'a Event<D>>,

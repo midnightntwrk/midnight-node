@@ -18,6 +18,14 @@ paths = [
 ]
 
 [[allowlists]]
+description = "local-env faucet's default dev API key, documented in the README"
+# Not path-scoped: a global path allowlist skips the whole file regardless of `condition`.
+targetRules = ["curl-auth-header"]
+regexes = [
+  '''^local-env$''',
+]
+
+[[allowlists]]
 description = "partner-chains docs -- illustrative example keys in prose"
 paths = [
   '''^partner-chains/docs/''',

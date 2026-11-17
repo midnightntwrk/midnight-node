@@ -83,6 +83,8 @@ transient-crypto = { version = "^2.0.0", package = "midnight-transient-crypto" }
 # crate is gone: rc.3 dropped the separate 2.x zkir, and its frozen `Zkir` impl can't satisfy
 # transient-crypto 2.2.0's new tagged-IR trait methods.
 zkir = { version = "^2.2.0", package = "midnight-zkir" }
+# ZKIR v3 (compactc 0.36+ emits only v3). Keep in step with `mn-ledger-9`'s own zkir 3.x dep so they unify.
+zkir-v3 = { version = "=3.2.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto (2.x) and zkir are shared above so reuse those entries.
@@ -391,7 +393,7 @@ raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-c
 secp256k1 = { version = "0.30.0", default-features = false }
 semver = "1.0.28"
 selection = { path = "partner-chains/toolkit/committee-selection/selection", default-features = false }
-testcontainers = { version = "0.27" }
+testcontainers = { version = "0.28" }
 time = { version = "0.3.47", default-features = false }
 tokio-retry = { version = "0.3" }
 uplc = { version = "1.1.21" }

@@ -137,6 +137,7 @@ mod test {
 			network: "undeployed".to_string(),
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+			no_fast_sync: false,
 		};
 
 		let destination = Destination {
