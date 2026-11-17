@@ -65,7 +65,7 @@ impl From<sidechain_domain::ScEpochNumber> for EpochLabel {
 	TypeInfo,
 )]
 pub enum OperatorId {
-	/// A Cardano stake pool operator. Index 1 is reserved for NIGHT stake pool operators.
+	/// A Cardano stake pool operator.
 	#[codec(index = 0)]
 	AdaSpo(PoolId),
 }
