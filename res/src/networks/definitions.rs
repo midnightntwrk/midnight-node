@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_block_rewards::RewardParametersV1;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
 use midnight_primitives_reserve_observation::ReserveConfig;
@@ -63,6 +64,12 @@ impl MidnightNetwork for UndeployedNetwork {
 		let config_str =
 			String::from_utf8_lossy(include_bytes!("../../dev/system-parameters-config.json"));
 		serde_json::from_str(&config_str).unwrap()
+	}
+
+	fn block_rewards_parameters(&self) -> Option<RewardParametersV1> {
+		let config_str =
+			String::from_utf8_lossy(include_bytes!("../../dev/block-rewards-parameters.json"));
+		Some(serde_json::from_str(&config_str).unwrap())
 	}
 
 	fn ics_config(&self) -> IcsConfig {

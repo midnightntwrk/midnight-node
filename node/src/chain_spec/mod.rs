@@ -18,7 +18,7 @@ use serde_valid::Validate as _;
 use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	AccountId, Block, BlockRewardsConfig, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
 	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
 	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
 	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SidechainConfig,
@@ -399,7 +399,10 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				_marker: Default::default(),
 			}
 		},
-		block_rewards: Default::default(),
+		block_rewards: BlockRewardsConfig {
+			parameters: genesis.block_rewards_parameters(),
+			_marker: Default::default(),
+		},
 		system_parameters: {
 			let system_params = genesis.system_parameters_config();
 			let hash_bytes = system_params

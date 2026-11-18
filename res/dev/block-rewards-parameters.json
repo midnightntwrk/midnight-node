@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "initial_reward_reserve_star": 6000000000873988,
+  "initial_expansion": {
+    "n": 3,
+    "d": 100
+  },
+  "reserve_allocation": {
+    "n": 1,
+    "d": 4
+  },
+  "treasury_allocation": {
+    "n": 1,
+    "d": 20
+  },
+  "expected_blocks_per_year": 5256000,
+  "distribution_rate": {
+    "n": 7,
+    "d": 438000000
+  },
+  "fixed_subsidy": {
+    "n": 95,
+    "d": 100
+  },
+  "recipient_split_policy": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "recipient_policy_hash": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "publication_hash": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "governance_action_hash": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  "max_updates_per_block": 100
+}
