@@ -1888,9 +1888,9 @@ impl_runtime_apis! {
 			let _guard = frame_support::StorageNoopGuard::default();
 
 			if checks.any() {
-				let decoded_keys = AllPalletsWithSystem::try_decode_entire_state()
+				let decoded_bytes = AllPalletsWithSystem::try_decode_entire_state()
 					.expect("state is not decodable by the new runtime");
-				log::info!(target: "try-runtime", "🔍 decoded {decoded_keys} storage keys");
+				log::info!(target: "try-runtime", "🔍 decoded {decoded_bytes} bytes of storage");
 			}
 
 			if checks.try_state() {

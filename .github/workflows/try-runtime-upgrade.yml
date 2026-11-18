@@ -70,9 +70,11 @@ jobs:
             --NETWORKS="$networks" --FAIL_FAST=false
 
       - name: Report results
+        if: ${{ !cancelled() }}
         run: |
           failed=0
           for status_file in artifacts-try-runtime/*.status; do
+            [ -e "$status_file" ] || { echo "::error::no status files produced"; exit 1; }
             network=$(basename "$status_file" .status)
             exit_code=$(cat "$status_file")
             if [ "$exit_code" = 0 ]; then

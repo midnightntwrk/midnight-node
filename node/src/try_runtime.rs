@@ -37,6 +37,7 @@ use sp_state_machine::{
 	backend::{BackendRuntimeCode, TryPendingCode},
 };
 use sp_version::RuntimeVersion;
+use tempfile::TempDir;
 
 use midnight_node_runtime::Block;
 use midnight_primitives_ledger::{LedgerStorage, LedgerStorageExt};
@@ -64,7 +65,7 @@ const LEDGER_CACHE_SIZE: usize = 100_000;
 #[derive(Debug, Clone, Args)]
 pub struct TryRuntimeCmd {
 	/// Snapshot file from `try-runtime create-snapshot`.
-	#[arg(long, short = 'p')]
+	#[arg(long)]
 	pub snap: PathBuf,
 
 	/// Runtime WASM to upgrade to. Defaults to the snapshot's own runtime.
@@ -105,7 +106,8 @@ impl TryRuntimeCmd {
 		let runtime_code = code_in_snapshot.runtime_code()?;
 		let mut changes = OverlayedChanges::default();
 		let mut extensions = Extensions::default();
-		extensions.register(LedgerStorageExt::new(self.ledger_storage()?));
+		let (ledger_storage, _empty_ledger_dir) = self.ledger_storage()?;
+		extensions.register(LedgerStorageExt::new(ledger_storage));
 
 		let encoded_weights = StateMachine::new(
 			&ext.backend,
@@ -163,19 +165,20 @@ impl TryRuntimeCmd {
 		Ok(())
 	}
 
-	fn ledger_storage(&self) -> sc_cli::Result<LedgerStorage> {
-		let path = match &self.ledger_db {
-			Some(path) => path.clone(),
+	/// The `TempDir` backs the empty-ledger default and must outlive the run.
+	fn ledger_storage(&self) -> sc_cli::Result<(LedgerStorage, Option<TempDir>)> {
+		let (path, temp_dir) = match &self.ledger_db {
+			Some(path) => (path.clone(), None),
 			None => {
-				let path = std::env::temp_dir()
-					.join(format!("midnight-try-runtime-ledger-{}", std::process::id()));
-				std::fs::create_dir_all(&path)
-					.map_err(|e| format!("creating {}: {e}", path.display()))?;
-				log::warn!("No --ledger-db; using an empty ledger at {}", path.display());
-				path
+				let dir = tempfile::Builder::new()
+					.prefix("midnight-try-runtime-ledger-")
+					.tempdir()
+					.map_err(|e| format!("creating a temporary ledger dir: {e}"))?;
+				log::warn!("No --ledger-db; using an empty ledger at {}", dir.path().display());
+				(dir.path().to_path_buf(), Some(dir))
 			},
 		};
-		Ok(LedgerStorage::new_separate(path, LEDGER_CACHE_SIZE))
+		Ok((LedgerStorage::new_separate(path, LEDGER_CACHE_SIZE), temp_dir))
 	}
 }
 

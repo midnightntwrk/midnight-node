@@ -1545,13 +1545,13 @@ try-runtime-dry-run:
 
     COPY +try-runtime-cli/try-runtime /usr/local/bin/try-runtime
 
+    # One RUN, so a failed snapshot is recorded in $NETWORK.status too.
     # `--uri=` form, as `--uri` takes several values and would swallow the path.
-    RUN --no-cache try-runtime create-snapshot --uri="$URI" "$NETWORK.snap"
-
-    RUN { $OUT/midnight-node try-runtime \
-            --snap "$NETWORK.snap" \
-            --runtime $OUT/midnight_node_runtime.compact.compressed.wasm \
-            --checks all 2>&1; \
+    RUN --no-cache { { try-runtime create-snapshot --uri="$URI" "$NETWORK.snap" \
+            && $OUT/midnight-node try-runtime \
+                --snap "$NETWORK.snap" \
+                --runtime $OUT/midnight_node_runtime.compact.compressed.wasm \
+                --checks all; } 2>&1; \
           echo $? > "$NETWORK.status"; } | tee "$NETWORK.log"; \
         [ "$FAIL_FAST" != true ] || [ "$(cat "$NETWORK.status")" = 0 ]
 

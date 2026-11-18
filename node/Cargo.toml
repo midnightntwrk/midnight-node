@@ -115,6 +115,7 @@ pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
 frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
+tempfile = { workspace = true, optional = true }
 
 thiserror = "1.0.50"
 log.workspace = true
@@ -197,6 +198,7 @@ try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
     "frame-try-runtime",
+    "tempfile",
 ]
 experimental = []
 # Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled
