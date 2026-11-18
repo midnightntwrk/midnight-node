@@ -111,6 +111,7 @@ pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod beefy;
 pub mod block_production;
+pub mod block_rewards;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -693,9 +694,25 @@ impl pallet_sidechain::Config for Runtime {
 	type OnNewEpoch = LogBeneficiaries;
 }
 
+impl pallet_block_rewards::Config for Runtime {
+	type GovernanceOrigin = EnsureRoot<AccountId>;
+	type Ledger = block_rewards::Ledger;
+	type Prerequisites = block_rewards::Prerequisites;
+	type BlockProducer = BlockProducer;
+	type Time = Timestamp;
+	// Until committees carry the Cardano epoch they were selected from. Never read: activation
+	// requires `cardano_epoch_source_live`.
+	type CardanoEpoch = frame_support::traits::GetDefault;
+	type Snapshot = block_rewards::NoSnapshot;
+	type SlotDurationMs = ConstU64<SLOT_DURATION>;
+	/// `L` comes from the reserve release observation, which does not exist yet.
+	type Released = ConstU128<0>;
+	type WeightInfo = pallet_block_rewards::weights::SubstrateWeight<Runtime>;
+}
+
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
-	type LedgerBlockEnd = ();
+	type LedgerBlockEnd = block_rewards::NoteUtilization;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
 	// admits, so the node cap binds first.
@@ -1153,6 +1170,10 @@ mod runtime {
 
 	#[runtime::pallet_index(33)]
 	pub type C2MBridge = pallet_c2m_bridge::Pallet<Runtime>;
+
+	// Declared after `Session`, so a block's producer is read after the committee is rotated.
+	#[runtime::pallet_index(34)]
+	pub type BlockRewards = pallet_block_rewards::Pallet<Runtime>;
 
 	// Governance
 	#[runtime::pallet_index(40)]
@@ -1958,6 +1979,34 @@ impl_runtime_apis! {
 
 		fn get_technical_committee_policy_id() -> PolicyId {
 			pallet_federated_authority_observation::MainChainTechnicalCommitteePolicyId::<Runtime>::get()
+		}
+	}
+
+	impl pallet_block_rewards::BlockRewardsApi<Block, BlockNumber> for Runtime {
+		fn state() -> pallet_block_rewards::RewardState<BlockNumber> {
+			BlockRewards::state()
+		}
+
+		fn parameters(version: u32) -> Option<pallet_block_rewards::RewardParameters> {
+			pallet_block_rewards::ParameterSets::<Runtime>::get(version)
+		}
+
+		fn bucket(
+			cardano_epoch: midnight_primitives_block_rewards::CardanoEpoch,
+			operator: midnight_primitives_block_production::OperatorId,
+		) -> u128 {
+			pallet_block_rewards::Buckets::<Runtime>::get(cardano_epoch, operator)
+		}
+
+		fn payout(
+			cardano_epoch: midnight_primitives_block_rewards::CardanoEpoch,
+			destination: pallet_block_rewards::Destination,
+		) -> pallet_block_rewards::PayoutAmount {
+			pallet_block_rewards::Payouts::<Runtime>::get(cardano_epoch, destination)
+		}
+
+		fn escrow(stake_credential: midnight_primitives_block_rewards::StakeCredential) -> u128 {
+			pallet_block_rewards::Escrow::<Runtime>::get(stake_credential)
 		}
 	}
 

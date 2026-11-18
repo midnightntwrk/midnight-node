@@ -399,6 +399,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				_marker: Default::default(),
 			}
 		},
+		block_rewards: Default::default(),
 		system_parameters: {
 			let system_params = genesis.system_parameters_config();
 			let hash_bytes = system_params

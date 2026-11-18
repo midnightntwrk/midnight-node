@@ -83,6 +83,8 @@ pallet-throttle.workspace = true
 pallet-consensus-engine.workspace = true
 pallet-version.workspace = true
 midnight-primitives-block-production.workspace = true
+midnight-primitives-block-rewards.workspace = true
+pallet-block-rewards.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 midnight-primitives-session-info.workspace = true
@@ -142,6 +144,8 @@ std = [
     "pallet-partner-chains-bridge/std",
     "pallet-version/std",
     "midnight-primitives-block-production/std",
+    "midnight-primitives-block-rewards/std",
+    "pallet-block-rewards/std",
     "pallet-c2m-bridge/std",
     "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
@@ -218,6 +222,7 @@ runtime-benchmarks = [
     "pallet-session-validator-management/runtime-benchmarks",
 ]
 try-runtime = [
+    "pallet-block-rewards/try-runtime",
     "frame-try-runtime/try-runtime",
     "frame-executive/try-runtime",
     "frame-system/try-runtime",
