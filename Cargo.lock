@@ -8397,6 +8397,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "hex-literal 1.1.0",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
@@ -10590,6 +10591,7 @@ dependencies = [
  "midnight-primitives-block-rewards",
  "parity-scale-codec",
  "scale-info",
+ "serde_json",
  "sp-api",
  "sp-io",
  "sp-runtime",

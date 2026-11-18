@@ -14,6 +14,7 @@ chain-spec = [
     "midnight-primitives-ics-observation/std",
     "midnight-primitives-reserve-observation/std",
     "midnight-primitives-system-parameters/std",
+    "midnight-primitives-block-rewards/std",
     "pallet-cnight-observation/std",
     "std",
     "sp-core/std",
@@ -40,6 +41,7 @@ midnight-primitives-federated-authority-observation = { workspace = true, option
 midnight-primitives-ics-observation = { workspace = true, optional = true }
 midnight-primitives-reserve-observation = { workspace = true, optional = true }
 midnight-primitives-system-parameters = { workspace = true, optional = true }
+midnight-primitives-block-rewards = { workspace = true, optional = true }
 pallet-cnight-observation = { workspace = true, optional = true }
 
 [dev-dependencies]

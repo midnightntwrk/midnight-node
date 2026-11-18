@@ -86,3 +86,12 @@ fn genesis_installs_the_first_version() {
 		assert_eq!(BlockRewards::current_parameters(), Some(parameters(1)));
 	});
 }
+
+#[test]
+fn the_dev_network_parameters_are_valid_at_six_second_slots() {
+	let parameters: RewardParametersV1 =
+		serde_json::from_str(include_str!("../../../../res/dev/block-rewards-parameters.json"))
+			.unwrap();
+	assert_eq!(parameters.version, 1);
+	assert_eq!(parameters.validate(6_000), Ok(()));
+}
