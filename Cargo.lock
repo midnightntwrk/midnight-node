@@ -8833,6 +8833,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-block-rewards"
+version = "0.1.0"
+dependencies = [
+ "hex-literal 1.1.0",
+ "midnight-primitives-block-production",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-arithmetic",
+]
+
+[[package]]
 name = "midnight-primitives-cnight-observation"
 version = "0.1.0"
 dependencies = [
