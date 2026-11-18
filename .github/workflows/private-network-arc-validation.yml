@@ -1,0 +1,73 @@
+name: Private network ARC validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-node-arc-validation-devnet
+  cancel-in-progress: false
+
+jobs:
+  rust_e2e:
+    if: github.repository == 'midnightntwrk/midnight-node' && github.ref == 'refs/heads/main' && vars.PRIVATE_NETWORK_TESTS_VALIDATION_ENABLED == 'true'
+    runs-on:
+      group: arc-private-network-tests-node-validation
+      labels: arc-private-network-tests-node-validation
+    timeout-minutes: 480
+    env:
+      E2E_NODE_URL: wss://rpc.devnet.shielded.tools
+      E2E_OGMIOS_URL: wss://ogmios.devnet.shielded.tools
+      # Separate from the retained nightly's public-NLB cache credential.
+      TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_PRIVATE_DB_URL }}
+      RUST_BACKTRACE: "1"
+      E2E_FAUCET_WORKERS: "16"
+    steps:
+      - name: Restore prebuilt node test source
+        run: |
+          test "$PRIVATE_TEST_SOURCE_REVISION" = 44640dfa3d89e177dafe86c7bdfef438622b2ddd
+          test -x /opt/private-test-bin/node-e2e
+          cp -a /opt/private-test-source/. "$GITHUB_WORKSPACE/"
+      - name: Verify private endpoints and cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TOOLKIT_CACHE_DB_URL"
+          # A private RDS URL is provisioned separately; never fall back to the public NLB.
+          python3 - <<'CHECK_PRIVATE'
+          import ipaddress, os, socket, urllib.parse
+          urls = [os.environ[k] for k in ('E2E_NODE_URL', 'E2E_OGMIOS_URL', 'TOOLKIT_CACHE_DB_URL')]
+          for url in urls:
+              host = urllib.parse.urlsplit(url).hostname
+              addresses = socket.getaddrinfo(host, None)
+              if not addresses or any(ipaddress.ip_address(a[4][0]) not in ipaddress.ip_network('10.0.0.0/16') for a in addresses):
+                  raise SystemExit('Endpoint must resolve exclusively inside the dev VPC')
+          CHECK_PRIVATE
+          psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
+          websocket_key=$(openssl rand -base64 16)
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 8 \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: $websocket_key" \
+            https://ogmios.devnet.shielded.tools/ || true)
+          test "$code" = "101"
+          curl --fail --silent --show-error -m 15 https://rpc.devnet.shielded.tools \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"state_getRuntimeVersion","params":[]}' \
+            | jq -e '.result.specVersion' >/dev/null
+      - name: Run e2e observation tests
+        working-directory: tests/e2e/tests
+        run: |
+          /opt/private-test-bin/node-e2e cnight::observation:: --no-capture --test-threads 16
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_E2E_NODE: ${{ secrets.SLACK_WEBHOOK_E2E_NODE }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$SLACK_WEBHOOK_E2E_NODE"
+          jq -n --arg text "devnet ARC validation cNIGHT: $STATUS $RUN_URL" '{text: $text}' \
+            | curl --fail --silent --show-error -H 'Content-Type: application/json' --data-binary @- "$SLACK_WEBHOOK_E2E_NODE"
