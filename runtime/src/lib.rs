@@ -699,22 +699,9 @@ impl pallet_sidechain::Config for Runtime {
 	type OnNewEpoch = LogBeneficiaries;
 }
 
-pub const BLOCK_REWARD_POINTS: u128 = 500_000;
-
-pub type BeneficiaryId = midnight_node_ledger::types::Hash;
-pub type BlockRewardPoints = u128;
-pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
-
-pub struct LedgerBlockReward;
-impl Get<BlockReward> for LedgerBlockReward {
-	fn get() -> BlockReward {
-		(0, None)
-	}
-}
-
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
-	type BlockReward = LedgerBlockReward;
+	type LedgerBlockEnd = ();
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 	// Bounds RPC response size, not work. Must exceed the operations `MaxTransactionNodes`
 	// admits, so the node cap binds first.

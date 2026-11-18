@@ -18,7 +18,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use hex_literal::hex;
 use midnight_node_ledger::types::{
-	Hash, Tx,
+	BlockFullness, Hash, Tx,
 	active_version::{BlockContext, LedgerApiError},
 };
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
@@ -63,6 +63,36 @@ pub trait MidnightSystemTransactionCNightExecutor {
 /// is permitted to construct (`UnlockToTreasury`, `DistributeReserve`,
 /// `DistributeNight(ClaimKind::CardanoBridge, _)`).
 pub trait MidnightSystemTransactionBridgeExecutor {
+	/// Execute a Midnight System Transaction and return a SCALE-compatible result
+	fn execute_system_transaction(
+		serialized_system_transaction: Vec<u8>,
+	) -> Result<Hash, DispatchError>;
+
+	/// True when `err` from [`Self::execute_system_transaction`] is the ledger refusing
+	/// the transaction because the block is already full, rather than rejecting the
+	/// transaction itself.
+	fn is_block_limit_exceeded(err: &DispatchError) -> bool;
+}
+
+/// Takes part in the ledger's end-of-block update, which `pallet-midnight` runs in `on_finalize`.
+pub trait LedgerBlockEnd {
+	/// The part of the block's fullness that the update's DUST price adjustment leaves out.
+	fn left_out_of_price() -> Option<BlockFullness>;
+	/// The block's fullness, as it was before the update reset it.
+	fn note_block_fullness(fullness: BlockFullness);
+}
+
+impl LedgerBlockEnd for () {
+	fn left_out_of_price() -> Option<BlockFullness> {
+		None
+	}
+	fn note_block_fullness(_: BlockFullness) {}
+}
+
+/// Allows `pallet-block-rewards` to execute only the system transaction variants it
+/// is permitted to construct (`DistributeNight(ClaimKind::Reward, _)`,
+/// `PayBlockRewardsToTreasury`).
+pub trait MidnightSystemTransactionRewardExecutor {
 	/// Execute a Midnight System Transaction and return a SCALE-compatible result
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
