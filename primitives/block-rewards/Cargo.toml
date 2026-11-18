@@ -1,0 +1,30 @@
+[package]
+name = "midnight-primitives-block-rewards"
+version = "0.1.0"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+repository.workspace = true
+description = "Native NIGHT block rewards: parameters, per-block arithmetic and records"
+
+[dependencies]
+parity-scale-codec.workspace = true
+scale-info.workspace = true
+serde.workspace = true
+sp-arithmetic.workspace = true
+midnight-primitives-block-production.workspace = true
+
+[dev-dependencies]
+hex-literal.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "serde/std",
+    "sp-arithmetic/std",
+    "midnight-primitives-block-production/std",
+]
