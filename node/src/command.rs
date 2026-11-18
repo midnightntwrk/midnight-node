@@ -475,6 +475,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),
+		Subcommand::BabeAndBeefyKeys(ref cmd) => cmd.run(&cfg),
 		Subcommand::PartnerChains(cmd) => {
 			bail_if_runtime_benchmarks("the partner-chains subcommand");
 			let midnight_cfg = cfg.midnight_cfg.clone();

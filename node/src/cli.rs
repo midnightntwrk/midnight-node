@@ -385,6 +385,13 @@ pub enum Subcommand {
 	#[command(subcommand)]
 	Key(sc_cli::KeySubcommand),
 
+	/// Ensure BABE and BEEFY keys are in the keystore and print them for Midnight governance.
+	///
+	/// Requires the cross-chain key to be present. A missing BEEFY key is inserted with the
+	/// cross-chain seed; a missing BABE key is generated. Honors `--base-path`, `--chain` and
+	/// `--keystore-path` like `key insert`.
+	BabeAndBeefyKeys(crate::babe_and_beefy_keys_cmd::BabeAndBeefyKeysCmd),
+
 	/// Partner chain subcommands (smart contract registration etc.)
 	#[clap(flatten)]
 	PartnerChains(PartnerChainsSubcommand<MidnightRuntime>),

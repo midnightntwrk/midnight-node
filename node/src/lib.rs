@@ -16,6 +16,7 @@ extern crate alloc;
 #[cfg(target_os = "linux")]
 pub mod allocator_metrics;
 mod aura_to_babe_migration_keystore;
+pub mod babe_and_beefy_keys_cmd;
 pub mod babe_authoring;
 pub mod babe_key_readiness;
 pub mod babe_pre_digest_proposer;
