@@ -10578,6 +10578,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-block-rewards"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-block-production",
+ "midnight-primitives-block-rewards",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-broker"
 version = "0.30.0"
 source = "git+https://github.com/shieldedtech/polkadot-sdk.git?tag=midnight-polkadot-stable2609#9c7455eabd0cc2e77da867e837dfb466b11fbcf6"
