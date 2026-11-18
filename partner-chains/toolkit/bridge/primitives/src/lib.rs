@@ -108,15 +108,14 @@
 //! is added and fully configured along with [TokenBridgeIDPRuntimeApi]. Thus, the correct order
 //! of steps when adding the feature to an already running chain will be:
 //!
-//! 0. Initialize the bridge smart contracts on Cardano using the offchain provided by the
-//!    `partner-chains-cardano-offchain` crate. This step can be performed independently from the
-//!    order of other steps.
+//! 0. Initialize the bridge smart contracts on Cardano. This step can be performed independently
+//!    from the order of other steps.
 //! 1. Release a new version of the chain's node, with added data source and inhrent data provider.
 //! 2. Distribute the new version and wait until most of the network's nodes have been updated.
 //! 3. Perform a runtime upgrade to a runtime version containing the pallet.
 //! 4. Complete the configuration of the pallet by setting the correct main chain script and data
 //!    checkpoint via an extrinsic. This step requires the governance authority to know the main
-//!    chain script values, which it should obtain using the offchain.
+//!    chain script values.
 //!
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]
