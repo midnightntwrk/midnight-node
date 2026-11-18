@@ -102,8 +102,9 @@ use {
 };
 
 use crate::boundary::types::{
-	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerStats,
-	Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
+	BlockFullness, ContractCallsDetails, FallibleCoinsDetails, FullnessDimension, GasCost,
+	GuaranteedCoinsDetails, Hash, LedgerStats, Op, RewardOutput, RewardPools,
+	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
 	WrappedHash,
 };
 
@@ -354,12 +355,33 @@ where
 		state_key: &[u8],
 		block_context: BlockContext,
 	) -> Result<Vec<u8>, LedgerApiError> {
+		Self::apply_post_block_update_leaving_out(
+			externalities,
+			state_key,
+			block_context,
+			BlockFullness::default(),
+		)
+		.map(|(state_root, _)| state_root)
+	}
+
+	/// [`Self::apply_post_block_update`], with the `used` of `left_out` kept out of the DUST
+	/// price update. Block rewards leave out their own settlement this way. Also returns the
+	/// block's fullness from before the update resets it.
+	pub fn apply_post_block_update_leaving_out(
+		externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		block_context: BlockContext,
+		left_out: BlockFullness,
+	) -> Result<(Vec<u8>, BlockFullness), LedgerApiError> {
+		let left_out = Self::used_cost(&left_out);
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
-		let ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let fullness =
+			Self::fullness(&ledger.block_fullness(), &ledger.state.parameters.limits.block_limits);
+		let ledger = Ledger::apply_post_block_update(ledger, block_context, left_out);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 		crate::ephemeral::retain(externalities, &state_root, ledger);
-		Ok(state_root)
+		Ok((state_root, fullness))
 	}
 
 	pub fn get_version() -> Vec<u8> {
@@ -756,6 +778,29 @@ where
 				matches!(tx, SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, _))
 					|| system_tx::is_distribute_reserve_system_tx(tx)
 					|| system_tx::is_unlock_to_treasury_system_tx(tx)
+			},
+		)
+	}
+
+	/// Applies a system transaction submitted by `pallet-block-rewards`. Only
+	/// `DistributeNight(ClaimKind::Reward, _)` and `PayBlockRewardsToTreasury` are allowed.
+	pub fn apply_reward_system_transaction(
+		externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+		Self::apply_system_transaction_checked(
+			externalities,
+			state_key,
+			tx_serialized,
+			block_context,
+			|tx| {
+				matches!(
+					tx,
+					SystemTransaction::DistributeNight(ClaimKind::Reward, _)
+						| SystemTransaction::PayBlockRewardsToTreasury { .. }
+				)
 			},
 		)
 	}
@@ -1170,6 +1215,56 @@ where
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ledger_parameters = Self::get_deserialized_ledger_parameters(&ledger);
 		api.tagged_serialize(&ledger_parameters)
+	}
+
+	pub fn get_reward_pools(state_key: &[u8]) -> Result<RewardPools, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		Ok(RewardPools {
+			reserve_pool: ledger.state.reserve_pool,
+			block_reward_pool: ledger.state.block_reward_pool,
+		})
+	}
+
+	/// Fullness accrued by the current block. Read it before the end-of-block update, which
+	/// resets it to zero.
+	pub fn get_block_fullness(state_key: &[u8]) -> Result<BlockFullness, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		Ok(Self::fullness(&ledger.block_fullness(), &ledger.state.parameters.limits.block_limits))
+	}
+
+	/// The `used` of `fullness` as a cost; the inverse of [`Self::fullness`] below the limits.
+	fn used_cost(fullness: &BlockFullness) -> base_crypto_local::cost_model::SyntheticCost {
+		use base_crypto_local::cost_model::{CostDuration, SyntheticCost};
+		SyntheticCost {
+			read_time: CostDuration::from_picoseconds(fullness.read_time.used),
+			compute_time: CostDuration::from_picoseconds(fullness.compute_time.used),
+			block_usage: fullness.block_usage.used,
+			bytes_written: fullness.bytes_written.used,
+			bytes_churned: fullness.bytes_churned.used,
+		}
+	}
+
+	/// `used` against `limits`, clamped as the ledger's fee update does.
+	fn fullness(
+		used: &base_crypto_local::cost_model::SyntheticCost,
+		limits: &base_crypto_local::cost_model::SyntheticCost,
+	) -> BlockFullness {
+		let dimension = |used: u64, limit: u64| FullnessDimension { used: used.min(limit), limit };
+		BlockFullness {
+			read_time: dimension(
+				used.read_time.into_picoseconds(),
+				limits.read_time.into_picoseconds(),
+			),
+			compute_time: dimension(
+				used.compute_time.into_picoseconds(),
+				limits.compute_time.into_picoseconds(),
+			),
+			block_usage: dimension(used.block_usage, limits.block_usage),
+			bytes_written: dimension(used.bytes_written, limits.bytes_written),
+			bytes_churned: dimension(used.bytes_churned, limits.bytes_churned),
+		}
 	}
 
 	pub fn get_c_to_m_bridge_min_amount(state_key: &[u8]) -> Result<u128, LedgerApiError> {
@@ -1627,6 +1722,33 @@ where
 		api.tagged_serialize(&system_tx)
 	}
 
+	/// Outputs are sorted by target address: sorted outputs churn far fewer ledger bytes.
+	pub fn construct_distribute_night_reward_system_tx(
+		mut outputs: Vec<RewardOutput>,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		outputs.sort_by_key(|output| output.target_address);
+		let outputs = outputs
+			.into_iter()
+			.map(|output| {
+				Ok(OutputInstructionUnshielded {
+					amount: output.amount,
+					target_address: api.night_address(output.target_address)?,
+					nonce: Nonce(HashOutput(output.nonce)),
+				})
+			})
+			.collect::<Result<Vec<_>, LedgerApiError>>()?;
+		let system_tx = SystemTransaction::DistributeNight(ClaimKind::Reward, outputs);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_pay_block_rewards_to_treasury_system_tx(
+		amount: u128,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		api.tagged_serialize(&SystemTransaction::PayBlockRewardsToTreasury { amount })
+	}
+
 	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let system_tx = system_tx::distribute_reserve_system_tx(amount);
@@ -1829,6 +1951,34 @@ mod tests {
 	/// The undeployed genesis `StateKey` (see `storage.rs`) with its last hash byte changed:
 	/// well-formed, but naming a root that was never stored.
 	const ABSENT_ROOT_STATE_KEY: &str = "6d69646e696768743a73746f726167652d6b6579286c65646765722d73746174655b7631385d293a0067100cb9fcfc392a863e7b22751c6baf4602e96deef27c4e5339205586ab4400";
+
+	/// What block rewards leave out of the DUST price reaches the ledger in the units and
+	/// dimensions `get_block_fullness` reported it in.
+	#[test]
+	fn fullness_converts_back_to_the_cost_it_was_read_from() {
+		use base_crypto_local::cost_model::CostDuration;
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+		let used = SyntheticCost {
+			read_time: CostDuration::from_picoseconds(1),
+			compute_time: CostDuration::from_picoseconds(2),
+			block_usage: 3,
+			bytes_written: 4,
+			bytes_churned: 5,
+		};
+		let limits = SyntheticCost {
+			read_time: CostDuration::from_picoseconds(10),
+			compute_time: CostDuration::from_picoseconds(20),
+			block_usage: 30,
+			bytes_written: 40,
+			bytes_churned: 50,
+		};
+		let fullness = TestBridge::fullness(&used, &limits);
+		assert_eq!(
+			(fullness.read_time.limit, fullness.bytes_churned.limit, fullness.compute_time.used),
+			(10, 50, 2)
+		);
+		assert_eq!(TestBridge::used_cost(&fullness), used);
+	}
 
 	/// A node whose ledger DB lost the root its block state names must get an error back, not
 	/// a host panic on first deref that wedges block authoring.

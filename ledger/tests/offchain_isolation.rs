@@ -134,8 +134,9 @@ fn run_block(
 	)
 	.unwrap();
 	assert_eq!(sibling_system.state_root, applied_system.state_root);
-	let apply_post_block =
-		host::apply_post_block_update(&sibling_system.state_root, ctx.clone()).unwrap();
+	let (apply_post_block, _) =
+		host::apply_post_block_update(&sibling_system.state_root, ctx.clone(), Default::default())
+			.unwrap();
 	let (migrated, migration_cost) = host::migrate_state_v8_to_v9(v8_state).unwrap();
 	host::flush_storage();
 
