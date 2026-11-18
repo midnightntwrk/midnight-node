@@ -8,6 +8,7 @@ self-hosted-runner:
     - tier:small
     - tier:medium
     - tier:large
+    - arc-private-network-tests-node-validation
 
 paths:
   .github/workflows/*.{yml,yaml}:
