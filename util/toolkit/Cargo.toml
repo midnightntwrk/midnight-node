@@ -25,6 +25,7 @@ subxt.workspace = true
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
 sha2.workspace = true
+storage-sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rand = "0.8.4"
@@ -48,7 +49,7 @@ async-channel = "2.5.0"
 redb = "3.1.1"
 postcard = { version = "1.1", features = ["alloc"] }
 serde_bytes = "0.11"
-zstd = "0.13"
+zstd = "0.14"
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 strum.workspace = true
 rayon.workspace = true
@@ -58,6 +59,7 @@ sidechain-domain.workspace = true
 zeroize.workspace = true
 stacker.workspace = true
 semver.workspace = true
+rustls.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true

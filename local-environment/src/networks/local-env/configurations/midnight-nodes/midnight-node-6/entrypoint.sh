@@ -31,7 +31,7 @@ export STORAGE_SEPARATION=unified
   --base-path=/data \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
-  --rpc-port=9945 \
+  --rpc-port="$RPC_PORT" \
   --rpc-cors=all \
   --prometheus-port=9620 \
   --prometheus-external \

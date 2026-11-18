@@ -21,6 +21,7 @@ zswap-ledger-8 = { workspace = true, optional = true }
 mn-ledger-9 = { workspace = true, features = ["proving"], optional = true }
 onchain-runtime-ledger-9 = { workspace = true, optional = true }
 onchain-state-ledger-9 = { workspace = true, optional = true }
+ledger-storage-ledger-9 = { workspace = true, optional = true }
 zswap-ledger-9 = { workspace = true, optional = true }
 coin-structure-ledger-9 = { workspace = true, optional = true }
 transient-crypto-ledger-9 = { workspace = true, optional = true }
@@ -44,13 +45,18 @@ hex = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
-sha2 = { workspace = true, optional = true }
+storage-sha2 = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
 
 [dev-dependencies]
+# The byte-limit test needs an `Externalities` to call `validate_transaction` with.
+sp-io = { workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
 midnight-ledger-unsafe-helpers = { workspace = true }
+prometheus-endpoint = { workspace = true }
+sp-state-machine = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = [
@@ -85,11 +91,12 @@ std = [
     "mn-ledger-9",
     "onchain-runtime-ledger-9",
     "onchain-state-ledger-9",
+    "ledger-storage-ledger-9",
     "zswap-ledger-9",
     "coin-structure-ledger-9",
     "transient-crypto-ledger-9",
     "v8-to-v9-state-translation",
-    "sha2",
+    "storage-sha2",
     "midnight-node-ledger-helpers",
     "derive-where"
 ]

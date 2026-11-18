@@ -11,20 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `midnight-node try-runtime`: dry-run a runtime upgrade against a state snapshot.
+//! Dry-runs a runtime upgrade against a `try-runtime create-snapshot` file.
 //!
-//! In-tree rather than the standalone `try-runtime-cli` because that links only
-//! `sp_io::SubstrateHostFunctions` and cannot resolve the `ledger_*_bridge` host
-//! functions the upgrade calls, so it traps before any check runs. Snapshot
-//! *creation* still uses `try-runtime-cli`, which needs no host functions.
-//!
-//! The snapshot reader is hand-rolled because adding `frame-remote-externalities`
-//! re-resolves `bip39` onto `rand_core 0.4`, which then fails to build
-//! `pallas-wallet`. The layout below mirrors the upstream `Snapshot<B>`.
+//! In-tree because the standalone `try-runtime-cli` lacks the `ledger_*_bridge` host functions.
+//! The snapshot reader is hand-rolled because `frame-remote-externalities` re-resolves `bip39`
+//! onto `rand_core 0.4`, which breaks the `pallas-wallet` build.
 
 #![allow(clippy::result_large_err)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Args;
 use frame_support::weights::Weight;
@@ -38,138 +33,86 @@ use sp_externalities::Extensions;
 use sp_runtime::StateVersion;
 use sp_runtime::traits::{Block as BlockT, HashingFor};
 use sp_state_machine::{
-	OverlayedChanges, StateMachine, TestExternalities, backend::TryPendingCode,
+	OverlayedChanges, StateMachine, TestExternalities,
+	backend::{BackendRuntimeCode, TryPendingCode},
 };
 use sp_version::RuntimeVersion;
 
+use midnight_node_runtime::Block;
 use midnight_primitives_ledger::{LedgerStorage, LedgerStorageExt};
 
 use crate::service::HostFunctions;
-use midnight_node_runtime::Block;
 
-/// A snapshot file as written by `try-runtime create-snapshot`, field for field
-/// the upstream `frame_remote_externalities::Snapshot<B>`. `raw_storage` is
-/// `(hashed_key, (trie_node_payload, ref_count))`.
+type Externalities = TestExternalities<HashingFor<Block>>;
+
+/// Mirrors upstream `frame_remote_externalities::Snapshot`.
 #[derive(Decode)]
 struct Snapshot {
-	#[allow(dead_code)]
-	snapshot_version: Compact<u16>,
+	_version: Compact<u16>,
 	state_version: StateVersion,
 	#[allow(clippy::type_complexity)]
 	raw_storage: Vec<(Vec<u8>, (Vec<u8>, i32))>,
 	storage_root: <Block as BlockT>::Hash,
-	#[allow(dead_code)]
-	header: <Block as BlockT>::Header,
+	_header: <Block as BlockT>::Header,
 }
 
-const EXPECTED_SNAPSHOT_VERSION: Compact<u16> = Compact(4);
+const SNAPSHOT_VERSION: u16 = 4;
+
+/// Same as `storage_cache_size` in `res/cfg/default.toml`.
+const LEDGER_CACHE_SIZE: usize = 100_000;
 
 #[derive(Debug, Clone, Args)]
 pub struct TryRuntimeCmd {
-	/// Path to a runtime snapshot file produced by `try-runtime create-snapshot`.
+	/// Snapshot file from `try-runtime create-snapshot`.
 	#[arg(long, short = 'p')]
 	pub snap: PathBuf,
 
-	/// Path to a new runtime wasm to test against the snapshot. If omitted, the
-	/// migration runs against the runtime that is already embedded in the snapshot.
+	/// Runtime WASM to upgrade to. Defaults to the snapshot's own runtime.
 	#[arg(long)]
 	pub runtime: Option<PathBuf>,
 
-	/// Which `try-runtime` checks to run. One of: none, all, pre-and-post, try-state.
+	/// One of: none, all, pre-and-post, try-state.
 	#[arg(long, default_value = "all")]
 	pub checks: UpgradeCheckSelect,
 
-	/// Skip enforcing that the new runtime's `spec_version` is greater than the
-	/// on-chain one. Use only when intentionally re-running the same version.
-	#[arg(long, default_value_t = false)]
+	/// Allow a `spec_version` that is not above the snapshot's.
+	#[arg(long)]
 	pub disable_spec_version_check: bool,
 
-	/// Skip enforcing that the new runtime's `spec_name` matches the on-chain one.
-	#[arg(long, default_value_t = false)]
+	/// Allow a `spec_name` that differs from the snapshot's.
+	#[arg(long)]
 	pub disable_spec_name_check: bool,
 
-	/// Path to a node's ledger storage (`<base-path>/ledger_storage`), e.g. from the
-	/// data directory the fork-testing flow restores — see `docs/fork-testing.md`.
-	///
-	/// A snapshot carries substrate storage only, so migrations that read ledger
-	/// state need this. Without it the run gets an empty arena, which is fine for
-	/// upgrades that leave the ledger alone and aborts on any that do not.
+	/// A node's `<base-path>/ledger_storage`, for migrations that read ledger state, which a
+	/// snapshot does not carry (see `docs/fork-testing.md`). Defaults to an empty ledger.
 	#[arg(long)]
 	pub ledger_db: Option<PathBuf>,
-
-	/// Arena cache size, in entries. Matches `storage_cache_size` in
-	/// `res/cfg/default.toml`.
-	#[arg(long, default_value_t = 100_000)]
-	pub ledger_cache_size: usize,
 }
 
 impl TryRuntimeCmd {
 	pub fn run(&self) -> sc_cli::Result<()> {
-		let executor: WasmExecutor<HostFunctions> = WasmExecutor::builder()
+		let executor = WasmExecutor::<HostFunctions>::builder()
 			.with_onchain_heap_alloc_strategy(DEFAULT_HEAP_ALLOC_STRATEGY)
 			.with_offchain_heap_alloc_strategy(DEFAULT_HEAP_ALLOC_STRATEGY)
 			.build();
 
-		log::info!("Loading snapshot from {:?}", self.snap);
 		let mut ext = load_snapshot(&self.snap)?;
-
-		let original_code = ext
-			.execute_with(|| sp_io::storage::get(well_known_keys::CODE))
-			.ok_or("snapshot does not contain :code")?;
-		let old_version = decode_version(&executor, &original_code, &mut ext)?;
-		log::info!(
-			"Original runtime [Name: {:?}] [Version: {}]",
-			old_version.spec_name,
-			old_version.spec_version,
-		);
-
-		if let Some(new_wasm_path) = &self.runtime {
-			let new_code = std::fs::read(new_wasm_path)
-				.map_err(|e| format!("reading {new_wasm_path:?}: {e}"))?;
-			ext.insert(well_known_keys::CODE.to_vec(), new_code.clone());
-			let new_version = decode_version(&executor, &new_code, &mut ext)?;
-			log::info!(
-				"New runtime      [Name: {:?}] [Version: {}]",
-				new_version.spec_name,
-				new_version.spec_version,
-			);
-
-			if !self.disable_spec_name_check && new_version.spec_name != old_version.spec_name {
-				return Err(format!(
-					"spec_name mismatch: on-chain={:?}, new={:?} (use --disable-spec-name-check to override)",
-					old_version.spec_name, new_version.spec_name,
-				)
-				.into());
-			}
-			if !self.disable_spec_version_check
-				&& new_version.spec_version <= old_version.spec_version
-			{
-				return Err(format!(
-					"new spec_version {} is not greater than on-chain {} (use --disable-spec-version-check to override)",
-					new_version.spec_version, old_version.spec_version,
-				)
-				.into());
-			}
+		if let Some(new_runtime) = &self.runtime {
+			self.set_runtime(&executor, &mut ext, new_runtime)?;
 		}
 
-		log::info!("🔬 Running TryRuntime_on_runtime_upgrade with checks: {:?}", self.checks);
-
-		let runtime_code_backend =
-			sp_state_machine::backend::BackendRuntimeCode::new(&ext.backend, TryPendingCode::No);
-		let runtime_code = runtime_code_backend.runtime_code()?;
-		let mut changes = OverlayedChanges::<HashingFor<Block>>::default();
+		let code_in_snapshot = BackendRuntimeCode::new(&ext.backend, TryPendingCode::No);
+		let runtime_code = code_in_snapshot.runtime_code()?;
+		let mut changes = OverlayedChanges::default();
 		let mut extensions = Extensions::default();
-		extensions.register(LedgerStorageExt::new(LedgerStorage::new_separate(
-			self.ledger_db_path()?,
-			self.ledger_cache_size,
-		)));
+		extensions.register(LedgerStorageExt::new(self.ledger_storage()?));
 
-		let encoded = StateMachine::new(
+		let encoded_weights = StateMachine::new(
 			&ext.backend,
 			&mut changes,
 			&executor,
 			"TryRuntime_on_runtime_upgrade",
-			self.checks.encode().as_ref(),
+			&self.checks.encode(),
 			&mut extensions,
 			&runtime_code,
 			CallContext::Offchain,
@@ -177,58 +120,81 @@ impl TryRuntimeCmd {
 		.execute()
 		.map_err(|e| {
 			let e = e.to_string();
-			// Say this up front; the trap backtrace below buries the cause.
+			// Logged separately, as the trap backtrace in `e` buries it.
 			if self.ledger_db.is_none() && e.contains("not in storage arena") {
-				log::error!(
-					"A migration read ledger state the empty scratch arena does not have. \
-					 Pass --ledger-db pointing at the ledger_storage of a node holding \
-					 this chain's state (docs/fork-testing.md)."
-				);
+				log::error!("A migration read ledger state: pass --ledger-db");
 			}
 			format!("TryRuntime_on_runtime_upgrade failed: {e}")
 		})?;
 
-		let (consumed, max) = <(Weight, Weight)>::decode(&mut &encoded[..])
-			.map_err(|e| format!("decoding migration weight result: {e:?}"))?;
-		log::info!("Migration consumed {consumed:?} of max block weight {max:?}");
-
+		let (consumed, max) = <(Weight, Weight)>::decode(&mut &encoded_weights[..])
+			.map_err(|e| format!("decoding the upgrade weight: {e}"))?;
+		log::info!("Upgrade consumed {consumed:?} of max block weight {max:?}");
 		Ok(())
 	}
 
-	/// Falls back to a fresh directory so the ledger host functions always have an
-	/// arena to open; without one every ledger call fails.
-	fn ledger_db_path(&self) -> sc_cli::Result<PathBuf> {
-		if let Some(path) = &self.ledger_db {
-			log::info!("Using ledger storage at {path:?}");
-			return Ok(path.clone());
+	fn set_runtime(
+		&self,
+		executor: &WasmExecutor<HostFunctions>,
+		ext: &mut Externalities,
+		new_runtime: &Path,
+	) -> sc_cli::Result<()> {
+		let old = runtime_version(executor, ext)?;
+		let code = std::fs::read(new_runtime)
+			.map_err(|e| format!("reading {}: {e}", new_runtime.display()))?;
+		ext.insert(well_known_keys::CODE.to_vec(), code);
+		let new = runtime_version(executor, ext)?;
+		log::info!(
+			"Upgrading {} {} to {} {}",
+			old.spec_name,
+			old.spec_version,
+			new.spec_name,
+			new.spec_version
+		);
+
+		if !self.disable_spec_name_check && new.spec_name != old.spec_name {
+			return Err("spec_name differs from the snapshot's (--disable-spec-name-check)".into());
 		}
-		let path = std::env::temp_dir()
-			.join(format!("midnight-try-runtime-ledger-{}", std::process::id()));
-		std::fs::create_dir_all(&path)
-			.map_err(|e| format!("creating scratch ledger storage {path:?}: {e}"))?;
-		log::warn!("No --ledger-db given; using an empty scratch arena at {path:?}");
-		Ok(path)
+		if !self.disable_spec_version_check && new.spec_version <= old.spec_version {
+			return Err(
+				"spec_version is not above the snapshot's (--disable-spec-version-check)".into()
+			);
+		}
+		Ok(())
+	}
+
+	fn ledger_storage(&self) -> sc_cli::Result<LedgerStorage> {
+		let path = match &self.ledger_db {
+			Some(path) => path.clone(),
+			None => {
+				let path = std::env::temp_dir()
+					.join(format!("midnight-try-runtime-ledger-{}", std::process::id()));
+				std::fs::create_dir_all(&path)
+					.map_err(|e| format!("creating {}: {e}", path.display()))?;
+				log::warn!("No --ledger-db; using an empty ledger at {}", path.display());
+				path
+			},
+		};
+		Ok(LedgerStorage::new_separate(path, LEDGER_CACHE_SIZE))
 	}
 }
 
-fn load_snapshot(path: &PathBuf) -> sc_cli::Result<TestExternalities<HashingFor<Block>>> {
-	let bytes = std::fs::read(path).map_err(|e| format!("reading snapshot {path:?}: {e}"))?;
+fn load_snapshot(path: &Path) -> sc_cli::Result<Externalities> {
+	let bytes = std::fs::read(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
 
-	// Decode the version prefix first, so a mismatch reports itself instead of
-	// surfacing as a confusing struct-decode failure.
-	let version = Compact::<u16>::decode(&mut &*bytes)
-		.map_err(|e| format!("decoding snapshot version: {e:?}"))?;
-	if version != EXPECTED_SNAPSHOT_VERSION {
+	// Checked first: another version's layout fails to decode with a misleading error.
+	let Compact(version) = Compact::<u16>::decode(&mut &bytes[..])
+		.map_err(|e| format!("decoding the snapshot version: {e}"))?;
+	if version != SNAPSHOT_VERSION {
 		return Err(format!(
-			"unsupported snapshot version {}: expected {}; recreate with a matching try-runtime-cli",
-			version.0, EXPECTED_SNAPSHOT_VERSION.0,
+			"snapshot version {version}, expected {SNAPSHOT_VERSION}: recreate it with a \
+			 matching try-runtime-cli"
 		)
 		.into());
 	}
 
 	let snapshot =
-		Snapshot::decode(&mut &*bytes).map_err(|e| format!("decoding snapshot body: {e:?}"))?;
-
+		Snapshot::decode(&mut &bytes[..]).map_err(|e| format!("decoding the snapshot: {e}"))?;
 	Ok(TestExternalities::from_raw_snapshot(
 		snapshot.raw_storage,
 		snapshot.storage_root,
@@ -236,14 +202,16 @@ fn load_snapshot(path: &PathBuf) -> sc_cli::Result<TestExternalities<HashingFor<
 	))
 }
 
-fn decode_version(
+fn runtime_version(
 	executor: &WasmExecutor<HostFunctions>,
-	code: &[u8],
-	ext: &mut TestExternalities<HashingFor<Block>>,
+	ext: &mut Externalities,
 ) -> sc_cli::Result<RuntimeVersion> {
+	let code = ext
+		.execute_with(|| sp_io::storage::get(well_known_keys::CODE))
+		.ok_or("the snapshot has no :code")?;
 	let encoded = executor
-		.read_runtime_version(code, &mut ext.ext())
-		.map_err(|e| format!("read_runtime_version failed: {e:?}"))?;
-	RuntimeVersion::decode(&mut &*encoded)
-		.map_err(|e| format!("decode RuntimeVersion: {e:?}").into())
+		.read_runtime_version(&code, &mut ext.ext())
+		.map_err(|e| format!("reading the runtime version: {e}"))?;
+	RuntimeVersion::decode(&mut &encoded[..])
+		.map_err(|e| format!("decoding the runtime version: {e}").into())
 }

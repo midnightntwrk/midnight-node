@@ -17,9 +17,10 @@
 //! wallet state is cached per seed. Ledger snapshots unused by any wallets are eventually gced.
 
 use midnight_ledger_unsafe_helpers::{
-	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged,
-	fork::fork_aware_context::watch_only_ecdsa_wallet_8, ledger_8, serialize_untagged,
+	BlockContext, DefaultDB, DustFrontierRaw, DustLocalState, HashOutput, LedgerContext,
+	LedgerState, Sp, Timestamp, UnshieldedSignatureScheme, UnshieldedUtxoRaw, Wallet, WalletSeed,
+	WalletState, deserialize_untagged, fork::fork_aware_context::watch_only_ecdsa_wallet_8,
+	ledger_8, serialize_untagged,
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,11 @@ use subxt::utils::H256;
 ///     unshielded signature scheme (see [`wallet_cache_key`]).
 /// v3: paired with version-tagged ledger snapshots (see [`SNAPSHOT_FORMAT_VERSION`]); bumped so
 ///     wallet entries written against untagged (implicitly ledger-9) snapshots miss cleanly.
-pub const WALLET_CACHE_FORMAT_VERSION: u8 = 3;
+/// v4: carries the indexer path's stream cursors (see [`indexer_wallet_cache_key`]), which changes
+///     the postcard body layout. Costs existing replay caches one re-replay.
+/// v5: reserved for the indexer UTXOs' `registeredForDustGeneration` flag.
+/// v6: adds the indexer path's DUST fast-sync frontier ([`CachedWalletState::dust_frontier`]).
+pub const WALLET_CACHE_FORMAT_VERSION: u8 = 6;
 
 /// On-disk format version for a [`LedgerSnapshot`] value, prefixed before the
 /// zstd-compressed postcard body.
@@ -100,15 +105,30 @@ pub struct LedgerSnapshot {
 ///
 /// `seed_hash` is the storage key and is skipped during serialization;
 /// it must be supplied to `from_value_bytes` to reconstruct the struct.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+///
+/// The trailing fields are written only by the indexer path, which resumes three independent
+/// stream cursors instead of replaying blocks, and are zero/empty on replay entries. The two kinds
+/// live in disjoint key namespaces (see [`indexer_wallet_cache_key`]) — which is what makes it
+/// safe that `dust_local_state_bytes` means *post*-TTL on a replay entry and *pre*-TTL on an
+/// indexer one.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CachedWalletState {
 	#[serde(skip)]
 	pub seed_hash: H256,
 	pub block_height: u64,
+	/// Indexer path: also the shielded resume cursor, via its `WalletState::first_free`. Empty
+	/// when a drain ended merkle-misaligned and the shielded half was therefore not cached.
 	#[serde(with = "serde_bytes")]
 	pub shielded_state_bytes: Vec<u8>,
 	#[serde(with = "serde_opt_bytes")]
 	pub dust_local_state_bytes: Option<Vec<u8>>,
+	/// Indexer path only: reconciled UTXO set.
+	pub unshielded_utxos: Vec<UnshieldedUtxoRaw>,
+	/// Indexer path only: highest applied `transactionId` / dust ledger-event `id`.
+	pub unshielded_tx_id: u64,
+	pub dust_event_id: u64,
+	/// Indexer path only: where the last DUST fast sync left each spend chain.
+	pub dust_frontier: Option<DustFrontierRaw>,
 }
 
 // =============================================================================
@@ -194,6 +214,28 @@ pub fn wallet_cache_key(seed: &WalletSeed, scheme: UnshieldedSignatureScheme) ->
 	H256::from_slice(&hasher.finalize())
 }
 
+/// Cache key for an indexer-path wallet entry.
+///
+/// The `indexer` domain tag keeps these disjoint from [`wallet_cache_key`]: their `block_height`
+/// and cursor semantics are incompatible, and the indexer path writes no [`LedgerSnapshot`]. That
+/// missing snapshot is also why the ledger generation is folded in here: the replay path gets its
+/// generation check from `restore_context_from_ledger_snapshot`, and the v8→v9 hardfork rewrites
+/// state, so a pre-fork cursor is meaningless afterwards. The scheme is folded in because each
+/// identity has its own unshielded address.
+///
+/// The chain itself is the existing `chain_id` directory namespace (block 1's hash).
+pub fn indexer_wallet_cache_key(
+	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
+	ledger_version: LedgerVersion,
+) -> H256 {
+	let mut hasher = Sha256::new();
+	hasher.update(b"indexer");
+	hasher.update([WALLET_CACHE_FORMAT_VERSION, scheme_discriminant(scheme), ledger_version as u8]);
+	hasher.update(seed.as_bytes());
+	H256::from_slice(&hasher.finalize())
+}
+
 /// Compute a state root hash from serialized ledger state bytes.
 ///
 /// This provides integrity verification for cached state without depending
@@ -269,6 +311,48 @@ impl CachedWalletState {
 			.map_err(|e| CacheError::DeserializeWalletState(e.to_string()))?;
 		state.seed_hash = seed_hash;
 		Ok(state)
+	}
+
+	/// Build an indexer-path entry from a sync run's resume point.
+	///
+	/// `block_height` is the indexer tip the run synced against. It is not a resume cursor here —
+	/// the three stream cursors are — but it keeps `write_wallet_if_newer`'s monotonic guard
+	/// meaningful, so a slow run cannot clobber a fresher entry.
+	pub fn from_sync_state(
+		seed_hash: H256,
+		block_height: u64,
+		sync: midnight_ledger_unsafe_helpers::WalletSyncState,
+	) -> Self {
+		Self {
+			seed_hash,
+			block_height,
+			shielded_state_bytes: sync.shielded_state.map(|s| s.0).unwrap_or_default(),
+			dust_local_state_bytes: sync.dust_state.map(|s| s.0),
+			unshielded_utxos: sync.unshielded_utxos,
+			unshielded_tx_id: sync.unshielded_tx_id,
+			dust_event_id: sync.dust_event_id,
+			dust_frontier: sync.dust_frontier,
+		}
+	}
+
+	/// Read an indexer-path entry back as a resume point. Only meaningful for an entry fetched
+	/// under [`indexer_wallet_cache_key`].
+	pub fn to_sync_state(&self) -> midnight_ledger_unsafe_helpers::WalletSyncState {
+		midnight_ledger_unsafe_helpers::WalletSyncState {
+			shielded_state: (!self.shielded_state_bytes.is_empty()).then(|| {
+				midnight_ledger_unsafe_helpers::ZswapWalletStateRaw(
+					self.shielded_state_bytes.clone(),
+				)
+			}),
+			unshielded_utxos: self.unshielded_utxos.clone(),
+			unshielded_tx_id: self.unshielded_tx_id,
+			dust_state: self
+				.dust_local_state_bytes
+				.clone()
+				.map(midnight_ledger_unsafe_helpers::DustLocalStateRaw),
+			dust_event_id: self.dust_event_id,
+			dust_frontier: self.dust_frontier.clone(),
+		}
 	}
 
 	/// Extract block_height from the value header. Returns `None` if the header is too short or
@@ -369,6 +453,7 @@ pub fn create_wallet_snapshot_8(
 		block_height,
 		shielded_state_bytes,
 		dust_local_state_bytes,
+		..Default::default()
 	})
 }
 
@@ -507,6 +592,7 @@ pub fn create_wallet_snapshot(
 		block_height,
 		shielded_state_bytes,
 		dust_local_state_bytes,
+		..Default::default()
 	})
 }
 
@@ -786,6 +872,7 @@ mod tests {
 			block_height: 99,
 			shielded_state_bytes: vec![0xDD; 500],
 			dust_local_state_bytes: Some(vec![0xEE; 200]),
+			..Default::default()
 		};
 
 		let bytes = wallet.to_value_bytes().expect("serialize failed");
@@ -804,6 +891,7 @@ mod tests {
 			block_height: 50,
 			shielded_state_bytes: vec![0xFF; 100],
 			dust_local_state_bytes: None,
+			..Default::default()
 		};
 
 		let bytes = wallet.to_value_bytes().expect("serialize failed");
@@ -821,6 +909,7 @@ mod tests {
 				block_height: height,
 				shielded_state_bytes: vec![0xDD; 500],
 				dust_local_state_bytes: Some(vec![0xEE; 200]),
+				..Default::default()
 			};
 
 			let bytes = wallet.to_value_bytes().expect("serialize failed");
@@ -844,6 +933,82 @@ mod tests {
 		let schnorr = wallet_cache_key(&seed, UnshieldedSignatureScheme::Schnorr);
 		let ecdsa = wallet_cache_key(&seed, UnshieldedSignatureScheme::Ecdsa);
 		assert_ne!(schnorr, ecdsa, "Schnorr and ECDSA must not share a cache key for one seed");
+	}
+
+	/// The indexer path's entries carry stream cursors and no ledger snapshot, so serving one
+	/// against the replay path (or across the v8→v9 hardfork) would resume from meaningless state.
+	#[test]
+	fn indexer_cache_key_is_disjoint_from_replay_and_per_generation() {
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000001",
+		)
+		.unwrap();
+
+		let key = |scheme, version| indexer_wallet_cache_key(&seed, scheme, version);
+		let v9 = key(UnshieldedSignatureScheme::Schnorr, LedgerVersion::Ledger9);
+		let v8 = key(UnshieldedSignatureScheme::Schnorr, LedgerVersion::Ledger8);
+		assert_ne!(v8, v9, "a v8 cursor must not be served to a v9 sync");
+		assert_ne!(
+			v9,
+			key(UnshieldedSignatureScheme::Ecdsa, LedgerVersion::Ledger9),
+			"each identity has its own unshielded address"
+		);
+
+		for scheme in [UnshieldedSignatureScheme::Schnorr, UnshieldedSignatureScheme::Ecdsa] {
+			let replay = wallet_cache_key(&seed, scheme);
+			assert_ne!(replay, key(scheme, LedgerVersion::Ledger8));
+			assert_ne!(replay, key(scheme, LedgerVersion::Ledger9));
+		}
+	}
+
+	#[test]
+	fn sync_state_roundtrips_through_a_cache_entry() {
+		use midnight_ledger_unsafe_helpers::{
+			DustLocalStateRaw, WalletSyncState, ZswapWalletStateRaw,
+		};
+
+		let sync = WalletSyncState {
+			shielded_state: Some(ZswapWalletStateRaw(vec![0x11; 64])),
+			unshielded_utxos: vec![
+				UnshieldedUtxoRaw { utxo: vec![0x22; 48], ctime_secs: 1_700_000_000 },
+				UnshieldedUtxoRaw { utxo: vec![0x33; 48], ctime_secs: 0 },
+			],
+			unshielded_tx_id: 4321,
+			dust_state: Some(DustLocalStateRaw(vec![0x44; 32])),
+			dust_event_id: 9876,
+			dust_frontier: Some(DustFrontierRaw {
+				height: 55,
+				block_hash: [0x66; 32],
+				heads: vec![vec![0x77; 90], vec![0x88; 90]],
+				event_cursor: Some(1234),
+			}),
+		};
+
+		let entry = CachedWalletState::from_sync_state(H256::from([5u8; 32]), 77, sync.clone());
+		let bytes = entry.to_value_bytes().expect("serialize");
+		let decoded =
+			CachedWalletState::from_value_bytes(&bytes, H256::from([5u8; 32])).expect("decode");
+		assert_eq!(decoded, entry);
+
+		let back = decoded.to_sync_state();
+		assert_eq!(back.shielded_state, sync.shielded_state);
+		assert_eq!(back.unshielded_utxos, sync.unshielded_utxos);
+		assert_eq!(back.unshielded_tx_id, sync.unshielded_tx_id);
+		assert_eq!(back.dust_state, sync.dust_state);
+		assert_eq!(back.dust_event_id, sync.dust_event_id);
+		assert_eq!(back.dust_frontier, sync.dust_frontier);
+	}
+
+	/// A drain that ended merkle-misaligned persists no shielded state; the next run must read that
+	/// back as "no shielded resume point" rather than as an empty `WalletState` blob.
+	#[test]
+	fn absent_shielded_state_roundtrips_as_none() {
+		use midnight_ledger_unsafe_helpers::WalletSyncState;
+
+		let sync = WalletSyncState { dust_event_id: 3, ..Default::default() };
+		let entry = CachedWalletState::from_sync_state(H256::zero(), 1, sync);
+		assert!(entry.shielded_state_bytes.is_empty());
+		assert!(entry.to_sync_state().shielded_state.is_none());
 	}
 
 	#[test]
@@ -873,6 +1038,7 @@ mod tests {
 			block_height: 123,
 			shielded_state_bytes: vec![0x11; 8],
 			dust_local_state_bytes: None,
+			..Default::default()
 		};
 		let bytes = wallet.to_value_bytes().expect("serialize");
 		assert_eq!(bytes[0], WALLET_CACHE_FORMAT_VERSION, "value must carry the version prefix");

@@ -152,11 +152,30 @@ impl Api {
 	where
 		T: Deserializable + DeserializableError + Tagged + 'static,
 	{
+		self.tagged_deserialize_with_level(bytes, log::Level::Error)
+	}
+
+	/// Invalid public input is expected; internal state decoding must still report errors.
+	pub fn tagged_deserialize_input<T>(&self, bytes: &[u8]) -> Result<T, LedgerApiError>
+	where
+		T: Deserializable + DeserializableError + Tagged + 'static,
+	{
+		self.tagged_deserialize_with_level(bytes, log::Level::Warn)
+	}
+
+	fn tagged_deserialize_with_level<T>(
+		&self,
+		bytes: &[u8],
+		level: log::Level,
+	) -> Result<T, LedgerApiError>
+	where
+		T: Deserializable + DeserializableError + Tagged + 'static,
+	{
 		let kind = core::any::type_name::<T>();
 		let error = LedgerApiError::Deserialization(<T as DeserializableError>::error());
 
 		midnight_serialize_local::tagged_deserialize(bytes).map_err(|e| {
-			log::error!(target: LOG_TARGET, "Error deserializing: {kind:?}: {e:?}");
+			log::log!(target: LOG_TARGET, level, "Error deserializing: {kind:?}: {e:?}");
 			error
 		})
 	}

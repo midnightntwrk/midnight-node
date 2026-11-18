@@ -18,8 +18,14 @@ use sp_runtime::{
 	traits::{BlakeTwo256, IdentityLookup},
 };
 use sp_session_validator_management::MainChainScripts;
+use std::cell::Cell;
 
 type Block = frame_system::mocking::MockBlock<Test>;
+
+thread_local! {
+	/// Makes the mock selector return an empty committee instead of `None` when given no candidates.
+	pub static SELECT_EMPTY_COMMITTEE: Cell<bool> = const { Cell::new(false) };
+}
 
 type AccountId = u64;
 type AuthorityId = u64;
@@ -125,7 +131,7 @@ impl pallet::Config for Test {
 		_sidechain_epoch: Self::ScEpochNumber,
 	) -> Option<BoundedVec<(Self::AuthorityId, Self::AuthorityKeys), Self::MaxValidators>> {
 		// This is a good approximation of the real selection algorithm, that returns None iff there are no valid candidates to select from.
-		if input.is_empty() { None } else { Some(input) }
+		if input.is_empty() && !SELECT_EMPTY_COMMITTEE.with(Cell::get) { None } else { Some(input) }
 	}
 
 	fn current_epoch_number() -> Self::ScEpochNumber {

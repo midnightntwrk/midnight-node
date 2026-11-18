@@ -3,3 +3,5 @@ target
 **/node_modules
 **/dist
 !/tests/.papi/descriptors/dist
+# Earthly secret file written by .envrc - never let it into a build context
+.secret

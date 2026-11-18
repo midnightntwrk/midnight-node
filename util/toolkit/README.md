@@ -137,6 +137,44 @@ Wallet state reconstructed during block replay is cached per seed in `--ledger-s
 
 Replay verifies finalized history in proof-erased form (no zero-knowledge proof, signature or balancing re-verification) and instead compares the locally computed ledger state root with the on-chain `Midnight.StateKey` after every block; a mismatch aborts the replay. The toolkit is a testing tool that trusts the node it talks to, so there is no strict-verification mode.
 
+### Reading wallet state from an indexer
+
+Replaying every block from the node gets slower as the chain grows. With `--indexer-url` (`MN_INDEXER_URL`) the toolkit reads wallet state from a Midnight indexer's GraphQL API instead. Pass the indexer's `api/v4` base URL, and the network id with `--network` so the viewing key and addresses are derived for the right network:
+
+```bash
+midnight-node-toolkit show-wallet \
+  --indexer-url http://127.0.0.1:8088/api/v4 \
+  --network undeployed \
+  --seed 0000000000000000000000000000000000000000000000000000000000000001
+```
+
+`show-wallet` and `generate-txs` support this path, except `generate-txs send`, which forwards source blocks that the indexer path does not have. The node is still used to submit transactions (`--dest-url`). Only the Schnorr NIGHT identity is supported; an `ecdsa:` seed needs the block-replay path.
+
+| Option | Environment variable | Purpose |
+| --- | --- | --- |
+| `--indexer-url` | `MN_INDEXER_URL` | Indexer base URL. Selects the indexer path. |
+| `--network` | | Network id, e.g. `undeployed`, `preview`, `preprod`, `mainnet`. |
+| `--indexer-concurrency` | `MN_INDEXER_CONCURRENCY` | Wallets synced at once (default 4). Each holds three WebSocket subscriptions. |
+| `--no-fast-sync` | `MN_INDEXER_NO_FAST_SYNC` | Replay the full DUST event log instead of using an indexer snapshot. |
+| `--blockfrost-project-id` | `BLOCKFROST_PROJECT_ID` | Blockfrost API key. See below. |
+
+#### Using Blockfrost as the indexer
+
+[Blockfrost](https://docs.blockfrost.io/midnight/) hosts a Midnight indexer for `mainnet`, `preprod` and `preview`. Pass its URL, `https://midnight-<network>.blockfrost.io/api/v0`, as `--indexer-url`. The toolkit recognises a `*.blockfrost.io` host, uses Blockfrost's endpoint layout and sends the API key as the `project_id` header on both the HTTP and WebSocket connections.
+
+The API key is the project id of a Blockfrost project created for the same Midnight network as the URL. Supply it through the environment:
+
+```bash
+export BLOCKFROST_PROJECT_ID=<project id>
+
+midnight-node-toolkit show-wallet \
+  --indexer-url https://midnight-mainnet.blockfrost.io/api/v0 \
+  --network mainnet \
+  --seed <seed>
+```
+
+`--blockfrost-project-id <project id>` does the same and takes precedence over the environment variable, but a key passed as a flag is visible in the process list and shell history. A Blockfrost URL without a key fails before any request is made. The key is ignored for any other indexer URL.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console
@@ -723,12 +761,12 @@ $ midnight-node-toolkit show-wallet
   },
   "utxos": [
     {
-      "id": "25fe03f8906c9bd2a9db4f2690d2e9e4f17b4194cc41b79458076d8ae486afaf#0",
-      "initial_nonce": "adf6979ee2caf3662dabe4588eb2311de04e97293c6f96e366bd4a67034d87e7",
+      "id": "5bad509df7cbb4c04b2e12bf5f2426d17964559919351aa7a51c36cfef336189#0",
+      "initial_nonce": "5a3d3972fec6996314742627e71f5be90fab3369506b202999cc4e506e431f63",
       "value": 50000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
-      "intent_hash": "25fe03f8906c9bd2a9db4f2690d2e9e4f17b4194cc41b79458076d8ae486afaf",
+      "intent_hash": "5bad509df7cbb4c04b2e12bf5f2426d17964559919351aa7a51c36cfef336189",
       "output_number": 0
     },
 ...
@@ -737,11 +775,11 @@ $ midnight-node-toolkit show-wallet
     {
       "initial_value": 0,
       "dust_public": "73ff4aaccbb878703e922c8ab5da32a349ca7b5a6e0a2b0950ac68c6a3e273471a",
-      "nonce": "73b63b0719231dc4a8d61e46ed175ba0d1edc56dd8f1839039f3f56e49be042335",
+      "nonce": "7357d571e866c1d2fea299a54a8bde6edbfff7488cb8412c2ebe1dd7eca5f13114",
       "seq": 0,
       "ctime": 1754395200,
-      "backing_night": "10ba51819808fc09897af46574aa37b3fee89f7dc0dde00cae2924d09d3c33b5",
-      "mt_index": 1
+      "backing_night": "5a3d3972fec6996314742627e71f5be90fab3369506b202999cc4e506e431f63",
+      "mt_index": 3
     },
 ...
   ],

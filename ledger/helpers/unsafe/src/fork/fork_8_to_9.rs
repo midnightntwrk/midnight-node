@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use tokio::sync::Mutex as MutexTokio;
 
 use base_crypto::cost_model::CostDuration;
-use ledger_storage_ledger_8::state_translation::TypedTranslationState;
+use ledger_storage_ledger_9::state_translation::TypedTranslationState;
 use v8_to_v9_state_translation::StateTranslationTable;
 
 type Db8 = crate::ledger_8::DefaultDB;
@@ -90,8 +90,8 @@ pub fn fork_context_8_to_9(
 	// changed v13->v18 and its shape changed, so a bare arena-key reuse would
 	// produce a v9 root the ledger-9 machinery can't read. Walk the v8 state
 	// through the same `StateTranslationTable` the on-chain migration uses. Db8
-	// == Db9 (both `ledger_storage_ledger_8::DefaultDB`), so source and target
-	// share one arena and a single-`D` `TypedTranslationState` applies.
+	// == Db9 (both re-export `midnight_storage_core::DefaultDB`), so source and
+	// target share one arena and a single-`D` `TypedTranslationState` applies.
 	let ledger_state: crate::ledger_9::Sp<LedgerState8<Db8>, Db8> = {
 		let mut tl = TypedTranslationState::<
 			mn_ledger_8::structure::LedgerState<Db8>,
@@ -110,7 +110,10 @@ pub fn fork_context_8_to_9(
 				return Err(std::io::Error::other("v8->v9 state translation did not converge"));
 			}
 			tl = tl.run(budget)?;
-			if let Some(result) = tl.result()? {
+			if let Some(mut result) = tl.result()? {
+				// The result is lazy and its nodes are pinned only by `tl`; persist before `tl`
+				// drops, or the in-memory arena evicts them (as the node's migration does).
+				result.persist();
 				break result;
 			}
 		}

@@ -17,10 +17,7 @@ import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { fullUpgrade } from "./commands/fullUpgrade";
-import {
-  consensusUpgradeArmBabe,
-  consensusUpgradeScheduleFlip,
-} from "./commands/consensusUpgrade";
+import { consensusUpgradeScheduleFlip } from "./commands/consensusUpgrade";
 import { verifyFinality } from "./commands/verifyFinality";
 import {
   RunOptions,
@@ -115,7 +112,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
+    "http(s):// URL or local archive path of the snapshot to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
   )
   .option(
     "--num-validators <count>",
@@ -168,7 +165,7 @@ program
   )
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to fork the network from before rolling the image",
+    "http(s):// URL or local archive path of the snapshot to fork the network from before rolling the image",
   )
   .option(
     "--num-validators <count>",
@@ -295,7 +292,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+    "Restore a snapshot (http(s):// URL or local archive path) before launching services. Omit it to reuse existing local fork state.",
   )
   .option(
     "--num-validators <count>",
@@ -404,7 +401,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to restore before phase 1. Required for the first bring-up of a well-known network.",
+    "http(s):// URL or local archive path of the snapshot to restore before phase 1. Required for the first bring-up of a well-known network.",
   )
   .option(
     "--num-validators <count>",
@@ -467,10 +464,9 @@ program
     await fullUpgrade(network, opts);
   });
 
-// The consensus-engine transitions (arm-babe, schedule-flip) share the same
-// governance surface: a federated-authority motion that dispatches a fixed
-// pallet-consensus-engine call as root. They differ only in which call is run,
-// so register them from one place.
+// The consensus-engine transition (schedule-flip) uses the same governance
+// surface as runtime upgrades: a federated-authority motion that dispatches a
+// fixed pallet-consensus-engine call as root.
 function parseGovernanceCallCliOpts(
   cliOpts: ConsensusUpgradeCliOpts,
 ): GovernanceCallOptions {
@@ -542,7 +538,7 @@ function registerConsensusUpgradeCommand(
     .option("--env-file <path...>", "specify one or more env files")
     .option(
       "--from-snapshot <uri>",
-      "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
+      "Restore a snapshot (http(s):// URL or local archive path) before launching services. Omit it to reuse existing local fork state.",
     )
     .option(
       "--num-validators <count>",
@@ -555,12 +551,6 @@ function registerConsensusUpgradeCommand(
       await handler(network, opts);
     });
 }
-
-registerConsensusUpgradeCommand(
-  "consensus-upgrade-arm-babe",
-  "Arm the AURA-to-BABE consensus flip (pallet-consensus-engine arm_babe) via a federated-authority motion",
-  consensusUpgradeArmBabe,
-);
 
 registerConsensusUpgradeCommand(
   "consensus-upgrade-schedule-flip",

@@ -1,0 +1,114 @@
+# GraphQL operations for the indexer-backed `BuilderContext`. Indexers reject the whole document if
+# any operation in it is invalid, so everything here must validate against every schema in
+# `schema/`.
+
+query LatestBlock {
+  block {
+    height
+    protocolVersion
+    timestamp
+    zswapEndIndex
+    ledgerParameters
+    parent {
+      hash
+      timestamp
+    }
+  }
+}
+
+mutation Connect($viewingKey: ViewingKey!, $options: ConnectOptions) {
+  connect(viewingKey: $viewingKey, options: $options)
+}
+
+mutation Disconnect($sessionId: HexEncoded!) {
+  disconnect(sessionId: $sessionId)
+}
+
+subscription ShieldedTransactions($sessionId: HexEncoded!, $index: Int) {
+  shieldedTransactions(sessionId: $sessionId, index: $index) {
+    __typename
+    ... on RelevantTransaction {
+      transaction {
+        raw
+        zswapStartIndex
+        zswapEndIndex
+        transactionResult {
+          status
+        }
+      }
+      zswapCollapsedUpdate {
+        update
+      }
+    }
+    ... on ShieldedTransactionsProgress {
+      highestZswapEndIndex
+      highestCheckedZswapEndIndex
+      highestRelevantZswapEndIndex
+    }
+  }
+}
+
+# Shared so `createdUtxos`/`spentUtxos` map to a single generated Rust type.
+fragment UnshieldedUtxoFields on UnshieldedUtxo {
+  tokenType
+  value
+  intentHash
+  outputIndex
+  ctime
+}
+
+subscription UnshieldedTransactions($address: UnshieldedAddress!, $transactionId: Int) {
+  unshieldedTransactions(address: $address, transactionId: $transactionId) {
+    __typename
+    ... on UnshieldedTransaction {
+      # The transaction id lets the drain decide it has caught up to the progress
+      # sentinel's `highestTransactionId`, rather than stopping on the first progress.
+      # `Transaction` is an interface, so `graphql_client` requires `__typename` here.
+      transaction {
+        __typename
+        id
+      }
+      createdUtxos {
+        ...UnshieldedUtxoFields
+      }
+      spentUtxos {
+        ...UnshieldedUtxoFields
+      }
+    }
+    ... on UnshieldedTransactionsProgress {
+      highestTransactionId
+    }
+  }
+}
+
+subscription DustLedgerEvents($id: Int) {
+  dustLedgerEvents(id: $id) {
+    __typename
+    id
+    raw
+    maxId
+  }
+}
+
+# Chain identity for cache keying: block 1's hash is stable for the life of a chain and is the
+# same value the replay path uses (`SourceTransactions::chain_id`).
+query BlockAtHeight($height: Int!) {
+  block(offset: { height: $height }) {
+    hash
+  }
+}
+
+# No offset selects the contract's latest action, i.e. its current state.
+query ContractActionState($address: HexEncoded!) {
+  contractAction(address: $address) {
+    __typename
+    state
+  }
+}
+
+# `endIndex` is inclusive.
+query ZswapCollapsedUpdate($startIndex: Int!, $endIndex: Int!) {
+  zswapMerkleTreeCollapsedUpdate(startIndex: $startIndex, endIndex: $endIndex) {
+    update
+  }
+}

@@ -45,9 +45,9 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -88,7 +88,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab #v2.87.13
+        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 #v2.90.0
         with:
           tool: just
 
@@ -127,14 +127,15 @@ jobs:
       - name: Extract existing artifacts
         if: steps.check-images.outputs.images_exist == 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
           NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
         run: |
           echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
-          . ./.envrc && earthly +extract-node-artifacts \
+          . ./.envrc && earth +extract-node-artifacts \
             --NODE_IMAGE="${NODE_IMAGE}:${IMAGE_TAG}-amd64"
-          . ./.envrc && earthly +extract-toolkit-artifacts \
+          . ./.envrc && earth +extract-toolkit-artifacts \
             --TOOLKIT_IMAGE="${TOOLKIT_IMAGE}:${IMAGE_TAG}-amd64"
 
       - name: Free disk space
@@ -147,12 +148,14 @@ jobs:
       - name: Run build
         if: steps.check-images.outputs.images_exist != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image --STRIP_BINARIES="$STRIP_BINARIES"
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image --STRIP_BINARIES="$STRIP_BINARIES"
 
       - name: Get image digests
         id: digests
@@ -184,7 +187,7 @@ jobs:
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  #v7.0.2
         if: success() || failure()
         with:
           name: midnight-node-amd64
@@ -270,7 +273,7 @@ jobs:
             "SHA256SUMS-${PLATFORM}"
 
       - name: Archive release notes
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes
           path: RELEASE_NOTES.md
@@ -286,9 +289,9 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -340,23 +343,28 @@ jobs:
       - name: Extract existing artifacts
         if: steps.check-images.outputs.images_exist == 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
           NODE_IMAGE: ${{ steps.check-images.outputs.node_image }}
           TOOLKIT_IMAGE: ${{ steps.check-images.outputs.toolkit_image }}
         run: |
           echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
-          . ./.envrc && earthly +extract-node-artifacts \
+          . ./.envrc && earth +extract-node-artifacts \
             --NODE_IMAGE="${NODE_IMAGE}:${IMAGE_TAG}-arm64"
-          . ./.envrc && earthly +extract-toolkit-artifacts \
+          . ./.envrc && earth +extract-toolkit-artifacts \
             --TOOLKIT_IMAGE="${TOOLKIT_IMAGE}:${IMAGE_TAG}-arm64"
 
       - name: Run Node and toolkit builds
         if: steps.check-images.outputs.images_exist != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          # Private clones strip the shipped binaries (STRIP_BINARIES in the Earthfile). Inverted so
+          # a payload with no repository object strips rather than ships symbols.
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image --STRIP_BINARIES="$STRIP_BINARIES"
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image --STRIP_BINARIES="$STRIP_BINARIES"
 
       - name: Get image digests
         id: digests
@@ -387,7 +395,7 @@ jobs:
 
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  #v7.0.2
         if: success() || failure()
         with:
           name: midnight-node-arm64

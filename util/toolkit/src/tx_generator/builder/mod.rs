@@ -526,6 +526,8 @@ pub enum BuilderConstructionError {
 	NoContext,
 	#[error("internal error: version mismatch in fork context")]
 	VersionMismatch,
+	#[error("`{0}` is not yet supported with --indexer-url")]
+	UnsupportedWithIndexer(&'static str),
 }
 
 impl From<BuilderConstructionError> for DynamicError {
@@ -769,17 +771,45 @@ impl Builder {
 				ctx.dispatch(
 					|context| {
 						let prover = Self::make_prover_v8(prover_config);
-						Ok(self_clone.clone().to_builder_v8(Arc::new(context), prover))
+						self_clone.clone().to_builder_v8(Arc::new(context), prover)
 					},
 					|context| {
 						let prover = Self::make_prover(prover_config);
-						Ok(self.to_builder_v9(Arc::new(context), prover))
+						self.to_builder_v9(Arc::new(context), prover)
 					},
 				)
 			},
 			None => {
 				// Pass-through builder (Send) doesn't need context
 				Ok(self.to_builder_passthrough())
+			},
+		}
+	}
+
+	/// Reject builders the indexer backend cannot serve yet, before any wallet sync.
+	pub fn ensure_indexer_supported(&self) -> Result<(), BuilderConstructionError> {
+		match self {
+			// There are no source blocks to forward on the indexer path.
+			Builder::Send => Err(BuilderConstructionError::UnsupportedWithIndexer("send")),
+			_ => Ok(()),
+		}
+	}
+
+	/// Construct a builder over a synced indexer context.
+	pub fn to_indexer_builder(
+		self,
+		ctx: &crate::tx_generator::indexer::IndexerLedgerContext,
+		prover_config: &ProverConfig,
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
+		use crate::tx_generator::indexer::IndexerLedgerContext;
+
+		self.ensure_indexer_supported()?;
+		match ctx {
+			IndexerLedgerContext::Ledger8(ctx) => {
+				self.to_builder_v8(ctx.clone(), Self::make_prover_v8(prover_config))
+			},
+			IndexerLedgerContext::Ledger9(ctx) => {
+				self.to_builder_v9(ctx.clone(), Self::make_prover(prover_config))
 			},
 		}
 	}
@@ -810,11 +840,11 @@ impl Builder {
 		}
 	}
 
-	fn to_builder_v9(
+	fn to_builder_v9<C: BuilderContext<DefaultDB>>(
 		self,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Box<dyn BuildTxs<Error = DynamicError>> {
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -823,7 +853,7 @@ impl Builder {
 
 		use builders::ledger_9 as v9;
 
-		match self {
+		Ok(match self {
 			Builder::Batches(args) => constr(v9::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
@@ -855,22 +885,22 @@ impl Builder {
 				constr(v9::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v9::DoNothingBuilder::new()),
-		}
+		})
 	}
 
-	fn to_builder_v8(
-		self,
-		context: Arc<
-			midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
+	fn to_builder_v8<
+		C: midnight_ledger_unsafe_helpers::ledger_8::BuilderContext<
 				midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 			>,
-		>,
+	>(
+		self,
+		context: Arc<C>,
 		prover: Arc<
 			dyn midnight_ledger_unsafe_helpers::ledger_8::ProofProvider<
 					midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 				>,
 		>,
-	) -> Box<dyn BuildTxs<Error = DynamicError>> {
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -879,7 +909,7 @@ impl Builder {
 
 		use builders::ledger_8 as v8;
 
-		match self {
+		Ok(match self {
 			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
@@ -911,7 +941,7 @@ impl Builder {
 				constr(v8::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
 			},
 			Builder::Send => constr(v8::DoNothingBuilder::new()),
-		}
+		})
 	}
 
 	fn to_builder_passthrough(self) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -1986,6 +2016,7 @@ mod tests {
 			tblock_err: 30,
 			parent_block_hash: [0; 32],
 			last_block_time_secs: 0,
+			spec_version: 0,
 			state_root: None,
 			state: None,
 		}
@@ -2011,6 +2042,7 @@ mod tests {
 				block_height: height,
 				shielded_state_bytes: vec![],
 				dust_local_state_bytes: None,
+				..Default::default()
 			},
 		)
 	}

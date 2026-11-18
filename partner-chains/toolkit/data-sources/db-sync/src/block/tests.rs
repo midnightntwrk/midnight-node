@@ -14,8 +14,9 @@ use time_source::{MockedTimeSource, TimeSource};
 const BLOCK_4_TS_MILLIS: u64 = 1650561570000;
 const BLOCK_5_TS_MILLIS: u64 = 1650562570000;
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn get_latest_block_info(pool: PgPool) {
+#[tokio::test]
+async fn get_latest_block_info() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let irrelevant_security_parameter = 1000;
 	let source = mk_datasource(pool, irrelevant_security_parameter);
 	let expected = MainchainBlock {
@@ -34,8 +35,9 @@ async fn get_latest_block_info(pool: PgPool) {
 	assert_eq!(block, expected)
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_latest_stable_block(pool: PgPool) {
+#[tokio::test]
+async fn test_get_latest_stable_block() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 2;
 	let source = mk_datasource(pool, security_parameter);
 	// The latest block at given timestamp is 4, so the expected block is 2 (security parameter is 2)
@@ -48,8 +50,9 @@ async fn test_get_latest_stable_block(pool: PgPool) {
 	assert_eq!(block, Some(expected))
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_latest_stable_block_at_filters_out_by_max_slot_boundary(pool: PgPool) {
+#[tokio::test]
+async fn test_get_latest_stable_block_at_filters_out_by_max_slot_boundary() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 2;
 	let slots_distance_between_blocks = block_4().slot.0 - block_2().slot.0;
 	let source = BlockDataSourceImpl {
@@ -63,8 +66,9 @@ async fn test_get_latest_stable_block_at_filters_out_by_max_slot_boundary(pool: 
 	assert_eq!(block, None)
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_stable_block_at(pool: PgPool) {
+#[tokio::test]
+async fn test_get_stable_block_at() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 2;
 	let source = mk_datasource(pool, security_parameter);
 	let exact_ts = BLOCK_4_TS_MILLIS.into();
@@ -75,10 +79,10 @@ async fn test_get_stable_block_at(pool: PgPool) {
 	assert_eq!(block, StableBlockByHashResult::BlockStable { info: block_2() });
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_stable_block_at_returns_block_that_dont_have_k_blocks_on_them_at_given_timestamp(
-	pool: PgPool,
-) {
+#[tokio::test]
+async fn test_get_stable_block_at_returns_block_that_dont_have_k_blocks_on_them_at_given_timestamp()
+{
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 3;
 	let source = mk_datasource(pool, security_parameter);
 	// Does not matter, that at block 4 timestamp, there were only two blocks on block number 2.
@@ -90,8 +94,9 @@ async fn test_get_stable_block_at_returns_block_that_dont_have_k_blocks_on_them_
 	assert_eq!(block, StableBlockByHashResult::BlockStable { info: block_2() });
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_stable_block_at_filters_out_by_min_slots_boundary(pool: PgPool) {
+#[tokio::test]
+async fn test_get_stable_block_at_filters_out_by_min_slots_boundary() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 3;
 	let slots_distance_between_blocks = block_4().slot.0 - block_2().slot.0;
 	let source = BlockDataSourceImpl {
@@ -109,8 +114,9 @@ async fn test_get_stable_block_at_filters_out_by_min_slots_boundary(pool: PgPool
 	assert_eq!(block, StableBlockByHashResult::BlockTimestampOutRange { info: block_2() });
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_stable_block_at_filters_out_by_max_slots_boundary(pool: PgPool) {
+#[tokio::test]
+async fn test_get_stable_block_at_filters_out_by_max_slots_boundary() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 2;
 	let slots_distance_between_blocks = block_4().slot.0 - block_2().slot.0;
 	let source = BlockDataSourceImpl {
@@ -128,8 +134,9 @@ async fn test_get_stable_block_at_filters_out_by_max_slots_boundary(pool: PgPool
 	assert_eq!(block, StableBlockByHashResult::BlockTimestampOutRange { info: block_2() });
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_stable_block_info_by_hash_for_unknown_hash(pool: PgPool) {
+#[tokio::test]
+async fn test_get_stable_block_info_by_hash_for_unknown_hash() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let source = mk_datasource(pool, 2);
 	let unknown_hash =
 		McBlockHash(hex!("0000D7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1"));
@@ -140,8 +147,9 @@ async fn test_get_stable_block_info_by_hash_for_unknown_hash(pool: PgPool) {
 	assert_eq!(result, StableBlockByHashResult::BlockNotFound)
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_latest_stable_block_with_stability_margin(pool: PgPool) {
+#[tokio::test]
+async fn test_get_latest_stable_block_with_stability_margin() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 2;
 	let stability_margin = 1;
 	let min_slot_boundary_as_seconds = 2000u64;
@@ -169,8 +177,9 @@ async fn test_get_latest_stable_block_with_stability_margin(pool: PgPool) {
 	assert_eq!(block, None);
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_latest_stable_block_with_stability_margin_2(pool: PgPool) {
+#[tokio::test]
+async fn test_get_latest_stable_block_with_stability_margin_2() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let security_parameter = 2;
 	let stability_margin = 0;
 	let source = BlockDataSourceImpl {
@@ -195,8 +204,9 @@ async fn test_get_latest_stable_block_with_stability_margin_2(pool: PgPool) {
 	assert_eq!(block, Some(block_0()));
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_get_stable_block_caching(pool: PgPool) {
+#[tokio::test]
+async fn test_get_stable_block_caching() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	fn dummy_hash(n: u8) -> McBlockHash {
 		McBlockHash([n; 32])
 	}
@@ -264,8 +274,9 @@ async fn test_get_stable_block_caching(pool: PgPool) {
 	)
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-async fn test_records_cardano_block_metrics(pool: PgPool) {
+#[tokio::test]
+async fn test_records_cardano_block_metrics() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 	let metrics = test_metrics();
 	let source =
 		BlockDataSourceImpl { metrics_opt: Some(metrics.clone()), ..mk_datasource(pool, 2) };
@@ -282,8 +293,9 @@ async fn test_records_cardano_block_metrics(pool: PgPool) {
 	assert_eq!(metrics.referenced_cardano_block_slot().get(), 190500,);
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-async fn test_is_cardano_fresh(pool: PgPool) {
+#[tokio::test]
+async fn test_is_cardano_fresh() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 	let security_parameter = 1;
 	// max_latest_block_age_seconds parameter is 100s, the highest block in migrations is from 2022-04-21T17:36:10Z (timestamp = 1650562570000)
 	// this time source will return highest block timestamp + 99 seconds
@@ -300,8 +312,9 @@ async fn test_is_cardano_fresh(pool: PgPool) {
 	assert!(!source_2.is_cardano_tip_fresh().await.unwrap());
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-async fn test_is_cardano_ok_chain_growth_rule_test(pool: PgPool) {
+#[tokio::test]
+async fn test_is_cardano_ok_chain_growth_rule_test() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 	let security_param = 2; // Max block_no is 8, so blocks 7 and 8 don't have enough confirmations.
 
 	// Block number 6 is from 2022-04-21T17:02:50Z (timestamp = 1650560570000)
@@ -320,8 +333,9 @@ async fn test_is_cardano_ok_chain_growth_rule_test(pool: PgPool) {
 	assert!(!source.is_cardano_ok().await.unwrap());
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-async fn test_is_cardano_ok_chain_quality_test(pool: PgPool) {
+#[tokio::test]
+async fn test_is_cardano_ok_chain_quality_test() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 	// In this test we choose timestamp so chain growth rule is not violated in both case, but chain quality rule (latest block timestamp) is.
 	let security_param = 1;
 
@@ -341,8 +355,9 @@ async fn test_is_cardano_ok_chain_quality_test(pool: PgPool) {
 	assert!(!source.is_cardano_ok().await.unwrap());
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-fn date_time_to_slot_tests(pool: PgPool) {
+#[tokio::test]
+async fn date_time_to_slot_tests() {
+	let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 	let source = mk_datasource(pool.clone(), 0);
 
 	// Hardcoded values based on [mainchain_epoch_config]

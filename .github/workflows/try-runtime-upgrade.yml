@@ -1,10 +1,6 @@
 name: try-runtime upgrade dry-run
 
-# Run before shipping a runtime upgrade. Manual because it scrapes full chain
-# state over RPC, which is heavy on the public endpoints.
-#
-# A snapshot carries substrate storage only, so migrations that read ledger state
-# abort here — those belong to the fork-testing flow (docs/fork-testing.md).
+# Manual: snapshotting scrapes full chain state from the public RPC endpoints.
 
 permissions: {}
 
@@ -45,70 +41,56 @@ jobs:
           persist-credentials: false
 
       - name: Setup Earthly
-        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
-      # One build; earthly then schedules the per-network dry-runs in parallel.
-      # --FAIL_FAST=false so every network runs to the end and the snapshots are
-      # output (earthly drops all outputs if any target fails); the next step
-      # fails the job from the per-network status files.
+      - name: Login to DockerHub
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
       - name: Dry-run on-runtime-upgrade
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           PREVIEW: ${{ inputs.preview }}
           PREPROD: ${{ inputs.preprod }}
           MAINNET: ${{ inputs.mainnet }}
         run: |
           networks=""
-          [ "$PREVIEW" = "true" ] && networks="$networks preview"
-          [ "$PREPROD" = "true" ] && networks="$networks preprod"
-          [ "$MAINNET" = "true" ] && networks="$networks mainnet"
-          if [ -z "$networks" ]; then
-            echo "::error::no network selected"
-            exit 1
-          fi
-          . ./.envrc && earthly --ci --output -P +try-runtime-dry-run-all \
-            --NETWORKS="${networks# }" --FAIL_FAST=false
+          [ "$PREVIEW" = true ] && networks="$networks preview"
+          [ "$PREPROD" = true ] && networks="$networks preprod"
+          [ "$MAINNET" = true ] && networks="$networks mainnet"
+          [ -n "$networks" ] || { echo "::error::no network selected"; exit 1; }
+          . ./.envrc && earth --ci --output -P +try-runtime-dry-run-all \
+            --NETWORKS="$networks" --FAIL_FAST=false
 
-      # One annotation per network saying why it stopped, the tail of each log,
-      # and a table in the job summary.
-      - name: Report per-network results
+      - name: Report results
         run: |
           failed=0
-          {
-            echo "| network | result |"
-            echo "|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-          for f in artifacts-try-runtime/*.status; do
-            [ -e "$f" ] || { echo "::error::no status files produced"; exit 1; }
-            network=$(basename "$f" .status)
-            log="artifacts-try-runtime/$network.log"
-            status=$(cat "$f")
-            if [ "$status" = 0 ]; then
-              result="passed: migrations, MBMs, state decode and try-state all ran"
-              echo "::notice::$network: $result"
-            elif grep -q "empty scratch arena does not have" "$log"; then
-              result="stopped at the ledger translation (pallet-midnight v1->v2): substrate migrations before it applied, the rest needs --ledger-db (docs/fork-testing.md)"
-              echo "::error::$network: $result"
-              failed=1
+          for status_file in artifacts-try-runtime/*.status; do
+            network=$(basename "$status_file" .status)
+            exit_code=$(cat "$status_file")
+            if [ "$exit_code" = 0 ]; then
+              echo "::notice::$network: passed"
             else
-              result="failed (exit $status), see the log tail below"
-              echo "::error::$network: $result"
+              echo "::error::$network: failed (exit $exit_code)"
               failed=1
             fi
-            echo "| $network | $result |" >> "$GITHUB_STEP_SUMMARY"
-            echo "::group::$network dry-run log (last 40 lines)"
-            tail -n 40 "$log" 2>/dev/null || echo "(no log)"
+            echo "::group::$network log tail"
+            tail -n 40 "artifacts-try-runtime/$network.log"
             echo "::endgroup::"
           done
           exit "$failed"
 
-      # So a failure can be re-run locally against the exact same state.
+      # To re-run a failure locally against the same state.
       - name: Upload snapshots
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: try-runtime-${{ github.run_id }}
           path: artifacts-try-runtime/

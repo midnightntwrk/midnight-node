@@ -53,6 +53,8 @@ pub enum InvalidError {
 	MerkleTreeError,
 	/// Catch-all for `#[non_exhaustive]` upstream additions we don't yet recognise.
 	UnknownError,
+	BridgeClaimTooSmall,
+	ContractTooManyOperations,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -152,6 +154,11 @@ pub enum MalformedError {
 	InputsSignaturesLengthMismatch,
 	/// Catch-all for `#[non_exhaustive]` upstream additions we don't yet recognise.
 	UnknownError,
+	TooManyPublicInputs,
+	TranscriptGasExceedsBlockLimits,
+	ContractDustTransfer,
+	RepeatedCommitteeSignature,
+	RepeatedDustRegistration,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -167,6 +174,9 @@ pub enum MalformedZswapErrorCode {
 pub enum FeeCalculationErrorCode {
 	OutsideTimeToDismiss,
 	BlockLimitExceeded,
+	RepeatedEntries,
+	/// Catch-all for `#[non_exhaustive]` upstream additions we don't yet recognise.
+	Unknown,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -174,6 +184,7 @@ pub enum MalformedContractDeployErrorCode {
 	NonZeroBalance,
 	IncorrectChargedState,
 	Unknown,
+	TooManyOperations,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -426,6 +437,8 @@ impl From<LedgerApiError> for u8 {
 					InvalidError::DivideByZero => 248,
 					InvalidError::MerkleTreeError => 249,
 					InvalidError::UnknownError => 109,
+					InvalidError::BridgeClaimTooSmall => 251,
+					InvalidError::ContractTooManyOperations => 252,
 				},
 				Malformed(e) => match e {
 					MalformedError::VerifierKeyNotSet => 110,
@@ -468,6 +481,8 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::FeeCalculation(f) => match f {
 						FeeCalculationErrorCode::OutsideTimeToDismiss => 231,
 						FeeCalculationErrorCode::BlockLimitExceeded => 232,
+						FeeCalculationErrorCode::RepeatedEntries => 144,
+						FeeCalculationErrorCode::Unknown => 145,
 					},
 					MalformedError::InvalidDustRegistrationSignature => 169,
 					MalformedError::InvalidDustSpendProof => 170,
@@ -478,6 +493,7 @@ impl From<LedgerApiError> for u8 {
 						MalformedContractDeployErrorCode::NonZeroBalance => 233,
 						MalformedContractDeployErrorCode::IncorrectChargedState => 234,
 						MalformedContractDeployErrorCode::Unknown => 174,
+						MalformedContractDeployErrorCode::TooManyOperations => 146,
 					},
 					MalformedError::IntentSignatureVerificationFailure => 175,
 					MalformedError::IntentSignatureKeyMismatch => 176,
@@ -521,6 +537,11 @@ impl From<LedgerApiError> for u8 {
 					MalformedError::DuplicateInputs => 191,
 					MalformedError::InputsSignaturesLengthMismatch => 192,
 					MalformedError::UnknownError => 139,
+					MalformedError::TooManyPublicInputs => 253,
+					MalformedError::TranscriptGasExceedsBlockLimits => 254,
+					MalformedError::ContractDustTransfer => 141,
+					MalformedError::RepeatedCommitteeSignature => 142,
+					MalformedError::RepeatedDustRegistration => 143,
 				},
 				SystemTransaction(e) => match e {
 					SystemTransactionError::IllegalPayout => 201,

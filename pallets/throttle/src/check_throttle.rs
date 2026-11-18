@@ -90,12 +90,16 @@ where
 
 		let new_bytes = effective_bytes.saturating_add(len as u64);
 		if new_bytes > T::MaxBytes::get() {
-			return Err(TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources));
+			return Err(TransactionValidityError::Invalid(InvalidTransaction::Custom(
+				crate::THROTTLE_LIMIT_EXCEEDED,
+			)));
 		}
 
 		let new_txs = effective_txs.saturating_add(1);
 		if new_txs > T::MaxTxs::get() {
-			return Err(TransactionValidityError::Invalid(InvalidTransaction::ExhaustsResources));
+			return Err(TransactionValidityError::Invalid(InvalidTransaction::Custom(
+				crate::THROTTLE_LIMIT_EXCEEDED,
+			)));
 		}
 
 		Ok((ValidTransaction::default(), Some(who), origin))

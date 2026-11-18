@@ -32,7 +32,7 @@ export STORAGE_SEPARATION=unified
   --keystore-path=/keystore \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
-  --rpc-port=9944 \
+  --rpc-port="$RPC_PORT" \
   --rpc-cors=all \
   --prometheus-port=9619 \
   --prometheus-external \

@@ -20,8 +20,6 @@ use frame_support::weights::Weight;
 
 /// Weight functions needed for `pallet-consensus-engine`.
 pub trait WeightInfo {
-	/// Weight of the `arm_babe` extrinsic.
-	fn arm_babe() -> Weight;
 	/// Weight of the `schedule_flip` extrinsic.
 	fn schedule_flip() -> Weight;
 	/// Weight of the per-block `on_initialize` hook driving the automatic flip transitions.
@@ -29,10 +27,6 @@ pub trait WeightInfo {
 }
 
 impl WeightInfo for () {
-	fn arm_babe() -> Weight {
-		Weight::zero()
-	}
-
 	fn schedule_flip() -> Weight {
 		Weight::zero()
 	}

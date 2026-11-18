@@ -403,6 +403,7 @@ mod tests {
 			block_height,
 			shielded_state_bytes: vec![0xDD; 500],
 			dust_local_state_bytes: Some(vec![0xEE; 200]),
+			..Default::default()
 		}
 	}
 

@@ -20,8 +20,6 @@ use frame_support::{
 	weights::constants::WEIGHT_REF_TIME_PER_SECOND,
 };
 
-//#[cfg(feature = "experimental")]
-//use sp_block_rewards::GetBlockRewardPoints;
 use sp_core::H256;
 use sp_runtime::{
 	BuildStorage, Perbill,
@@ -37,8 +35,6 @@ frame_support::construct_runtime!(
 		System: frame_system = 0,
 		Timestamp: pallet_timestamp = 1,
 		Midnight: pallet_midnight = 5,
-		//#[cfg(feature = "experimental")]
-		//BlockRewards: pallet_block_rewards = 9,
 	}
 );
 
@@ -98,17 +94,6 @@ pub type BlockRewardPoints = u128;
 pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
 pub struct LedgerBlockReward;
 impl Get<BlockReward> for LedgerBlockReward {
-	#[cfg(feature = "experimental")]
-	fn get() -> BlockReward {
-		/*
-		(
-			<Test as pallet_block_rewards::Config>::GetBlockRewardPoints::get_block_reward(),
-			pallet_block_rewards::CurrentBlockBeneficiary::<Test>::get(),
-		)
-		*/
-		(0, None)
-	}
-	#[cfg(not(feature = "experimental"))]
 	fn get() -> BlockReward {
 		(0, None)
 	}
@@ -117,33 +102,15 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }
 
-/*
-#[cfg(feature = "experimental")]
-pub const BLOCK_REWARD_POINTS: u128 = 500_000;
-#[cfg(feature = "experimental")]
-pub struct LedgerBlockRewardPoints;
-#[cfg(feature = "experimental")]
-impl GetBlockRewardPoints<BlockRewardPoints> for LedgerBlockRewardPoints {
-	fn get_block_reward() -> BlockRewardPoints {
-		BLOCK_REWARD_POINTS
-	}
-}
-*/
-
-/*
-#[cfg(feature = "experimental")]
-impl pallet_block_rewards::Config for Test {
-	type BeneficiaryId = BeneficiaryId;
-	type BlockRewardPoints = BlockRewardPoints;
-	type GetBlockRewardPoints = LedgerBlockRewardPoints;
-}
-	 */
-
-// Build genesis storage according to the mock runtime.
+// Build genesis storage according to the mock runtime. Calls run as block execution.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
+	let mut ext: sp_io::TestExternalities =
+		frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into();
+	ext.register_extension(midnight_primitives_ledger::LedgerOnchainExt::default());
+	ext
 }
 
 pub fn midnight_events() -> Vec<super::Event> {

@@ -21,3 +21,7 @@ global:
     disable_analytics: true
     buildkit_max_parallelism: 16
     cache_size_pct: 50
+    # The registry earth publishes for image export. "earth" and "earthly"
+    # installs both default to 127.0.0.1:8371, so earth-buildkitd cannot start
+    # beside a v0.8.16 earthly-buildkitd ("port is already allocated").
+    local_registry_host: "tcp://127.0.0.1:8381"

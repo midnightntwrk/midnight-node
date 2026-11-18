@@ -66,6 +66,7 @@ impl frame_system::Config for Test {
 
 impl pallet_system_parameters::Config for Test {
 	type SystemOrigin = frame_system::EnsureRoot<Self::AccountId>;
+	type MaxCommitteeSize = ConstU32<10_000>;
 	type WeightInfo = ();
 }
 

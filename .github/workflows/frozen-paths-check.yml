@@ -14,10 +14,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
-          # Full history so the PR base commit is available for the diff.
+          # Full history so the base branch is available for the diff: with
+          # fetch-depth 0, checkout fetches +refs/heads/*:refs/remotes/origin/*,
+          # which is what makes origin/<base_ref> resolvable below.
           fetch-depth: 0
 
       - name: Frozen res/ network config
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: scripts/ci/check-frozen-res.sh "$BASE_SHA"
+          # Diff against the base *branch*, not github.event.pull_request.base.sha.
+          # That SHA is pinned to the base tip from when the PR was last synced, so
+          # as the base moves on, the `BASE...HEAD` merge-base stops advancing and
+          # the three-dot diff starts reporting commits merged into the base since
+          # - flagging frozen res/ files the PR never touched.
+          BASE_REF: origin/${{ github.base_ref }}
+        run: scripts/ci/check-frozen-res.sh "$BASE_REF"

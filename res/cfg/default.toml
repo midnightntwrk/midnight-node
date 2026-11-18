@@ -7,6 +7,7 @@
 # - governance_authority
 
 wipe_chain_state = false
+landlock = true
 use_main_chain_follower_mock = false
 show_config = false
 show_secrets = false

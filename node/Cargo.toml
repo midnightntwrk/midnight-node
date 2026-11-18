@@ -41,6 +41,8 @@ sc-transaction-pool.workspace = true
 sc-transaction-pool-api.workspace = true
 sc-consensus.workspace = true
 sc-consensus-aura.workspace = true
+sc-consensus-babe.workspace = true
+sc-consensus-epochs.workspace = true
 sc-consensus-beefy.workspace = true
 sc-consensus-beefy-rpc.workspace = true
 sc-consensus-grandpa.workspace = true
@@ -112,14 +114,11 @@ pallet-throttle = { workspace = true, default-features = true }
 pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
-# Powers the in-tree `try-runtime` subcommand, which replaces the standalone
-# `try-runtime-cli`. See `node/src/try_runtime.rs` for why.
 frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
 
 thiserror = "1.0.50"
 log.workspace = true
 authority-selection-inherents.workspace = true
-#sp-block-rewards = { workspace = true, optional = true }
 sp-crypto-hashing.workspace = true
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
@@ -159,10 +158,17 @@ derive-new.workspace = true
 
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
+rustls.workspace = true
 blake2b_simd = "1.0"
 
 # FilteringTransactionPool feature dependency
 sp-transaction-pool.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux binaries use jemalloc as the global allocator, as polkadot does.
+tikv-jemallocator.workspace = true
+tikv-jemalloc-ctl.workspace = true
+landlock.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
@@ -170,6 +176,8 @@ yamux = "0.13"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Enable the `std`-gated `testing` module (MemoryKeystore) for unit tests.
 sp-keystore = { workspace = true, features = ["std"] }
+sc-block-builder.workspace = true
+substrate-test-runtime-client.workspace = true
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true
@@ -190,6 +198,7 @@ try-runtime = [
     "pallet-staking/try-runtime",
     "frame-try-runtime",
 ]
-experimental = [
-    #"sp-block-rewards",
-]
+experimental = []
+# Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled
+# at run time through `MALLOC_CONF`; see docs/operations/heap-profiling.md.
+jemalloc-profiling = ["tikv-jemallocator/profiling"]

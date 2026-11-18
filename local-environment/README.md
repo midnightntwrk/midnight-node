@@ -188,22 +188,16 @@ Use `--allow-same-version` only for local rehearsals where the candidate wasm
 does not bump `spec_version`. It deliberately bypasses the runtime-side version
 check and should not be used for production-shaped validation.
 
-### Consensus engine (AURA → BABE) transitions
+### Consensus engine (AURA → BABE) transition
 
-`pallet-consensus-engine`'s `arm_babe` and `schedule_flip` calls are gated by
-governance motion filter, like runtime upgrades.
+`pallet-consensus-engine`'s `schedule_flip` call is gated by the governance
+motion filter, like runtime upgrades. The runtime upgrade that adds the pallet
+activates it, and migration-aware nodes attach the BABE pre-runtime digest to
+every AURA block they author.
 
-`consensus-upgrade-arm-babe` moves the engine from `Aura` to `ArmedBabe`.
-
-```bash
-npm run consensus-upgrade-arm-babe:local-env -- \
-  --technical-uris //One //Two //Three \
-  --council-uris //Four //Five //Six \
-  --executor-uri //One
-```
-
-`consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
-Run it only after the finalized blocks have BABE pre-runtime digests.
+`consensus-upgrade-schedule-flip` moves the engine from `Aura` to `ScheduledFlip`.
+Run it only after the block that activated the pallet (the runtime-upgrade
+block, first with both AURA and BABE pre-runtime digests) is finalized.
 
 ```bash
 npm run consensus-upgrade-schedule-flip:local-env -- \
@@ -212,7 +206,7 @@ npm run consensus-upgrade-schedule-flip:local-env -- \
   --executor-uri //One
 ```
 
-Both commands will error if the pallet is not a state expected for given call.
+The command errors if the engine is not in the state expected for the call.
 
 ### Stopping networks
 
@@ -388,6 +382,30 @@ commands skip it.
 
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
+
+#### Faucet
+
+`-p withfaucet` (`npm run run:local-env-with-faucet`) adds the
+[faucet](https://github.com/midnightntwrk/midnight-faucet-api), dispensing from the
+`0x..01` wallet that `init-mnight-faucet` funds (see below). It starts the indexer stack
+too, plus `proof-server` (`:6300`), `faucet-postgres` and `faucet` (`:5300` API + UI,
+`:9696` metrics). Images come from `FAUCET_IMAGE` and `PROOF_SERVER_IMAGE` in
+`.env.default`; override them like any other image.
+
+- **UI:** <http://localhost:5300/?isTesting=true>. `isTesting` swaps in Cloudflare's
+  always-pass Turnstile test key; the browser still needs internet access to load it.
+- **Scripted drop:**
+
+  ```bash
+  curl -s localhost:5300/v1/drips -H 'X-API-Key: local-env' -H 'Content-Type: application/json' \
+    -d '{"recipientAddress":"mn_addr_local1…","network":"midnight_local","token":"tNIGHT"}'
+  ```
+
+  The key defaults to `local-env`; set `FAUCET_THIRD_PARTY_API_KEY` to change it.
+
+- **Older faucet images:** v1.2.1 and earlier never drip on a fresh chain; drips stay
+  `PENDING` ([midnight-wallet#924](https://github.com/midnightntwrk/midnight-wallet/issues/924)).
+  Don't override `FAUCET_IMAGE` with one of them.
 
 #### cNIGHT bridge funding
 

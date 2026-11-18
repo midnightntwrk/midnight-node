@@ -63,8 +63,108 @@ pub struct CircuitCall<'a> {
 	pub call_args: &'a [&'a str],
 }
 
+pub struct ContractSpec<'a> {
+	pub dir: &'a str,
+	pub source: &'a str,
+	pub vars: &'a [(&'a str, &'a str)],
+	pub constructor_args: &'a [&'a str],
+	pub secrets: &'a [&'a str],
+}
+
+impl<'a> ContractSpec<'a> {
+	pub fn new(dir: &'a str) -> Self {
+		Self { dir, source: dir, vars: &[], constructor_args: &[], secrets: &[] }
+	}
+
+	pub fn source(mut self, source: &'a str) -> Self {
+		self.source = source;
+		self
+	}
+
+	pub fn vars(mut self, vars: &'a [(&'a str, &'a str)]) -> Self {
+		self.vars = vars;
+		self
+	}
+
+	pub fn constructor_args(mut self, args: &'a [&'a str]) -> Self {
+		self.constructor_args = args;
+		self
+	}
+
+	pub fn secrets(mut self, secrets: &'a [&'a str]) -> Self {
+		self.secrets = secrets;
+		self
+	}
+}
+
+/// A deployed contract and its call context.
+pub struct ContractSession<'a> {
+	helper: &'a ToolkitTestHelper,
+	label: String,
+	config_file: PathBuf,
+	compiled_dir: PathBuf,
+	coin_public: String,
+	address: String,
+	step: AtomicUsize,
+}
+
+impl ContractSession<'_> {
+	/// Runs a read-only circuit call against the latest state.
+	pub async fn read(&self, private_state: &Path, call: CircuitCall<'_>) -> CircuitOutput {
+		let circuit = call.circuit_id;
+		let step = self.step.fetch_add(1, Ordering::Relaxed);
+		let state = self.helper.work_dir.path().join(format!("{}_state_{step}.mn", self.label));
+		self.helper
+			.contract_state(&self.address, &state)
+			.await
+			.unwrap_or_else(|e| panic!("{} contract state fetch failed: {e}", self.label));
+		self.helper
+			.generate_intent_circuit(
+				&self.config_file,
+				&self.coin_public,
+				&state,
+				private_state,
+				&self.address,
+				call,
+			)
+			.await
+			.unwrap_or_else(|e| panic!("generate {circuit} intent failed: {e}"))
+	}
+
+	/// Proves, privacy-checks, and submits a circuit call.
+	pub async fn call(
+		&self,
+		private_state: &Path,
+		secrets: &[&str],
+		call: CircuitCall<'_>,
+	) -> CircuitOutput {
+		let circuit = call.circuit_id;
+		let out = self.read(private_state, call).await;
+		let tx = self
+			.helper
+			.send_intent(
+				&out.intent,
+				&self.compiled_dir,
+				&self.helper.funding_seed,
+				Some(&out.zswap_state),
+			)
+			.await
+			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
+		for secret in secrets {
+			self.helper.assert_secret_not_in_tx(&tx, secret, circuit);
+		}
+		self.helper
+			.submit_tx(&tx)
+			.await
+			.unwrap_or_else(|e| panic!("submit {circuit} tx failed: {e}"));
+		out
+	}
+}
+
 pub struct ToolkitTestHelper {
 	node_ws: String,
+	/// Pays fees and supplies coins for every transaction the helper builds.
+	pub funding_seed: String,
 	toolkit_js_path: PathBuf,
 	contracts_dir: PathBuf,
 	network: String,
@@ -73,6 +173,19 @@ pub struct ToolkitTestHelper {
 
 fn path_to_string(path: &Path) -> String {
 	path.to_string_lossy().to_string()
+}
+
+/// Hex-encodes a JSON byte array, the form circuit results render `Bytes<N>` in.
+/// `what` names the value for the panic message.
+fn hex_bytes(value: &serde_json::Value, what: &std::fmt::Arguments<'_>) -> String {
+	let bytes = value.as_array().unwrap_or_else(|| panic!("expected {what} to be a byte array"));
+	bytes
+		.iter()
+		.map(|b| {
+			let byte = b.as_u64().unwrap_or_else(|| panic!("non-numeric byte in {what}"));
+			format!("{byte:02x}")
+		})
+		.collect()
 }
 
 fn default_source() -> Source {
@@ -87,6 +200,12 @@ fn default_source() -> Source {
 		fetch_cache: FetchCacheConfig::InMemory,
 		ledger_state_db: String::new(),
 		replay_checkpoint_interval: 0,
+		indexer_url: None,
+		network: "undeployed".to_string(),
+		indexer_concurrency:
+			midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
+		no_fast_sync: false,
+		blockfrost_project_id: None,
 	}
 }
 
@@ -103,10 +222,11 @@ fn compile_cache_key(source: &str, compactc_version: &str) -> String {
 }
 
 impl ToolkitTestHelper {
-	pub fn new(node_ws: &str) -> Self {
+	pub fn new(node_ws: &str, funding_seed: &str) -> Self {
 		let base = manifest_dir();
 		Self {
 			node_ws: node_ws.to_string(),
+			funding_seed: funding_seed.to_string(),
 			toolkit_js_path: std::env::var("TOOLKIT_JS_PATH")
 				.map(PathBuf::from)
 				.unwrap_or_else(|_| base.join(TOOLKIT_JS_RELATIVE_PATH)),
@@ -163,15 +283,19 @@ impl ToolkitTestHelper {
 
 			// COMPACT_HOME wins in run-compactc, so its compiler must match the version
 			// the tests select the toolkit package and cache key for — otherwise we would
-			// silently compile with the wrong compiler. `compactc --version` reports the
-			// bare semver (no tree-hash suffix), so compare against major.minor.patch.
+			// silently compile with the wrong compiler. `compactc --version` leads with the
+			// bare semver (0.35.0+ appends a commit and date), so compare its first word.
 			let expected = format!(
 				"{}.{}.{}",
 				compactc_version.major, compactc_version.minor, compactc_version.patch
 			);
 			match std::process::Command::new(&compactc).arg("--version").output() {
 				Ok(out) if out.status.success() => {
-					let got = String::from_utf8_lossy(&out.stdout).trim().to_string();
+					let got = String::from_utf8_lossy(&out.stdout)
+						.split_whitespace()
+						.next()
+						.unwrap_or_default()
+						.to_string();
 					if got != expected {
 						eprintln!(
 							"Skipping contract integration tests: COMPACT_HOME compactc is {got}, \
@@ -224,6 +348,10 @@ impl ToolkitTestHelper {
 		Source {
 			src_url: Some(self.node_ws.clone()),
 			fetch_concurrency: DEFAULT_FETCH_CONCURRENCY,
+			// Dust-warp stamps DUST spends with wall-clock time while proving against the
+			// finalized state; any DUST change in a not-yet-finalized block (another test's
+			// fee) then fails the spend with InvalidDustSpendProof.
+			dust_warp: false,
 			..default_source()
 		}
 	}
@@ -258,7 +386,7 @@ impl ToolkitTestHelper {
 
 	pub fn load_template(&self, name: &str, vars: &[(&str, &str)]) -> String {
 		let mut content = self.load_contract_file(name);
-		for (key, value) in vars {
+		for (key, value) in vars.iter().chain([&("NETWORK", self.network.as_str())]) {
 			content = content.replace(&format!("{{{{{key}}}}}"), value);
 		}
 		content
@@ -363,8 +491,9 @@ impl ToolkitTestHelper {
 		coin_public: &str,
 		constructor_args: &[&str],
 	) -> Result<DeployOutput, Box<dyn std::error::Error + Send + Sync>> {
-		let intent = self.work_dir.path().join("deploy_intent.bin");
 		let out = self.out_prefix("deploy");
+		// `send_intent` derives the tx filename by rewriting `_intent`, so keep that in here.
+		let intent = out.with_extension("deploy_intent.bin");
 		let private_state = out.with_extension("private_state.json");
 		let zswap_state = out.with_extension("zswap_state.json");
 
@@ -390,6 +519,52 @@ impl ToolkitTestHelper {
 		Ok(DeployOutput { intent, private_state, zswap_state })
 	}
 
+	/// Compiles, configures, and deploys a test contract.
+	pub async fn deploy_contract(&self, spec: ContractSpec<'_>) -> (ContractSession<'_>, PathBuf) {
+		let coin_public = self.show_address_coin_public(&self.funding_seed);
+
+		let source = self.load_contract_file(&format!("{}/{}.compact", spec.dir, spec.source));
+		let compiled_dir = self
+			.compile_contract(&source, spec.dir)
+			.await
+			.unwrap_or_else(|e| panic!("{} contract compilation failed: {e}", spec.dir));
+
+		let mut vars = spec.vars.to_vec();
+		vars.push(("COIN_PUBLIC", coin_public.as_str()));
+		let config_content = self.load_template(&format!("{}/config.template.ts", spec.dir), &vars);
+		let config_file =
+			self.write_config(&config_content, &format!("{}/contract.config.ts", spec.dir));
+
+		let deploy = self
+			.generate_intent_deploy_with_args(&config_file, &coin_public, spec.constructor_args)
+			.await
+			.unwrap_or_else(|e| panic!("generate {} deploy intent failed: {e}", spec.dir));
+		let deploy_tx = self
+			.send_intent(&deploy.intent, &compiled_dir, &self.funding_seed, None)
+			.await
+			.unwrap_or_else(|e| panic!("send {} deploy intent failed: {e}", spec.dir));
+		for secret in spec.secrets {
+			self.assert_secret_not_in_tx(&deploy_tx, secret, &format!("{} deploy", spec.dir));
+		}
+		self.submit_tx(&deploy_tx)
+			.await
+			.unwrap_or_else(|e| panic!("submit {} deploy tx failed: {e}", spec.dir));
+		let address = self
+			.contract_address(&deploy_tx)
+			.unwrap_or_else(|e| panic!("{} contract address extraction failed: {e}", spec.dir));
+
+		let session = ContractSession {
+			helper: self,
+			label: spec.dir.replace('-', "_"),
+			config_file,
+			compiled_dir,
+			coin_public,
+			address,
+			step: AtomicUsize::new(0),
+		};
+		(session, deploy.private_state)
+	}
+
 	pub async fn generate_intent_circuit(
 		&self,
 		config_file: &Path,
@@ -408,14 +583,13 @@ impl ToolkitTestHelper {
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Circuit(CircuitCommandArgs {
-				source: self.source_from_url(),
+				source: Source { network: self.network.clone(), ..self.source_from_url() },
 				wallet_seed: None,
 				toolkit_js: self.toolkit_js(),
 				circuit_call: CircuitArgs {
 					config: RelativePath(config_file.to_path_buf()),
 					contract_address: cli_parsers::contract_address_decode(contract_address)
 						.expect("invalid contract address"),
-					network: self.network.clone(),
 					coin_public: cli_parsers::coin_public_decode(coin_public)
 						.expect("invalid coin public key"),
 					input_onchain_state: RelativePath(onchain_state.to_path_buf()),
@@ -458,18 +632,7 @@ impl ToolkitTestHelper {
 		let result = self.read_result(result_file);
 
 		let hex_field = |name: &str| -> String {
-			let bytes = result[name].as_array().unwrap_or_else(|| {
-				panic!("expected `{name}` to be a byte array in {}", result_file.display())
-			});
-			bytes
-				.iter()
-				.map(|b| {
-					let byte = b.as_u64().unwrap_or_else(|| {
-						panic!("non-numeric byte in `{name}` in {}", result_file.display())
-					});
-					format!("{byte:02x}")
-				})
-				.collect()
+			hex_bytes(&result[name], &format_args!("`{name}` in {}", result_file.display()))
 		};
 
 		let value: u128 = result["value"]
@@ -489,6 +652,13 @@ impl ToolkitTestHelper {
 			hex_field("nonce"),
 			hex_field("color"),
 		)
+	}
+
+	/// Re-encodes a `Bytes<32>` a circuit returned into the hex form the CLI parses.
+	/// Results render `Bytes<32>` as a byte array; arguments want hex.
+	pub fn result_bytes_to_hex(&self, result_file: &Path) -> String {
+		let result = self.read_result(result_file);
+		hex_bytes(&result, &format_args!("{}", result_file.display()))
 	}
 
 	pub async fn send_intent(

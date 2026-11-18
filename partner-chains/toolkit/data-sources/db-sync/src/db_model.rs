@@ -1,4 +1,4 @@
-use crate::db_datum::DbDatum;
+use crate::db_datum::{DbDatum, DbDatumIfValid};
 use crate::{DataSourceError, SqlxError};
 use bigdecimal::ToPrimitive;
 use cardano_serialization_lib::PlutusData;
@@ -11,8 +11,9 @@ use sidechain_domain::{
 };
 use sqlx::{
 	Decode, PgPool, Pool, Postgres, database::Database, error::BoxDynError, postgres::PgTypeInfo,
-	types::JsonValue,
 };
+#[cfg(feature = "bridge")]
+use sqlx::{ValueRef, types::JsonValue};
 use std::{cell::OnceCell, str::FromStr, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -145,6 +146,7 @@ pub(crate) struct MainchainTxOutputRow {
 	pub tx_epoch_no: EpochNumber,
 	pub tx_index_in_block: TxIndexInBlock,
 	pub address: String,
+	#[sqlx(try_from = "DbDatumIfValid")]
 	pub datum: Option<DbDatum>,
 	pub tx_inputs: Vec<String>,
 }
@@ -434,7 +436,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index) ORDER BY consumes_tx.hash, consumes_tx_in.tx_out_index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
@@ -483,7 +485,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
           		origin_tx.block_index as tx_index_in_block,
           		tx_out.address,
           		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
+          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index) ORDER BY consumes_tx.hash, consumes_tx_out.index) as tx_inputs
 			FROM tx_out
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
@@ -563,24 +565,26 @@ pub(crate) async fn index_exists_unsafe(pool: &Pool<Postgres>, index_name: &str)
 mod tests {
 	use super::*;
 	use hex_literal::hex;
-	use sqlx::PgPool;
 
-	#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-	async fn tx_in_configuration_is_enabled_if_tx_in_table_exists(pool: PgPool) {
+	#[tokio::test]
+	async fn tx_in_configuration_is_enabled_if_tx_in_table_exists() {
+		let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 		let tx_in_config = TxInConfiguration::from_connection(&pool).await.unwrap();
 
 		assert_eq!(tx_in_config, TxInConfiguration::Enabled)
 	}
 
-	#[sqlx::test(migrations = false)]
-	async fn tx_in_configuration_is_consumed_if_tx_in_table_does_not_exist(pool: PgPool) {
+	#[tokio::test]
+	async fn tx_in_configuration_is_consumed_if_tx_in_table_does_not_exist() {
+		let (pool, _db) = crate::test_db::empty_test_db().await;
 		let tx_in_config = TxInConfiguration::from_connection(&pool).await.unwrap();
 
 		assert_eq!(tx_in_config, TxInConfiguration::Consumed)
 	}
 
-	#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-	async fn get_block_info_for_utxo_works(pool: PgPool) {
+	#[tokio::test]
+	async fn get_block_info_for_utxo_works() {
+		let (pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 		// utxo 1 of `consumed_tx_id` in test migration
 		let utxo = UtxoId::new(
 			hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"),
@@ -596,6 +600,42 @@ mod tests {
 	}
 }
 
+/// Decodes transaction metadata that is NULL or not valid JSON as `None`
+///
+/// Anyone can pay to the illiquid circulating supply address and attach whatever metadata they
+/// like, so one unreadable metadatum must not fail the whole query. In particular, serde_json
+/// rejects JSON nested 128 levels or deeper, which a metadatum of 128 nested lists reaches.
+#[cfg(feature = "bridge")]
+pub(crate) struct C2mMetadataIfValid(Option<JsonValue>);
+
+#[cfg(feature = "bridge")]
+impl sqlx::Type<Postgres> for C2mMetadataIfValid {
+	fn type_info() -> <Postgres as Database>::TypeInfo {
+		<JsonValue as sqlx::Type<Postgres>>::type_info()
+	}
+
+	fn compatible(ty: &<Postgres as Database>::TypeInfo) -> bool {
+		<JsonValue as sqlx::Type<Postgres>>::compatible(ty)
+	}
+}
+
+#[cfg(feature = "bridge")]
+impl<'r> Decode<'r, Postgres> for C2mMetadataIfValid {
+	fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+		if value.is_null() {
+			return Ok(Self(None));
+		}
+		Ok(Self(<JsonValue as Decode<Postgres>>::decode(value).ok()))
+	}
+}
+
+#[cfg(feature = "bridge")]
+impl From<C2mMetadataIfValid> for Option<JsonValue> {
+	fn from(metadata: C2mMetadataIfValid) -> Self {
+		metadata.0
+	}
+}
+
 #[cfg(feature = "bridge")]
 #[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
 pub(crate) struct BridgeTx {
@@ -604,6 +644,10 @@ pub(crate) struct BridgeTx {
 	pub(crate) tx_hash: TxHash,
 	/// Value of transaction metadata with a specific C-to-M key.
 	/// Not the full metadata JSON. Db-sync metadata uses a separate row per metadata key.
+	///
+	/// Metadata that cannot be decoded is read as `None`, which makes the transfer's recipient
+	/// [sp_partner_chains_bridge::TransferRecipient::Invalid], same as any other unusable value.
+	#[sqlx(try_from = "C2mMetadataIfValid")]
 	pub(crate) c2m_metadata: Option<JsonValue>,
 	/// Sum of bridge token amounts in inputs at bridge address for given tx
 	pub(crate) bridge_in: NativeTokenAmount,
