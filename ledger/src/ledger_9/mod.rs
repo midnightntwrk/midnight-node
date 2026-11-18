@@ -1752,6 +1752,9 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 }
 
 #[cfg(test)]
+mod revalidation_tests;
+
+#[cfg(test)]
 mod tests {
 	use super::*;
 	use base_crypto_local::{
