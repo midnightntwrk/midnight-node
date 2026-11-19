@@ -2002,9 +2002,16 @@ local-env-ci-prepare:
     RUN --secret NODE_GIT_TOKEN cd tests/e2e && with-git-creds cargo test --test e2e_tests --no-default-features --features local --no-run
     SAVE IMAGE
 
+local-env-ci-inputs:
+    FROM +local-env-ci-prepare
+    # Resolve compose on the client before creating the isolated test daemon.
+    RUN microdnf -y install docker jq && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+    RUN cd local-environment && npm ci && npm test
+    SAVE IMAGE
+
 # Each invocation gets its own nested Docker daemon and chain state.
 local-env-ci:
-    FROM +local-env-ci-prepare
+    FROM +local-env-ci-inputs
     ARG NODE_IMAGE
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
@@ -2025,17 +2032,33 @@ local-env-ci:
         echo "    --WALLET_INDEXER_IMAGE=$GHCR_REGISTRY/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
-    # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
-    # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
-    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
-    # hence the optional docker login below (see +test for the --secret semantics);
-    # empty secrets → anonymous pulls (fork PRs/local), rate-limited but functional.
+    RUN cd local-environment && ARCHITECTURE=linux/$USERARCH \
+        node --require ts-node/register src/lib/ciImages.ts > /ci-images.json
+    ARG BUSYBOX_IMAGE=$(jq -er .BUSYBOX_IMAGE /ci-images.json)
+    ARG CARDANO_IMAGE=$(jq -er .CARDANO_IMAGE /ci-images.json)
+    ARG SOCAT_IMAGE=$(jq -er .SOCAT_IMAGE /ci-images.json)
+    ARG KUPO_IMAGE=$(jq -er .KUPO_IMAGE /ci-images.json)
+    ARG OGMIOS_IMAGE=$(jq -er .OGMIOS_IMAGE /ci-images.json)
+    ARG DBSYNC_IMAGE=$(jq -er .DBSYNC_IMAGE /ci-images.json)
+    ARG POSTGRES_IMAGE=$(jq -er .POSTGRES_IMAGE /ci-images.json)
+    ARG INDEXER_POSTGRES_IMAGE=$(jq -er .INDEXER_POSTGRES_IMAGE /ci-images.json)
+    ARG NATS_IMAGE=$(jq -er .NATS_IMAGE /ci-images.json)
+    # Public dependencies use the same persistent image cache as the private images.
     WITH DOCKER \
             --pull $NODE_IMAGE \
             --pull $INDEXER_API_IMAGE \
             --pull $CHAIN_INDEXER_IMAGE \
             --pull $WALLET_INDEXER_IMAGE \
-            --pull $TOOLKIT_IMAGE
+            --pull $TOOLKIT_IMAGE \
+            --pull $BUSYBOX_IMAGE \
+            --pull $CARDANO_IMAGE \
+            --pull $SOCAT_IMAGE \
+            --pull $KUPO_IMAGE \
+            --pull $OGMIOS_IMAGE \
+            --pull $DBSYNC_IMAGE \
+            --pull $POSTGRES_IMAGE \
+            --pull $INDEXER_POSTGRES_IMAGE \
+            --pull $NATS_IMAGE
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             echo "CI execution: $CI_EXECUTION" && \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
@@ -2044,7 +2067,6 @@ local-env-ci:
             fi && \
             ROOT="$PWD" && \
             cd local-environment && \
-            npm ci && \
             ( ARCHITECTURE=linux/$USERARCH \
               MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
               MIDNIGHT_NODE_IMAGE=$NODE_IMAGE \
@@ -2119,6 +2141,7 @@ local-env-full-ci-localimg:
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
               TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
+              LOCAL_ENV_IMAGE_PULL_POLICY=never \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
