@@ -54,17 +54,18 @@ pub struct UsageDimension {
 pub struct BlockUsage(pub [UsageDimension; 5]);
 
 impl BlockUsage {
-	/// The largest share of any dimension that the block used after `settlement`, out of what
-	/// `settlement` left. The ledger prices DUST by the largest share too. The block's own reward
-	/// payments are thereby not counted as the producer's work.
+	/// The largest share of any dimension of the block's limit that the block used besides
+	/// `settlement`: the same share the ledger's DUST price update sees, since it leaves
+	/// `settlement` out too. The block's own reward payments are thereby not counted as the
+	/// producer's work.
 	pub fn utilization_after(&self, settlement: &BlockUsage) -> Utilization {
 		self.0
 			.iter()
 			.zip(settlement.0.iter())
 			.filter_map(|(block, settlement)| {
-				let max = block.limit.saturating_sub(settlement.used);
 				let used = block.used.min(block.limit).saturating_sub(settlement.used);
-				(max > 0).then(|| Utilization { used: used.into(), max: max.into() })
+				(block.limit > 0)
+					.then(|| Utilization { used: used.into(), max: block.limit.into() })
 			})
 			// u64 × u64 fits in u128, so the cross products compare the shares exactly.
 			.max_by(|a, b| (a.used * b.max).cmp(&(b.used * a.max)))
@@ -129,7 +130,8 @@ mod tests {
 		let block = usage([(10, 100), (0, 100), (40, 100), (0, 100), (0, 100)]);
 		assert_eq!(block.utilization_after(&settlement), Utilization { used: 10, max: 100 });
 		let full = usage([(10, 100), (0, 100), (100, 100), (0, 100), (0, 100)]);
-		assert_eq!(full.utilization_after(&settlement), Utilization { used: 60, max: 60 });
+		// Measured against the whole limit, as the DUST price is.
+		assert_eq!(full.utilization_after(&settlement), Utilization { used: 60, max: 100 });
 	}
 
 	#[test]
