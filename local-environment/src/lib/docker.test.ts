@@ -90,6 +90,36 @@ exit 0
 }
 
 describe("ensureImageAvailable", () => {
+  it("uses a preloaded image without a registry request under the never policy", async () => {
+    const { env, logFile } = fakeDockerEnv({ inspectExit: 0, pullExit: 1 });
+    await ensureImageAvailable("private:preloaded", env, "never");
+    assert.equal(
+      fs.readFileSync(logFile, "utf-8").trim(),
+      "image inspect private:preloaded",
+    );
+  });
+
+  it("fails a missing preloaded image without pulling it", async () => {
+    const { env, logFile } = fakeDockerEnv({ inspectExit: 1 });
+    await assert.rejects(
+      () => ensureImageAvailable("private:missing", env, "never"),
+      /Preloaded image.*missing/,
+    );
+    assert.equal(
+      fs.readFileSync(logFile, "utf-8").trim(),
+      "image inspect private:missing",
+    );
+  });
+
+  it("pulls only absent images under the missing policy", async () => {
+    const { env, logFile } = fakeDockerEnv({ inspectExit: 1 });
+    await ensureImageAvailable("public:new", env, "missing");
+    assert.deepEqual(fs.readFileSync(logFile, "utf-8").trim().split("\n"), [
+      "image inspect public:new",
+      "pull public:new",
+    ]);
+  });
+
   it("succeeds without inspecting when the pull works", async () => {
     const { env, logFile } = fakeDockerEnv({ pullExit: 0 });
     await ensureImageAvailable("node:new", env);
@@ -101,7 +131,10 @@ describe("ensureImageAvailable", () => {
     const { env, logFile } = fakeDockerEnv({ pullExit: 1, inspectExit: 0 });
     await ensureImageAvailable("local-only:dev", env);
     const calls = fs.readFileSync(logFile, "utf-8").trim().split("\n");
-    assert.deepEqual(calls, ["pull local-only:dev", "image inspect local-only:dev"]);
+    assert.deepEqual(calls, [
+      "pull local-only:dev",
+      "image inspect local-only:dev",
+    ]);
   });
 
   it("fails when the image is in neither place", async () => {
@@ -114,13 +147,49 @@ describe("ensureImageAvailable", () => {
 });
 
 describe("runDockerCompose", () => {
+  it("keeps preloaded CI images local through compose startup", async () => {
+    const { env, logFile } = fakeDockerEnv({
+      images: ["private:preloaded"],
+      inspectExit: 0,
+      pullExit: 1,
+    });
+    env.LOCAL_ENV_IMAGE_PULL_POLICY = "never";
+    await runDockerCompose({
+      composeFile: "docker-compose.yml",
+      profiles: ["withindexer"],
+      env,
+    });
+    const calls = fs.readFileSync(logFile, "utf-8").trim().split("\n");
+    assert.ok(!calls.some((call) => call.startsWith("pull ")));
+    assert.ok(
+      calls.includes(
+        "compose --profile=withindexer -f docker-compose.yml up --build --pull never",
+      ),
+    );
+  });
+
+  it("rejects unknown pull policies before contacting Docker", async () => {
+    const { env, logFile } = fakeDockerEnv({});
+    env.LOCAL_ENV_IMAGE_PULL_POLICY = "sometimes";
+    await assert.rejects(
+      () => runDockerCompose({ composeFile: "docker-compose.yml", env }),
+      /Invalid LOCAL_ENV_IMAGE_PULL_POLICY/,
+    );
+    assert.ok(!fs.existsSync(logFile));
+  });
+
   it("ensures every image resolved by the compose config before starting", async () => {
     const { env, logFile } = fakeDockerEnv({
-      images: ["ghcr.io/midnight-ntwrk/midnight-node:new", "postgres:17.1-alpine"],
+      images: [
+        "ghcr.io/midnight-ntwrk/midnight-node:new",
+        "postgres:17.1-alpine",
+      ],
     });
     await runDockerCompose({ composeFile: "docker-compose.yml", env });
     const calls = fs.readFileSync(logFile, "utf-8").trim().split("\n");
-    assert.ok(calls.some((c) => c.startsWith("compose") && c.includes("--format json")));
+    assert.ok(
+      calls.some((c) => c.startsWith("compose") && c.includes("--format json")),
+    );
     assert.ok(calls.includes("pull ghcr.io/midnight-ntwrk/midnight-node:new"));
     assert.ok(calls.includes("pull postgres:17.1-alpine"));
     assert.ok(calls.some((c) => c.includes(" up --build")));
