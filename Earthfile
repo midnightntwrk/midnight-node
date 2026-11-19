@@ -1301,11 +1301,10 @@ build-test-toolkit:
     ARG COMPACTC_VERSION=$(cat /COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
-    # Tests embed CARGO_MANIFEST_DIR=/util/toolkit and read these files at runtime.
+    # Keep package fixtures and executable docs at the embedded CARGO_MANIFEST_DIR.
     COPY Cargo.toml /
     COPY --dir .config res /
-    COPY --dir util/toolkit/tests util/toolkit/test-data util/toolkit/examples /util/toolkit/
-    COPY util/toolkit/README.md util/toolkit/test-images.docker-compose.yml /util/toolkit/
+    COPY --dir util/toolkit /util/
     RUN mkdir /test-artifacts-toolkit && \
         cargo --version && cargo nextest --version && /compact-home/compactc --version && \
         test ! -d /root/.rustup && ! command -v rustc
