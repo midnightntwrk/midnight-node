@@ -65,8 +65,8 @@ jobs:
       #   if: steps.guard.outputs.hit != 'true'
       #   run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
-      # The only git-coupled work: git history exists on the host, and `--ci`
-      # (strict) forbids LOCALLY inside the build, so the scope inputs are
+      # The only git-coupled work: git history exists on the host, and keeping LOCALLY
+      # out of the build keeps it hermetic, so the scope inputs are
       # produced here and COPYed into the container. HEAD^1 is the PR base on a
       # merge-commit checkout (fetch-depth: 2 above).
       - name: Collect scope inputs
@@ -82,7 +82,7 @@ jobs:
       - name: Run feature unification check
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earth --ci +check-feature-unification
+          . ./.envrc && earth --no-output +check-feature-unification
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

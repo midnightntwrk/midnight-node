@@ -138,6 +138,7 @@ mod test {
 			indexer_concurrency:
 				midnight_ledger_unsafe_helpers::indexer_client::DEFAULT_WALLET_SYNC_CONCURRENCY,
 			no_fast_sync: false,
+			blockfrost_project_id: None,
 		};
 
 		let destination = Destination {

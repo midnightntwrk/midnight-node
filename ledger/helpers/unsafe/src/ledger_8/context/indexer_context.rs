@@ -85,8 +85,17 @@ impl<D: DB + Clone> IndexerContext<D> {
 		network_id: impl Into<String>,
 		wallet_sync_concurrency: NonZeroUsize,
 	) -> Result<Self, IndexerClientError> {
-		Ok(Self {
-			client: IndexerClient::new(indexer_url)?,
+		Ok(Self::with_client(IndexerClient::new(indexer_url)?, network_id, wallet_sync_concurrency))
+	}
+
+	/// Like [`new`](Self::new), but over an already-built client.
+	pub fn with_client(
+		client: IndexerClient,
+		network_id: impl Into<String>,
+		wallet_sync_concurrency: NonZeroUsize,
+	) -> Self {
+		Self {
+			client,
 			network_id: network_id.into(),
 			wallet_sync_concurrency,
 			wallets: Mutex::new(HashMap::new()),
@@ -94,7 +103,7 @@ impl<D: DB + Clone> IndexerContext<D> {
 			resolver: Mutex::new(&DEFAULT_RESOLVER),
 			tip: Mutex::new(None),
 			fast_sync: true,
-		})
+		}
 	}
 
 	/// Turn DUST fast sync off (it is on by default) to always replay the dust event log.

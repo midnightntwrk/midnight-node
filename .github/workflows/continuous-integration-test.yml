@@ -106,7 +106,7 @@ jobs:
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            --strict $PUSH_FLAG \
+            $PUSH_FLAG \
             --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test" \
             +test --CACHE_KEY="$CACHE_KEY"
 

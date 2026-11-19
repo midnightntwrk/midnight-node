@@ -4,6 +4,12 @@ This changelog is based on [Keep A Changelog](https://keepachangelog.com/en/1.1.
 
 # Unreleased
 
+## Removed
+
+* `partner-chains-cardano-offchain` crate and the `raw-scripts` (partner-chains-smart-contracts) dependency.
+* `partner-chains-cli` crate and the `wizards` subcommand of `partner-chains-node-commands`.
+* `version_oracle` module of `partner-chains-plutus-data`.
+
 ## Changed
 
 * Updated polkadot-sdk dependency to polkadot-stable2603.

@@ -112,11 +112,18 @@ pub async fn execute(
 	let seeds: Option<Vec<WalletSeed>> = if let Some(seeds_file) = args.seeds_file {
 		let seeds_str = std::fs::read_to_string(&seeds_file)?;
 		let seeds_json: serde_json::Value = serde_json::from_str(&seeds_str)?;
+		let mut entries: Vec<_> = seeds_json
+			.as_object()
+			.ok_or("seeds file must be a JSON object")?
+			.iter()
+			.collect();
+		// Fund `wallet-seed-10` after `wallet-seed-9`, not after `wallet-seed-1`.
+		entries.sort_by_key(|(k, _)| {
+			(k.strip_prefix("wallet-seed-").and_then(|n| n.parse::<u32>().ok()), k.to_string())
+		});
 		let parsed_seeds: Result<Vec<WalletSeed>, Box<dyn std::error::Error + Send + Sync>> =
-			seeds_json
-				.as_object()
-				.unwrap()
-				.iter()
+			entries
+				.into_iter()
 				.map(|(_k, v)| {
 					let wallet_seed_str =
 						v.as_str().ok_or("seeds file object value was not a string")?;

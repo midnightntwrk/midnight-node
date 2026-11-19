@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "4.0.0"
+version = "3.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -114,10 +114,8 @@ pallet-throttle = { workspace = true, default-features = true }
 pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
-# CLI-specific dependencies
-# try-runtime-cli = { optional = true, workspace = true }
-# The deprecated `try-runtime` subcommand and `try-runtime-cli` crate has been completely removed.
-# If you are not already, you should be using the standalone CLI at https://github.com/paritytech/try-runtime-cli.
+frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
+tempfile = { workspace = true, optional = true }
 
 thiserror = "1.0.50"
 log.workspace = true
@@ -135,7 +133,6 @@ sidechain-mc-hash = { workspace = true, features = ["mock"] }
 sc-partner-chains-consensus.workspace = true
 sp-session-validator-management-query.workspace = true
 partner-chains-node-commands.workspace = true
-partner-chains-cli.workspace = true
 sp-partner-chains-bridge = { workspace = true, default-features = true }
 
 sc-storage-monitor.workspace = true
@@ -179,6 +176,8 @@ yamux = "0.13"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Enable the `std`-gated `testing` module (MemoryKeystore) for unit tests.
 sp-keystore = { workspace = true, features = ["std"] }
+sc-block-builder.workspace = true
+substrate-test-runtime-client.workspace = true
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true
@@ -197,6 +196,8 @@ runtime-benchmarks = [
 try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
+    "frame-try-runtime",
+    "tempfile",
 ]
 experimental = []
 # Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled

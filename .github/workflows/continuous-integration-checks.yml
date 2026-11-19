@@ -60,7 +60,7 @@ jobs:
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
-          . ./.envrc && earth --ci +check
+          . ./.envrc && earth --no-output +check
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

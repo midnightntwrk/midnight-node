@@ -81,7 +81,8 @@ impl TxInConfiguration {
 			"select count(*) from information_schema.tables where table_name = 'tx_in';",
 		)
 		.fetch_one(pool)
-		.await? == 1;
+		.await?
+			== 1;
 
 		if !tx_in_exists {
 			return Ok(Self::Consumed);
