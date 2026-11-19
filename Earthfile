@@ -1264,20 +1264,54 @@ toolkit-test-archive:
             --archive-file /toolkit-tests.tar.zst
     SAVE ARTIFACT /toolkit-tests.tar.zst
 
-# Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
+# Export the real Cargo executable, not its rustup proxy, so tests need no Rust toolchain.
+toolkit-test-tools:
+    FROM +prep-no-copy
+    RUN mkdir /test-tools && \
+        cp "$(rustup which cargo)" /test-tools/cargo && \
+        cp "$(command -v cargo-nextest)" /test-tools/cargo-nextest
+    SAVE ARTIFACT /test-tools
+
+# Runs the precompiled archive without loading the compiler image into nested Docker.
 build-test-toolkit:
     ARG NATIVEARCH
-    FROM +prep
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
     ARG TARGETARCH
 
+    RUN microdnf -y install ca-certificates curl-minimal tar gzip xz docker \
+        findutils git libgcc libstdc++ openssl-libs perl-Digest-SHA && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Test
-    RUN mkdir /test-artifacts-toolkit
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g npm@${NPM_VERSION} && \
+        node --version && npm --version
+
+    COPY +toolkit-test-tools/test-tools/cargo /usr/local/bin/cargo
+    COPY +toolkit-test-tools/test-tools/cargo-nextest /usr/local/bin/cargo-nextest
+    COPY +toolkit-js-prep/compact-home /compact-home
+    ENV COMPACT_HOME=/compact-home
+    COPY COMPACTC_VERSION /
+    ARG COMPACTC_VERSION=$(cat /COMPACTC_VERSION)
+    ENV COMPACTC_VERSION=$COMPACTC_VERSION
+
+    # Tests embed CARGO_MANIFEST_DIR=/util/toolkit and read these files at runtime.
+    COPY --dir .config res /
+    COPY --dir util/toolkit/tests util/toolkit/test-data /util/toolkit/
+    COPY util/toolkit/test-images.docker-compose.yml /util/toolkit/
+    RUN mkdir /test-artifacts-toolkit && \
+        cargo --version && cargo nextest --version && /compact-home/compactc --version && \
+        test ! -d /root/.rustup && ! command -v rustc
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
     COPY scripts/test-toolkit.sh /test-toolkit.sh
@@ -1324,6 +1358,7 @@ test-toolkit:
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
+                docker image inspect --format 'Toolkit test runtime size: {{.Size}} bytes' test-toolkit:latest && \
                 docker run \
                 --network=host \
                 -v /var/run/docker.sock:/var/run/docker.sock \
@@ -1343,6 +1378,7 @@ test-toolkit:
                    ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
                   echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
+                docker image inspect --format 'Toolkit test runtime size: {{.Size}} bytes' test-toolkit:latest && \
                 docker run \
                 --network=host \
                 -v /var/run/docker.sock:/var/run/docker.sock \

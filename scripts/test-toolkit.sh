@@ -18,6 +18,17 @@ set -euxo pipefail
 ARCHIVE=/toolkit-tests.tar.zst
 EXTRACT_DIR=/tmp/toolkit-tests
 
+# Missing runtime assets must fail CI rather than silently skip contract tests.
+test -s /util/toolkit-js/dist/bin.js
+test -s /util/toolkit/test-images.docker-compose.yml
+test -s /util/toolkit/test-data/genesis/genesis_block_undeployed.mn
+test -s /util/toolkit/tests/contracts/counter/counter.compact
+test -s /.config/nextest.toml
+test -s /res/dev/undeployed-genesis-seeds.json
+compact_version="${COMPACTC_VERSION%%[-+]*}"
+test -d "/util/toolkit-js/node_modules/@midnight-ntwrk/node-toolkit-compact-$compact_version"
+test "$("$COMPACT_HOME/compactc" --version | cut -d ' ' -f 1)" = "$compact_version"
+
 # toolkit_e2e's tests share one node and a pool of genesis-funded seeds, so they must run in
 # one process: libtest, not nextest's process per test.
 mkdir -p "$EXTRACT_DIR"
