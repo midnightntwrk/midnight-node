@@ -2034,15 +2034,11 @@ local-env-ci:
         exit 1; }
     RUN cd local-environment && ARCHITECTURE=linux/$USERARCH \
         node --require ts-node/register src/lib/ciImages.ts > /ci-images.json
-    ARG BUSYBOX_IMAGE=$(jq -er .BUSYBOX_IMAGE /ci-images.json)
     ARG CARDANO_IMAGE=$(jq -er .CARDANO_IMAGE /ci-images.json)
-    ARG SOCAT_IMAGE=$(jq -er .SOCAT_IMAGE /ci-images.json)
     ARG KUPO_IMAGE=$(jq -er .KUPO_IMAGE /ci-images.json)
     ARG OGMIOS_IMAGE=$(jq -er .OGMIOS_IMAGE /ci-images.json)
     ARG DBSYNC_IMAGE=$(jq -er .DBSYNC_IMAGE /ci-images.json)
     ARG POSTGRES_IMAGE=$(jq -er .POSTGRES_IMAGE /ci-images.json)
-    ARG INDEXER_POSTGRES_IMAGE=$(jq -er .INDEXER_POSTGRES_IMAGE /ci-images.json)
-    ARG NATS_IMAGE=$(jq -er .NATS_IMAGE /ci-images.json)
     # Public dependencies use the same persistent image cache as the private images.
     WITH DOCKER \
             --pull $NODE_IMAGE \
@@ -2050,15 +2046,11 @@ local-env-ci:
             --pull $CHAIN_INDEXER_IMAGE \
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE \
-            --pull $BUSYBOX_IMAGE \
             --pull $CARDANO_IMAGE \
-            --pull $SOCAT_IMAGE \
             --pull $KUPO_IMAGE \
             --pull $OGMIOS_IMAGE \
             --pull $DBSYNC_IMAGE \
-            --pull $POSTGRES_IMAGE \
-            --pull $INDEXER_POSTGRES_IMAGE \
-            --pull $NATS_IMAGE
+            --pull $POSTGRES_IMAGE
         RUN --secret NODE_GIT_TOKEN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             echo "CI execution: $CI_EXECUTION" && \
             if [ -n "$DOCKERHUB_TOKEN" ] && \
@@ -2074,6 +2066,7 @@ local-env-ci:
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
               TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
+              LOCAL_ENV_IMAGE_PULL_POLICY=missing \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -2141,7 +2134,6 @@ local-env-full-ci-localimg:
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
               TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
-              LOCAL_ENV_IMAGE_PULL_POLICY=never \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \

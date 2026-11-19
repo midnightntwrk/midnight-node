@@ -90,6 +90,14 @@ exit 0
 }
 
 describe("ensureImageAvailable", () => {
+  it("does not refresh an existing tag under the missing policy", async () => {
+    const { env, logFile } = fakeDockerEnv({ inspectExit: 0, pullExit: 1 });
+    await ensureImageAvailable("private:cached", env, "missing");
+    assert.equal(
+      fs.readFileSync(logFile, "utf-8").trim(),
+      "image inspect private:cached",
+    );
+  });
   it("uses a preloaded image without a registry request under the never policy", async () => {
     const { env, logFile } = fakeDockerEnv({ inspectExit: 0, pullExit: 1 });
     await ensureImageAvailable("private:preloaded", env, "never");

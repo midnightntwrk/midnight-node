@@ -30,19 +30,44 @@ function fixture() {
   ]) {
     services[service] = { image: `registry.example/${service}:resolved` };
   }
+  for (const service of [
+    "busybox-init",
+    "cardano-node-socat",
+    "postgres-indexer",
+    "nats",
+  ]) {
+    services[service].image += `@sha256:${"a".repeat(64)}`;
+  }
   services["contract-compiler"] = {};
   services["node"] = { image: "private.example/node:commit" };
   return { services };
 }
 
 describe("CI image preloading", () => {
-  it("uses compose-resolved references, including overrides and pinned images", () => {
+  it("uses compose-resolved overrides and preserves separate digest pins", () => {
     const config = fixture();
-    config.services["cardano-node-1"].image =
-      "override.example/cardano@sha256:abc";
+    config.services["cardano-node-1"].image = "override.example/cardano:custom";
     const images = ciImages(config, ["private.example/node:commit"]);
-    assert.equal(images.CARDANO_IMAGE, "override.example/cardano@sha256:abc");
-    assert.equal(Object.keys(images).length, 9);
+    assert.equal(images.CARDANO_IMAGE, "override.example/cardano:custom");
+    assert.equal(Object.keys(images).length, 5);
+  });
+
+  it("rejects dropping a runtime dependency's digest pin", () => {
+    const config = fixture();
+    config.services["nats"].image = "nats:latest";
+    assert.throws(
+      () => ciImages(config, ["private.example/node:commit"]),
+      /nats.*retain its digest pin/,
+    );
+  });
+
+  it("rejects digest preloading unsupported by the pinned EarthBuild release", () => {
+    const config = fixture();
+    config.services["cardano-node-1"].image += `@sha256:${"a".repeat(64)}`;
+    assert.throws(
+      () => ciImages(config, ["private.example/node:commit"]),
+      /cardano-node-1.*digest-aware/,
+    );
   });
 
   it("ignores unused profiles and build-only services", () => {

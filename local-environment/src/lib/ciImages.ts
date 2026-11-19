@@ -20,16 +20,20 @@ interface ComposeConfig {
 }
 
 const publicServices = {
-  BUSYBOX_IMAGE: "busybox-init",
   CARDANO_IMAGE: "cardano-node-1",
-  SOCAT_IMAGE: "cardano-node-socat",
   KUPO_IMAGE: "kupo",
   OGMIOS_IMAGE: "ogmios",
   DBSYNC_IMAGE: "db-sync",
   POSTGRES_IMAGE: "postgres",
-  INDEXER_POSTGRES_IMAGE: "postgres-indexer",
-  NATS_IMAGE: "nats",
 };
+
+// EarthBuild v0.8.18 cannot retag digest-qualified references (EarthBuild/earthbuild#513).
+const digestServices = new Set([
+  "busybox-init",
+  "cardano-node-socat",
+  "postgres-indexer",
+  "nats",
+]);
 
 export function ciImages(
   config: ComposeConfig,
@@ -40,6 +44,10 @@ export function ciImages(
     const image = config.services[service]?.image;
     if (!image)
       throw new Error(`CI dependency '${service}' has no resolved image.`);
+    if (image.includes("@"))
+      throw new Error(
+        `CI dependency '${service}' needs digest-aware EarthBuild preloading.`,
+      );
     images[arg] = image;
   }
   const preloaded = new Set([...Object.values(images), ...privateImages]);
@@ -49,6 +57,14 @@ export function ciImages(
       !configService.profiles.includes("withindexer")
     )
       continue;
+    if (configService.image && digestServices.has(service)) {
+      if (!/@sha256:[a-f0-9]{64}$/.test(configService.image)) {
+        throw new Error(
+          `CI dependency '${service}' must retain its digest pin.`,
+        );
+      }
+      continue;
+    }
     if (configService.image && !preloaded.has(configService.image)) {
       throw new Error(
         `CI service '${service}' is not preloaded: ${configService.image}`,
