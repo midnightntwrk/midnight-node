@@ -1,0 +1,53 @@
+name: Validate hosted registry mirrors
+
+on:
+  pull_request:
+    paths:
+      - ".envrc"
+      - ".earthly/config.hosted.yml"
+      - ".github/actions/reusable-e2e-tests/**"
+      - ".github/workflows/registry-mirror.yml"
+      - "scripts/ci/*docker*mirror*.py"
+      - "scripts/ci/probe-registry-mirror.py"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  mirrors:
+    name: Hosted Docker and BuildKit mirrors
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test Docker configuration handling
+        run: python3 -m unittest discover -s scripts/ci -p 'test_docker_mirror.py' -v
+
+      - name: Configure host mirror without interrupting containers
+        run: |
+          docker run -d --name mirror-reload-smoke busybox:1.35.0-uclibc@sha256:e5877866756a3714cd11309f0b34e7c2c62406fdbfcae39c96beabb5dd4005a7 sleep 300
+          trap 'docker rm -f mirror-reload-smoke >/dev/null 2>&1 || true' EXIT
+          container_before=$(docker inspect --format '{{.State.Pid}}' mirror-reload-smoke)
+          before=$(systemctl show docker.service --property=MainPID --value)
+          sudo python3 scripts/ci/configure-docker-mirror.py
+          after=$(systemctl show docker.service --property=MainPID --value)
+          test "$before" = "$after"
+          test "$container_before" = "$(docker inspect --format '{{.State.Pid}}' mirror-reload-smoke)"
+          test "$(docker inspect --format '{{.State.Running}}' mirror-reload-smoke)" = true
+      - name: Pull a distinct pinned public image through hosted Docker
+        run: docker pull alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+
+      - name: Install pinned EarthBuild client
+        uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae #v2.2.0
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Verify BuildKit mirror and Hub fallback
+        run: python3 scripts/ci/probe-registry-mirror.py
