@@ -207,15 +207,13 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 
 **Comment pass before pushing:** Before every `git push`, run the comment-cleanup skill (`.claude/skills/comment-cleanup/SKILL.md`) over the unpushed commits.
 
-**Agentic review before opening a PR:** Before `gh pr create`, run an agentic review (e.g. `/code-review`) over the branch's changes and address the findings. In the PR template's "Run agentic review" checkbox, tick it and name the skill you used.
-
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
 - This applies especially to change files - if you need to add a PR link after creating the PR, make a separate commit
 
 **Signed commits:** All commits must be signed. Use `git commit -S` or configure Git to sign commits by default with `git config commit.gpgsign true`.
 
-**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant GitHub issue link and add labels as needed:
+**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Before creating the PR, run an agentic review over `git diff main...HEAD` (e.g. `/code-review` in Claude Code, or your tool's equivalent bug-and-convention review) and fix or explicitly dismiss each finding. The "Run agentic review" checkbox is yours to tick: replace its HTML comment with the skill or tool you used. Prompt the user for a relevant GitHub issue link and add labels as needed:
 - No issue link: add `-l skip-changes-check-issue`
 - No change file: add `-l skip-changes-check-all`
 
