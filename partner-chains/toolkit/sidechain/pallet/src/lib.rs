@@ -34,7 +34,7 @@
 //!
 //! Before a Partner Chain can be started, its Cardano governance must be established by
 //! running the _init_ transaction, which also determines the _genesis UTXO_ of the
-//! Partner Chain. Consult `docs/user-guides/governance/governance.md` for instructions.
+//! Partner Chain.
 //!
 //! As Partner Chains operate on the basis of slots and epochs, your Substrate node should
 //! use a slot-based consensus mechanism such as Aura.

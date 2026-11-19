@@ -306,8 +306,8 @@ pre-configured genesis file (private testnet, no public connectivity).
 
 Once Cardano is synced, Ogmios and DB-Sync connect and begin syncing.
 
-`pc-contracts-cli` inserts D parameter values and registers Midnight Node keys
-with Cardano.
+The `contract-compiler` job compiles and deploys the Aiken governance contracts
+to Cardano.
 
 Once Postgres is populated, Midnight nodes begin block production after 2 main
 chain epochs.

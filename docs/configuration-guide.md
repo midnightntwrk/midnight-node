@@ -154,7 +154,7 @@ $ earthly +generate-seeds --NETWORK=<network> --OUTPUT_FILE=<network>-genesis-se
 
 ## `pc-chain-config.json`: PartnerChains Configuration
 
-The `pc-chain-config.json` is an output of the PartnerChains chain initialisation. See the [Partner Chains Chain Builder Documentation](https://github.com/midnightntwrk/partner-chains/blob/898ee1cb082dd1002afdd8bcf01b4aee494c03f3/docs/user-guides/chain-builder.md#storing-the-main-chain-configuration) for more information on this.
+The `pc-chain-config.json` holds the Partner Chains parameters (genesis UTXO, Cardano security parameter, initial authorities). Its format originates from the upstream Partner Chains `prepare-configuration` wizard ([Chain Builder Documentation](https://github.com/midnightntwrk/partner-chains/blob/898ee1cb082dd1002afdd8bcf01b4aee494c03f3/docs/user-guides/chain-builder.md#storing-the-main-chain-configuration)), which `midnight-node` no longer ships; the file is maintained per network in `res/<network>/`.
 
 We use the `initial_authorities` field as the initial committee for the node. After the first epoch, the committee is loaded via the Ariadne selection algorithm from the list of registered and permissioned nodes indexed from the connected Cardano chain.
 

@@ -1192,7 +1192,6 @@ test:
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
-    # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
     # Logs into Docker Hub INSIDE the nested dockerd (it inherits no host auth) so
     # testcontainers pulls (postgres etc.) are authenticated. Bare `--secret NAME` is
     # load-bearing: `--secret NAME=` binds an EMPTY secret-id and silently yields ""
@@ -1212,7 +1211,6 @@ test:
             (docker image inspect postgres:17.2 >/dev/null 2>&1 || docker pull postgres:17.2) && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 with-git-creds cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
-            --exclude partner-chains-cardano-offchain \
             -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))' && \
             rm -f /root/.docker/config.json
     END
