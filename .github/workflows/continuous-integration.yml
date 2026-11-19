@@ -1,6 +1,7 @@
 name: CI + E2E
 
 env:
+  NODE_CI_IMAGE_REPO: ${{ github.repository == 'midnightntwrk/midnight-node' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MIDNIGHTCI_PACKAGES_READ != '' && 'ghcr.io/midnight-ntwrk/midnight-node-ci' || 'midnightntwrk/midnight-node-ci' }}
   # Define environment variables for AWS credentials and region
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -55,6 +56,20 @@ jobs:
         with:
           persist-credentials: false
           submodules: true
+
+      - name: Isolate CI base registry credentials
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to CI base registry
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
@@ -554,6 +569,20 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
+      - name: Isolate CI base registry credentials
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to CI base registry
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -665,6 +694,20 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
+      - name: Isolate CI base registry credentials
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to CI base registry
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -722,6 +765,20 @@ jobs:
         uses: ./.github/actions/tree-cache-guard # zizmor: ignore[self-repository] actionlint does not yet accept $/
         with:
           check-name: test-toolkit
+
+      - name: Isolate CI base registry credentials
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to CI base registry
+        if: env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'

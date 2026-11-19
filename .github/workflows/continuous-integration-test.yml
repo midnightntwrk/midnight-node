@@ -9,6 +9,7 @@ on:
   push:
     branches: ["main"]
 env:
+  NODE_CI_IMAGE_REPO: ${{ github.repository == 'midnightntwrk/midnight-node' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MIDNIGHTCI_PACKAGES_WRITE != '' && 'ghcr.io/midnight-ntwrk/midnight-node-ci' || 'midnightntwrk/midnight-node-ci' }}
   # Registry the images this workflow touches live in. Derived from the repo owner so a fork
   # or private clone never reads from or writes to midnightntwrk's registries. Upstream's
   # private GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the
@@ -54,13 +55,19 @@ jobs:
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
+      - name: Isolate registry credentials
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
       - name: Log in to GHCR (for remote cache)
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.guard.outputs.hit != 'true'
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci' && 'MidnightCI' || github.actor }}
+          password: ${{ env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci' && secrets.MIDNIGHTCI_PACKAGES_WRITE || github.token }}
 
       # Authenticate to Docker Hub on internal PRs / pushes to avoid the unauthenticated
       # pull rate limit when WITH DOCKER pulls images like postgres for testcontainers.

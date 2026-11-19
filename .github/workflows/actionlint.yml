@@ -6,11 +6,17 @@ on:
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - ".envrc"
+      - "Earthfile"
+      - "scripts/ci/test_ci_base_registry.py"
   push:
     branches: [main]
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - ".envrc"
+      - "Earthfile"
+      - "scripts/ci/test_ci_base_registry.py"
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -35,6 +41,9 @@ jobs:
         with:
           matcher: true # Enable GitHub annotations for errors
           fail-on-error: true # Fail CI when errors are found
+
+      - name: Test CI base registry selection
+        run: python3 -m unittest discover -s scripts/ci -p 'test_ci_base_registry.py' -v
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
