@@ -207,6 +207,8 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 
 **Comment pass before pushing:** Before every `git push`, run the comment-cleanup skill (`.claude/skills/comment-cleanup/SKILL.md`) over the unpushed commits.
 
+**Agentic review before opening a PR:** Before `gh pr create`, run an agentic review (e.g. `/code-review`) over the branch's changes and address the findings. In the PR template's "Run agentic review" checkbox, tick it and name the skill you used.
+
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
 - This applies especially to change files - if you need to add a PR link after creating the PR, make a separate commit
