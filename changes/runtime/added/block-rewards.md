@@ -6,4 +6,4 @@ epoch to the Treasury and to stake pool payees through the ledger's reward syste
 transactions. It stays inactive until governance calls `activate`, which needs
 the stake snapshot and the reserve release.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2473
