@@ -1,4 +1,4 @@
-//! This crate contains datum types used by Plutus smart contracts from [raw_scripts::SCRIPTS].
+//! This crate contains datum types used by Plutus smart contracts observed on Cardano by Partner Chains.
 #![deny(missing_docs)]
 use cardano_serialization_lib::{PlutusData, PlutusList};
 
@@ -9,7 +9,6 @@ pub mod governed_map;
 pub mod permissioned_candidates;
 pub mod registered_candidates;
 pub mod reserve;
-pub mod version_oracle;
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 #[error("Could not decode {datum:?} to {to}: {msg}")]

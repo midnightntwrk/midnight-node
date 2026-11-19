@@ -20,13 +20,15 @@ macro_rules! with_migration_versions {
 		$(
 			async fn $name($pool: PgPool, $tx_in_cfg: TxInConfiguration) $body
 
-			#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-			async fn $name_v1($pool: PgPool) {
+			#[tokio::test]
+			async fn $name_v1() {
+				let ($pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 				$name($pool, TxInConfiguration::Enabled).await
 			}
 
-			#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-			async fn $name_v2($pool: PgPool) {
+			#[tokio::test]
+			async fn $name_v2() {
+				let ($pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 				$name($pool, TxInConfiguration::Consumed).await
 			}
 		)*

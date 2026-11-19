@@ -1,0 +1,100 @@
+name: try-runtime upgrade dry-run
+
+# Manual: snapshotting scrapes full chain state from the public RPC endpoints.
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "Dry-run against preview"
+        type: boolean
+        default: true
+      preprod:
+        description: "Dry-run against preprod"
+        type: boolean
+        default: true
+      mainnet:
+        description: "Dry-run against mainnet"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Build node and dry-run upgrade
+    runs-on: [self-hosted, "tier:large"]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Login to DockerHub
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      - name: Dry-run on-runtime-upgrade
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          PREVIEW: ${{ inputs.preview }}
+          PREPROD: ${{ inputs.preprod }}
+          MAINNET: ${{ inputs.mainnet }}
+        run: |
+          networks=""
+          [ "$PREVIEW" = true ] && networks="$networks preview"
+          [ "$PREPROD" = true ] && networks="$networks preprod"
+          [ "$MAINNET" = true ] && networks="$networks mainnet"
+          [ -n "$networks" ] || { echo "::error::no network selected"; exit 1; }
+          . ./.envrc && earth --ci --output -P +try-runtime-dry-run-all \
+            --NETWORKS="$networks" --FAIL_FAST=false
+
+      - name: Report results
+        if: ${{ !cancelled() }}
+        run: |
+          failed=0
+          for status_file in artifacts-try-runtime/*.status; do
+            [ -e "$status_file" ] || { echo "::error::no status files produced"; exit 1; }
+            network=$(basename "$status_file" .status)
+            exit_code=$(cat "$status_file")
+            if [ "$exit_code" = 0 ]; then
+              echo "::notice::$network: passed"
+            else
+              echo "::error::$network: failed (exit $exit_code)"
+              failed=1
+            fi
+            echo "::group::$network log tail"
+            tail -n 40 "artifacts-try-runtime/$network.log"
+            echo "::endgroup::"
+          done
+          exit "$failed"
+
+      # To re-run a failure locally against the same state.
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: try-runtime-${{ github.run_id }}
+          path: artifacts-try-runtime/
+          if-no-files-found: ignore
+          retention-days: 14
