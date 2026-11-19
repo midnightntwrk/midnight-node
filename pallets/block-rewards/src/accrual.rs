@@ -15,7 +15,7 @@
 
 use crate::*;
 use frame_support::traits::Defensive;
-use midnight_primitives_block_production::{OperatorId, Producer};
+use midnight_primitives_block_production::Producer;
 
 impl<T: Config> Pallet<T> {
 	/// Draws the finalized block's reward and adds it to its pool's bucket and its epoch.
@@ -27,7 +27,9 @@ impl<T: Config> Pallet<T> {
 			_ => None,
 		};
 		let draw = match operator {
-			Some(operator) if Self::in_snapshot(epoch.cardano_epoch, &operator) => {
+			// Every registered producer is eligible once the record is complete; what the record
+			// holds for its pool is checked by the split, which halts on what it cannot use.
+			Some(operator) if T::Snapshot::snapshot_id(epoch.cardano_epoch).is_some() => {
 				let draw = utilization
 					.defensive_proof("the utilization of every block after activation is noted")
 					.map(|utilization| Self::draw(epoch.parameters_version, utilization))
@@ -56,14 +58,6 @@ impl<T: Config> Pallet<T> {
 				draw,
 			},
 		});
-	}
-
-	/// Whether `operator` is a pool of the epoch's complete snapshot with stake. The snapshot
-	/// selects the committee, so a block of any other operator is not expected; if one comes, it
-	/// draws nothing. A pool without stake is listed but cannot be split, so it earns nothing.
-	fn in_snapshot(cardano_epoch: CardanoEpoch, operator: &OperatorId) -> bool {
-		T::Snapshot::snapshot_id(cardano_epoch).is_some()
-			&& T::Snapshot::pool(cardano_epoch, operator).is_some_and(|pool| pool.total_stake > 0)
 	}
 
 	/// The open epoch if it is `cardano_epoch`; otherwise closes it and opens `cardano_epoch`.

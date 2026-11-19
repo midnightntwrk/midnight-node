@@ -73,13 +73,13 @@ fn clear_halt(db: RuntimeDbWeight) -> Weight {
 	BASE.saturating_add(db.reads_writes(1, 1))
 }
 
-/// Reads: `Activation`, the timestamp, the digest, the current committee, the snapshot's id and
-/// pool, `OpenEpoch`, `ParameterSets`, `ReserveOutstanding`, `Drawn`, the bucket. Writes: those
+/// Reads: `Activation`, the timestamp, the digest, the current committee, the snapshot's id,
+/// `OpenEpoch`, `ParameterSets`, `ReserveOutstanding`, `Drawn`, the bucket. Writes: those
 /// four and the two utilization takes; when an epoch closes, also the snapshot's id read again,
 /// and `ClosedEpochs`, `NextClosed`, `LastClosed` and `Settlement` written. The proof size covers
 /// decoding a committee of up to 1 000 seats.
 fn accrue(db: RuntimeDbWeight) -> Weight {
-	BASE.saturating_add(db.reads_writes(12, 10))
+	BASE.saturating_add(db.reads_writes(11, 10))
 		.saturating_add(Weight::from_parts(0, 200_000))
 }
 

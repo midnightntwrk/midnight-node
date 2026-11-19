@@ -247,39 +247,34 @@ fn usage_above_the_limit_counts_as_a_full_block() {
 	});
 }
 
+/// Eligibility is the producer's: a registered operator draws whatever the complete record holds
+/// for its pool, and settlement halts on what the split cannot use.
 #[test]
-fn a_block_of_an_operator_missing_from_the_snapshot_draws_nothing() {
-	activated().execute_with(|| {
-		EVERY_OPERATOR_A_POOL.set(false);
-		SNAPSHOT.with_borrow_mut(|pools| {
-			pools.insert((CardanoEpoch(5), operator(2)), (sole_pool(), Vec::new()));
+fn a_registered_producer_draws_whatever_its_pool_record_holds() {
+	let unstaked = SnapshotPool { operator_stake: 0, total_stake: 0, ..sole_pool() };
+	let mut unsplittable = sole_pool();
+	unsplittable.terms.margin = Ratio { n: 2, d: 1 };
+	for (case, pool) in [
+		("missing", None),
+		("without stake", Some(unstaked)),
+		("margin above one", Some(unsplittable)),
+	] {
+		activated().execute_with(|| {
+			EVERY_OPERATOR_A_POOL.set(false);
+			SNAPSHOT.with_borrow_mut(|pools| {
+				pools.insert((CardanoEpoch(5), operator(2)), (sole_pool(), Vec::new()));
+				if let Some(pool) = pool {
+					pools.insert((CardanoEpoch(5), operator(1)), (pool, Vec::new()));
+				}
+			});
+			produced_by(5, Some(Producer::Operator(operator(1))));
+			finalize(2);
+			let draw = records()[0].draw;
+			assert_eq!(draw, expected_draw(RESERVE, UTILIZATION.get()), "{case}");
+			assert_eq!(Buckets::<Test>::get(CardanoEpoch(5), operator(1)), draw.producer, "{case}");
+			assert_eq!(BlockRewards::do_try_state(), Ok(()), "{case}");
 		});
-		produced_by(5, Some(Producer::Operator(operator(1))));
-		finalize(2);
-		assert_eq!(records()[0].operator, Some(operator(1)));
-		assert_eq!(records()[0].draw, BlockDraw::default());
-		assert_eq!(ReserveOutstanding::<Test>::get(), RESERVE);
-		assert_eq!(Buckets::<Test>::iter().count(), 0);
-
-		produced_by(5, Some(Producer::Operator(operator(2))));
-		finalize(3);
-		assert!(records()[1].draw.base > 0);
-	});
-}
-
-#[test]
-fn a_block_of_a_pool_without_stake_draws_nothing() {
-	activated().execute_with(|| {
-		EVERY_OPERATOR_A_POOL.set(false);
-		let unstaked = SnapshotPool { operator_stake: 0, total_stake: 0, ..sole_pool() };
-		SNAPSHOT.with_borrow_mut(|pools| {
-			pools.insert((CardanoEpoch(5), operator(1)), (unstaked, Vec::new()));
-		});
-		produced_by(5, Some(Producer::Operator(operator(1))));
-		finalize(2);
-		assert_eq!(records()[0].draw, BlockDraw::default());
-		assert_eq!(Buckets::<Test>::iter().count(), 0);
-	});
+	}
 }
 
 #[test]

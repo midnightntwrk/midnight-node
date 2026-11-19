@@ -225,6 +225,44 @@ fn a_pool_missing_from_a_complete_snapshot_halts() {
 }
 
 #[test]
+fn a_pool_the_split_cannot_use_halts() {
+	for (case, pool) in [
+		(
+			"without stake",
+			SnapshotPool {
+				terms: TERMS_1,
+				reward_address: address(0x90),
+				operator_stake: 0,
+				total_stake: 0,
+			},
+		),
+		(
+			"margin above one",
+			SnapshotPool {
+				terms: PoolTerms { fixed_cost: 0, margin: Ratio { n: 2, d: 1 } },
+				reward_address: address(0x90),
+				operator_stake: 1,
+				total_stake: 1,
+			},
+		),
+	] {
+		epoch_5_closed().execute_with(|| {
+			record_both_pools();
+			record_pool(1, pool, Vec::new());
+			initialize(6);
+			assert_eq!(payments(), [treasury()], "{case}");
+			assert_eq!(
+				SettlementHalted::<Test>::get(),
+				Some(HaltReason::SnapshotInconsistent),
+				"{case}"
+			);
+			assert!(bucket(1) > 0, "{case}: the bucket waits for a repair");
+			assert_eq!(BlockRewards::do_try_state(), Ok(()), "{case}");
+		});
+	}
+}
+
+#[test]
 fn a_lock_without_an_address_halts() {
 	epoch_5_closed().execute_with(|| {
 		record_both_pools();
