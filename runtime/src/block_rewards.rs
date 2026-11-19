@@ -109,7 +109,7 @@ impl ActivationPrerequisites for Prerequisites {
 	}
 }
 
-/// Stands in until the stake snapshot record exists. No operator is a pool of it, so no block
+/// Stands in until the stake snapshot record exists. No record is ever complete, so no block
 /// draws.
 pub struct NoSnapshot;
 
