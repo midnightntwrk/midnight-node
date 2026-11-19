@@ -601,6 +601,21 @@ fn on_idle_stays_within_the_weight_it_is_given() {
 }
 
 #[test]
+fn an_unreadable_ledger_pool_leaves_settlement_waiting() {
+	epoch_5_closed().execute_with(|| {
+		record_both_pools();
+		let outputs = expected_outputs();
+		LEDGER_POOL_UNREADABLE.set(true);
+		initialize(6);
+		assert_eq!(Settled::<Test>::get(), 0);
+		assert_eq!(SettlementHalted::<Test>::get(), None);
+		LEDGER_POOL_UNREADABLE.set(false);
+		settle_until_done(7);
+		assert_eq!(distributed(), outputs);
+	});
+}
+
+#[test]
 fn full_blocks_leave_settlement_waiting() {
 	epoch_5_closed().execute_with(|| {
 		record_both_pools();

@@ -171,7 +171,7 @@ impl<T: Config> Pallet<T> {
 		// Checked whether or not anything is queued, so a pool that falls short halts at once.
 		let baseline = Activation::<T>::get().map_or(0, |activation| activation.baseline);
 		let required = baseline.saturating_add(EscrowTotal::<T>::get()).saturating_add(available);
-		if T::Ledger::block_reward_pool().is_none_or(|pool| pool < required) {
+		if T::Ledger::block_reward_pool()? < required {
 			Self::halt(HaltReason::LedgerPoolBelowBaseline);
 			return None;
 		}
