@@ -601,6 +601,42 @@ fn on_idle_stays_within_the_weight_it_is_given() {
 }
 
 #[test]
+fn a_long_payout_starts_each_block_from_twice_the_chunk_tried_last() {
+	epoch_5_closed().execute_with(|| {
+		record_both_pools();
+		let locks = (0..60u16)
+			.map(|index| SnapshotPayee {
+				payee: RewardPayee::Lock { utxo: UtxoId { transaction: [7; 32], index } },
+				stake: 10,
+				reward_address: Some(RewardAddress([index as u8 + 1; 32])),
+			})
+			.collect();
+		let pool = SnapshotPool {
+			terms: TERMS_1,
+			reward_address: address(0x90),
+			operator_stake: 400,
+			total_stake: 1_000,
+		};
+		record_pool(1, pool, locks);
+		// Five ledger entries fit in a block, a twentieth of the budget.
+		ENTRY_COST.set(100);
+		EXTRINSICS_USE.set(BLOCK_LIMIT - 500);
+		let mut refused = Vec::new();
+		let mut block = 6;
+		while Settlement::<Test>::get().is_some() {
+			REFUSED.set(0);
+			initialize(block);
+			assert_eq!(SettlementHalted::<Test>::get(), None);
+			refused.push(REFUSED.get());
+			block += 1;
+			assert!(block < 100);
+		}
+		assert!(refused.len() > 10);
+		assert!(refused[4..].iter().all(|refused| *refused <= 1), "{refused:?}");
+	});
+}
+
+#[test]
 fn an_unreadable_ledger_pool_leaves_settlement_waiting() {
 	epoch_5_closed().execute_with(|| {
 		record_both_pools();

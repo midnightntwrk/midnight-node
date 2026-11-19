@@ -113,8 +113,12 @@ impl<T: Config> Pallet<T> {
 			return checks;
 		};
 		let mut used = Weight::zero();
-		let mut budget = Self::budget_within(remaining, Self::max_updates());
+		let cap = SettlementBudget::<T>::get()
+			.map_or(Self::max_updates(), |budget| budget.min(Self::max_updates()));
+		let mut budget = Self::budget_within(remaining, cap);
+		let mut tried = 0;
 		while budget > 0 {
+			tried = budget;
 			let work = Self::settle_chunk(&start, budget);
 			used = used.saturating_add(Self::settle_weight(&work));
 			// A refused chunk of one entry would be refused at any size.
@@ -122,6 +126,9 @@ impl<T: Config> Pallet<T> {
 				break;
 			}
 			budget = Self::budget_within(remaining.saturating_sub(used), budget / 2);
+		}
+		if tried > 0 {
+			SettlementBudget::<T>::put(tried.saturating_mul(2));
 		}
 		used.max(checks)
 	}

@@ -94,6 +94,8 @@ std::thread_local! {
 	pub static LOCK_OWNERS: RefCell<LockOwners> = const { RefCell::new(LockOwners::new()) };
 	/// What one Treasury payment or output uses of the block limit.
 	pub static ENTRY_COST: Cell<u64> = const { Cell::new(1) };
+	/// Chunks the mock ledger refused as too big for the block.
+	pub static REFUSED: Cell<u32> = const { Cell::new(0) };
 	/// What the block's extrinsics use before `on_idle`.
 	pub static EXTRINSICS_USE: Cell<u64> = const { Cell::new(0) };
 	pub static USAGE_UNREADABLE: Cell<bool> = const { Cell::new(false) };
@@ -253,6 +255,7 @@ impl RewardLedger for MockLedger {
 fn use_block(entries: usize) -> Result<(), PayoutFailure> {
 	let used = BLOCK_USED.get().saturating_add(ENTRY_COST.get().saturating_mul(entries as u64));
 	if used > BLOCK_LIMIT {
+		REFUSED.set(REFUSED.get() + 1);
 		return Err(PayoutFailure::BlockFull);
 	}
 	BLOCK_USED.set(used);
@@ -336,6 +339,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	LEDGER_POOL_UNREADABLE.set(false);
 	RESERVE_POOL.set(None);
 	ENTRY_COST.set(1);
+	REFUSED.set(0);
 	EXTRINSICS_USE.set(0);
 	USAGE_UNREADABLE.set(false);
 	let storage = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();

@@ -162,6 +162,11 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type SettlementUsage<T> = StorageValue<_, BlockUsage, OptionQuery>;
 
+	/// Where the next block's settlement starts: twice the last chunk tried, so a block that fits
+	/// fewer entries than `max_updates_per_block` does not halve down to them every block.
+	#[pallet::storage]
+	pub type SettlementBudget<T> = StorageValue<_, u32, OptionQuery>;
+
 	/// Producer shares accrued per operator in an epoch, in STAR.
 	#[pallet::storage]
 	pub type Buckets<T> = StorageDoubleMap<
