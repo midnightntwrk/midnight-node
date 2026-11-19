@@ -1302,6 +1302,7 @@ build-test-toolkit:
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     # Tests embed CARGO_MANIFEST_DIR=/util/toolkit and read these files at runtime.
+    COPY Cargo.toml /
     COPY --dir .config res /
     COPY --dir util/toolkit/tests util/toolkit/test-data /util/toolkit/
     COPY util/toolkit/test-images.docker-compose.yml /util/toolkit/

@@ -19,6 +19,7 @@ ARCHIVE=/toolkit-tests.tar.zst
 EXTRACT_DIR=/tmp/toolkit-tests
 
 # Missing runtime assets must fail CI rather than silently skip contract tests.
+test -s /Cargo.toml
 test -s /util/toolkit-js/dist/bin.js
 test -s /util/toolkit/test-images.docker-compose.yml
 test -s /util/toolkit/test-data/genesis/genesis_block_undeployed.mn
