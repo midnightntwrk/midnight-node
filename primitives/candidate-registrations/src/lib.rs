@@ -33,6 +33,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use parity_scale_codec::Encode;
+use sidechain_domain::McEpochNumber;
 use sp_api::decl_runtime_apis;
 
 #[cfg(feature = "std")]
@@ -124,8 +125,9 @@ decl_runtime_apis! {
 		/// `None` means it would be admitted as valid.
 		fn validate_registration(datum: RegistrationDatum) -> Option<RegistrationInvalidReason>;
 
-		/// Every pool that holds an active registration, for committee
-		/// selection.
-		fn active_registrations() -> Vec<ActiveRegistration>;
+		/// Every pool that held an active registration at the snapshot committee
+		/// selection for Cardano epoch `for_mc_epoch` reads: the start of epoch
+		/// `for_mc_epoch - SNAPSHOT_EPOCH_OFFSET`.
+		fn active_registrations(for_mc_epoch: McEpochNumber) -> Vec<ActiveRegistration>;
 	}
 }

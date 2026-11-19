@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 use frame_support::{storage::bounded_vec::BoundedVec, traits::ConstU32};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sidechain_domain::{MainchainKeyHash, UtxoId};
+use sidechain_domain::{MainchainKeyHash, McEpochNumber, UtxoId};
 
 /// A `sp_core::crypto::KeyTypeId` as it travels in a datum: four opaque bytes.
 ///
@@ -376,6 +376,8 @@ impl core::fmt::Display for CardanoTxPosition {
 pub struct ObservedRegistration {
 	/// Where the depositing transaction sits on Cardano.
 	pub position: CardanoTxPosition,
+	/// The Cardano epoch of the block holding the transaction.
+	pub mc_epoch: McEpochNumber,
 	/// The node output the transaction created, its first output. Kept so an
 	/// operator can tie a stored record back to the UTxO they posted.
 	pub utxo: UtxoId,
@@ -422,9 +424,10 @@ pub enum RegistrationInvalidReason {
 /// A registration first appears Active or, if it failed admission, Invalid.
 /// A pool may register afresh from any of the three, so every state can move
 /// to Active or Invalid; only a state that is not already Inactive can be
-/// inactivated. The pallet keeps only the state the latest event left behind,
-/// and never drops a record — the map only ever grows, so a pool that has
-/// registered once stays addressable whatever it did afterwards.
+/// inactivated. The pallet keeps the state the latest event left behind, and
+/// the past states selection may still read ([`RegistrationHistory`]). It never
+/// drops a pool — the map only ever grows, so a pool that has registered once
+/// stays addressable whatever it did afterwards.
 #[derive(
 	Clone,
 	Copy,
@@ -569,6 +572,90 @@ impl<Keys> RegistrationRecord<Keys> {
 			| Self::Invalid { utxo, .. }
 			| Self::Inactive { utxo, .. } => *utxo,
 		}
+	}
+}
+
+/// How many Cardano epochs before the epoch it selects for committee selection reads the
+/// registrations: selection for epoch `E` takes them as they stood at the start of epoch
+/// `E - 3`, where Cardano fixed the ADA stake Ariadne reads for `E` (MIP rule 16, Snapshot
+/// point).
+pub const SNAPSHOT_EPOCH_OFFSET: u32 = 3;
+
+/// Most past states [`RegistrationHistory`] keeps: the state before the oldest snapshot
+/// still in use, and one per Cardano epoch from that snapshot to the current state's.
+pub const MAX_PREVIOUS_REGISTRATIONS: u32 = SNAPSHOT_EPOCH_OFFSET + 1;
+
+/// A pool's registration state, and the Cardano epoch of the event that left it.
+#[derive(
+	Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo, MaxEncodedLen,
+)]
+pub struct RegistrationEntry<Keys> {
+	/// The Cardano epoch of the block whose event left this state.
+	pub mc_epoch: McEpochNumber,
+	/// The state.
+	pub record: RegistrationRecord<Keys>,
+}
+
+/// A pool's registration now, and as it stood at the starts of the Cardano epochs
+/// committee selection may still read.
+#[derive(
+	Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo, MaxEncodedLen,
+)]
+pub struct RegistrationHistory<Keys> {
+	/// The latest state: what admission, deactivation and the key indices work from.
+	pub current: RegistrationEntry<Keys>,
+	/// Earlier states, newest first, each from an earlier Cardano epoch than the one
+	/// before it in the list.
+	pub previous: BoundedVec<RegistrationEntry<Keys>, ConstU32<MAX_PREVIOUS_REGISTRATIONS>>,
+}
+
+impl<Keys> RegistrationHistory<Keys> {
+	/// A pool's first state.
+	pub fn new(entry: RegistrationEntry<Keys>) -> Self {
+		Self { current: entry, previous: BoundedVec::new() }
+	}
+
+	/// Makes `entry` the pool's latest state.
+	///
+	/// A state from the same Cardano epoch as the current one replaces it: only the
+	/// last state of an epoch can be the one at the start of a later epoch. Past states
+	/// no snapshot can read any more are dropped: events arrive in Cardano order, and
+	/// selection reads the snapshot at the start of `E - SNAPSHOT_EPOCH_OFFSET` only
+	/// while Cardano is in epoch `E - 1` or `E`, so no later read needs a snapshot older
+	/// than `SNAPSHOT_EPOCH_OFFSET` epochs before `entry`'s.
+	pub fn record(&mut self, entry: RegistrationEntry<Keys>) {
+		if entry.mc_epoch <= self.current.mc_epoch {
+			self.current = entry;
+			return;
+		}
+		let oldest_snapshot = entry.mc_epoch.0.saturating_sub(SNAPSHOT_EPOCH_OFFSET);
+		let previous = core::mem::replace(&mut self.previous, BoundedVec::new());
+		let replaced = core::mem::replace(&mut self.current, entry);
+		let mut kept: Vec<RegistrationEntry<Keys>> = Vec::new();
+		for past in core::iter::once(replaced).chain(previous) {
+			let before_oldest_snapshot = past.mc_epoch.0 < oldest_snapshot;
+			kept.push(past);
+			if before_oldest_snapshot {
+				break;
+			}
+		}
+		// At most one state per epoch from `oldest_snapshot` up to `entry`'s, and one
+		// before it: never more than the bound.
+		self.previous = BoundedVec::truncate_from(kept);
+	}
+
+	/// The latest state.
+	pub fn current(&self) -> &RegistrationRecord<Keys> {
+		&self.current.record
+	}
+
+	/// The state at the start of Cardano epoch `mc_epoch`: the one the last event of an
+	/// earlier epoch left, or `None` when the pool had not registered by then.
+	pub fn at_start_of(&self, mc_epoch: McEpochNumber) -> Option<&RegistrationRecord<Keys>> {
+		core::iter::once(&self.current)
+			.chain(self.previous.iter())
+			.find(|entry| entry.mc_epoch < mc_epoch)
+			.map(|entry| &entry.record)
 	}
 }
 
