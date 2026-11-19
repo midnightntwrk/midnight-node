@@ -681,7 +681,7 @@ fn what_settlement_used_is_not_counted_as_the_producers_utilization() {
 		BlockRewards::note_block_usage(usage_of(UTILIZATION.get()));
 		BlockRewards::on_finalize(6);
 		let record = records().pop().unwrap();
-		assert_eq!(record.utilization, Utilization { used: 30, max: 960 });
+		assert_eq!(record.utilization, Utilization { used: 30, max: BLOCK_LIMIT.into() });
 		assert_eq!(SettlementUsage::<Test>::get(), None);
 	});
 }
