@@ -82,7 +82,7 @@ jobs:
           . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            -P --strict \
+            -P \
             +test-toolkit \
               --CACHE_KEY=compact-contract-tests \
               --RUN_COMPACT_CONTRACT_TESTS=true

@@ -49,6 +49,10 @@ homepage = "https://midnight.network"
 repository = "https://github.com/midnightntwrk/mn4"
 
 # Same lint list as polkadot-sdk
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+unused_workspace_dependencies = "deny"
+
 [workspace.lints.clippy]
 all = { level = "allow", priority = 0 }
 correctness = { level = "warn", priority = 1 }
@@ -137,7 +141,6 @@ midnight-node-metadata = { path = "metadata", default-features = false }
 midnight-node-ledger-helpers = { path = "ledger/helpers", default-features = false }
 midnight-ledger-unsafe-helpers = { path = "ledger/helpers/unsafe", default-features = false }
 midnight-node-res = { path = "res", default-features = false }
-midnight-node-toolkit = { path = "util/toolkit", default-features = true }
 pallet-midnight = { path = "pallets/midnight", default-features = false }
 pallet-midnight-system = { path = "pallets/midnight-system", default-features = false }
 pallet-midnight-rpc = { path = "pallets/midnight/rpc", default-features = false }

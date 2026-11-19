@@ -612,7 +612,8 @@ type ApplySystemTransactionFn =
 		&[u8],
 		BlockContext,
 		u32,
-	) -> Result<midnight_node_ledger::types::SystemTransactionAppliedStateRoot, LedgerApiError>;
+	)
+		-> Result<midnight_node_ledger::types::SystemTransactionAppliedStateRoot, LedgerApiError>;
 
 /// Applies a system transaction the way `pallet-midnight-system` does for cNIGHT and the bridge.
 fn apply_system_transaction(apply: ApplySystemTransactionFn, tx: Vec<u8>) {

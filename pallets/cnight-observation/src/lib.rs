@@ -78,6 +78,8 @@ pub const DEFAULT_OBSERVATION_BUDGET_PERCENT: u32 = 50;
 const ZERO_DUST_PUBLIC_KEY: [u8; 32] = [0; 32];
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use frame_support::{sp_runtime::traits::Hash, storage::with_storage_layer};
 	use midnight_primitives::{
