@@ -411,6 +411,12 @@ impl frame_system::Config for Runtime {
 		// no-op once unset. Remove after it has landed on all live networks and before BEEFY is
 		// re-enabled (see `migrations::beefy_genesis`).
 		migrations::beefy_genesis::ResetBeefyGenesis,
+		// Live networks are still at v0; `DisabledValidators` is empty on all of them.
+		pallet_session::migrations::v1::MigrateV0ToV1<
+			Runtime,
+			pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
+		>,
+		migrations::bridge_reserve_validator::MigrateMainChainScripts,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -1833,11 +1839,82 @@ impl_runtime_apis! {
 
 	#[cfg(feature = "try-runtime")]
 	impl frame_try_runtime::TryRuntime<Block> for Runtime {
+		/// `Executive::try_runtime_upgrade`, except that the pallet checks run after the
+		/// multi-block migrations: a pallet's storage version only matches once its MBMs finish.
 		fn on_runtime_upgrade(checks: frame_try_runtime::UpgradeCheckSelect) -> (Weight, Weight) {
-			// NOTE: intentional unwrap: we don't want to propagate the error backwards, and want to
-			// have a backtrace here. If any of the pre/post migration checks fail, we shall stop
-			// right here and right now.
-			let weight = Executive::try_runtime_upgrade(checks).unwrap();
+			use frame_support::migrations::MultiStepMigrator;
+			use frame_support::traits::{
+				BeforeAllRuntimeMigrations, OnRuntimeUpgrade, PalletInfoAccess, PalletsInfoAccess,
+				TryDecodeEntireStorage, TryState,
+			};
+			use frame_try_runtime::TryStateSelect;
+			use midnight_primitives_consensus_engine::ActiveEngine;
+
+			type SingleBlockMigrations = <Runtime as frame_system::Config>::SingleBlockMigrations;
+			type MultiBlockMigrator = <Runtime as frame_system::Config>::MultiBlockMigrator;
+
+			fn run_multi_block_migrations() -> Weight {
+				const MAX_STEPS: u32 = 100_000;
+				let mut weight = Weight::zero();
+				for _ in 0..MAX_STEPS {
+					if !MultiBlockMigrator::ongoing() {
+						return weight;
+					}
+					weight.saturating_accrue(MultiBlockMigrator::step());
+				}
+				panic!("multi-block migrations did not finish within {MAX_STEPS} steps");
+			}
+
+			let mut weight = AllPalletsWithSystem::before_all_runtime_migrations();
+			weight.saturating_accrue(
+				SingleBlockMigrations::try_on_runtime_upgrade(checks.pre_and_post())
+					.expect("runtime migrations failed"),
+			);
+			// Unchecked first, to queue and run the MBMs; then checked. The hooks are idempotent.
+			// Only the first pass counts towards the upgrade block's weight; the checked pass
+			// repeats it, and MBM steps run in the blocks that follow.
+			weight.saturating_accrue(AllPalletsWithSystem::on_runtime_upgrade());
+			let mut mbm_weight = run_multi_block_migrations();
+			AllPalletsWithSystem::try_on_runtime_upgrade(checks.pre_and_post())
+				.expect("pallet upgrade checks failed");
+			mbm_weight.saturating_accrue(run_multi_block_migrations());
+			if mbm_weight != Weight::zero() {
+				log::info!(target: "try-runtime", "Multi-block migrations consumed {mbm_weight:?}");
+			}
+
+			frame_system::LastRuntimeUpgrade::<Runtime>::put(
+				frame_system::LastRuntimeUpgradeInfo::from(
+					<Runtime as frame_system::Config>::Version::get(),
+				),
+			);
+
+			let _guard = frame_support::StorageNoopGuard::default();
+
+			if checks.any() {
+				let decoded_bytes = AllPalletsWithSystem::try_decode_entire_state()
+					.expect("state is not decodable by the new runtime");
+				log::info!(target: "try-runtime", "🔍 decoded {decoded_bytes} bytes of storage");
+			}
+
+			if checks.try_state() {
+				// Babe's `CurrentSlot >= GenesisSlot` fails until the AURA->BABE flip replaces
+				// consensus-engine's `GenesisSlot` sentinel.
+				let pallets = if ConsensusEngine::active_engine() == ActiveEngine::Aura {
+					TryStateSelect::Only(
+						AllPalletsWithSystem::infos()
+							.into_iter()
+							.map(|pallet| pallet.name)
+							.filter(|name| *name != Babe::name())
+							.map(|name| name.as_bytes().to_vec())
+							.collect(),
+					)
+				} else {
+					TryStateSelect::All
+				};
+				AllPalletsWithSystem::try_state(frame_system::Pallet::<Runtime>::block_number(), pallets)
+					.expect("try_state failed");
+			}
+
 			(weight, BlockWeights::get().max_block)
 		}
 

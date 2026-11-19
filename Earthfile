@@ -1494,6 +1494,76 @@ build-benchmarks:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
 
+try-runtime-build:
+    FROM +build-prepare
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
+    ARG NATIVEARCH
+    ARG OUT=/artifacts-try-runtime-$NATIVEARCH
+
+    RUN ./scripts/assert-no-fork-transition.sh features -p midnight-node --features try-runtime
+    RUN --secret NODE_GIT_TOKEN \
+        with-git-creds cargo auditable build -p midnight-node --locked --release --features try-runtime
+    RUN ./scripts/assert-no-fork-transition.sh wasm /target/release/wbuild/midnight-node-runtime/*.wasm
+
+    # cp, not mv: the binary must stay in the mounted /target cache.
+    RUN mkdir -p $OUT \
+        && cp /target/release/midnight-node \
+              /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
+              $OUT/
+
+    SAVE ARTIFACT $OUT AS LOCAL artifacts-try-runtime
+
+# Only for `create-snapshot`: its dry-run lacks the node's host functions.
+try-runtime-cli:
+    FROM +prep-no-copy
+    # renovate: datasource=github-releases packageName=paritytech/try-runtime-cli
+    ARG TRY_RUNTIME_CLI_VERSION=v0.10.1
+    RUN cargo install --git https://github.com/paritytech/try-runtime-cli \
+        --tag $TRY_RUNTIME_CLI_VERSION --locked --root /out try-runtime-cli
+    SAVE ARTIFACT /out/bin/try-runtime
+
+try-runtime-dry-run:
+    FROM +try-runtime-build
+    ARG NATIVEARCH
+    ARG OUT=/artifacts-try-runtime-$NATIVEARCH
+    ARG --required NETWORK
+    ARG --required URI
+    # false: record the exit code in $NETWORK.status instead of failing. A failing target
+    # makes earthly cancel the other networks and discard every output.
+    ARG FAIL_FAST=true
+
+    COPY +try-runtime-cli/try-runtime /usr/local/bin/try-runtime
+
+    # One RUN, so a failed snapshot is recorded in $NETWORK.status too.
+    # `--uri=` form, as `--uri` takes several values and would swallow the path.
+    RUN --no-cache { { try-runtime create-snapshot --uri="$URI" "$NETWORK.snap" \
+            && $OUT/midnight-node try-runtime \
+                --snap "$NETWORK.snap" \
+                --runtime $OUT/midnight_node_runtime.compact.compressed.wasm \
+                --checks all; } 2>&1; \
+          echo $? > "$NETWORK.status"; } | tee "$NETWORK.log"; \
+        [ "$FAIL_FAST" != true ] || [ "$(cat "$NETWORK.status")" = 0 ]
+
+    SAVE ARTIFACT "$NETWORK.*" AS LOCAL artifacts-try-runtime/
+
+try-runtime-dry-run-all:
+    # FOR needs a shell to split $NETWORKS.
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+    ARG NETWORKS="preview preprod mainnet"
+    ARG FAIL_FAST=true
+    FOR network IN $NETWORKS
+        BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network --FAIL_FAST=$FAIL_FAST
+    END
+
 subwasm:
     ARG NATIVEARCH
     FROM +build

@@ -482,6 +482,10 @@ pub enum Subcommand {
 
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
+
+	/// Dry-run a runtime upgrade against a state snapshot.
+	#[cfg(feature = "try-runtime")]
+	TryRuntime(crate::try_runtime::TryRuntimeCmd),
 }
 
 // TODO: this is used for signing address associations. Which kind of midnight address do we want to associate with Cardano?
