@@ -1871,13 +1871,16 @@ impl_runtime_apis! {
 					.expect("runtime migrations failed"),
 			);
 			// Unchecked first, to queue and run the MBMs; then checked. The hooks are idempotent.
+			// Only the first pass counts towards the upgrade block's weight; the checked pass
+			// repeats it, and MBM steps run in the blocks that follow.
 			weight.saturating_accrue(AllPalletsWithSystem::on_runtime_upgrade());
-			weight.saturating_accrue(run_multi_block_migrations());
-			weight.saturating_accrue(
-				AllPalletsWithSystem::try_on_runtime_upgrade(checks.pre_and_post())
-					.expect("pallet upgrade checks failed"),
-			);
-			weight.saturating_accrue(run_multi_block_migrations());
+			let mut mbm_weight = run_multi_block_migrations();
+			AllPalletsWithSystem::try_on_runtime_upgrade(checks.pre_and_post())
+				.expect("pallet upgrade checks failed");
+			mbm_weight.saturating_accrue(run_multi_block_migrations());
+			if mbm_weight != Weight::zero() {
+				log::info!(target: "try-runtime", "Multi-block migrations consumed {mbm_weight:?}");
+			}
 
 			frame_system::LastRuntimeUpgrade::<Runtime>::put(
 				frame_system::LastRuntimeUpgradeInfo::from(
