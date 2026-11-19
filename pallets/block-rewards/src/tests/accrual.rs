@@ -283,6 +283,24 @@ fn a_block_of_a_pool_without_stake_draws_nothing() {
 }
 
 #[test]
+fn a_draw_without_a_producer_share_leaves_no_bucket() {
+	activated().execute_with(|| {
+		ParameterSets::<Test>::mutate(1, |parameters| {
+			let Some(RewardParameters::V1(parameters)) = parameters else { unreachable!() };
+			parameters.fixed_subsidy = Ratio::new(0, 1);
+		});
+		UTILIZATION.set(Utilization { used: 0, max: 1 });
+		produced_by(5, Some(Producer::Operator(operator(1))));
+		finalize(2);
+		let draw = records()[0].draw;
+		assert_eq!(draw.producer, 0);
+		assert!(draw.treasury > 0);
+		assert_eq!(Buckets::<Test>::iter().count(), 0);
+		assert_eq!(BlockRewards::do_try_state(), Ok(()));
+	});
+}
+
+#[test]
 fn a_block_without_a_complete_snapshot_draws_nothing() {
 	activated().execute_with(|| {
 		EVERY_OPERATOR_A_POOL.set(false);

@@ -32,9 +32,11 @@ impl<T: Config> Pallet<T> {
 					.defensive_proof("the utilization of every block after activation is noted")
 					.map(|utilization| Self::draw(epoch.parameters_version, utilization))
 					.unwrap_or_default();
-				Buckets::<T>::mutate(epoch.cardano_epoch, operator, |bucket| {
-					*bucket = bucket.saturating_add(draw.producer)
-				});
+				if draw.producer > 0 {
+					Buckets::<T>::mutate(epoch.cardano_epoch, operator, |bucket| {
+						*bucket = bucket.saturating_add(draw.producer)
+					});
+				}
 				draw
 			},
 			_ => BlockDraw::default(),
