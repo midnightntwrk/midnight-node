@@ -213,7 +213,7 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 
 **Signed commits:** All commits must be signed. Use `git commit -S` or configure Git to sign commits by default with `git config commit.gpgsign true`.
 
-**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant GitHub issue link and add labels as needed:
+**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Before creating the PR, run an agentic review (e.g. `/code-review`) against the PR's base branch and let the user triage the findings. Tick "Run agentic review" and name the skill used. Prompt the user for a relevant GitHub issue link and add labels as needed:
 - No issue link: add `-l skip-changes-check-issue`
 - No change file: add `-l skip-changes-check-all`
 
