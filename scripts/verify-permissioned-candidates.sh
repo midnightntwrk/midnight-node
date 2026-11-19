@@ -14,27 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Checks a permissioned-candidates list before it goes to `change-federated-ops`.
-# Optionally also compares it with what the chain observed.
-# See docs/aura-to-babe-migration-runbook.md, Phase 0.
-# Needs bash, jq and curl. Exits 1 on any ERROR.
+# Checks a new permissioned-candidates list before it goes to `change-federated-ops`, and
+# optionally compares it with what the chain observed. Each ERROR says what the mistake breaks.
+# `change-federated-ops` checks only that keys are hex, and a 2.1 runtime accepts a wrong-length
+# BABE key: without this check such mistakes surface only at the v3 runtime upgrade.
+# See docs/aura-to-babe-migration-runbook.md, Phase 0. Needs bash, jq and curl. Exits 1 on any ERROR.
 #
-# Usage: verify-permissioned-candidates.sh <list.json> [--previous <list.json>] [--rpc <url> [--epoch <n>]]
-#   <list.json>      res/<network>/permissioned-candidates-config.json format, or a bare array of candidates
-#   --previous       the list active today: new keys must not collide with former candidates' keys either
+# Usage: verify-permissioned-candidates.sh <new.json> [--current <current.json>] [--rpc <url> [--epoch <n>]]
+#   <new.json>       res/<network>/permissioned-candidates-config.json format, or a bare array of candidates
+#   --current        the list active today: a key may not move to another candidate (DuplicatedKey)
 #   --rpc            Midnight node HTTP RPC (e.g. http://localhost:9944): compare with systemParameters_getAriadneParameters
 #   --epoch          Cardano epoch for --rpc (default: the node's current one)
 #
 # It cannot tell whether a well-formed key is the one the node loaded: check the node itself (runbook 0.1).
 set -euo pipefail
 
-usage() { sed -n '22,26p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '23,27p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -ge 1 ] || usage
 LIST=$1; shift
-PREV=null RPC= EPOCH=
+CURRENT=null RPC= EPOCH=
 while [ $# -gt 0 ]; do
   case $1 in
-    --previous) PREV=$(cat "$2"); shift 2 ;;
+    --current) CURRENT=$(cat "$2"); shift 2 ;;
     --rpc) RPC=$2; shift 2 ;;
     --epoch) EPOCH=$2; shift 2 ;;
     *) usage ;;
@@ -54,7 +55,7 @@ if [ -n "$RPC" ]; then
   echo "chain: $RPC, Cardano epoch $EPOCH, runtime spec $SPEC"
 fi
 
-jq -r -n --slurpfile list "$LIST" --argjson prev "$PREV" --argjson observed "$OBSERVED" \
+jq -r -n --slurpfile list "$LIST" --argjson current "$CURRENT" --argjson observed "$OBSERVED" \
   --argjson spec "$SPEC" '
 def norm: if type == "string" then ascii_downcase | ltrimstr("0x") else null end;
 def short: if type == "string" and length > 0 then "0x" + .[0:8] + "…" else "?" end;
@@ -78,28 +79,29 @@ def hint($s; $v):
     elif $n == 32 then " (an sr25519/ed25519 key?)"
     elif $n == 65 then " (uncompressed: send the 33-byte compressed form)" else "" end;
 
-($list[0] | cands) as $cur
-| (if $prev == null then [] else $prev | cands end) as $old
+($list[0] | cands) as $new
+| (if $current == null then [] else $current | cands end) as $old
+| " — the v3 runtime drops the candidate from the committee (no fallback to its AURA key)" as $dropped
 
 # 1. Every key present, hex, the right length and type.
-| ($cur[] | . as $c | specs[] | . as $s | $c[$s.t] as $v
-   | if $v == null or $v == "" then out("ERROR"; $c | who; "\($s.f) missing")
+| ($new[] | . as $c | specs[] | . as $s | $c[$s.t] as $v
+   | if $v == null or $v == "" then out("ERROR"; $c | who; "\($s.f) missing" + $dropped)
      elif ($v | test("^[0-9a-f]+$") | not) or ($v | length) % 2 == 1 then out("ERROR"; $c | who; "\($s.f) is not hex")
-     elif ($v | length) != $s.n * 2 then out("ERROR"; $c | who; "\($s.f) is \($v | length / 2) bytes, expected \($s.n)" + hint($s; $v))
-     elif $s.ecdsa and ($v | test("^0[23]") | not) then out("ERROR"; $c | who; "\($s.f) is not a compressed ECDSA key (must start with 02 or 03)")
+     elif ($v | length) != $s.n * 2 then out("ERROR"; $c | who; "\($s.f) is \($v | length / 2) bytes, expected \($s.n)" + hint($s; $v) + $dropped)
+     elif $s.ecdsa and ($v | test("^0[23]") | not) then out("ERROR"; $c | who; "\($s.f) is not a compressed ECDSA key (must start with 02 or 03)" + $dropped)
      else empty end),
 
 # 2. Keys mixed up within one candidate.
-  ($cur[] | select(.babe != null)
-   | if .babe == .grandpa then out("ERROR"; who; "babe_pub_key is its own GRANDPA (ed25519) key: keeps its seat but cannot author BABE blocks")
+  ($new[] | select(.babe != null)
+   | if .babe == .grandpa then out("ERROR"; who; "babe_pub_key is its own GRANDPA (ed25519) key: keeps its seat but cannot author after the flip")
      elif .babe == .aura then out("ERROR"; who; "babe_pub_key reuses its own AURA key: BABE needs a fresh key (runbook 0.1)")
      else empty end),
-  ($cur[] | select(.aura != null and .aura == .grandpa) | out("ERROR"; who; "aura_pub_key equals grandpa_pub_key")),
+  ($new[] | select(.aura != null and .aura == .grandpa) | out("ERROR"; who; "aura_pub_key equals grandpa_pub_key")),
 
-# 3. One key owned by two candidates (in this list, or a former one): DuplicatedKey stops rotation.
-  ($cur | group_by(.sc)[] | select(length > 1 and .[0].sc != null)
+# 3. One key owned by two candidates (in the new list, or across new and current): DuplicatedKey stops rotation.
+  ($new | group_by(.sc)[] | select(length > 1 and .[0].sc != null)
    | out("ERROR"; map(who) | join(", "); "same sidechain_pub_key on \(length) candidates")),
-  ([($cur[] | {src: "", c: .}), ($old[] | {src: "previous ", c: .})]
+  ([($new[] | {src: "", c: .}), ($old[] | {src: "current ", c: .})]
    | map(.src as $src | .c as $c | ["aura", "grandpa", "babe", "beefy", "sidechain"][]
          | select($c[.] != null and $c[.] != "")
          | {v: $c[.], t: ., owner: $c.sc, src: $src, who: ($src + ($c | who))})
@@ -107,20 +109,21 @@ def hint($s; $v):
    | select((map(.owner) | unique | length) > 1 and any(.src == ""))
    | out("ERROR"; (first(.[] | select(.src == "")) | .who);
        "same key used as " + (map("\(.t) of \(.who)") | unique | join(", "))
-       + " — DuplicatedKey: the committee stops rotating"
+       + " — DuplicatedKey: from the first rotation after the runtime upgrade the committee stops rotating until the list is fixed"
        + (if ([.[] | select(.t == "babe") | .owner] as $b | any(.[]; .t == "aura" and (.owner as $o | $b | any(. != $o)))) then " (the runtime upgrade copies every AURA key into the BABE slot)" else "" end))),
 
 # 4. --rpc: the list the chain observed matches, and every entry is valid (runbook 0.3).
   (if $observed == null then empty else
      ($observed | map({sc: (.sidechainPublicKey | norm), aura: (.keys.aura | norm), grandpa: (.keys.gran | norm),
                        babe: (.keys.babe | norm), beefy: (.keys.beef | norm), isValid, invalidReasons})) as $obs
-     | ($cur[] | . as $c | ($obs | map(select(.sc == $c.sc)) | first) as $o
-        | if $o == null then out("ERROR"; $c | who; "not in the list the chain observed")
+     | " — the list was changed or lost on the way to Cardano; explain before Phase 1" as $lost
+     | ($new[] | . as $c | ($obs | map(select(.sc == $c.sc)) | first) as $o
+        | if $o == null then out("ERROR"; $c | who; "not in the list the chain observed" + $lost)
           else (["aura", "grandpa", "babe", "beefy"][] | select($o[.] != $c[.])
-                | out("ERROR"; $c | who; "\(.) on chain is \($o[.] | short), list has \($c[.] | short)")),
+                | out("ERROR"; $c | who; "\(.) on chain is \($o[.] | short), list has \($c[.] | short)" + $lost)),
                (if $o.isValid then empty else out("ERROR"; $c | who; "chain marks it invalid: \($o.invalidReasons)") end)
           end),
-       ($obs[] | select(.sc as $sc | $cur | all(.sc != $sc)) | out("ERROR"; "chain"; "\(.sc | short) is on chain but not in the list")),
+       ($obs[] | select(.sc as $sc | $new | all(.sc != $sc)) | out("ERROR"; "chain"; "\(.sc | short) is on chain but not in the list" + $lost)),
        (if $spec < 3000000 then out("INFO"; "chain"; "runtime spec \($spec): isValid does not check BABE keys yet; rely on checks 1–3") else empty end)
    end)
 ' | awk -F'\t' -v n="$(jq '(if type == "array" then . else .initial_permissioned_candidates end) | length' "$LIST")" '

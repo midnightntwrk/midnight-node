@@ -76,50 +76,22 @@ becomes active.
 
 **Gate — before running `change-federated-ops`:** check the list it will
 submit with
-[`scripts/verify-permissioned-candidates.sh`](../scripts/verify-permissioned-candidates.sh)
-(needs `jq` and `curl`):
+[`scripts/verify-permissioned-candidates.sh`](../scripts/verify-permissioned-candidates.sh).
+Stop and fix the list on any `ERROR`.
 
 ```bash
-scripts/verify-permissioned-candidates.sh new-list.json --previous current-list.json
+scripts/verify-permissioned-candidates.sh new.json --current current.json
 ```
-
-`change-federated-ops` checks only that keys are hex, and a 2.1 runtime marks
-a wrong-length BABE key valid — this script is the only check before the
-runtime upgrade. Stop and fix the list on any `ERROR`:
-
-- any candidate has no `babe_pub_key`, or one that is not a 32-byte sr25519
-  public key (e.g. truncated, a secret key, an ECDSA key) — it is dropped from
-  the committee from the first rotation after the runtime upgrade (no fallback
-  to its AURA key);
-- a candidate's BABE key is its own AURA key — breaks the fresh-key rule of
-  0.1; ask for a fresh key;
-- a candidate's BABE key is its own GRANDPA key — it keeps its seat but cannot
-  author after the flip;
-- two candidates, or a candidate and a former one, share any session key —
-  from the first rotation after the runtime upgrade the committee stops
-  rotating (`DuplicatedKey`) until the list is fixed;
-- a candidate's BABE key is another candidate's AURA key — the runtime upgrade
-  copies every AURA key into the BABE slot, so the two can collide.
-
-The script cannot tell whether a well-formed key is the one the node loaded
-(e.g. keys swapped between two validators) — that is the 0.1 Verify step on
-each node.
 
 ### 0.3 Gate: permissioned-candidates with BABE keys observed by the Midnight nodes
 
-After the two Cardano epoch boundaries, run the 0.2 check again against any
-Midnight RPC node (a 2.1 node works):
+After the two Cardano epoch boundaries, compare the submitted list with what
+the Midnight nodes observed (any RPC node; a 2.1 node works). Do not continue
+to Phase 1 until every `ERROR` is fixed or explained.
 
 ```bash
-scripts/verify-permissioned-candidates.sh new-list.json --rpc http://<rpc-node>:9944
+scripts/verify-permissioned-candidates.sh new.json --rpc http://<rpc-node>:9944
 ```
-
-It queries `systemParameters_getAriadneParameters` for the current Cardano
-epoch, repeats the 0.2 checks, and reports every entry with `isValid: false`
-or that differs from the list you submitted. A difference means the list was
-changed or lost on the way to Cardano — do not continue to Phase 1 until it is
-explained. On a 2.1 runtime `isValid` does not check BABE keys; the script's
-own checks cover them.
 
 ## Phase 1 — Binary rollout
 
