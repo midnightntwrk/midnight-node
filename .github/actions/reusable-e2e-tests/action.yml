@@ -23,8 +23,7 @@ runs:
   steps:
     - name: Configure hosted Docker Hub mirror
       if: runner.environment == 'github-hosted'
-      run: sudo python3 scripts/ci/configure-docker-mirror.py
-      shell: bash
+      uses: ./.github/actions/configure-docker-mirror
 
     - name: Install just
       uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30

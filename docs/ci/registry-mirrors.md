@@ -6,7 +6,7 @@ BuildKit falls back to Docker Hub when an image is absent from the cache.
 The mirror is a cache of public Hub images, not a mirror of GHCR or a guarantee
 that any particular image remains cached.
 
-Hosted reusable E2E jobs also configure the host Docker daemon. The helper
+Hosted reusable E2E jobs also configure the host Docker daemon. A Bash composite action
 preserves unrelated `daemon.json` keys and existing mirrors, validates a
 temporary candidate with `dockerd --validate`, replaces it atomically, reloads
 Docker with SIGHUP and checks the effective mirrors. It never restarts Docker.
@@ -19,17 +19,19 @@ shared BuildKit settings requires coordinating all clients because its settings
 hash can cause the CLI to replace the daemon during other jobs. Host Docker
 mirrors do not automatically configure either BuildKit or nested Docker stores.
 
-`registry-mirror.yml` runs the configuration unit tests, verifies the real hosted
-Docker daemon and a running BusyBox keep their PIDs after reload, then pulls a
-distinct digest-pinned Alpine image. It
+`registry-mirror.yml` checks runner-profile selection with inline Bash, verifies
+that the real Docker daemon and a running BusyBox keep their PIDs after reload,
+and checks preservation of configuration, permissions and ownership. Reapplying
+the action must leave the configuration inode unchanged. It then pulls a
+distinct digest-pinned Alpine image and
 then uses two separate small EarthBuild installations: one proves successful
 Google mirror resolution; the other uses an unserved mirror path to force a
 cache miss and prove fallback to Hub. Only allowlisted URL hosts/paths and
 response statuses are emitted from the in-memory daemon debug logs.
 
-Run `python3 -m unittest discover -s scripts/ci -p 'test_docker_mirror.py' -v`
-for local regression checks. The real daemon and image-resolution probes run
-only in hosted CI. Rollback removes the helper step and the additional BuildKit
+The merge/reload action and validation use native Actions and inline Bash with
+`jq`; there are no custom Python helpers. Real daemon and image-resolution probes
+run only in hosted CI. Rollback removes the mirror step and additional BuildKit
 configuration; no shared self-hosted daemon setting changes are needed.
 
 References:
