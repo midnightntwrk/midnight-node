@@ -44,6 +44,98 @@ pub struct TransactionAppliedStateRoot {
 	pub unshielded_utxos_spent: Vec<UtxoInfo>,
 }
 
+/// Returned by `apply_transaction` v4+. `failed_segments` is empty iff every segment applied.
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct TransactionAppliedStateRootV2 {
+	pub state_root: Vec<u8>,
+	pub tx_hash: Hash,
+	pub failed_segments: Vec<(u16, SegmentFailure)>,
+	pub call_addresses: Vec<Vec<u8>>,
+	pub deploy_addresses: Vec<Vec<u8>>,
+	pub maintain_addresses: Vec<Vec<u8>>,
+	pub claim_rewards: Vec<u128>,
+	pub unshielded_utxos_created: Vec<UtxoInfo>,
+	pub unshielded_utxos_spent: Vec<UtxoInfo>,
+}
+
+impl From<TransactionAppliedStateRootV2> for TransactionAppliedStateRoot {
+	fn from(v2: TransactionAppliedStateRootV2) -> Self {
+		Self {
+			state_root: v2.state_root,
+			tx_hash: v2.tx_hash,
+			all_applied: v2.failed_segments.is_empty(),
+			call_addresses: v2.call_addresses,
+			deploy_addresses: v2.deploy_addresses,
+			maintain_addresses: v2.maintain_addresses,
+			claim_rewards: v2.claim_rewards,
+			unshielded_utxos_created: v2.unshielded_utxos_created,
+			unshielded_utxos_spent: v2.unshielded_utxos_spent,
+		}
+	}
+}
+
+/// Top-level `TransactionInvalid` variant a fallible segment failed with.
+///
+/// Deliberately payload-free: events land in the state root, so the payload must be small,
+/// bounded and identical on every node, which the ledger's error contents are not.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Copy, Eq, PartialEq, Debug)]
+pub enum SegmentFailure {
+	/// A variant this node doesn't map, e.g. one added by a newer ledger.
+	#[codec(index = 0)]
+	Other,
+	#[codec(index = 1)]
+	EffectsMismatch,
+	#[codec(index = 2)]
+	ContractAlreadyDeployed,
+	#[codec(index = 3)]
+	ContractNotPresent,
+	#[codec(index = 4)]
+	Zswap,
+	#[codec(index = 5)]
+	Transcript,
+	#[codec(index = 6)]
+	InsufficientClaimable,
+	#[codec(index = 7)]
+	VerifierKeyNotFound,
+	#[codec(index = 8)]
+	VerifierKeyAlreadyPresent,
+	#[codec(index = 9)]
+	ReplayCounterMismatch,
+	#[codec(index = 10)]
+	ReplayProtectionViolation,
+	#[codec(index = 11)]
+	BalanceCheckOutOfBounds,
+	#[codec(index = 12)]
+	InputNotInUtxos,
+	#[codec(index = 13)]
+	DustDoubleSpend,
+	#[codec(index = 14)]
+	DustDeregistrationNotRegistered,
+	#[codec(index = 15)]
+	InitialNonceAlreadyPresent,
+	#[codec(index = 16)]
+	InvariantViolation,
+	#[codec(index = 17)]
+	RewardTooSmall,
+	#[codec(index = 18)]
+	BridgeClaimTooSmall,
+	#[codec(index = 19)]
+	DivideByZero,
+	#[codec(index = 20)]
+	MerkleTreeError,
+	#[codec(index = 21)]
+	ContractMetadataTooLarge,
+	#[codec(index = 22)]
+	ContractAuthorityMetadataTooLarge,
+	#[codec(index = 23)]
+	ContractTooManyOperations,
+	#[codec(index = 24)]
+	IrNotFound,
+	#[codec(index = 25)]
+	IrAlreadyPresent,
+	// Encoded in events, which are consensus state: never reuse or change an index.
+}
+
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct SystemTransactionAppliedStateRoot {
 	pub state_root: Vec<u8>,

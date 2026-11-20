@@ -223,6 +223,13 @@ pub mod pallet {
 	}
 
 	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+	pub struct TxPartialSuccessDetails {
+		pub tx_hash: LedgerTypes::Hash,
+		/// Fallible segments that did not apply; every other segment did.
+		pub failed_segments: Vec<(u16, LedgerTypes::SegmentFailure)>,
+	}
+
+	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct MaintainDetails {
 		pub tx_hash: LedgerTypes::Hash,
 		pub contract_address: Vec<u8>,
@@ -278,8 +285,8 @@ pub mod pallet {
 		ClaimRewards(ClaimRewardsDetails),
 		/// Unshielded Tokens Trasfers
 		UnshieldedTokens(UnshieldedTokensDetails),
-		/// Partial Success.
-		TxPartialSuccess(TxAppliedDetails),
+		/// The guaranteed segment applied but at least one fallible segment did not.
+		TxPartialSuccess(TxPartialSuccessDetails),
 	}
 
 	// Errors inform users that something went wrong.
@@ -448,10 +455,13 @@ pub mod pallet {
 				}));
 			}
 
-			if result.all_applied {
+			if result.failed_segments.is_empty() {
 				Self::deposit_event(Event::TxApplied(TxAppliedDetails { tx_hash }));
 			} else {
-				Self::deposit_event(Event::TxPartialSuccess(TxAppliedDetails { tx_hash }));
+				Self::deposit_event(Event::TxPartialSuccess(TxPartialSuccessDetails {
+					tx_hash,
+					failed_segments: result.failed_segments,
+				}));
 			}
 
 			Ok(())
