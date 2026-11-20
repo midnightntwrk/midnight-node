@@ -31,7 +31,7 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt, stream::SplitStream};
 use graphql_client::GraphQLQuery;
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -405,6 +405,10 @@ pub struct IndexerClient {
 /// not change, and a proxy in front of it closes a connection that carries no data for its idle
 /// timeout (60s by default on an AWS load balancer). The pings keep the connection busy in between.
 pub const WS_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(20);
+
+/// A subscription that receives no frame at all, not even a pong, for this many keep-alive
+/// intervals has lost its connection.
+const WS_LIVENESS_INTERVALS: u32 = 3;
 
 /// A Blockfrost API key. Its `Debug` output is redacted so it cannot reach logs or error messages.
 #[derive(Clone)]
@@ -799,36 +803,52 @@ impl IndexerClient {
 			.await
 			.map_err(|e| IndexerClientError::WebSocket(format!("send subscribe: {e}")))?;
 
-		let mut keepalive = tokio::time::interval_at(
-			tokio::time::Instant::now() + self.ws_keepalive,
-			self.ws_keepalive,
-		);
-		keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-		Ok(SubscriptionStream { ws, keepalive })
+		let (mut sink, frames) = ws.split();
+		let period = self.ws_keepalive;
+		// A task, not a timer in `next_data`, so pings continue while the caller is busy between
+		// reads.
+		let pinger = tokio::spawn(async move {
+			let mut tick = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+			tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+			loop {
+				tick.tick().await;
+				if sink.send(Message::Ping(Default::default())).await.is_err() {
+					// The reader reports the dead connection.
+					break;
+				}
+			}
+		});
+		Ok(SubscriptionStream { frames, pinger, liveness: period * WS_LIVENESS_INTERVALS })
 	}
 }
 
 /// A live `graphql-transport-ws` subscription. Yields the GraphQL `data` object per `next`
 /// message and ends (`None`) on `complete`. Dropping it closes the socket.
 pub struct SubscriptionStream {
-	ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
-	keepalive: tokio::time::Interval,
+	frames: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+	/// Owns the write half and pings the server until the stream is dropped.
+	pinger: tokio::task::JoinHandle<()>,
+	/// Longest wait for any frame before the connection counts as lost.
+	liveness: Duration,
+}
+
+impl Drop for SubscriptionStream {
+	fn drop(&mut self) {
+		self.pinger.abort();
+	}
 }
 
 impl SubscriptionStream {
 	/// Read the next `data` payload, or `None` once the server sends `complete`/closes.
 	async fn next_data(&mut self) -> Option<IndexerResult<Value>> {
 		loop {
-			let frame = tokio::select! {
-				frame = self.ws.next() => frame,
-				_ = self.keepalive.tick() => {
-					if let Err(e) = self.ws.send(Message::Ping(Default::default())).await {
-						return Some(Err(IndexerClientError::WebSocket(format!(
-							"send keep-alive ping: {e}"
-						))));
-					}
-					continue;
-				},
+			// Pongs to the pinger's pings count as frames, so this only fires on a lost connection,
+			// never on a quiet server.
+			let Ok(frame) = tokio::time::timeout(self.liveness, self.frames.next()).await else {
+				return Some(Err(IndexerClientError::WebSocket(format!(
+					"no frame from the indexer for {:?}, not even a pong: connection lost",
+					self.liveness
+				))));
 			};
 			match frame {
 				Some(Ok(Message::Text(text))) => {
@@ -1107,12 +1127,14 @@ fn decode_hash(s: &str) -> IndexerResult<[u8; 32]> {
 	})
 }
 
-/// Dead-connection backstop for the progress-bearing subscriptions (shielded, unshielded).
+/// Stall backstop for the progress-bearing subscriptions (shielded, unshielded).
 ///
 /// These streams heartbeat progress every 30s (the indexer's `progress_update_interval`), even for
-/// a wallet with no relevant transactions. Keep this comfortably above 30s: at equal values the
-/// local timer beats the heartbeat across the network and a sparse-but-live wallet reads drained.
-pub const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+/// a wallet with no relevant transactions, but the indexer backs that off to 240s (+20% jitter)
+/// while the wallet's progress does not change. Keep this above that 288s gap, or a slow but live
+/// wallet reads drained. A lost connection is caught sooner, by the subscription's own liveness
+/// check.
+pub const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// How long [`ShieldedCatchUp`] waits after a progress tick before probing for a fresh one.
 ///
@@ -1297,52 +1319,73 @@ impl SyncProgress {
 mod tests {
 	use super::*;
 
-	/// A subscription that is waiting for data must ping the server, and still return the data
-	/// that arrives after the pings.
-	#[tokio::test]
-	async fn subscription_pings_while_waiting_for_data() {
+	/// Accept one subscription on `listener` the way the indexer does: `graphql-transport-ws`
+	/// handshake, `connection_ack`, then read the `subscribe` message.
+	async fn accept_subscription(listener: tokio::net::TcpListener) -> WebSocketStream<TcpStream> {
 		use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
+		let (tcp, _) = listener.accept().await.unwrap();
+		// The error type is fixed by tungstenite's handshake `Callback` trait.
+		#[allow(clippy::result_large_err)]
+		let accept_protocol = |_: &Request, mut response: Response| {
+			response
+				.headers_mut()
+				.insert("Sec-WebSocket-Protocol", "graphql-transport-ws".parse().unwrap());
+			Ok(response)
+		};
+		let mut ws = tokio_tungstenite::accept_hdr_async(tcp, accept_protocol).await.unwrap();
+		for expected in ["connection_init", "subscribe"] {
+			let Some(Ok(Message::Text(text))) = ws.next().await else {
+				panic!("expected `{expected}`");
+			};
+			let msg: Value = serde_json::from_str(&text).unwrap();
+			assert_eq!(msg["type"], expected);
+			if expected == "connection_init" {
+				let ack = json!({ "type": "connection_ack" }).to_string();
+				ws.send(Message::text(ack)).await.unwrap();
+			}
+		}
+		ws
+	}
+
+	async fn subscribe_with_keepalive(
+		addr: std::net::SocketAddr,
+		keepalive: Duration,
+	) -> SubscriptionStream {
+		let mut client = IndexerClient::new(&format!("http://{addr}/api/v4")).unwrap();
+		client.ws_keepalive = keepalive;
+		client
+			.open_subscription_payload(json!({ "query": "subscription { x }" }))
+			.await
+			.unwrap()
+	}
+
+	/// Pings go out while the caller is not reading, and data sent after them still arrives.
+	#[tokio::test]
+	async fn subscription_pings_while_caller_is_not_reading() {
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let addr = listener.local_addr().unwrap();
+		let (pinged_tx, pinged_rx) = tokio::sync::oneshot::channel();
 		let server = tokio::spawn(async move {
-			let (tcp, _) = listener.accept().await.unwrap();
-			// The error type is fixed by tungstenite's handshake `Callback` trait.
-			#[allow(clippy::result_large_err)]
-			let accept_protocol = |_: &Request, mut response: Response| {
-				response
-					.headers_mut()
-					.insert("Sec-WebSocket-Protocol", "graphql-transport-ws".parse().unwrap());
-				Ok(response)
-			};
-			let mut ws = tokio_tungstenite::accept_hdr_async(tcp, accept_protocol).await.unwrap();
-			let mut text_types = Vec::new();
+			let mut ws = accept_subscription(listener).await;
 			let mut pings = 0;
 			while pings < 2 {
 				match ws.next().await {
-					Some(Ok(Message::Text(text))) => {
-						let msg: Value = serde_json::from_str(&text).unwrap();
-						let kind = msg["type"].as_str().unwrap().to_owned();
-						if kind == "connection_init" {
-							let ack = json!({ "type": "connection_ack" }).to_string();
-							ws.send(Message::text(ack)).await.unwrap();
-						}
-						text_types.push(kind);
-					},
 					Some(Ok(Message::Ping(_))) => pings += 1,
 					other => panic!("unexpected client frame: {other:?}"),
 				}
 			}
+			pinged_tx.send(()).unwrap();
 			let next = json!({ "type": "next", "id": "1", "payload": { "data": { "x": 1 } } });
 			ws.send(Message::text(next.to_string())).await.unwrap();
-			text_types
+			// Keep the connection open until the client has read the data.
+			let _ = ws.next().await;
 		});
 
-		let mut client = IndexerClient::new(&format!("http://{addr}/api/v4")).unwrap();
-		client.ws_keepalive = Duration::from_millis(50);
-		let mut stream = client
-			.open_subscription_payload(json!({ "query": "subscription { x }" }))
+		let mut stream = subscribe_with_keepalive(addr, Duration::from_millis(50)).await;
+		tokio::time::timeout(Duration::from_secs(10), pinged_rx)
 			.await
+			.expect("no pings while the stream was not being read")
 			.unwrap();
 		let data = tokio::time::timeout(Duration::from_secs(10), stream.next_data())
 			.await
@@ -1350,7 +1393,29 @@ mod tests {
 			.expect("stream ended")
 			.unwrap();
 		assert_eq!(data, json!({ "x": 1 }));
-		assert_eq!(server.await.unwrap(), ["connection_init", "subscribe"]);
+		drop(stream);
+		server.await.unwrap();
+	}
+
+	/// A server that sends nothing and answers no ping is reported as a lost connection.
+	#[tokio::test]
+	async fn subscription_without_any_frame_is_lost() {
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+		let addr = listener.local_addr().unwrap();
+		let server = tokio::spawn(async move {
+			// Never read again, so the client's pings are never answered.
+			let _ws = accept_subscription(listener).await;
+			tokio::time::sleep(Duration::from_secs(10)).await;
+		});
+
+		let mut stream = subscribe_with_keepalive(addr, Duration::from_millis(50)).await;
+		let result = tokio::time::timeout(Duration::from_secs(5), stream.next_data())
+			.await
+			.expect("liveness check did not fire within 5s")
+			.expect("stream ended instead of failing");
+		let error = result.expect_err("a silent connection must fail").to_string();
+		assert!(error.contains("connection lost"), "{error}");
+		server.abort();
 	}
 
 	#[test]
