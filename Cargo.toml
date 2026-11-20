@@ -17,6 +17,7 @@ members = [
     "pallets/throttle",
     "pallets/version",
     "primitives/beefy",
+    "primitives/candidate-registrations",
     "primitives/ics-observation",
     "primitives/reserve-observation",
     "primitives/midnight",
