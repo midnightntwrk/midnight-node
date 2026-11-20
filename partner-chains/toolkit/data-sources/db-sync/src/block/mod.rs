@@ -2,8 +2,9 @@
 use crate::{
 	DataSourceError::*,
 	data_sources::read_mc_epoch_config,
-	db_model::{self, Block, BlockNumber, SlotNumber},
+	db_model::{Block, BlockNumber, SlotNumber},
 	metrics::McFollowerMetrics,
+	row_source::BlockRowSource,
 };
 use chrono::{DateTime, NaiveDateTime, TimeDelta};
 use derive_new::new;
@@ -62,9 +63,9 @@ enum StableBlockByHashError {
 /// that require access to Cardano block data
 #[allow(clippy::too_many_arguments)]
 #[derive(new)]
-pub struct BlockDataSourceImpl {
-	/// Postgres connection pool
-	pool: PgPool,
+pub struct BlockDataSourceImpl<R = PgPool> {
+	/// Source of Cardano block rows, a Postgres connection pool by default
+	pool: R,
 	/// Cardano security parameter
 	///
 	/// This parameter controls how many confirmations (blocks on top) are required by
@@ -99,12 +100,13 @@ pub struct BlockDataSourceImpl {
 	time_source: Arc<dyn TimeSource + Send + Sync>,
 }
 
-impl BlockDataSourceImpl {
+impl<R: BlockRowSource> BlockDataSourceImpl<R> {
 	/// Returns the latest _unstable_ Cardano block from the Db-Sync database
 	pub async fn get_latest_block_info(
 		&self,
 	) -> Result<MainchainBlock, Box<dyn std::error::Error + Send + Sync>> {
-		db_model::get_latest_block_info(&self.pool)
+		self.pool
+			.get_latest_block_info()
 			.await?
 			.map(From::from)
 			.ok_or(ExpectedDataNotFound("No latest block on chain.".to_string()).into())
@@ -117,7 +119,7 @@ impl BlockDataSourceImpl {
 		&self,
 		reference_timestamp: Timestamp,
 	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
-		let reference_timestamp = BlockDataSourceImpl::timestamp_to_db_type(reference_timestamp)?;
+		let reference_timestamp = Self::timestamp_to_db_type(reference_timestamp)?;
 		let latest = self.get_latest_block_info().await?;
 		let offset = self.security_parameter + self.block_stability_margin;
 		let stable = latest.number.saturating_sub(offset).into();
@@ -134,7 +136,7 @@ impl BlockDataSourceImpl {
 		&self,
 	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
 		let now = Timestamp::new(self.time_source.get_current_time_millis());
-		let now = BlockDataSourceImpl::timestamp_to_db_type(now)?;
+		let now = Self::timestamp_to_db_type(now)?;
 		let latest = self.get_latest_block_info().await?;
 		let stable = latest.number.saturating_sub(self.security_parameter).into();
 		let block = self.get_latest_block(stable, now).await?;
@@ -148,7 +150,7 @@ impl BlockDataSourceImpl {
 		hash: McBlockHash,
 		reference_timestamp: Timestamp,
 	) -> Result<StableBlockByHashResult, Box<dyn std::error::Error + Send + Sync>> {
-		let reference_timestamp = BlockDataSourceImpl::timestamp_to_db_type(reference_timestamp)?;
+		let reference_timestamp = Self::timestamp_to_db_type(reference_timestamp)?;
 		self.get_stable_block_by_hash(hash, reference_timestamp).await
 	}
 
@@ -164,7 +166,7 @@ impl BlockDataSourceImpl {
 		};
 		let block_opt = match from_cache {
 			Some(block) => Some(block),
-			None => db_model::get_block_by_hash(&self.pool, hash).await?,
+			None => self.pool.get_block_by_hash(hash).await?,
 		};
 		Ok(block_opt.map(From::from))
 	}
@@ -191,8 +193,8 @@ impl BlockDataSourceImpl {
 	/// Unlike [Self::is_cardano_tip_fresh] it is not heuristic.
 	pub async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
 		let current_time = self.time_source.get_current_time_millis();
-		let current_time = BlockDataSourceImpl::timestamp_to_db_type(Timestamp::new(current_time))?;
-		let latest = match db_model::get_latest_block_info(&self.pool).await? {
+		let current_time = Self::timestamp_to_db_type(Timestamp::new(current_time))?;
+		let latest = match self.pool.get_latest_block_info().await? {
 			None => return Ok(false),
 			Some(block) => block,
 		};
@@ -272,11 +274,13 @@ impl BlockDataSourceImpl {
 	) -> BlockDataSourceImpl {
 		Self::from_config_with_metrics(pool, config, mc_epoch_config, None)
 	}
+}
 
+impl<R: BlockRowSource> BlockDataSourceImpl<R> {
 	/// Creates a new instance of [BlockDataSourceImpl], using passed configuration and an
 	/// optional Prometheus metrics client.
 	pub fn from_config_with_metrics(
-		pool: PgPool,
+		pool: R,
 		DbSyncBlockDataSourceConfig {
 			cardano_security_parameter,
 			cardano_active_slots_coeff,
@@ -284,7 +288,7 @@ impl BlockDataSourceImpl {
 		}: DbSyncBlockDataSourceConfig,
 		mc_epoch_config: &MainchainEpochConfig,
 		metrics_opt: Option<McFollowerMetrics>,
-	) -> BlockDataSourceImpl {
+	) -> BlockDataSourceImpl<R> {
 		let k: f64 = cardano_security_parameter.into();
 		let slot_duration_ms: f64 = mc_epoch_config.slot_duration_millis.millis() as f64;
 		let slot_duration_seconds: f64 = slot_duration_ms / 1000f64;
@@ -319,10 +323,10 @@ impl BlockDataSourceImpl {
 		let min_slot = self.date_time_to_slot(min_time)?;
 		let max_time = self.max_allowed_block_time(reference_timestamp);
 		let max_slot = self.date_time_to_slot(max_time)?;
-		Ok(db_model::get_highest_block(
-			&self.pool, max_block, min_time, min_slot, max_time, max_slot,
-		)
-		.await?)
+		Ok(self
+			.pool
+			.get_highest_block(max_block, min_time, min_slot, max_time, max_slot)
+			.await?)
 	}
 
 	fn min_block_allowed_time(&self, reference_timestamp: NaiveDateTime) -> NaiveDateTime {
@@ -416,7 +420,9 @@ impl BlockDataSourceImpl {
 		hash: McBlockHash,
 		reference_timestamp: NaiveDateTime,
 	) -> Result<Block, StableBlockByHashError> {
-		let latest_block = db_model::get_latest_block_info(&self.pool)
+		let latest_block = self
+			.pool
+			.get_latest_block_info()
 			.await
 			.map_err(|err| StableBlockByHashError::Database(format!("{err:?}")))?;
 		let Some(latest_block) = latest_block else {
@@ -424,7 +430,9 @@ impl BlockDataSourceImpl {
 		};
 		self.observe_latest_cardano_block_metrics(&latest_block);
 
-		let block = db_model::get_block_by_hash(&self.pool, hash.clone())
+		let block = self
+			.pool
+			.get_block_by_hash(hash.clone())
 			.await
 			.map_err(|err| StableBlockByHashError::Database(format!("{err:?}")))?;
 		let Some(block) = block else {
@@ -469,17 +477,14 @@ impl BlockDataSourceImpl {
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let from_block_no = from_block.block_no;
 		let size = u32::from(self.cache_size);
-		let latest_block =
-			db_model::get_latest_block_info(&self.pool)
-				.await?
-				.ok_or(InternalDataSourceError(
-					"No latest block when filling the caches.".to_string(),
-				))?;
+		let latest_block = self.pool.get_latest_block_info().await?.ok_or(
+			InternalDataSourceError("No latest block when filling the caches.".to_string()),
+		)?;
 		let stable_block_num = latest_block.block_no.saturating_sub(self.security_parameter);
 
 		let to_block_no = from_block_no.saturating_add(size).min(stable_block_num);
 		let blocks = if to_block_no > from_block_no {
-			db_model::get_blocks_by_numbers(&self.pool, from_block_no, to_block_no).await?
+			self.pool.get_blocks_by_numbers(from_block_no, to_block_no).await?
 		} else {
 			vec![from_block.clone()]
 		};

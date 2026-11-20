@@ -45,6 +45,7 @@
 use crate::McFollowerMetrics;
 use crate::db_model::*;
 use crate::metrics::observed_async_trait;
+use crate::row_source::{BlockRowSource, BridgeRowSource};
 use sidechain_domain::{McBlockHash, McTxHash};
 use sp_partner_chains_bridge::*;
 use sqlx::PgPool;
@@ -57,27 +58,34 @@ mod tests;
 pub(crate) mod cache;
 
 /// Db-Sync data source serving data for Partner Chains token bridge
-pub struct TokenBridgeDataSourceImpl {
-	/// Postgres connection pool
-	pool: PgPool,
+pub struct TokenBridgeDataSourceImpl<R = DbSyncConfigurationProvider> {
+	/// Source of Cardano rows, a Postgres connection pool with its Db-Sync configuration by default
+	rows: R,
 	/// Prometheus metrics client
 	metrics_opt: Option<McFollowerMetrics>,
-	/// Configuration used by Db-Sync
-	db_sync_config: DbSyncConfigurationProvider,
 }
 
 impl TokenBridgeDataSourceImpl {
 	/// Crates a new token bridge data source
 	pub fn new(pool: PgPool, metrics_opt: Option<McFollowerMetrics>) -> Self {
-		Self { db_sync_config: DbSyncConfigurationProvider::new(pool.clone()), pool, metrics_opt }
+		Self { rows: DbSyncConfigurationProvider::new(pool), metrics_opt }
+	}
+}
+
+impl<R> TokenBridgeDataSourceImpl<R> {
+	/// Creates a new token bridge data source reading from the given row source
+	pub fn with_row_source(rows: R, metrics_opt: Option<McFollowerMetrics>) -> Self {
+		Self { rows, metrics_opt }
 	}
 }
 
 observed_async_trait!(
-	impl<RecipientAddress> TokenBridgeDataSource<RecipientAddress> for TokenBridgeDataSourceImpl
+	impl<RecipientAddress, R> TokenBridgeDataSource<RecipientAddress> for TokenBridgeDataSourceImpl<R>
 	where
 		RecipientAddress: Debug,
 		RecipientAddress: (for<'a> TryFrom<&'a [u8]>),
+		R: BridgeRowSource,
+		R: BlockRowSource,
 	{
 		async fn get_transfers(
 			&self,
@@ -94,7 +102,9 @@ observed_async_trait!(
 				asset_name: main_chain_scripts.token_asset_name.into(),
 			};
 
-			let current_mc_block = get_block_by_hash(&self.pool, current_mc_block_hash.clone())
+			let current_mc_block = self
+				.rows
+				.get_block_by_hash(current_mc_block_hash.clone())
 				.await?
 				.ok_or(format!("Could not find block for hash {current_mc_block_hash:?}"))?;
 
@@ -121,29 +131,29 @@ observed_async_trait!(
 				return Ok((vec![], data_checkpoint));
 			}
 
-			let txs = get_bridge_txs(
-				self.db_sync_config.get_tx_in_config().await?,
-				&self.pool,
-				&main_chain_scripts.illiquid_circulation_supply_validator_address.into(),
-				&main_chain_scripts.reserve_validator_address.into(),
-				asset,
-				resolved_checkpoint,
-				current_mc_block.block_no,
-				Some(max_txs_to_read(max_transfers)),
-			)
-			.await?;
+			let txs = self
+				.rows
+				.get_bridge_txs(
+					&main_chain_scripts.illiquid_circulation_supply_validator_address.into(),
+					&main_chain_scripts.reserve_validator_address.into(),
+					asset,
+					resolved_checkpoint,
+					current_mc_block.block_no,
+					Some(max_txs_to_read(max_transfers)),
+				)
+				.await?;
 
 			Ok(txs_to_transfers(txs, &data_checkpoint, max_transfers, current_mc_block.block_no))
 		}
 	}
 );
 
-impl TokenBridgeDataSourceImpl {
+impl<R: BridgeRowSource> TokenBridgeDataSourceImpl<R> {
 	async fn resolve_tx_position(
 		&self,
 		tx_hash: McTxHash,
 	) -> Result<TxBlockInfo, Box<dyn std::error::Error + Send + Sync>> {
-		get_block_info_for_tx_hash(&self.pool, tx_hash.into()).await?.ok_or_else(|| {
+		self.rows.get_block_info_for_tx_hash(tx_hash.into()).await?.ok_or_else(|| {
 			format!("Could not find block info for data checkpoint tx: {tx_hash:?}").into()
 		})
 	}

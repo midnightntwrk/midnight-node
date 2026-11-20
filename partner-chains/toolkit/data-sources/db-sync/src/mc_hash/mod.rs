@@ -2,68 +2,76 @@
 use crate::{
 	block::BlockDataSourceImpl,
 	metrics::{McFollowerMetrics, observed_async_trait},
+	row_source::BlockRowSource,
 };
 use sidechain_domain::{MainchainBlock, McBlockHash};
 use sidechain_mc_hash::{McHashDataSource, StableBlockByHashResult};
 use sp_timestamp::Timestamp;
+use sqlx::PgPool;
 use std::sync::Arc;
 
 /// Db-Sync data source used by the Main Chain Reference feature of Partner Chain toolkit.
 ///
 /// See [sidechain_mc_hash] a detailed explanation of its purpose.
-pub struct McHashDataSourceImpl {
+pub struct McHashDataSourceImpl<R = PgPool> {
 	/// [BlockDataSourceImpl] instance shared with other data sources for cache reuse.
-	inner: Arc<BlockDataSourceImpl>,
+	inner: Arc<BlockDataSourceImpl<R>>,
 	/// Prometheus metrics client
 	metrics_opt: Option<McFollowerMetrics>,
 }
 
-impl McHashDataSourceImpl {
+impl<R> McHashDataSourceImpl<R> {
 	/// Creates a new MC Hash data source by wrapping an instance of [BlockDataSourceImpl]
-	pub fn new(inner: Arc<BlockDataSourceImpl>, metrics_opt: Option<McFollowerMetrics>) -> Self {
+	pub fn new(inner: Arc<BlockDataSourceImpl<R>>, metrics_opt: Option<McFollowerMetrics>) -> Self {
 		Self { inner, metrics_opt }
 	}
 }
 
 observed_async_trait!(
-impl McHashDataSource for McHashDataSourceImpl {
-	async fn get_latest_stable_block_for(
-		&self,
-		reference_timestamp: sp_timestamp::Timestamp,
-	) -> std::result::Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(self
-			.inner
-			.get_latest_stable_block_for(Timestamp::new(reference_timestamp.as_millis()))
-			.await?)
-	}
+	impl<R> McHashDataSource for McHashDataSourceImpl<R>
+	where
+		R: BlockRowSource,
+	{
+		async fn get_latest_stable_block_for(
+			&self,
+			reference_timestamp: sp_timestamp::Timestamp,
+		) -> std::result::Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>>
+		{
+			Ok(self
+				.inner
+				.get_latest_stable_block_for(Timestamp::new(reference_timestamp.as_millis()))
+				.await?)
+		}
 
-	async fn get_stable_block_for(
-		&self,
-		hash: McBlockHash,
-		reference_timestamp: sp_timestamp::Timestamp,
-	) -> std::result::Result<StableBlockByHashResult, Box<dyn std::error::Error + Send + Sync>> {
-		self.inner
-			.get_stable_block_for(hash, Timestamp::new(reference_timestamp.as_millis()))
-			.await
-	}
+		async fn get_stable_block_for(
+			&self,
+			hash: McBlockHash,
+			reference_timestamp: sp_timestamp::Timestamp,
+		) -> std::result::Result<StableBlockByHashResult, Box<dyn std::error::Error + Send + Sync>>
+		{
+			self.inner
+				.get_stable_block_for(hash, Timestamp::new(reference_timestamp.as_millis()))
+				.await
+		}
 
-	async fn get_block_by_hash(
-		&self,
-		hash: McBlockHash,
-	) -> std::result::Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(self.inner.get_block_by_hash(hash).await?)
-	}
+		async fn get_block_by_hash(
+			&self,
+			hash: McBlockHash,
+		) -> std::result::Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>>
+		{
+			Ok(self.inner.get_block_by_hash(hash).await?)
+		}
 
-	async fn is_cardano_tip_fresh(
-		&self
-	) -> std::result::Result<bool,  Box<dyn std::error::Error + Send + Sync>> {
-		Ok(self.inner.is_cardano_tip_fresh().await?)
-	}
+		async fn is_cardano_tip_fresh(
+			&self,
+		) -> std::result::Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+			Ok(self.inner.is_cardano_tip_fresh().await?)
+		}
 
-	async fn is_cardano_ok(
-		&self
-	) -> std::result::Result<bool,  Box<dyn std::error::Error + Send + Sync>> {
-		Ok(self.inner.is_cardano_ok().await?)
+		async fn is_cardano_ok(
+			&self,
+		) -> std::result::Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+			Ok(self.inner.is_cardano_ok().await?)
+		}
 	}
-}
 );

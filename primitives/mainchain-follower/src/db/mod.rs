@@ -13,9 +13,11 @@
 
 pub mod multi_asset_cache;
 pub mod queries;
+pub mod row_source;
 mod types;
 
 pub use multi_asset_cache::MultiAssetCache;
 pub use queries::cnight_observation::*;
 pub use queries::federated_authority_observation::*;
+pub use row_source::*;
 pub use types::*;

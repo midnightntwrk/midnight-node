@@ -111,6 +111,7 @@ mod data_sources;
 mod db_datum;
 mod db_model;
 mod metrics;
+pub mod row_source;
 
 #[cfg(feature = "block-source")]
 mod block;

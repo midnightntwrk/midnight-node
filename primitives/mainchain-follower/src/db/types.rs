@@ -194,11 +194,11 @@ pub struct QueryBounds {
 /// `start`/`end` scope blocks and tx index; `low_bound`/`high_bound` pre-filter
 /// the underlying id-indexed tables so the SQL planner avoids full scans.
 #[derive(Debug, Clone, Copy)]
-pub struct PagedQuery<'a> {
+pub struct PagedQuery<'a, B = QueryBounds> {
 	pub start: &'a CardanoPosition,
 	pub end: &'a CardanoPosition,
 	pub limit: usize,
 	pub offset: usize,
-	pub low_bound: QueryBounds,
-	pub high_bound: QueryBounds,
+	pub low_bound: B,
+	pub high_bound: B,
 }

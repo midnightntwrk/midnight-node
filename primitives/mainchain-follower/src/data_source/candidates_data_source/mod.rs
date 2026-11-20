@@ -13,7 +13,6 @@
 
 //! Db-Sync data source used by Partner Chain committee selection
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
-use crate::db::MultiAssetCache;
 use authority_selection_inherents::*;
 use db_sync_sqlx::{Address, Asset, BlockNumber, EpochNumber};
 use itertools::Itertools;
@@ -29,6 +28,9 @@ use std::error::Error;
 
 pub mod cached;
 mod db_model;
+pub mod row_source;
+
+pub use row_source::{CandidatesRowSource, DbSyncCandidatesRows};
 
 #[derive(Clone, Debug)]
 struct ParsedCandidate {
@@ -52,88 +54,98 @@ struct RegisteredCandidate {
 }
 
 /// Db-Sync data source serving data for Partner Chain committee selection
-pub struct CandidatesDataSourceImpl {
-	/// Postgres connection pool
-	pool: PgPool,
+pub struct CandidatesDataSourceImpl<R = DbSyncCandidatesRows> {
+	/// Source of Cardano rows, db-sync by default
+	rows: R,
 	/// Prometheus metrics client
 	metrics_opt: Option<MidnightDataSourceMetrics>,
-	/// Configuration used by Db-Sync
-	db_sync_config: db_model::DbSyncConfigurationProvider,
-	/// Cache for resolving multi_asset.id from (policy, name) pairs
-	multi_asset_cache: MultiAssetCache,
 }
 
 observed_async_trait!(
-impl AuthoritySelectionDataSource for CandidatesDataSourceImpl {
-	async fn get_ariadne_parameters(
+	impl<R> AuthoritySelectionDataSource for CandidatesDataSourceImpl<R>
+	where
+		R: CandidatesRowSource,
+	{
+		async fn get_ariadne_parameters(
 			&self,
 			epoch: McEpochNumber,
 			_d_parameter_policy: PolicyId,
-			permissioned_candidate_policy: PolicyId
-	) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
-		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
-		let permissioned_candidate_asset = Asset::new(permissioned_candidate_policy);
+			permissioned_candidate_policy: PolicyId,
+		) -> Result<AriadneParameters, Box<dyn std::error::Error + Send + Sync>> {
+			let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
+			let permissioned_candidate_asset = Asset::new(permissioned_candidate_policy);
 
-		let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_token_utxo_for_epoch");
-		let ident = self.multi_asset_cache.resolve_ident(
-			&permissioned_candidate_asset.policy_id.0,
-			&permissioned_candidate_asset.asset_name.0,
-		).await?;
-		let candidates_output_opt = match ident {
-			Some(id) => db_model::get_token_utxo_for_epoch(&self.pool, id, epoch).await?,
-			None => None,
-		};
-		drop(_sq_timer);
+			let _sq_timer =
+				start_sub_query_timer(&self.metrics_opt, "candidates_get_token_utxo_for_epoch");
+			let candidates_output_opt =
+				self.rows.get_token_utxo_for_epoch(&permissioned_candidate_asset, epoch).await?;
+			drop(_sq_timer);
 
-		// DParameter is now read from pallet_system_parameters storage, not from mainchain.
-		// This hardcoded value is unused - the actual d_parameter comes from the runtime.
-		let d_parameter = DParameter { num_permissioned_candidates: 0, num_registered_candidates: 0 };
+			// DParameter is now read from pallet_system_parameters storage, not from mainchain.
+			// This hardcoded value is unused - the actual d_parameter comes from the runtime.
+			let d_parameter =
+				DParameter { num_permissioned_candidates: 0, num_registered_candidates: 0 };
 
-		let permissioned_candidates = match candidates_output_opt {
-			None => None,
-			Some(candidates_output) => {
-				let candidates_datum = candidates_output.datum.ok_or(
-					db_model::DataSourceError::ExpectedDataNotFound("Permissioned Candidates List Datum".to_string()),
-				)?;
-				Some(PermissionedCandidateDatums::try_from(candidates_datum.0)?.into())
-			},
-		};
+			let permissioned_candidates = match candidates_output_opt {
+				None => None,
+				Some(candidates_output) => {
+					let candidates_datum = candidates_output.datum.ok_or(
+						db_model::DataSourceError::ExpectedDataNotFound(
+							"Permissioned Candidates List Datum".to_string(),
+						),
+					)?;
+					Some(PermissionedCandidateDatums::try_from(candidates_datum.0)?.into())
+				},
+			};
 
-		Ok(AriadneParameters { d_parameter, permissioned_candidates })
-	}
+			Ok(AriadneParameters { d_parameter, permissioned_candidates })
+		}
 
-	async fn get_candidates(
+		async fn get_candidates(
 			&self,
 			epoch: McEpochNumber,
-			committee_candidate_address: MainchainAddress
-	)-> Result<Vec<CandidateRegistrations>, Box<dyn std::error::Error + Send + Sync>> {
-		let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
-		let candidates = self.get_registered_candidates(epoch, committee_candidate_address).await?;
-		let _stake_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_stake_distribution");
-		let stake_entries = db_model::get_stake_distribution(&self.pool, epoch).await?;
-		drop(_stake_timer);
-		let stake_map = Self::make_stake_map(stake_entries);
-		Ok(Self::group_candidates_by_mc_pub_key(candidates).into_iter().map(|(mainchain_pub_key, candidate_registrations)| {
-			CandidateRegistrations {
-				stake_pool_public_key: mainchain_pub_key.clone(),
-				registrations: candidate_registrations.into_iter().map(Self::make_registration_data).collect(),
-				stake_delegation: Self::get_stake_delegation(&stake_map, &mainchain_pub_key),
-			}
-		}).collect())
-	}
+			committee_candidate_address: MainchainAddress,
+		) -> Result<Vec<CandidateRegistrations>, Box<dyn std::error::Error + Send + Sync>> {
+			let epoch = EpochNumber::from(self.get_epoch_of_data_storage(epoch)?);
+			let candidates =
+				self.get_registered_candidates(epoch, committee_candidate_address).await?;
+			let _stake_timer =
+				start_sub_query_timer(&self.metrics_opt, "candidates_get_stake_distribution");
+			let stake_entries = self.rows.get_stake_distribution(epoch).await?;
+			drop(_stake_timer);
+			let stake_map = Self::make_stake_map(stake_entries);
+			Ok(Self::group_candidates_by_mc_pub_key(candidates)
+				.into_iter()
+				.map(|(mainchain_pub_key, candidate_registrations)| CandidateRegistrations {
+					stake_pool_public_key: mainchain_pub_key.clone(),
+					registrations: candidate_registrations
+						.into_iter()
+						.map(Self::make_registration_data)
+						.collect(),
+					stake_delegation: Self::get_stake_delegation(&stake_map, &mainchain_pub_key),
+				})
+				.collect())
+		}
 
-	async fn get_epoch_nonce(&self, epoch: McEpochNumber) -> Result<Option<EpochNonce>, Box<dyn std::error::Error + Send + Sync>> {
-		let epoch = self.get_epoch_of_data_storage(epoch)?;
-		let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_epoch_nonce");
-		let nonce = db_model::get_epoch_nonce(&self.pool, EpochNumber(epoch.0)).await?;
-		drop(_sq_timer);
-		Ok(nonce.map(|n| EpochNonce(n.0)))
-	}
+		async fn get_epoch_nonce(
+			&self,
+			epoch: McEpochNumber,
+		) -> Result<Option<EpochNonce>, Box<dyn std::error::Error + Send + Sync>> {
+			let epoch = self.get_epoch_of_data_storage(epoch)?;
+			let _sq_timer = start_sub_query_timer(&self.metrics_opt, "candidates_get_epoch_nonce");
+			let nonce = self.rows.get_epoch_nonce(EpochNumber(epoch.0)).await?;
+			drop(_sq_timer);
+			Ok(nonce.map(|n| EpochNonce(n.0)))
+		}
 
-	async fn data_epoch(&self, for_epoch: McEpochNumber) -> Result<McEpochNumber, Box<dyn std::error::Error + Send + Sync>> {
-		self.get_epoch_of_data_storage(for_epoch)
+		async fn data_epoch(
+			&self,
+			for_epoch: McEpochNumber,
+		) -> Result<McEpochNumber, Box<dyn std::error::Error + Send + Sync>> {
+			self.get_epoch_of_data_storage(for_epoch)
+		}
 	}
-});
+);
 
 impl CandidatesDataSourceImpl {
 	/// Creates new instance of the data source
@@ -144,20 +156,22 @@ impl CandidatesDataSourceImpl {
 		db_model::create_idx_ma_tx_out_ident(&pool).await?;
 		db_model::create_idx_tx_out_address(&pool).await?;
 		db_model::create_idx_ma_tx_out_id_ident(&pool).await?;
-		let multi_asset_cache = MultiAssetCache::new(pool.clone());
-		Ok(Self {
-			pool: pool.clone(),
-			metrics_opt,
-			db_sync_config: db_model::DbSyncConfigurationProvider::new(pool),
-			multi_asset_cache,
-		})
+		Ok(Self::with_row_source(DbSyncCandidatesRows::new(pool), metrics_opt))
+	}
+}
+
+impl<R: CandidatesRowSource> CandidatesDataSourceImpl<R> {
+	/// Creates new instance of the data source reading from the given row source
+	pub fn with_row_source(rows: R, metrics_opt: Option<MidnightDataSourceMetrics>) -> Self {
+		Self { rows, metrics_opt }
 	}
 
 	/// Creates a new caching instance of the data source
 	pub fn cached(
 		self,
 		candidates_for_epoch_cache_size: usize,
-	) -> std::result::Result<cached::CandidateDataSourceCached, Box<dyn Error + Send + Sync>> {
+	) -> std::result::Result<cached::CandidateDataSourceCached<R>, Box<dyn Error + Send + Sync>>
+	{
 		cached::CandidateDataSourceCached::new_from_env(self, candidates_for_epoch_cache_size)
 	}
 
@@ -168,7 +182,7 @@ impl CandidatesDataSourceImpl {
 	) -> Result<Option<BlockNumber>, Box<dyn std::error::Error + Send + Sync>> {
 		let _sq_timer =
 			start_sub_query_timer(&self.metrics_opt, "candidates_get_latest_block_for_epoch");
-		let block_option = db_model::get_latest_block_for_epoch(&self.pool, epoch).await?;
+		let block_option = self.rows.get_latest_block_for_epoch(epoch).await?;
 		drop(_sq_timer);
 		Ok(block_option.map(|b| b.block_no))
 	}
@@ -184,13 +198,7 @@ impl CandidatesDataSourceImpl {
 			Some(block) => {
 				let _sq_timer =
 					start_sub_query_timer(&self.metrics_opt, "candidates_get_utxos_for_address");
-				let utxos = db_model::get_utxos_for_address(
-					&self.pool,
-					&address,
-					block,
-					self.db_sync_config.get_tx_in_config().await?,
-				)
-				.await?;
+				let utxos = self.rows.get_utxos_for_address(&address, block).await?;
 				drop(_sq_timer);
 				utxos
 			},

@@ -1,6 +1,7 @@
 use super::*;
 use crate::BlockDataSourceImpl;
 use crate::db_model::BridgeTx;
+use crate::row_source::{BlockRowSource, BridgeRowSource};
 use futures::lock::Mutex;
 use log::debug;
 use sidechain_domain::{MainchainBlock, McBlockHash, McTxHash};
@@ -21,15 +22,13 @@ use std::{
 /// In case of queries where the lower bound is a UTXO, all UTXOs from the containing
 /// block are stored. Technically servable case where the lower bound UTXO is the last one in its
 /// block but the block is not stored, is treated as a cache miss.
-pub struct CachedTokenBridgeDataSourceImpl {
-	/// Postgres connection pool
-	pool: PgPool,
+pub struct CachedTokenBridgeDataSourceImpl<R = DbSyncConfigurationProvider, B = PgPool> {
+	/// Source of Cardano rows, a Postgres connection pool with its Db-Sync configuration by default
+	rows: R,
 	/// Prometheus metrics client
 	metrics_opt: Option<McFollowerMetrics>,
-	/// Configuration used by Db-Sync
-	db_sync_config: DbSyncConfigurationProvider,
 	/// [BlockDataSourceImpl] instance shared with other data sources for cache reuse.
-	blocks: Arc<BlockDataSourceImpl>,
+	blocks: Arc<BlockDataSourceImpl<B>>,
 	/// Internal data cache
 	cache: Arc<Mutex<TokenUtxoCache>>,
 	/// Number of additional blocks that should be loaded into cache when refreshing
@@ -124,10 +123,13 @@ impl TokenUtxoCache {
 }
 
 observed_async_trait!(
-	impl<RecipientAddress> TokenBridgeDataSource<RecipientAddress> for CachedTokenBridgeDataSourceImpl
+	impl<RecipientAddress, R, B> TokenBridgeDataSource<RecipientAddress>
+		for CachedTokenBridgeDataSourceImpl<R, B>
 	where
 		RecipientAddress: Debug,
 		RecipientAddress: (for<'a> TryFrom<&'a [u8]>),
+		R: BridgeRowSource,
+		B: BlockRowSource,
 	{
 		async fn get_transfers(
 			&self,
@@ -177,16 +179,34 @@ impl CachedTokenBridgeDataSourceImpl {
 		blocks: Arc<BlockDataSourceImpl>,
 		cache_lookahead: u32,
 	) -> Self {
+		Self::with_row_source(
+			DbSyncConfigurationProvider::new(pool),
+			metrics_opt,
+			blocks,
+			cache_lookahead,
+		)
+	}
+}
+
+impl<R, B> CachedTokenBridgeDataSourceImpl<R, B> {
+	/// Creates a new token bridge data source reading from the given row source
+	pub fn with_row_source(
+		rows: R,
+		metrics_opt: Option<McFollowerMetrics>,
+		blocks: Arc<BlockDataSourceImpl<B>>,
+		cache_lookahead: u32,
+	) -> Self {
 		Self {
-			db_sync_config: DbSyncConfigurationProvider::new(pool.clone()),
-			pool,
+			rows,
 			metrics_opt,
 			blocks,
 			cache: Arc::new(Mutex::new(TokenUtxoCache::new())),
 			cache_lookahead,
 		}
 	}
+}
 
+impl<R: BridgeRowSource, B: BlockRowSource> CachedTokenBridgeDataSourceImpl<R, B> {
 	async fn set_cache_mc_scripts(&self, main_chain_scripts: MainChainScripts) {
 		let mut cache = self.cache.lock().await;
 		cache.set_mc_scripts(main_chain_scripts.clone());
@@ -230,17 +250,17 @@ impl CachedTokenBridgeDataSourceImpl {
 		let to_block: BlockNumber =
 			max(to_block, min(to_block.saturating_add(self.cache_lookahead), latest_block));
 
-		let utxos = get_bridge_txs(
-			self.db_sync_config.get_tx_in_config().await?,
-			&self.pool,
-			&main_chain_scripts.illiquid_circulation_supply_validator_address.clone().into(),
-			&main_chain_scripts.reserve_validator_address.clone().into(),
-			main_chain_scripts.asset_id().into(),
-			effective_data_checkpoint,
-			to_block.into(),
-			None,
-		)
-		.await?;
+		let utxos = self
+			.rows
+			.get_bridge_txs(
+				&main_chain_scripts.illiquid_circulation_supply_validator_address.clone().into(),
+				&main_chain_scripts.reserve_validator_address.clone().into(),
+				main_chain_scripts.asset_id().into(),
+				effective_data_checkpoint,
+				to_block.into(),
+				None,
+			)
+			.await?;
 
 		self.set_cached_transfers(from_block, to_block, utxos).await;
 
@@ -277,10 +297,11 @@ impl CachedTokenBridgeDataSourceImpl {
 		{
 			return Ok(position);
 		}
-		let TxBlockInfo { block_number, tx_ix } =
-			get_block_info_for_tx_hash(&self.pool, (*tx_hash).into())
-				.await?
-				.ok_or(format!("Could not find block info for tx: {tx_hash:?}"))?;
+		let TxBlockInfo { block_number, tx_ix } = self
+			.rows
+			.get_block_info_for_tx_hash((*tx_hash).into())
+			.await?
+			.ok_or(format!("Could not find block info for tx: {tx_hash:?}"))?;
 		Ok((block_number, tx_ix))
 	}
 
