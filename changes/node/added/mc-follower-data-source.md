@@ -11,4 +11,4 @@ The data sources run the same logic on either backend: they are now generic
 over row source traits, implemented by the existing db-sync queries and by the
 new `midnight-primitives-mc-follower` gRPC row source.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2498
