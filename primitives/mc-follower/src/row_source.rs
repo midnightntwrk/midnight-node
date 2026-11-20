@@ -13,10 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The row source traits of the data sources, implemented against mc-follower
-//!
-//! Every response is converted into the row type of the db-sync implementation, failing where
-//! decoding the db-sync row in Rust fails.
+//! The row source traits of the data sources, implemented against mc-follower. Responses are
+//! converted into the db-sync row types, failing where decoding the db-sync row fails.
 
 use crate::{McFollowerError, McFollowerRowSource, datum, proto};
 use cardano_serialization_lib::PlutusData;
@@ -93,7 +91,9 @@ fn token_amount(value: Option<proto::Uint128>, name: &str) -> Result<pc::NativeT
 
 /// A datum of a row that fails the whole query when undecodable, as db-sync's `DbDatum`
 fn strict_datum(datum: proto::Datum) -> Result<mf::DbDatum> {
-	Ok(mf::DbDatum(datum::plutus_data_like_db_sync(&datum.cbor)?))
+	datum::plutus_data_like_db_sync(&datum.cbor)
+		.map(mf::DbDatum)
+		.map_err(McFollowerError::UndecodableDatum)
 }
 
 /// A datum of a row that is absent when undecodable, as db-sync's `DbDatumIfValid`
@@ -215,7 +215,6 @@ impl McFollowerRowSource {
 		}))
 	}
 
-	#[allow(clippy::too_many_arguments)]
 	async fn bridge_txs(
 		&self,
 		ics_address: &Address,

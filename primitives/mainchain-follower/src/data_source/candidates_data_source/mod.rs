@@ -30,7 +30,7 @@ pub mod cached;
 mod db_model;
 pub mod row_source;
 
-pub use row_source::{CandidatesRowSource, DbSyncCandidatesRows};
+use row_source::{CandidatesRowSource, DbSyncCandidatesRows};
 
 #[derive(Clone, Debug)]
 struct ParsedCandidate {
@@ -55,7 +55,7 @@ struct RegisteredCandidate {
 
 /// Db-Sync data source serving data for Partner Chain committee selection
 pub struct CandidatesDataSourceImpl<R = DbSyncCandidatesRows> {
-	/// Source of Cardano rows, db-sync by default
+	/// Source of Cardano rows
 	rows: R,
 	/// Prometheus metrics client
 	metrics_opt: Option<MidnightDataSourceMetrics>,

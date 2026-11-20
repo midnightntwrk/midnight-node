@@ -1,10 +1,4 @@
-//! Row sources: the Cardano data queries made by the data sources of this crate
-//!
-//! Each data source reads its Cardano data through a row source trait, so that the
-//! same data source logic can run against a different backend than Db-Sync.
-//! The Db-Sync implementations run the queries of this crate against Postgres:
-//! [BlockRowSource] is implemented by [sqlx::PgPool], and [BridgeRowSource] by the
-//! Db-Sync configuration provider that the bridge data sources create from a pool.
+//! Cardano queries of the data sources, implemented for Db-Sync by running them on Postgres
 use crate::SqlxError;
 pub use crate::db_model::Block;
 #[cfg(any(feature = "block-source", feature = "bridge"))]
@@ -132,10 +126,7 @@ pub trait BridgeRowSource: Send + Sync + 'static {
 		tx_hash: TxHash,
 	) -> Result<Option<TxBlockInfo>, RowSourceError>;
 
-	/// Returns the transactions that moved `native_token` into the ICS address or out of the
-	/// reserve address, after `checkpoint` and up to block `to_block`, ordered by position,
-	/// at most `max_txs` of them
-	#[allow(clippy::too_many_arguments)]
+	/// Returns the bridge transactions after `checkpoint` up to block `to_block`, ordered by position
 	async fn get_bridge_txs(
 		&self,
 		ics_address: &Address,
@@ -179,38 +170,5 @@ impl BridgeRowSource for DbSyncConfigurationProvider {
 			max_txs,
 		)
 		.await?)
-	}
-}
-
-#[cfg(all(feature = "bridge", feature = "block-source"))]
-#[async_trait::async_trait]
-impl BlockRowSource for DbSyncConfigurationProvider {
-	async fn get_latest_block_info(&self) -> Result<Option<Block>, RowSourceError> {
-		self.pool.get_latest_block_info().await
-	}
-
-	async fn get_blocks_by_numbers(
-		&self,
-		from: BlockNumber,
-		to: BlockNumber,
-	) -> Result<Vec<Block>, RowSourceError> {
-		self.pool.get_blocks_by_numbers(from, to).await
-	}
-
-	async fn get_highest_block(
-		&self,
-		max_block_number: BlockNumber,
-		min_time: NaiveDateTime,
-		min_slot: SlotNumber,
-		max_time: NaiveDateTime,
-		max_slot: SlotNumber,
-	) -> Result<Option<Block>, RowSourceError> {
-		self.pool
-			.get_highest_block(max_block_number, min_time, min_slot, max_time, max_slot)
-			.await
-	}
-
-	async fn get_block_by_hash(&self, hash: McBlockHash) -> Result<Option<Block>, RowSourceError> {
-		self.pool.get_block_by_hash(hash).await
 	}
 }

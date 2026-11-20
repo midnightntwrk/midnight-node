@@ -18,7 +18,7 @@ pub use super::db_model::{
 	Block, MainchainEpochNonce, MainchainTxOutput, StakePoolEntry, TokenTxOutput,
 };
 use crate::db::MultiAssetCache;
-pub use crate::db::RowSourceError;
+use crate::db::RowSourceError;
 use db_sync_sqlx::{Address, Asset, BlockNumber, EpochNumber};
 use sqlx::PgPool;
 

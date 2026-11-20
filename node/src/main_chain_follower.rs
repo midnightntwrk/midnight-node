@@ -404,9 +404,8 @@ pub async fn create_cached_data_sources(
 	})
 }
 
-/// Creates the same data sources as [create_cached_data_sources], reading Cardano data from
-/// mc-follower at `endpoint` instead of db-sync
-pub async fn create_mc_follower_data_sources(
+/// [create_cached_data_sources] reading Cardano data from mc-follower instead of db-sync
+async fn create_mc_follower_data_sources(
 	cfg: MidnightCfg,
 	endpoint: String,
 	mc_metrics_opt: Option<McFollowerMetrics>,
@@ -419,7 +418,6 @@ pub async fn create_mc_follower_data_sources(
 		log::warn!("Failed to connect to mc-follower: {e}");
 		e
 	})?;
-	log::info!("Reading Cardano data from mc-follower.");
 
 	let candidates_data_source =
 		CandidatesDataSourceImpl::with_row_source(rows.clone(), midnight_metrics_opt.clone());

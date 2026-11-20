@@ -134,9 +134,8 @@ pub struct MidnightCfg {
 	#[doc_tag(secret)]
 	pub db_sync_postgres_connection_string: Option<String>,
 
-	/// gRPC endpoint of an mc-follower indexer, eg. http://localhost:50051
-	/// When set, the node reads Cardano data from mc-follower instead of db-sync, and
-	/// db_sync_postgres_connection_string is not required. Genesis commands still read db-sync.
+	/// gRPC endpoint of an mc-follower indexer, eg. http://localhost:50051, to read Cardano data
+	/// from instead of db-sync. Genesis commands still read db-sync.
 	pub mc_follower_grpc_endpoint: Option<String>,
 
 	/// see partner-chains CandidateDataSourceCacheConfig and DbSyncBlockDataSourceConfig

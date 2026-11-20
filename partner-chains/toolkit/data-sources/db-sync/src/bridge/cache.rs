@@ -23,7 +23,7 @@ use std::{
 /// block are stored. Technically servable case where the lower bound UTXO is the last one in its
 /// block but the block is not stored, is treated as a cache miss.
 pub struct CachedTokenBridgeDataSourceImpl<R = DbSyncConfigurationProvider, B = PgPool> {
-	/// Source of Cardano rows, a Postgres connection pool with its Db-Sync configuration by default
+	/// Source of Cardano rows
 	rows: R,
 	/// Prometheus metrics client
 	metrics_opt: Option<McFollowerMetrics>,

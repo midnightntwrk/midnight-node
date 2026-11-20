@@ -11,11 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Row sources: the Cardano data queries made by the Midnight data sources
-//!
-//! Each data source reads its Cardano data through a row source trait, so that the same
-//! data source logic can run against a different backend than db-sync. The db-sync
-//! implementations run the queries of the `db` module against Postgres.
+//! Cardano queries of the data sources, implemented for db-sync by the queries of this module
 
 use crate::db::{
 	AssetCreateRow, AssetSpendRow, Block, DeregistrationRow, GovernanceBodyUtxoRow,
@@ -67,14 +63,12 @@ pub trait McBlockByHashRowSource: Send + Sync + 'static {
 /// Cardano queries of the cNIGHT observation data source
 #[async_trait::async_trait]
 pub trait CNightObservationRowSource: McBlockByHashRowSource {
-	/// Identifier of a native asset in the queries, resolved by [Self::resolve_asset]
+	/// Identifier of a native asset in the queries
 	type AssetIdent: Debug + Send + Sync;
-	/// Coarse bounds narrowing the queries of one [PagedQuery], resolved by
-	/// [Self::get_low_bounds] and [Self::get_high_bounds]
+	/// Pre-filter bounds of a [PagedQuery]
 	type Bounds: Copy + Debug + Send + Sync;
 
-	/// Resolves the identifier of the native asset `(policy, name)`, `None` if no such asset
-	/// is known, in which case no rows can carry it
+	/// `None` if no such asset is known
 	async fn resolve_asset(
 		&self,
 		policy: &[u8],
@@ -155,15 +149,12 @@ impl FederatedAuthorityRowSource for PgPool {
 
 /// db-sync row source of the cNIGHT observation data source
 pub struct DbSyncCNightRows {
-	/// Postgres connection pool
-	pub pool: PgPool,
-	/// Cache of `multi_asset.id` lookups
+	pool: PgPool,
 	multi_asset_cache: MultiAssetCache,
 }
 
 impl DbSyncCNightRows {
-	/// Creates a row source querying the given db-sync database
-	pub fn new(pool: PgPool) -> Self {
+	pub(crate) fn new(pool: PgPool) -> Self {
 		let multi_asset_cache = MultiAssetCache::new(pool.clone());
 		Self { pool, multi_asset_cache }
 	}

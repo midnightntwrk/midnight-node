@@ -13,22 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Row source reading Cardano data from an mc-follower indexer over gRPC
-//!
-//! mc-follower indexes the Cardano data a Midnight node reads and serves it with one RPC per
-//! db-sync query of the data sources. [McFollowerRowSource] implements every row source trait
-//! of the main chain follower data sources against that API, returning the same rows as the
-//! db-sync implementations, so the data sources behave the same on either backend.
-//!
-//! `proto/mc_follower.proto` is a copy of `proto/mc_follower.proto` of the mc-follower
-//! repository, which is the canonical version of the contract.
+//! Row source reading Cardano data from an mc-follower indexer over gRPC.
+//! `proto/mc_follower.proto` is a copy of the one in the mc-follower repository.
 
 mod datum;
 mod row_source;
-
-pub use datum::{
-	DatumError, c2m_metadata_like_db_sync, plutus_data_if_valid, plutus_data_like_db_sync,
-};
 
 /// Types and client generated from `proto/mc_follower.proto`
 pub mod proto {
@@ -37,40 +26,23 @@ pub mod proto {
 }
 
 use proto::mc_follower_client::McFollowerClient;
-use tonic::{Code, Status, transport::Channel};
+use tonic::{Status, transport::Channel};
 
-/// Error of a request to mc-follower
-///
-/// None of these errors means that the requested data does not exist: mc-follower reports
-/// absent data in its responses, so every error fails the data source call that made the
-/// request, as a failed db-sync query does.
+/// Every error fails the data source call, as a failed db-sync query does: mc-follower reports
+/// absent data in its responses, so an error never means "no data".
 #[derive(Debug, thiserror::Error)]
-pub enum McFollowerError {
-	/// mc-follower cannot answer now: it is not reachable, has not synced the requested data
-	/// yet, or is backfilling a requested address or policy
-	#[error("mc-follower is unavailable or not synced to the requested data: {0}")]
-	Unavailable(Box<Status>),
-	/// mc-follower is not configured to index a requested address or policy
-	#[error("mc-follower does not index the requested address or policy: {0}")]
-	NotIndexed(Box<Status>),
-	/// mc-follower failed the request
+enum McFollowerError {
 	#[error("mc-follower request failed: {0}")]
 	Request(Box<Status>),
-	/// A response carries a value that does not fit the row it is read into
 	#[error("invalid mc-follower response: {0}")]
 	InvalidResponse(String),
-	/// A datum that must decode, does not
 	#[error("undecodable datum in mc-follower response: {0}")]
-	UndecodableDatum(#[from] DatumError),
+	UndecodableDatum(String),
 }
 
 impl From<Status> for McFollowerError {
 	fn from(status: Status) -> Self {
-		match status.code() {
-			Code::Unavailable => Self::Unavailable(Box::new(status)),
-			Code::FailedPrecondition => Self::NotIndexed(Box::new(status)),
-			_ => Self::Request(Box::new(status)),
-		}
+		Self::Request(Box::new(status))
 	}
 }
 
@@ -85,12 +57,8 @@ impl McFollowerRowSource {
 	pub async fn connect(
 		endpoint: String,
 	) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(Self::new(Channel::from_shared(endpoint)?.connect().await?))
-	}
-
-	/// Creates a row source sending its requests over `channel`
-	pub fn new(channel: Channel) -> Self {
-		Self { client: McFollowerClient::new(channel) }
+		let channel = Channel::from_shared(endpoint)?.connect().await?;
+		Ok(Self { client: McFollowerClient::new(channel) })
 	}
 
 	fn client(&self) -> McFollowerClient<Channel> {
