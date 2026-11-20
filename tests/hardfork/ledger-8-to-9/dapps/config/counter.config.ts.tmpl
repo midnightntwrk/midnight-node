@@ -1,0 +1,36 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import { CompiledContract, ContractExecutable } from '@midnight-ntwrk/compact-js/effect';
+import { Contract as C_ } from './__OUT__/contract/index.js';
+
+type PrivateState = { count: number };
+type Ctx = { privateState: PrivateState };
+
+// `any`: compact-js's Witnesses<C> collapses to `never` for generated contracts.
+// The private counter shows whether private state survived the fork.
+const witnesses = {
+  private_increment: ({ privateState }: Ctx) => [{ count: privateState.count + 1 }, []],
+} as any;
+
+export default {
+  contractExecutable: CompiledContract.make<any>('CounterContract', C_ as any).pipe(
+    CompiledContract.withWitnesses(witnesses),
+    CompiledContract.withCompiledFileAssets('./__OUT__'),
+    ContractExecutable.make
+  ),
+  createInitialPrivateState: (): PrivateState => ({ count: 0 }),
+  config: { keys: { coinPublic: '__COIN_PUBLIC__' }, network: '__NETWORK_ID__' }
+}
