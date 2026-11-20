@@ -395,7 +395,16 @@ pub struct IndexerClient {
 	/// WebSocket endpoint, e.g. `ws://host:8088/api/v4/graphql/ws`.
 	ws_url: String,
 	project_id: Option<String>,
+	/// Ping interval for open subscriptions: [`WS_KEEPALIVE_INTERVAL`], shortened in tests.
+	ws_keepalive: Duration,
 }
+
+/// How often an open subscription sends a WebSocket ping while it waits for the server.
+///
+/// The indexer's progress heartbeat backs off from 30s to 4 minutes while a wallet's progress does
+/// not change, and a proxy in front of it closes a connection that carries no data for its idle
+/// timeout (60s by default on an AWS load balancer). The pings keep the connection busy in between.
+pub const WS_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(20);
 
 /// A Blockfrost API key. Its `Debug` output is redacted so it cannot reach logs or error messages.
 #[derive(Clone)]
@@ -479,7 +488,7 @@ impl IndexerClient {
 			.build()
 			.map_err(|e| IndexerClientError::Decode(format!("build http client: {e}")))?;
 
-		Ok(Self { http, http_url, ws_url, project_id })
+		Ok(Self { http, http_url, ws_url, project_id, ws_keepalive: WS_KEEPALIVE_INTERVAL })
 	}
 
 	/// POST a typed GraphQL query/mutation and return its (validated) response data.
@@ -790,7 +799,12 @@ impl IndexerClient {
 			.await
 			.map_err(|e| IndexerClientError::WebSocket(format!("send subscribe: {e}")))?;
 
-		Ok(SubscriptionStream { ws })
+		let mut keepalive = tokio::time::interval_at(
+			tokio::time::Instant::now() + self.ws_keepalive,
+			self.ws_keepalive,
+		);
+		keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+		Ok(SubscriptionStream { ws, keepalive })
 	}
 }
 
@@ -798,13 +812,25 @@ impl IndexerClient {
 /// message and ends (`None`) on `complete`. Dropping it closes the socket.
 pub struct SubscriptionStream {
 	ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
+	keepalive: tokio::time::Interval,
 }
 
 impl SubscriptionStream {
 	/// Read the next `data` payload, or `None` once the server sends `complete`/closes.
 	async fn next_data(&mut self) -> Option<IndexerResult<Value>> {
 		loop {
-			match self.ws.next().await {
+			let frame = tokio::select! {
+				frame = self.ws.next() => frame,
+				_ = self.keepalive.tick() => {
+					if let Err(e) = self.ws.send(Message::Ping(Default::default())).await {
+						return Some(Err(IndexerClientError::WebSocket(format!(
+							"send keep-alive ping: {e}"
+						))));
+					}
+					continue;
+				},
+			};
+			match frame {
 				Some(Ok(Message::Text(text))) => {
 					let msg: Value = match serde_json::from_str(&text) {
 						Ok(v) => v,
@@ -1270,6 +1296,62 @@ impl SyncProgress {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	/// A subscription that is waiting for data must ping the server, and still return the data
+	/// that arrives after the pings.
+	#[tokio::test]
+	async fn subscription_pings_while_waiting_for_data() {
+		use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+		let addr = listener.local_addr().unwrap();
+		let server = tokio::spawn(async move {
+			let (tcp, _) = listener.accept().await.unwrap();
+			// The error type is fixed by tungstenite's handshake `Callback` trait.
+			#[allow(clippy::result_large_err)]
+			let accept_protocol = |_: &Request, mut response: Response| {
+				response
+					.headers_mut()
+					.insert("Sec-WebSocket-Protocol", "graphql-transport-ws".parse().unwrap());
+				Ok(response)
+			};
+			let mut ws = tokio_tungstenite::accept_hdr_async(tcp, accept_protocol).await.unwrap();
+			let mut text_types = Vec::new();
+			let mut pings = 0;
+			while pings < 2 {
+				match ws.next().await {
+					Some(Ok(Message::Text(text))) => {
+						let msg: Value = serde_json::from_str(&text).unwrap();
+						let kind = msg["type"].as_str().unwrap().to_owned();
+						if kind == "connection_init" {
+							let ack = json!({ "type": "connection_ack" }).to_string();
+							ws.send(Message::text(ack)).await.unwrap();
+						}
+						text_types.push(kind);
+					},
+					Some(Ok(Message::Ping(_))) => pings += 1,
+					other => panic!("unexpected client frame: {other:?}"),
+				}
+			}
+			let next = json!({ "type": "next", "id": "1", "payload": { "data": { "x": 1 } } });
+			ws.send(Message::text(next.to_string())).await.unwrap();
+			text_types
+		});
+
+		let mut client = IndexerClient::new(&format!("http://{addr}/api/v4")).unwrap();
+		client.ws_keepalive = Duration::from_millis(50);
+		let mut stream = client
+			.open_subscription_payload(json!({ "query": "subscription { x }" }))
+			.await
+			.unwrap();
+		let data = tokio::time::timeout(Duration::from_secs(10), stream.next_data())
+			.await
+			.expect("no data within 10s")
+			.expect("stream ended")
+			.unwrap();
+		assert_eq!(data, json!({ "x": 1 }));
+		assert_eq!(server.await.unwrap(), ["connection_init", "subscribe"]);
+	}
 
 	#[test]
 	fn new_derives_graphql_and_ws_urls() {
