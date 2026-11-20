@@ -24,8 +24,16 @@
 //!
 //! Verification + persistence live in the ledger crate (next to the arena); this module is pure
 //! network orchestration. No peer is trusted: a bad blob fails the root check and is discarded.
+//!
+//! Untrusted peers are bounded in time as well as in content — see `fetch_blob_from` for the
+//! per-chunk timeout and whole-transfer throughput floor that stop one peer from holding recovery
+//! open indefinitely.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+	marker::PhantomData,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 
 use parity_scale_codec::{Decode, Encode};
 use sc_client_api::{Backend, StorageProvider};
@@ -33,6 +41,7 @@ use sc_network::{
 	IfDisconnected, NetworkRequest, PeerId, ProtocolName, request_responses::RequestFailure,
 };
 use sp_runtime::traits::Block as BlockT;
+use tokio::time::timeout;
 
 use super::{
 	LOG_TARGET,
@@ -163,14 +172,26 @@ where
 	/// Fetch the full compressed blob from a single peer by paging contiguous byte ranges in order,
 	/// then decompress it to the canonical `Ledger`-rooted blob.
 	///
-	/// Every chunk must be full-size ([`required_chunk_len`]) — an honest server always fills the
-	/// requested range — so a peer drip-feeding tiny (or empty) chunks fails immediately instead of
-	/// tying the client up in an unbounded request loop.
+	/// Two independent bounds keep one peer from monopolising recovery:
+	/// - **Size**: every chunk must be full-size ([`required_chunk_len`]) — an honest server always
+	///   fills the requested range — so a peer drip-feeding tiny (or empty) chunks fails
+	///   immediately instead of tying the client up in an unbounded *number* of requests.
+	/// - **Time**: [`CHUNK_TIMEOUT`] per range plus a whole-transfer deadline from
+	///   [`transfer_budget`]. Full-size chunks bound the request *count*, not the wall clock: a peer
+	///   answering each 1 MiB range just inside the protocol's 40 s timeout would otherwise hold
+	///   recovery open for hours (a slowloris). The deadline scales with the advertised size, so a
+	///   genuinely large arena over a slow link still completes, but a peer must sustain
+	///   [`MIN_THROUGHPUT_BYTES_PER_SEC`] to keep its turn.
 	///
 	/// (Parallel / multi-peer range fetch is a possible future optimization; the
 	/// `ChunkAssembler` already supports resume by `next_offset`.)
 	async fn fetch_blob_from(&self, peer: PeerId, target: B::Hash) -> Result<Vec<u8>, ClientError> {
-		// First range establishes the compressed transfer length and expected raw size.
+		let started = Instant::now();
+
+		// First range establishes the compressed transfer length and expected raw size. It is the
+		// one request that may legitimately be slow — on a cold server cache it pays for the whole
+		// arena serialization — so it gets the protocol's own request timeout rather than the
+		// tighter per-chunk one applied to the rest of the transfer.
 		let first = self.request_range(peer, target, 0).await?;
 		let compressed_total_len = first.compressed_total_len;
 		let raw_total_len = first.raw_total_len;
@@ -179,8 +200,27 @@ where
 		ensure_full_chunk(&first)?;
 		assembler.accept(first.offset, &first.bytes)?;
 
+		// Budget starts from the size the peer just advertised, measured from the start of the
+		// transfer so the peer cannot buy extra time by having been slow to answer the first range.
+		let budget = transfer_budget(compressed_total_len);
+		let deadline = started + budget;
+
 		while !assembler.is_complete() {
-			let next = self.request_range(peer, target, assembler.next_offset()).await?;
+			let elapsed = started.elapsed();
+			if elapsed >= budget {
+				return Err(ClientError::TransferTooSlow {
+					got: assembler.next_offset(),
+					total: compressed_total_len,
+					elapsed,
+				});
+			}
+			// Cap each range at the shorter of the per-chunk timeout and the remaining budget, so
+			// the last request cannot overrun the deadline it was checked against.
+			let chunk_timeout = CHUNK_TIMEOUT.min(deadline - Instant::now());
+			let offset = assembler.next_offset();
+			let next = timeout(chunk_timeout, self.request_range(peer, target, offset))
+				.await
+				.map_err(|_| ClientError::ChunkTimeout { offset, waited: chunk_timeout })??;
 			if next.compressed_total_len != compressed_total_len
 				|| next.raw_total_len != raw_total_len
 			{
@@ -214,6 +254,36 @@ where
 			.await?;
 		Ok(LedgerSyncResponse::decode(&mut &bytes[..])?)
 	}
+}
+
+/// Wall clock a peer gets to answer a single range request once the transfer is under way.
+///
+/// Deliberately well under the protocol's 40 s request timeout: by this point the server is serving
+/// from its memoized blob, so a range is a memcpy and a send. A peer that has simply gone quiet is
+/// dropped in seconds rather than tying up a slot for the full protocol timeout.
+const CHUNK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Throughput a peer must sustain across the whole transfer to keep its turn.
+///
+/// Any node healthy enough to be worth recovering from serves state sync far faster than this; the
+/// floor exists to convert "technically still responding" into a failure the driver can act on.
+const MIN_THROUGHPUT_BYTES_PER_SEC: u64 = 256 * 1024;
+
+/// Fixed allowance added to the throughput-derived budget, covering per-request round trips and a
+/// server whose first response had to serialize the arena.
+const TRANSFER_GRACE: Duration = Duration::from_secs(60);
+
+/// Wall clock allowed for a whole single-peer transfer of `compressed_total_len` bytes.
+///
+/// Scales with the advertised size rather than being a flat timeout, so a large arena over a slow
+/// link is still recoverable while a peer that stops making real progress is dropped.
+///
+/// The argument is the *compressed* length, so the worst case a peer can advertise is
+/// `max_compress_len(MAX_LEDGER_SYNC_RAW_BYTES)` (~1.17 GiB), not the 1 GiB raw ceiling — about 81
+/// minutes. For a realistic arena, minutes.
+fn transfer_budget(compressed_total_len: u64) -> Duration {
+	TRANSFER_GRACE
+		.saturating_add(Duration::from_secs(compressed_total_len / MIN_THROUGHPUT_BYTES_PER_SEC))
 }
 
 /// Require a response chunk to be full-size for its offset (see [`required_chunk_len`]). Oversized
@@ -254,6 +324,63 @@ pub enum ClientError {
 	UndersizedChunk { offset: u64, got: u64, required: u64 },
 	#[error("failed to decompress ledger snapshot: {0}")]
 	Decompress(#[from] DecompressError),
+	#[error("peer did not answer the range at offset {offset} within {waited:?}")]
+	ChunkTimeout { offset: u64, waited: Duration },
+	#[error(
+		"peer served {got} of {total} bytes in {elapsed:?}, below the required \
+		 {MIN_THROUGHPUT_BYTES_PER_SEC} B/s"
+	)]
+	TransferTooSlow { got: u64, total: u64, elapsed: Duration },
 	#[error("all peers failed to provide a verifiable snapshot")]
 	AllPeersFailed,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::warp_ledger_sync::protocol::MAX_LEDGER_SYNC_RAW_BYTES;
+
+	#[test]
+	fn transfer_budget_scales_with_size_and_is_always_positive() {
+		// An empty/tiny transfer still gets the fixed grace, so a fast small blob is never
+		// failed for being quick.
+		assert_eq!(transfer_budget(0), TRANSFER_GRACE);
+		assert_eq!(transfer_budget(1), TRANSFER_GRACE);
+
+		// The budget is grace + size/throughput.
+		let ten_mib = 10 * 1024 * 1024;
+		assert_eq!(
+			transfer_budget(ten_mib),
+			TRANSFER_GRACE + Duration::from_secs(ten_mib / MIN_THROUGHPUT_BYTES_PER_SEC)
+		);
+
+		// Monotonic: a bigger advertised blob never buys less time.
+		assert!(transfer_budget(ten_mib) > transfer_budget(0));
+	}
+
+	#[test]
+	fn worst_case_transfer_budget_is_bounded() {
+		// `transfer_budget` takes the *compressed* length, so the largest value a peer can get past
+		// `validate_snapshot_lengths` is snappy's worst-case expansion of the raw ceiling (~1.17
+		// GiB), not the 1 GiB raw ceiling itself. Budget against that, or the bound is asserted
+		// against an underestimate of what an attacker can actually claim.
+		let worst_compressed =
+			snap::raw::max_compress_len(MAX_LEDGER_SYNC_RAW_BYTES as usize) as u64;
+		assert!(worst_compressed > MAX_LEDGER_SYNC_RAW_BYTES, "compressed ceiling is the larger");
+
+		// Even there, one peer's turn is capped well inside two hours rather than the ~13 hours
+		// that `MAX_LEDGER_SYNC_CHUNK`-sized ranges at the 40s protocol timeout would allow.
+		let worst = transfer_budget(worst_compressed);
+		assert!(
+			worst < Duration::from_secs(2 * 60 * 60),
+			"worst-case single-peer budget {worst:?} should stay well under 2h"
+		);
+	}
+
+	#[test]
+	fn chunk_timeout_is_tighter_than_the_protocol_timeout() {
+		// The point of the per-chunk bound is to drop a quiet peer faster than the 40s
+		// request-response timeout would. If this ever inverts, the bound is dead code.
+		assert!(CHUNK_TIMEOUT < Duration::from_secs(40));
+	}
 }
