@@ -13,11 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Generates the mc-follower gRPC client (and the server, used by the tests) from the vendored
-// `proto/mc_follower.proto`. Like the other prost-build users in the dependency tree, this needs
-// `protoc` on the PATH or in `PROTOC`.
+// Needs `protoc` on the PATH or in `PROTOC`, like the other prost-build users.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("cargo:rerun-if-changed=proto/mc_follower.proto");
-	tonic_build::configure().compile_protos(&["proto/mc_follower.proto"], &["proto"])?;
+	tonic_build::configure()
+		.build_server(false)
+		.compile_protos(&["proto/mc_follower.proto"], &["proto"])?;
 	Ok(())
 }

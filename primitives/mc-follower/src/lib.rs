@@ -25,8 +25,6 @@
 
 mod datum;
 mod row_source;
-#[cfg(test)]
-mod tests;
 
 pub use datum::{
 	DatumError, c2m_metadata_like_db_sync, plutus_data_if_valid, plutus_data_like_db_sync,

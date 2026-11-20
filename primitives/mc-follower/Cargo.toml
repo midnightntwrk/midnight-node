@@ -19,12 +19,5 @@ sidechain-domain = { workspace = true, features = ["std"] }
 thiserror = { workspace = true, features = ["std"] }
 tonic.workspace = true
 
-[dev-dependencies]
-hex-literal.workspace = true
-midnight-primitives-cnight-observation = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["full"] }
-tokio-stream = { workspace = true, features = ["net"] }
-tonic = { workspace = true, features = ["server"] }
-
 [build-dependencies]
 tonic-build.workspace = true

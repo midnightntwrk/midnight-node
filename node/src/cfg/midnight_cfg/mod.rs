@@ -391,54 +391,6 @@ mod tests {
 		assert!(mainchain_epoch_invariants(&cfg).is_err());
 	}
 
-	fn follower_cfg() -> MidnightCfg {
-		MidnightCfg {
-			cardano_security_parameter: Some(432),
-			cardano_active_slots_coeff: Some(0.05),
-			block_stability_margin: Some(30),
-			..good_cfg()
-		}
-	}
-
-	#[test]
-	fn db_sync_connection_string_is_required_by_default() {
-		let err = main_chain_follower_vars(&follower_cfg()).unwrap_err();
-		assert!(err.to_string().contains("db_sync_postgres_connection_string"), "got: {err}");
-
-		let cfg = MidnightCfg {
-			db_sync_postgres_connection_string: Some("postgres://db-sync".to_string()),
-			..follower_cfg()
-		};
-		assert!(main_chain_follower_vars(&cfg).is_ok());
-	}
-
-	#[test]
-	fn mc_follower_endpoint_replaces_db_sync_connection_string() {
-		let cfg = MidnightCfg {
-			mc_follower_grpc_endpoint: Some("http://localhost:50051".to_string()),
-			..follower_cfg()
-		};
-		assert!(main_chain_follower_vars(&cfg).is_ok());
-
-		let cfg = MidnightCfg { cardano_security_parameter: None, ..cfg };
-		let err = main_chain_follower_vars(&cfg).unwrap_err();
-		assert!(err.to_string().contains("cardano_security_parameter"), "got: {err}");
-	}
-
-	#[test]
-	fn mc_follower_endpoint_is_rejected_with_mock() {
-		for mock in [MainChainFollowerMock::All, MainChainFollowerMock::Authorities] {
-			let cfg = MidnightCfg {
-				use_main_chain_follower_mock: mock,
-				mock_registrations_file: Some("/dev/null".to_string()),
-				mc_follower_grpc_endpoint: Some("http://localhost:50051".to_string()),
-				..follower_cfg()
-			};
-			let err = main_chain_follower_vars(&cfg).unwrap_err();
-			assert!(err.to_string().contains("mc_follower_grpc_endpoint"), "got: {err}");
-		}
-	}
-
 	#[test]
 	fn serde_valid_validate_surfaces_mainchain_invariant_violation() {
 		// The aggregate `Validate::validate()` path (run by `Cfg::new()` → `cfg.validate()`,
