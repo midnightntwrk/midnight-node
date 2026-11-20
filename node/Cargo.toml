@@ -172,6 +172,7 @@ landlock.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+sp-maybe-compressed-blob.workspace = true
 yamux = "0.13"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Enable the `std`-gated `testing` module (MemoryKeystore) for unit tests.

@@ -8235,6 +8235,7 @@ dependencies = [
  "sp-io",
  "sp-keyring",
  "sp-keystore",
+ "sp-maybe-compressed-blob",
  "sp-mmr-primitives",
  "sp-partner-chains-bridge",
  "sp-runtime",

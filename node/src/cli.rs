@@ -483,6 +483,10 @@ pub enum Subcommand {
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
 
+	/// Generate a fresh set of session keys into the keystore of the node on this machine and
+	/// print their public keys for the Cardano registration.
+	GenerateSessionKeys(crate::session_keys::cmd::GenerateSessionKeysCmd),
+
 	/// Dry-run a runtime upgrade against a state snapshot.
 	#[cfg(feature = "try-runtime")]
 	TryRuntime(crate::try_runtime::TryRuntimeCmd),
