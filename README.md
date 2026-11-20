@@ -169,6 +169,7 @@ that we are still in the process of being release. As such:
 - [Mock Authorities](docs/mock-authorities.md) - Existing test keys with real Cardano observations
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
+- [Toolkit ledger state in ParityDB](docs/toolkit-paritydb-storage.md) - Design of the toolkit's opt-in on-disk ledger state (`PARITYDB_MODE`)
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
 - [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
   - [Runtime Upgrade Guide](docs/governance/example/runtime-upgrade.md) - Step-by-step guide for runtime upgrades via governance

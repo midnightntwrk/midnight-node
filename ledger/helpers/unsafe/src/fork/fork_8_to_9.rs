@@ -38,7 +38,8 @@ where
 	T1: crate::ledger_8::Storable<Db8> + crate::ledger_8::Tagged,
 	T2: crate::ledger_9::Storable<Db9> + crate::ledger_9::Tagged,
 {
-	t1.persist();
+	// Keeps the nodes alive for the lazy re-typed `Sp` until they are on disk.
+	crate::arena_db::persist_until_flushed(&mut t1);
 	let old_root = t1.as_typed_key().key;
 	// Both ArenaKey types are the same type (unified via midnight-storage-core patch).
 	let new_arena_key: crate::ledger_9::ArenaKey = old_root;
