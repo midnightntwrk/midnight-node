@@ -44,6 +44,7 @@ use midnight_primitives_mainchain_follower::{
 	FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
 	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
 };
+use midnight_primitives_mc_follower::McFollowerRowSource;
 
 #[derive(Clone)]
 pub struct DataSources {
@@ -77,6 +78,14 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 		})?;
 
 		Ok(mock)
+	} else if let Some(endpoint) = cfg.mc_follower_grpc_endpoint.clone() {
+		create_mc_follower_data_sources(cfg, endpoint, mc_metrics_opt, midnight_metrics_opt)
+			.await
+			.map_err(|err| {
+				ServiceError::Application(
+					format!("Failed to create mc-follower main chain follower: {err}").into(),
+				)
+			})
 	} else {
 		create_cached_data_sources(cfg, mc_metrics_opt, midnight_metrics_opt)
 			.await
@@ -392,6 +401,93 @@ pub async fn create_cached_data_sources(
 		cnight_observation: Arc::new(cnight_observation),
 		bridge: Arc::new(bridge),
 		federated_authority_observation,
+	})
+}
+
+/// Creates the same data sources as [create_cached_data_sources], reading Cardano data from
+/// mc-follower at `endpoint` instead of db-sync
+pub async fn create_mc_follower_data_sources(
+	cfg: MidnightCfg,
+	endpoint: String,
+	mc_metrics_opt: Option<McFollowerMetrics>,
+	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
+) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
+	let block_data_source_config = block_data_source_config(&cfg)?;
+	let mc: MainchainEpochConfig = cfg.into();
+
+	let rows = McFollowerRowSource::connect(endpoint).await.map_err(|e| {
+		log::warn!("Failed to connect to mc-follower: {e}");
+		e
+	})?;
+	log::info!("Reading Cardano data from mc-follower.");
+
+	let candidates_data_source =
+		CandidatesDataSourceImpl::with_row_source(rows.clone(), midnight_metrics_opt.clone());
+	let candidates_data_source_cached =
+		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
+			log::warn!("Failed to create candidates data source cache: {e}");
+			e
+		})?;
+
+	let sidechain_block_data_source = Arc::new(BlockDataSourceImpl::from_config_with_metrics(
+		rows.clone(),
+		block_data_source_config.clone(),
+		&mc,
+		None,
+	));
+	let sidechain_rpc = SidechainRpcDataSourceImpl::new(
+		sidechain_block_data_source.clone(),
+		mc_metrics_opt.clone(),
+	);
+
+	let mc_hash_block_data_source = BlockDataSourceImpl::from_config_with_metrics(
+		rows.clone(),
+		block_data_source_config,
+		&mc,
+		None,
+	);
+	let mc_hash =
+		McHashDataSourceImpl::new(Arc::new(mc_hash_block_data_source), mc_metrics_opt.clone());
+
+	let cnight_observation = MidnightCNightObservationDataSourceImpl::with_row_source(
+		rows.clone(),
+		midnight_metrics_opt.clone(),
+		1000,
+	);
+
+	let federated_authority_observation =
+		FederatedAuthorityObservationDataSourceImpl::new(rows.clone(), midnight_metrics_opt, 1000);
+
+	let bridge = CachedTokenBridgeDataSourceImpl::with_row_source(
+		rows,
+		mc_metrics_opt,
+		sidechain_block_data_source,
+		BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
+	);
+
+	Ok(DataSources {
+		sidechain_rpc: Arc::new(sidechain_rpc),
+		mc_hash: Arc::new(mc_hash),
+		authority_selection: Arc::new(candidates_data_source_cached),
+		cnight_observation: Arc::new(cnight_observation),
+		bridge: Arc::new(bridge),
+		federated_authority_observation: Arc::new(federated_authority_observation),
+	})
+}
+
+fn block_data_source_config(
+	cfg: &MidnightCfg,
+) -> Result<DbSyncBlockDataSourceConfig, Box<dyn Error + Send + Sync + 'static>> {
+	Ok(DbSyncBlockDataSourceConfig {
+		cardano_security_parameter: cfg
+			.cardano_security_parameter
+			.ok_or(missing("cardano_security_parameter"))?,
+		cardano_active_slots_coeff: cfg
+			.cardano_active_slots_coeff
+			.ok_or(missing("cardano_active_slots_coeff"))?,
+		block_stability_margin: cfg
+			.block_stability_margin
+			.ok_or(missing("block_stability_margin"))?,
 	})
 }
 

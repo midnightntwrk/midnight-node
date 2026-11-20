@@ -8208,6 +8208,7 @@ dependencies = [
  "midnight-primitives-ics-observation",
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
+ "midnight-primitives-mc-follower",
  "midnight-primitives-reserve-observation",
  "midnight-primitives-session-info",
  "midnight-primitives-system-parameters",
