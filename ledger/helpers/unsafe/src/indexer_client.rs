@@ -238,6 +238,9 @@ pub struct UnshieldedUtxoData {
 	pub output_index: u32,
 	/// Creation time in unix seconds (absent for some genesis UTXOs).
 	pub ctime: Option<u64>,
+	/// Whether this UTXO's initial nonce is in `dust.generation.night_indices`, evaluated by the
+	/// indexer against the state right after the creating transaction.
+	pub registered_for_dust_generation: bool,
 }
 
 /// An item from the `unshieldedTransactions` subscription.
@@ -1065,6 +1068,7 @@ fn map_unshielded_utxo(
 		intent_hash: decode_hex(&u.intent_hash)?,
 		output_index: u.output_index as u32,
 		ctime: u.ctime.map(|c| c as u64),
+		registered_for_dust_generation: u.registered_for_dust_generation,
 	})
 }
 
@@ -1545,8 +1549,16 @@ mod tests {
 					"intentHash": "11",
 					"outputIndex": 0,
 					"ctime": 123,
+					"registeredForDustGeneration": true,
 				}],
-				"spentUtxos": [],
+				"spentUtxos": [{
+					"tokenType": "00",
+					"value": "5",
+					"intentHash": "22",
+					"outputIndex": 1,
+					"ctime": null,
+					"registeredForDustGeneration": false,
+				}],
 			}
 		});
 		let resp: unshielded_transactions::ResponseData = serde_json::from_value(v).unwrap();
@@ -1556,7 +1568,9 @@ mod tests {
 				assert_eq!(created.len(), 1);
 				assert_eq!(created[0].value, 1000);
 				assert_eq!(created[0].ctime, Some(123));
-				assert!(spent.is_empty());
+				assert!(created[0].registered_for_dust_generation);
+				assert_eq!(spent.len(), 1);
+				assert!(!spent[0].registered_for_dust_generation);
 			},
 			_ => panic!("expected transaction"),
 		}

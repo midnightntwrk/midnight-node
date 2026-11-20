@@ -80,6 +80,8 @@ pub struct DustFrontierRaw {
 pub struct UnshieldedUtxoRaw {
 	pub utxo: Vec<u8>,
 	pub ctime_secs: u64,
+	/// The indexer's `registeredForDustGeneration`.
+	pub backs_dust_generation: bool,
 }
 
 /// Struct to store serialized verifying key bytes

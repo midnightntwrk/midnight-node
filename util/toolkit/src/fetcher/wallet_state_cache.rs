@@ -39,7 +39,8 @@ use subxt::utils::H256;
 ///     the postcard body layout. Costs existing replay caches one re-replay.
 /// v5: reserved for the indexer UTXOs' `registeredForDustGeneration` flag.
 /// v6: adds the indexer path's DUST fast-sync frontier ([`CachedWalletState::dust_frontier`]).
-pub const WALLET_CACHE_FORMAT_VERSION: u8 = 6;
+/// v7: each indexer-path unshielded UTXO also carries its `registeredForDustGeneration` flag.
+pub const WALLET_CACHE_FORMAT_VERSION: u8 = 7;
 
 /// On-disk format version for a [`LedgerSnapshot`] value, prefixed before the
 /// zstd-compressed postcard body.
@@ -970,8 +971,16 @@ mod tests {
 		let sync = WalletSyncState {
 			shielded_state: Some(ZswapWalletStateRaw(vec![0x11; 64])),
 			unshielded_utxos: vec![
-				UnshieldedUtxoRaw { utxo: vec![0x22; 48], ctime_secs: 1_700_000_000 },
-				UnshieldedUtxoRaw { utxo: vec![0x33; 48], ctime_secs: 0 },
+				UnshieldedUtxoRaw {
+					utxo: vec![0x22; 48],
+					ctime_secs: 1_700_000_000,
+					backs_dust_generation: true,
+				},
+				UnshieldedUtxoRaw {
+					utxo: vec![0x33; 48],
+					ctime_secs: 0,
+					backs_dust_generation: false,
+				},
 			],
 			unshielded_tx_id: 4321,
 			dust_state: Some(DustLocalStateRaw(vec![0x44; 32])),
@@ -1009,6 +1018,18 @@ mod tests {
 		let entry = CachedWalletState::from_sync_state(H256::zero(), 1, sync);
 		assert!(entry.shielded_state_bytes.is_empty());
 		assert!(entry.to_sync_state().shielded_state.is_none());
+	}
+
+	/// A v4 indexer entry's UTXOs lack the dust-generation flag; postcard could misread them.
+	#[test]
+	fn v4_wallet_value_is_a_miss() {
+		let seed_hash = H256::from([8u8; 32]);
+		let mut bytes = CachedWalletState { block_height: 5, ..Default::default() }
+			.to_value_bytes()
+			.expect("serialize");
+		bytes[0] = 4;
+		assert!(CachedWalletState::from_value_bytes(&bytes, seed_hash).is_err());
+		assert_eq!(CachedWalletState::block_height_from_header(&bytes), None);
 	}
 
 	#[test]
