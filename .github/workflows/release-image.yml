@@ -918,6 +918,9 @@ jobs:
           [ "$FORCE" = "true" ] && CLOBBER=(--clobber)
           gh release upload "${CLOBBER[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" "${FILES[@]}"
 
+  # The GHCR jobs scan the arch images Main already scanned (the unsuffixed tag prepare-release
+  # retags only exists once Main's scans passed), so a stable release rescans only to catch
+  # advisories published since that build; a suffixed one (rc, beta) relies on Main's scan.
   sbom-scan-ghcr-node:
     if: github.event.inputs.skip-node != 'true'
     permissions:
@@ -934,6 +937,7 @@ jobs:
     with:
       image: ${{ needs.prepare-release.outputs.node-image }}:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-ghcr-${{ matrix.arch }}-release
+      skip-scan: ${{ github.event.inputs.suffix != '' }}
       tlog-upload: true
     secrets:
       MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
@@ -956,6 +960,7 @@ jobs:
     with:
       image: ${{ needs.prepare-release.outputs.toolkit-image }}:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
+      skip-scan: ${{ github.event.inputs.suffix != '' }}
       tlog-upload: true
     secrets:
       MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
