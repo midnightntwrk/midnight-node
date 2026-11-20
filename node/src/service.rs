@@ -956,6 +956,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
 		let babe_key_readiness_epoch_config = epoch_config.clone();
+		let registrations_epoch_config = epoch_config.clone();
 		let inherent_config =
 			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source)
 				.map_err(|e| {
@@ -1107,6 +1108,20 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				"No Prometheus registry available; not reporting BABE key readiness",
 			),
 		}
+
+		task_manager.spawn_handle().spawn(
+			"session-keys-startup-check",
+			None,
+			crate::session_keys::startup_check::run(
+				crate::session_keys::startup_check::MainchainRegistrations::new(
+					client.clone(),
+					data_sources.authority_selection.clone(),
+					registrations_epoch_config,
+					Arc::new(SystemTimeSource),
+				),
+				keystore_container.keystore(),
+			),
+		);
 	}
 	// Non-authorities need no authoring gate: the epoch tree they need to *import* the first BABE
 	// block is seeded on the import path by `BabeEpochSeeder` (see `EngineDispatchVerifier`).

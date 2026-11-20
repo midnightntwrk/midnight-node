@@ -98,6 +98,10 @@ pub fn run() -> sc_cli::Result<()> {
 					.init()?;
 				return cmd.run();
 			}
+			// Works on an explicit keystore path, so it needs no node config either.
+			if let Subcommand::GenerateSessionKeys(ref cmd) = cli.subcommand {
+				return cmd.run();
+			}
 			let cfg = get_cfg(false)?;
 			run_subcommand(cli.subcommand, cfg)
 		},
@@ -702,6 +706,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		},
 		#[cfg(feature = "try-runtime")]
 		Subcommand::TryRuntime(_) => unreachable!("handled in `run`"),
+		Subcommand::GenerateSessionKeys(_) => unreachable!("handled in `run`"),
 		Subcommand::GenerateCNightGenesis(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;

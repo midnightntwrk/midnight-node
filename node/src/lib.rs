@@ -46,6 +46,7 @@ pub mod peer_info_rpc;
 pub mod reference_hardware;
 pub mod rpc;
 pub mod service;
+pub mod session_keys;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
 #[cfg(feature = "try-runtime")]

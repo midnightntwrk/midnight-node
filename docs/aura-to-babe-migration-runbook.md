@@ -1,7 +1,8 @@
 # Runbook: AURA → BABE Consensus Migration
 
 Live migration of a running Midnight network from AURA to BABE block
-production. GRANDPA finality and BEEFY are unaffected.
+production. GRANDPA finality is unaffected; the v3 runtime upgrade turns BEEFY
+off (see 2.1).
 
 **Roles.** _Network operator_ — coordinates the phases, drives governance
 motions and runtime upgrades. _Validator operators_ — upgrade binaries,
@@ -166,6 +167,11 @@ runtime-upgrade flow.
 
 The first block executed by the new runtime is the **activation block**.
 From it on, runtime rejects any block from a non-upgraded author.
+
+The upgrade also turns BEEFY off (`ResetBeefyGenesis`). A running node keeps
+voting in BEEFY until it is restarted, then stays idle. This is expected and
+harmless: nothing consumes BEEFY proofs and block production and GRANDPA
+finality are unaffected.
 
 **Verify:**
 

@@ -11,12 +11,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Runtime API exposing the substrate session index.
+//! Runtime APIs about substrate sessions: the session index and session key generation.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
+use sp_core::{crypto::KeyTypeId, ecdsa};
 
 sp_api::decl_runtime_apis! {
 	pub trait SessionInfoApi {
 		fn current_session_index() -> u32;
+	}
+
+	pub trait SessionKeysGenerationApi {
+		/// Generates a fresh set of the runtime's session keys into the keystore and returns,
+		/// in the runtime's key order, each key's type, raw public key and proof of possession
+		/// for the candidate identified by `cross_chain`. The runtime defines what the proof
+		/// signs.
+		/// The runtime's session key types, in key order.
+		fn key_ids() -> Vec<KeyTypeId>;
+
+		fn generate_session_keys_with_proofs(
+			cross_chain: ecdsa::Public,
+		) -> Vec<(KeyTypeId, Vec<u8>, Vec<u8>)>;
 	}
 }

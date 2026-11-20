@@ -52,7 +52,7 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoCursor;
-use opaque::{CrossChainKey, SessionKeys};
+use opaque::SessionKeys;
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
@@ -1745,7 +1745,6 @@ impl_runtime_apis! {
 			seed: Option<Vec<u8>>,
 		) -> sp_session::OpaqueGeneratedSessionKeys {
 			// despite being named "generate" this function also adds generated keys to local keystore
-			let _ = CrossChainKey::generate(&owner, seed.clone());
 			SessionKeys::generate(&owner, seed).into()
 		}
 
@@ -1943,6 +1942,32 @@ impl_runtime_apis! {
 	impl midnight_primitives_session_info::SessionInfoApi<Block> for Runtime {
 		fn current_session_index() -> u32 {
 			Session::current_index()
+		}
+	}
+
+	impl midnight_primitives_session_info::SessionKeysGenerationApi<Block> for Runtime {
+		fn key_ids() -> Vec<KeyTypeId> {
+			<SessionKeys as sp_runtime::traits::OpaqueKeys>::key_ids().to_vec()
+		}
+
+		fn generate_session_keys_with_proofs(
+			cross_chain: sp_core::ecdsa::Public,
+		) -> Vec<(KeyTypeId, Vec<u8>, Vec<u8>)> {
+			// The `pallet_session` ownership statement for the candidate's account: each key
+			// signs `b"POP_"` followed by the SCALE-encoded `AccountId` of its `crch` key.
+			let owner = AccountId::from(CrossChainPublic::from(cross_chain)).encode();
+			let sp_runtime::traits::GeneratedSessionKeys { keys, proof } =
+				SessionKeys::generate(&owner, None);
+			// The proof is a tuple with one signature per key, in key order: this pattern stops
+			// compiling when a key is added or removed. Signatures are fixed-size, so their SCALE
+			// encoding is their raw bytes.
+			let (a, b, c, d) = proof;
+			let signatures = [a.encode(), b.encode(), c.encode(), d.encode()];
+			keys.into_raw_public_keys()
+				.into_iter()
+				.zip(signatures)
+				.map(|((public, key_type), signature)| (key_type, public, signature))
+				.collect()
 		}
 	}
 
