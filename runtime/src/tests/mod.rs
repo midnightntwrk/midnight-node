@@ -248,7 +248,7 @@ mod runtime_api_views {
 		)
 	}
 
-	fn committee(
+	pub(super) fn committee(
 		epoch: u64,
 		members: &[TestKeys],
 	) -> CommitteeInfo<
@@ -836,12 +836,79 @@ mod slot_config {
 	}
 }
 
+mod block_producer {
+	use super::runtime_api_views::committee;
+	use crate::mock::{TestKeys, alice, bob};
+	use crate::{BlockProducer, Runtime};
+	use frame_support::BoundedVec;
+	use midnight_primitives_block_production::{
+		Attribution, BlockProducer as _, EpochLabel, Producer,
+	};
+	use parity_scale_codec::Encode;
+	use sp_core::Pair as _;
+	use sp_runtime::{Digest, DigestItem};
+
+	/// Starts block 1 with `authorities` as the AURA set and `members` as the current committee
+	/// of epoch 7. With `slot`, the header names `slot % authorities` as the author.
+	fn start_block(authorities: &[TestKeys], members: &[TestKeys], slot: Option<u64>) {
+		pallet_aura::Authorities::<Runtime>::put(BoundedVec::truncate_from(
+			authorities.iter().map(|keys| keys.aura.public()).collect::<Vec<_>>(),
+		));
+		pallet_session_validator_management::CurrentCommittee::<Runtime>::put(committee(
+			7, members,
+		));
+		let logs = slot
+			.map(|slot| {
+				DigestItem::PreRuntime(
+					sp_consensus_aura::AURA_ENGINE_ID,
+					sp_consensus_slots::Slot::from(slot).encode(),
+				)
+			})
+			.into_iter()
+			.collect();
+		frame_system::Pallet::<Runtime>::initialize(&1, &Default::default(), &Digest { logs });
+	}
+
+	#[test]
+	fn names_the_committee_seat_of_the_author_index() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			start_block(&[alice(), bob()], &[alice(), bob()], Some(3));
+
+			assert_eq!(
+				BlockProducer::current(),
+				Attribution { epoch: EpochLabel(7), producer: Some(Producer::Permissioned) }
+			);
+		});
+	}
+
+	#[test]
+	// Panics only where debug assertions are on; release builds get no producer.
+	#[cfg_attr(debug_assertions, should_panic(expected = "Defensive failure"))]
+	fn a_block_without_author_is_a_defensive_failure() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			start_block(&[alice()], &[alice()], None);
+			assert_eq!(BlockProducer::current().producer, None);
+		});
+	}
+
+	#[test]
+	// Panics only where debug assertions are on; release builds get no producer.
+	#[cfg_attr(debug_assertions, should_panic(expected = "Defensive failure"))]
+	fn an_index_outside_the_committee_is_a_defensive_failure() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			start_block(&[alice(), bob()], &[alice()], Some(1));
+			assert_eq!(BlockProducer::current().producer, None);
+		});
+	}
+}
+
 mod failed_mbm_recovery {
 	use crate::{AccountId, BlockNumber, Executive, Runtime, RuntimeCall, VERSION};
 	use frame_support::{
 		assert_ok, dispatch::GetDispatchInfo, migrations::MultiStepMigrator, traits::Contains,
 	};
 	use parity_scale_codec::Encode;
+	use sp_core::Pair as _;
 	use sp_runtime::{
 		BuildStorage, ExtrinsicInclusionMode,
 		traits::{Dispatchable, Hash as _, Header as _},
@@ -922,13 +989,15 @@ mod failed_mbm_recovery {
 			// The next block admits normal (non-inherent) extrinsics again. Like any
 			// AURA block it must carry the AURA pre-digest followed by the matching BABE
 			// `SecondaryPlain` one, which `pallet-consensus-engine` checks against the
-			// AURA authority set (`authority_index == slot % n`).
-			let authority = sp_consensus_aura::sr25519::AuthorityId::from(
-				sp_core::sr25519::Public::from_raw([1u8; 32]),
-			);
+			// AURA authority set (`authority_index == slot % n`). The committee holds the
+			// same single member, as on a real chain.
+			let signer = crate::mock::alice();
 			pallet_aura::Authorities::<Runtime>::put(frame_support::BoundedVec::truncate_from(
-				vec![authority],
+				vec![signer.aura.public()],
 			));
+			pallet_session_validator_management::CurrentCommittee::<Runtime>::put(
+				super::runtime_api_views::committee(0, &[signer]),
+			);
 			let slot = sp_consensus_slots::Slot::from(1);
 			let digest = sp_runtime::Digest {
 				logs: vec![

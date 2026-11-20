@@ -8430,6 +8430,7 @@ dependencies = [
  "midnight-node-ledger",
  "midnight-primitives",
  "midnight-primitives-beefy",
+ "midnight-primitives-block-production",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
@@ -8707,6 +8708,17 @@ dependencies = [
  "sp-api",
  "sp-consensus-beefy",
  "sp-runtime",
+]
+
+[[package]]
+name = "midnight-primitives-block-production"
+version = "0.1.0"
+dependencies = [
+ "authority-selection-inherents",
+ "hex-literal 1.1.0",
+ "parity-scale-codec",
+ "scale-info",
+ "sidechain-domain",
 ]
 
 [[package]]

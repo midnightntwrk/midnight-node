@@ -204,6 +204,8 @@ impl pallet_sidechain::Config for Test {
 	type OnNewEpoch = ();
 }
 
+pub type BlockProducer = crate::block_production::CommitteeBlockProducer<Test>;
+
 impl pallet_session_validator_management::Config for Test {
 	type MaxValidators = ConstU32<32>;
 	type AuthorityId = CrossChainPublic;
