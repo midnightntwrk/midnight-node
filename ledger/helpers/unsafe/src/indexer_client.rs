@@ -124,6 +124,14 @@ pub struct ContractActionState;
 #[derive(GraphQLQuery)]
 #[graphql(
 	schema_path = "graphql/schema/indexer-4.4.graphql",
+	query_path = "graphql/contract_zswap_state.graphql",
+	response_derives = "Debug, Clone"
+)]
+pub struct ContractZswapState;
+
+#[derive(GraphQLQuery)]
+#[graphql(
+	schema_path = "graphql/schema/indexer-4.4.graphql",
 	query_path = "graphql/indexer.graphql",
 	response_derives = "Debug, Clone"
 )]
@@ -554,6 +562,15 @@ impl IndexerClient {
 		let variables = contract_action_state::Variables { address: hex::encode(address) };
 		let data = self.run_query::<ContractActionState>(variables).await?;
 		data.contract_action.map(|action| decode_hex(&action.state)).transpose()
+	}
+
+	/// `block { contractZswapState(address) }` — the latest block's tagged `ZswapChainState`
+	/// filtered to the contract, or `None` if the contract does not exist there. `address` is the
+	/// untagged `ContractAddress` encoding. Indexer 4.4 onwards.
+	pub async fn contract_zswap_state(&self, address: &[u8]) -> IndexerResult<Option<Vec<u8>>> {
+		let variables = contract_zswap_state::Variables { address: hex::encode(address) };
+		let data = self.run_query::<ContractZswapState>(variables).await?;
+		decode_contract_zswap_state(data)
 	}
 
 	/// `zswapMerkleTreeCollapsedUpdate` — the tagged zswap tree update over `start..=end`.
@@ -1069,6 +1086,15 @@ fn map_unshielded_utxo(
 }
 
 /// Decode a `HexEncoded` scalar, tolerating an optional `0x`/`0X` prefix.
+fn decode_contract_zswap_state(
+	data: contract_zswap_state::ResponseData,
+) -> IndexerResult<Option<Vec<u8>>> {
+	let block = data
+		.block
+		.ok_or_else(|| IndexerClientError::Malformed("no block returned".into()))?;
+	block.contract_zswap_state.map(|state| decode_hex(&state)).transpose()
+}
+
 fn decode_hex(s: &str) -> IndexerResult<Vec<u8>> {
 	let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
 	hex::decode(s).map_err(|e| IndexerClientError::Decode(format!("hex: {e}")))
@@ -1416,6 +1442,17 @@ mod tests {
 		assert_eq!(decode_hex(&resp.contract_action.unwrap().state).unwrap(), vec![1, 2]);
 	}
 
+	#[test]
+	fn contract_zswap_state_decodes_hex_and_absent_contract() {
+		let decode = |value| decode_contract_zswap_state(serde_json::from_value(value).unwrap());
+		assert_eq!(
+			decode(json!({ "block": { "contractZswapState": "0102" } })).unwrap(),
+			Some(vec![1, 2])
+		);
+		assert_eq!(decode(json!({ "block": { "contractZswapState": null } })).unwrap(), None);
+		assert!(decode(json!({ "block": null })).is_err());
+	}
+
 	/// Maps a `ShieldedTransactionsProgress` JSON payload through the generated types, pinning the
 	/// query field names against the schema.
 	#[test]
@@ -1569,7 +1606,10 @@ mod tests {
 	const SCHEMAS: &[&str] = &["indexer-4.3.graphql", "indexer-4.4.graphql"];
 	/// Documents that only newer indexers accept, with the oldest schema each needs. All others must
 	/// validate against every schema.
-	const NEWER_ONLY: &[(&str, &str)] = &[("dust_generations.graphql", "indexer-4.4.graphql")];
+	const NEWER_ONLY: &[(&str, &str)] = &[
+		("contract_zswap_state.graphql", "indexer-4.4.graphql"),
+		("dust_generations.graphql", "indexer-4.4.graphql"),
+	];
 
 	fn vendored_schema(name: &str) -> apollo_compiler::validation::Valid<apollo_compiler::Schema> {
 		let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("graphql/schema").join(name);
