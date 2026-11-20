@@ -153,7 +153,9 @@ impl MainchainEpochDerivation for MainchainEpochConfig {
 	}
 
 	fn mainchain_epoch_to_timestamp(&self, epoch: McEpochNumber) -> Timestamp {
-		let time_elapsed = self.epoch_duration_millis.millis() * epoch.0 as u64;
+		let epochs_since_first_epoch = epoch.0.saturating_sub(self.first_epoch_number);
+		let time_elapsed =
+			self.epoch_duration_millis.millis() * u64::from(epochs_since_first_epoch);
 		Timestamp::from_unix_millis(self.first_epoch_timestamp_millis.unix_millis() + time_elapsed)
 	}
 
@@ -237,6 +239,41 @@ mod tests {
 			first_epoch_number: 4,
 			first_slot_number: 86400,
 			slot_duration_millis: Duration::from_millis(1000),
+		}
+	}
+
+	fn mainnet_mc_epoch_config() -> MainchainEpochConfig {
+		MainchainEpochConfig {
+			first_epoch_timestamp_millis: Timestamp::from_unix_millis(1596059091000),
+			epoch_duration_millis: Duration::from_millis(5 * 24 * 60 * 60 * 1000),
+			first_epoch_number: 208,
+			first_slot_number: 4492800,
+			slot_duration_millis: Duration::from_millis(1000),
+		}
+	}
+
+	#[test]
+	fn mainchain_epoch_to_timestamp_counts_from_first_epoch() {
+		let config = mainnet_mc_epoch_config();
+		assert_eq!(
+			config.mainchain_epoch_to_timestamp(McEpochNumber(208)),
+			config.first_epoch_timestamp_millis
+		);
+		// Cardano mainnet epoch 669 starts at 2026-11-20T21:44:51Z.
+		assert_eq!(
+			config.mainchain_epoch_to_timestamp(McEpochNumber(669)),
+			Timestamp::from_unix_millis(1795211091000)
+		);
+	}
+
+	#[test]
+	fn mainchain_epoch_to_timestamp_is_inverse_of_timestamp_to_mainchain_epoch() {
+		for config in
+			[mainnet_mc_epoch_config(), preprod_mc_epoch_config(), testnet_mc_epoch_config()]
+		{
+			let epoch = McEpochNumber(config.first_epoch_number + 10);
+			let start = config.mainchain_epoch_to_timestamp(epoch);
+			assert_eq!(config.timestamp_to_mainchain_epoch(start), Ok(epoch));
 		}
 	}
 
