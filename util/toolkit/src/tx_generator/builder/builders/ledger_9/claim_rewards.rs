@@ -88,11 +88,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ClaimRewardsBuilder<C> {
 		tx_info.set_rewards(rewards);
 		tx_info.set_claim_kind(self.claim_kind);
 
-		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await;
-
-		#[cfg(feature = "erase-proof")]
-		let tx = tx_info.erase_proof().await;
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 

@@ -26,10 +26,7 @@ use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc
 
 pub type UnprovenTransaction<D> =
 	Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>;
-#[cfg(not(feature = "erase-proof"))]
 pub type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGeneratorPedersen, D>;
-#[cfg(feature = "erase-proof")]
-pub type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 
@@ -294,7 +291,6 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 		Err("Could not balance TX".into())
 	}
 
-	#[cfg(not(feature = "erase-proof"))]
 	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		let resolver = self.context.resolver().await;
 		let parameters = self.context.ledger_parameters().await;
@@ -309,19 +305,8 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 		Ok(proven)
 	}
 
-	#[cfg(feature = "erase-proof")]
-	async fn prove_tx(&mut self, tx: UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
-		Ok(tx.erase_proofs())
-	}
-
-	#[cfg(not(feature = "erase-proof"))]
 	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
 		Ok(tx.mock_prove()?)
-	}
-
-	#[cfg(feature = "erase-proof")]
-	fn mock_prove_tx(&self, tx: &UnprovenTransaction<D>) -> Result<FinalizedTransaction<D>> {
-		Ok(tx.erase_proofs())
 	}
 
 	async fn compute_missing_dust(&self, tx: &FinalizedTransaction<D>) -> Result<Option<u128>> {
@@ -622,7 +607,6 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 		Transaction::ClaimRewards(claim_rewards)
 	}
 
-	#[cfg(not(feature = "erase-proof"))]
 	pub async fn prove(mut self) -> FinalizedTransaction<D> {
 		let tx_unproven = self.build().await;
 		let resolver = self.context.resolver().await;
@@ -637,11 +621,5 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 			)
 			.await;
 		tx_proven.seal(self.rng.clone())
-	}
-
-	#[cfg(feature = "erase-proof")]
-	pub async fn prove(mut self) -> FinalizedTransaction<D> {
-		let tx_unproven = self.build().await;
-		tx_unproven.erase_proofs()
 	}
 }

@@ -32,18 +32,9 @@ use tx_generator::*;
 
 use midnight_ledger_unsafe_helpers::*;
 
-// Conditionally define the type alias `ProofType` and `SignatureType`
-#[cfg(not(feature = "erase-proof"))]
 pub type ProofType = ProofMarker;
 
-#[cfg(not(feature = "erase-proof"))]
 pub type SignatureType = Signature;
-
-#[cfg(feature = "erase-proof")]
-pub type ProofType = ();
-
-#[cfg(feature = "erase-proof")]
-pub type SignagtureType = ();
 
 pub fn hash_to_str(h: H256) -> String {
 	format!("0x{}", hex::encode(h.as_bytes()))

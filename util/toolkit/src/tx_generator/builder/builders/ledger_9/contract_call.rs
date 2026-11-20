@@ -132,11 +132,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractCallBuilder<C> {
 		tx_info.set_funding_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(false);
 
-		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await.expect("Balancing TX failed");
-
-		#[cfg(feature = "erase-proof")]
-		let tx = tx_info.erase_proof().await.expect("Balancing TX failed");
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
