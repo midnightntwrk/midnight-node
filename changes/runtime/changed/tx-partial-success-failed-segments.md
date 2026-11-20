@@ -17,5 +17,5 @@ across nodes. To get it, re-run the segment off-chain.
 The runtime calls the new `apply_transaction` host function v4, so nodes must upgrade before
 this runtime is enacted. Versions 1–3 are unchanged, so historical blocks still replay.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2492
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2491

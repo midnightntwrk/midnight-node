@@ -7,5 +7,5 @@ code, which the runtime uses for `TxPartialSuccess` events. A runtime that binds
 execute on a node without it, so upgrade nodes before that runtime is enacted. v1–v3 are
 unchanged.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2492
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2491
