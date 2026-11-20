@@ -6,11 +6,15 @@ on:
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - ".envrc"
+      - "Earthfile"
   push:
     branches: [main]
     paths:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
+      - ".envrc"
+      - "Earthfile"
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -35,6 +39,26 @@ jobs:
         with:
           matcher: true # Enable GitHub annotations for errors
           fail-on-error: true # Fail CI when errors are found
+
+      - name: Check CI base argument forwarding
+        shell: bash
+        run: |
+          fixture=$(mktemp -d "$RUNNER_TEMP/ci-base-forwarding.XXXXXX")
+          cp .envrc rust-toolchain.toml "$fixture/"
+          git -C "$fixture" init -q
+          cd "$fixture" || exit
+          for image in '' midnightntwrk/midnight-node-ci ghcr.io/midnight-ntwrk/midnight-node-ci; do
+            actual=$(env -i PATH="$PATH" CI=true EARTHLY_BUILD_ARGS=CACHE_KEY=test \
+              bash -e -s -- "$image" <<'CHECK'
+            if [ -n "$1" ]; then export NODE_CI_IMAGE_REPO="$1"; fi
+            . ./.envrc >/dev/null
+            printf "%s" "$EARTHLY_BUILD_ARGS"
+          CHECK
+            )
+            expected=CACHE_KEY=test,CI=true
+            if [ -n "$image" ]; then expected+=",NODE_CI_IMAGE_REPO=$image"; fi
+            test "$actual" = "$expected"
+          done
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

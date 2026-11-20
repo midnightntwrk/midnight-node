@@ -8,6 +8,9 @@ on:
       - "changes/**"
   push:
     branches: ["main"]
+env:
+  NODE_CI_IMAGE_REPO: ${{ github.repository == 'midnightntwrk/midnight-node' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.MIDNIGHTCI_PACKAGES_READ != '' && 'ghcr.io/midnight-ntwrk/midnight-node-ci' || 'midnightntwrk/midnight-node-ci' }}
+
 # no top level default permissions for security reasons
 permissions: {}
 concurrency:
@@ -37,7 +40,7 @@ jobs:
 
       # Fork PRs get no secrets; +check only pulls public docker.io images.
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: steps.guard.outputs.hit != 'true' && env.NODE_CI_IMAGE_REPO == 'ghcr.io/midnight-ntwrk/midnight-node-ci'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io

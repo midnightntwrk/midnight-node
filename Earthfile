@@ -49,6 +49,9 @@ ARG --global GHCR_REGISTRY_PUBLIC=ghcr.io/midnight-ntwrk
 # Image basename, so a fork publishes <owner>/<its-repo> instead of overwriting midnight-node.
 ARG --global IMAGE_REPO=midnight-node
 
+# Public by default so forks and local builds need no GHCR credentials.
+ARG --global NODE_CI_IMAGE_REPO=midnightntwrk/midnight-node-ci
+
 # Repo this build came from, for the OCI source label (GHCR links a package to the repo
 # named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
 ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
@@ -843,7 +846,7 @@ prep-no-copy:
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}-$NATIVEARCH
+    FROM ${NODE_CI_IMAGE_REPO}:${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}-$NATIVEARCH
     # The pulled image's tag tracks Rust, compactc and npm only; cargo tools baked into it
     # (cargo-hack, cargo-shear, ...) are not in the tag, so republish after bumping one.
 
