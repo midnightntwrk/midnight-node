@@ -48,9 +48,9 @@ Then discuss it with the user. They know invariants the code never states, and t
 property is usually a sharpening of a candidate, not one of them unchanged. Revise and ask again
 until the user accepts one exact wording.
 
-**Gate:** step 3 starts when the user has confirmed the exact text of the validity property in
-their own words. If they confirmed an earlier draft, or the wording changed after they confirmed
-it, ask again.
+**Gate:** step 3 starts when the user has explicitly approved one exact wording of the validity
+property, whoever wrote it, including the Definitions terms it uses. If they approved an earlier
+draft, or the wording or a term's meaning changed after they approved it, ask again.
 
 The confirmed predicate expands into Hughes' full validity set:
 
@@ -62,7 +62,8 @@ every shrink of a valid value is valid   test-code check: shrinking is right
 
 ## 3. Propose the properties
 
-Go through the kinds in order. Each kind is a question to ask of every entry point:
+Ask each kind's question of every entry point. The table order is the order to ask in; the
+paragraph after the table says where to spend effort.
 
 | Kind | Shape | Ask |
 |---|---|---|
@@ -73,10 +74,11 @@ Go through the kinds in order. Each kind is a question to ask of every entry poi
 | **test-case generator requirement** | not a property: a constraint on the test code that widens another property | Which states does a naive test-case generator never reach (forks, reorgs, collisions, boundaries)? |
 
 Hughes' bug-hunting results in the paper tell you where to spend effort. Model-based properties
-found every bug in the operation they covered, and found it in the fewest tests. Postconditions and
-metamorphic properties each caught every bug in combination. Validity alone missed five of eight
-bugs. If a model is cheap and does not just repeat the implementation, lead with model-based
-properties. Otherwise use metamorphic ones.
+found every bug in the operation they covered, and found it in the fewest tests. Every bug was
+also found by at least one postcondition and at least one metamorphic property, though single
+metamorphic properties missed some. Validity alone missed five of eight bugs. If a model is cheap
+and does not just repeat the implementation, lead with model-based properties. Otherwise use
+metamorphic ones.
 
 Then test the set as a whole. Fix the set whenever a check fails:
 
@@ -86,8 +88,8 @@ Then test the set as a whole. Fix the set whenever a check fails:
   catches. If you cannot name one, merge the property into the one that subsumes it.
 - **Coverage**: every entry point appears in some property, and every term a property uses is in
   Definitions.
-- **Preconditions**: each `implies` says how the test-case generator satisfies the precondition. Otherwise
-  most generated cases are discarded, and a weak precondition lets bugs through.
+- **Preconditions**: each `implies` says how the test-case generator satisfies the precondition.
+  Otherwise most generated cases are discarded, and a weak precondition lets bugs through.
 - **Collisions**: where two generated values must coincide to reach a case (same key, same state,
   same tx), the property says how the test-case generator makes that happen often enough.
 
@@ -131,9 +133,9 @@ Write for a reader who knows the component but not property testing:
   rather than "generator". Others need a one-line explanation in Definitions: shrinking always
   does.
 
-Number properties `P1`, `P2`, ..., keeping related properties next to each other. Properties that split one idea
-share a number with letter suffixes (`P8a`, `P8b`). The confirmed validity property's kind is
-`invariant (validity)`.
+Number properties `P1`, `P2`, ..., keeping related properties next to each other. Properties that
+split one idea share a number with letter suffixes (`P8a`, `P8b`). The confirmed validity
+property's kind is `invariant (validity)`.
 
 **Revising an existing list:** keep the numbers stable. A retired number stays unused. New
 properties get new numbers or suffixes and are marked `(new)`. Open with a **What changed** list,
@@ -153,5 +155,7 @@ request:
 
 Pass the body with `-F`, because the pseudo-code contains backticks and `$`. For a target in
 another repo (`-R <owner/repo>`), write references as `midnightntwrk/midnight-node#<n>`, because a
-bare `#<n>` links to that repo's own issue. Posting is public:
-post only after the user has approved this draft and named the target. Report the URL back.
+bare `#<n>` links to that repo's own issue. The new-issue type and labels are midnight-node's; for
+another repo, check `gh label list -R <owner/repo>` and its issue types, and use the closest it
+has. Posting is public: post only after the user has approved this draft and named the target.
+Report the URL back.
