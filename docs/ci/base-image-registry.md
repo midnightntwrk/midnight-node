@@ -17,7 +17,9 @@ to Docker Hub. Moving authenticated readers avoids Hub manifest requests for
 this large custom image, including the 429 failures seen despite cached layers.
 Other workflows keep the public default unless they explicitly opt in.
 
-Validate anonymous/fork defaults with `scripts/ci/test_ci_base_registry.py`.
+Registry selection uses native GitHub Actions conditions for repository trust
+and credential availability. The workflow lint job checks `.envrc` argument
+forwarding with inline Bash for the default, public and private image paths.
 Validate authenticated pulls in CI logs on both architectures, then inspect
 the complete core, toolkit and local-environment test results. Rollback is
 removing the workflow override; no runner or shared BuildKit configuration changes.
