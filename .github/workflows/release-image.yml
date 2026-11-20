@@ -67,6 +67,16 @@ jobs:
           echo "::error::At least one component must be selected for release. All three skip flags are set."
           exit 1
 
+      - name: Validate suffix
+        if: inputs.suffix != ''
+        env:
+          SUFFIX: ${{ inputs.suffix }}
+        run: |
+          if [[ ! "$SUFFIX" =~ ^[0-9A-Za-z._-]+$ ]]; then
+            echo "::error::suffix may only contain letters, numbers, dots, underscores, and hyphens"
+            exit 1
+          fi
+
   prepare-release:
     permissions:
       contents: read
@@ -711,8 +721,9 @@ jobs:
       - name: Extract node binary from Docker image
         if: inputs.skip-node != true
         id: extract-node
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          PLATFORM="${{ matrix.platform }}"
           NODE_IMAGE_REF="${NODE_IMAGE}:${IMAGE_TAG_RELEASE}"
           NODE_RELEASE="midnight-node-${IMAGE_TAG_RELEASE}-linux-${PLATFORM}.tar.gz"
 
@@ -730,8 +741,9 @@ jobs:
       - name: Extract toolkit binary from Docker image
         if: inputs.skip-toolkit != true
         id: extract-toolkit
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          PLATFORM="${{ matrix.platform }}"
           TOOLKIT_IMAGE_REF="${TOOLKIT_IMAGE}:${TOOLKIT_TAG_RELEASE}"
           TOOLKIT_RELEASE="midnight-node-toolkit-${TOOLKIT_TAG_RELEASE}-linux-${PLATFORM}.tar.gz"
 
@@ -749,11 +761,12 @@ jobs:
         env:
           NODE_RELEASE: ${{ steps.extract-node.outputs.node_release }}
           TOOLKIT_RELEASE: ${{ steps.extract-toolkit.outputs.toolkit_release }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          if [ -n "$NODE_RELEASE" ]; then sha256sum "$NODE_RELEASE" >> "SHA256SUMS-${{ matrix.platform }}"; fi
-          if [ -n "$TOOLKIT_RELEASE" ]; then sha256sum "$TOOLKIT_RELEASE" >> "SHA256SUMS-${{ matrix.platform }}"; fi
+          if [ -n "$NODE_RELEASE" ]; then sha256sum "$NODE_RELEASE" >> "SHA256SUMS-$PLATFORM"; fi
+          if [ -n "$TOOLKIT_RELEASE" ]; then sha256sum "$TOOLKIT_RELEASE" >> "SHA256SUMS-$PLATFORM"; fi
           echo "Generated checksums:"
-          cat "SHA256SUMS-${{ matrix.platform }}"
+          cat "SHA256SUMS-$PLATFORM"
 
       - name: Attest node release binary
         if: inputs.skip-node != true && github.repository == 'midnightntwrk/midnight-node'
@@ -799,13 +812,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_FILE: ${{ steps.extract-node.outputs.node_release }}
           TOOLKIT_FILE: ${{ steps.extract-toolkit.outputs.toolkit_release }}
+          PLATFORM: ${{ matrix.platform }}
           FORCE: ${{ github.event.inputs.force }}
         run: |
           echo "Uploading assets to release: $GIT_TAG_RELEASE"
           FILES=()
           [ -n "$NODE_FILE" ] && FILES+=("$NODE_FILE")
           [ -n "$TOOLKIT_FILE" ] && FILES+=("$TOOLKIT_FILE")
-          FILES+=("SHA256SUMS-${{ matrix.platform }}")
+          FILES+=("SHA256SUMS-$PLATFORM")
           # `.sig` files exist only if signing ran. `if`, not a trailing `&&`: a missing last
           # `.sig` would then fail the step under `bash -e`.
           SIGS=()
