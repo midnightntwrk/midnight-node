@@ -443,7 +443,7 @@ impl IndexerContext<DefaultDB> {
 					}
 				},
 				_ = sleep_until(stall_at) => {
-					// Past the 30s progress heartbeat: the connection is stalled, not drained.
+					// Past the indexer's longest progress-heartbeat gap: stalled, not drained.
 					log::warn!(
 						"indexer: shielded subscription stalled (no progress heartbeat); shielded \
 						 coins may be incomplete"
@@ -540,7 +540,7 @@ impl IndexerContext<DefaultDB> {
 				Ok(Some(Err(e))) => return Err(e.into()),
 				Ok(None) => break,
 				Err(_) => {
-					// Past the 30s progress heartbeat: the connection is stalled, not drained.
+					// Past the indexer's longest progress-heartbeat gap: stalled, not drained.
 					log::warn!(
 						"indexer: unshielded subscription stalled (no progress heartbeat); \
 						 unshielded UTXOs may be incomplete"
