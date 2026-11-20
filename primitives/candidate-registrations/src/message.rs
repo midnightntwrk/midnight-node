@@ -14,7 +14,7 @@
 //! The messages a registration's signatures cover (MIP rule 21, Signature).
 //!
 //! `crch_signature` covers [`CrossChainKeyMessage`], and each session key's
-//! proof of possession covers its own [`SessionKeyMessage`]. Both are rebuilt
+//! proof of possession covers [`SessionKeyMessage`]. Both are rebuilt
 //! by the runtime from the node it reads, never taken from the datum.
 
 use alloc::vec::Vec;
@@ -22,7 +22,7 @@ use parity_scale_codec::Encode;
 use sidechain_domain::MainchainKeyHash;
 use sp_core::H256;
 
-use crate::types::{CrossChainPublicKeyBytes, KeyTypeIdBytes, RegistrationDatum};
+use crate::types::{CrossChainPublicKeyBytes, RegistrationDatum};
 
 /// The message `crch_signature` covers: the network, the pool and the
 /// cross-chain key.
@@ -60,15 +60,16 @@ impl CrossChainKeyMessage {
 	}
 }
 
-/// The message one session key's proof of possession covers: the node's
-/// `crch` and the key's id.
+/// The message every session key's proof of possession covers:
+/// `blake2_256(crch)`, the transformation the runtime derives the candidate's
+/// `AccountId` from its cross-chain key with.
 ///
-/// Each key has its own message (rule 21), so a pool that replaces one key
-/// replaces that key's proof and the others stay valid. The `crch` binds the
+/// Each key proves possession on its own (rule 21), so a pool that replaces one
+/// key replaces that key's proof and the others stay valid. The `crch` binds the
 /// key to this node: the set holds one node per `crch`, and `crch_signature`
 /// binds the `crch` to the pool and the network, so a key and its proof copied
-/// into another node fail there. The id keeps one key's proof from standing
-/// for it under another id.
+/// into another node fail there. The key's id is not covered: a key placed in
+/// two slots proves possession once for both.
 ///
 /// The key itself is not in the message: the proof is verified against it.
 /// The proof is a `sp_core` proof of possession, a signature by the key over
@@ -76,21 +77,20 @@ impl CrossChainKeyMessage {
 /// signature by the same key.
 #[derive(Clone, Debug, PartialEq, Eq, Encode)]
 pub struct SessionKeyMessage {
-	/// The node's `crch`: the 33-byte compressed cross-chain key, unprefixed.
-	pub cross_chain_pub_key: CrossChainPublicKeyBytes,
-	/// The key's 4-byte id, as `keys` names it.
-	pub key_id: KeyTypeIdBytes,
+	/// `blake2_256` of the node's `crch`, the 33-byte compressed cross-chain key.
+	pub cross_chain_key_hash: [u8; 32],
 }
 
 impl SessionKeyMessage {
-	/// The message the key of `key_id` proves possession over, in the node
-	/// of `cross_chain_pub_key`.
-	pub fn new(cross_chain_pub_key: CrossChainPublicKeyBytes, key_id: KeyTypeIdBytes) -> Self {
-		Self { cross_chain_pub_key, key_id }
+	/// The message the session keys of the node of `cross_chain_pub_key` prove
+	/// possession over.
+	pub fn new(cross_chain_pub_key: CrossChainPublicKeyBytes) -> Self {
+		use sp_runtime::traits::{BlakeTwo256, Hash};
+		Self { cross_chain_key_hash: BlakeTwo256::hash(&cross_chain_pub_key.0).0 }
 	}
 
 	/// The bytes handed to the proof of possession, which prefixes them with
-	/// `b"POP_"` before signing: 33 bytes of `crch`, then 4 of `key_id`.
+	/// `b"POP_"` before signing: the 32 bytes of the hash.
 	pub fn to_signed_bytes(&self) -> Vec<u8> {
 		self.encode()
 	}

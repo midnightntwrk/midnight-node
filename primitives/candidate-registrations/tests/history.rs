@@ -13,7 +13,7 @@
 
 use midnight_primitives_candidate_registrations::{
 	CardanoTxPosition, CrchHash, MAX_PREVIOUS_REGISTRATIONS, RegistrationEntry,
-	RegistrationHistory, RegistrationRecord, SNAPSHOT_EPOCH_OFFSET,
+	RegistrationHistory, RegistrationRecord, SNAPSHOT_EPOCH_OFFSET, snapshot_complete,
 };
 use sidechain_domain::{McEpochNumber, UtxoId};
 
@@ -87,4 +87,15 @@ fn a_pool_changing_every_epoch_keeps_every_snapshot_still_read() {
 	for snapshot in (12 - SNAPSHOT_EPOCH_OFFSET)..=13 {
 		assert_eq!(tag(history.at_start_of(McEpochNumber(snapshot))), Some(snapshot - 1));
 	}
+}
+
+#[test]
+fn a_snapshot_is_complete_once_a_block_of_its_epoch_is_read_in_full() {
+	let for_epoch = McEpochNumber(20);
+	let start = 20 - SNAPSHOT_EPOCH_OFFSET;
+
+	assert!(!snapshot_complete(for_epoch, None));
+	assert!(!snapshot_complete(for_epoch, Some(McEpochNumber(start - 1))));
+	assert!(snapshot_complete(for_epoch, Some(McEpochNumber(start))));
+	assert!(snapshot_complete(for_epoch, Some(McEpochNumber(start + 5))));
 }

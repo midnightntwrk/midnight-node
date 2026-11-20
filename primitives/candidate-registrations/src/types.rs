@@ -106,7 +106,7 @@ pub struct CandidateKey {
 	pub id: KeyTypeIdBytes,
 	/// The public key.
 	pub bytes: KeyBytes,
-	/// Proof of possession of `bytes` over its own
+	/// Proof of possession of `bytes` over the node's
 	/// [`SessionKeyMessage`](crate::SessionKeyMessage).
 	pub proof: KeyProofBytes,
 }
@@ -667,4 +667,26 @@ pub struct RegistrationsObservation {
 	pub registrations: Vec<ObservedRegistration>,
 	/// Where the cursor moves once these have been applied.
 	pub next_position: CardanoTxPosition,
+	/// The Cardano epoch of the last block read in full: the block before
+	/// `next_position`'s. `None` when no block has been read in full yet.
+	///
+	/// An epoch ends with no event at all as often as not, so the events alone
+	/// cannot say that an epoch has been read through; this does (see
+	/// [`snapshot_complete`]).
+	pub read_through_epoch: Option<McEpochNumber>,
+}
+
+/// Whether the registrations snapshot for Cardano epoch `for_mc_epoch` is
+/// complete, given the epoch of the last Cardano block read in full.
+///
+/// The snapshot is the state at the start of `for_mc_epoch -
+/// SNAPSHOT_EPOCH_OFFSET`; a block of that epoch or a later one having been read
+/// in full means every block before that start has been read (MIP rule 17,
+/// Snapshot finality, and rule 27, Bounded units).
+pub fn snapshot_complete(
+	for_mc_epoch: McEpochNumber,
+	read_through_epoch: Option<McEpochNumber>,
+) -> bool {
+	read_through_epoch
+		.is_some_and(|read| read.0 >= for_mc_epoch.0.saturating_sub(SNAPSHOT_EPOCH_OFFSET))
 }

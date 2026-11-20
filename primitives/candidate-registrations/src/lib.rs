@@ -128,6 +128,9 @@ decl_runtime_apis! {
 		/// Every pool that held an active registration at the snapshot committee
 		/// selection for Cardano epoch `for_mc_epoch` reads: the start of epoch
 		/// `for_mc_epoch - SNAPSHOT_EPOCH_OFFSET`.
-		fn active_registrations(for_mc_epoch: McEpochNumber) -> Vec<ActiveRegistration>;
+		///
+		/// `None` while that snapshot is not complete: Cardano has not yet been
+		/// read through to its start.
+		fn active_registrations(for_mc_epoch: McEpochNumber) -> Option<Vec<ActiveRegistration>>;
 	}
 }

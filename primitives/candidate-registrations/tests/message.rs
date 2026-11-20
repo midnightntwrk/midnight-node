@@ -91,13 +91,10 @@ fn the_cross_chain_key_message_does_not_cover_the_keys_or_the_terms() {
 
 #[test]
 fn session_key_message_encoding_is_stable() {
-	let message = SessionKeyMessage::new(CRCH, *b"aura");
+	let message = SessionKeyMessage::new(CRCH);
 
-	// crch (33 raw bytes) || key_id (4 raw bytes)
-	let expected = hex!(
-		"030303030303030303030303030303030303030303030303030303030303030303"
-		"61757261"
-	);
+	// blake2_256(crch), computed outside this code.
+	let expected = hex!("0a807365a29ddbed43660d53e8cd09ce19d5404400d1025c4d2b0d3eeeab9476");
 
 	assert_eq!(message.to_signed_bytes(), expected.to_vec());
 }
@@ -106,25 +103,20 @@ fn session_key_message_encoding_is_stable() {
 fn a_session_key_signs_its_message_behind_the_pop_prefix() {
 	// What a key's proof of possession is a signature over: `sp_core`'s
 	// statement of ownership, `b"POP_"` then the message.
-	let statement =
-		statement_of_ownership(&SessionKeyMessage::new(CRCH, *b"gran").to_signed_bytes());
+	let statement = statement_of_ownership(&SessionKeyMessage::new(CRCH).to_signed_bytes());
 
 	let expected = hex!(
 		"504f505f"
-		"030303030303030303030303030303030303030303030303030303030303030303"
-		"6772616e"
+		"0a807365a29ddbed43660d53e8cd09ce19d5404400d1025c4d2b0d3eeeab9476"
 	);
 
 	assert_eq!(statement, expected.to_vec());
 }
 
 #[test]
-fn the_session_key_message_binds_the_node_and_the_key_id() {
-	let baseline = SessionKeyMessage::new(CRCH, *b"aura").to_signed_bytes();
-
+fn the_session_key_message_binds_the_node() {
 	assert_ne!(
-		baseline,
-		SessionKeyMessage::new(CrossChainPublicKeyBytes([9u8; 33]), *b"aura").to_signed_bytes()
+		SessionKeyMessage::new(CRCH).to_signed_bytes(),
+		SessionKeyMessage::new(CrossChainPublicKeyBytes([9u8; 33])).to_signed_bytes()
 	);
-	assert_ne!(baseline, SessionKeyMessage::new(CRCH, *b"babe").to_signed_bytes());
 }
