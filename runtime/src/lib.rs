@@ -1945,6 +1945,32 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl midnight_primitives_session_info::SessionKeysGenerationApi<Block> for Runtime {
+		fn key_ids() -> Vec<KeyTypeId> {
+			<SessionKeys as sp_runtime::traits::OpaqueKeys>::key_ids().to_vec()
+		}
+
+		fn generate_session_keys_with_proofs(
+			cross_chain: sp_core::ecdsa::Public,
+		) -> Vec<(KeyTypeId, Vec<u8>, Vec<u8>)> {
+			// The `pallet_session` ownership statement for the candidate's account: each key
+			// signs `b"POP_"` followed by the SCALE-encoded `AccountId` of its `crch` key.
+			let owner = AccountId::from(CrossChainPublic::from(cross_chain)).encode();
+			let sp_runtime::traits::GeneratedSessionKeys { keys, proof } =
+				SessionKeys::generate(&owner, None);
+			// The proof is a tuple with one signature per key, in key order: this pattern stops
+			// compiling when a key is added or removed. Signatures are fixed-size, so their SCALE
+			// encoding is their raw bytes.
+			let (a, b, c, d) = proof;
+			let signatures = [a.encode(), b.encode(), c.encode(), d.encode()];
+			keys.into_raw_public_keys()
+				.into_iter()
+				.zip(signatures)
+				.map(|((public, key_type), signature)| (key_type, public, signature))
+				.collect()
+		}
+	}
+
 	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()

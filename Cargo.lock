@@ -8820,6 +8820,7 @@ name = "midnight-primitives-session-info"
 version = "0.1.0"
 dependencies = [
  "sp-api",
+ "sp-core",
 ]
 
 [[package]]
