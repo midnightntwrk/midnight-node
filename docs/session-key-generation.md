@@ -93,3 +93,14 @@ The node inserts the keys of `*_SEED_FILE` files into the keystore on every star
   keystore, a `crch` key from a phrase seed cannot sign, so the tool reports a wrong
   password even when it is right; a `crch` key from a hex seed signs with any password,
   so a wrong password goes undetected.
+
+## Startup check
+
+On startup a validator looks up its own entry in the permissioned and registered
+candidate lists on Cardano by its `crch` key, and logs (target `session-keys`) for
+each registered session key whether it is `present in keystore` or `MISSING from
+keystore`. Without a `crch` key it logs that and keeps running. The key types come
+from the runtime at the best block; on a runtime without `SessionKeysGenerationApi`
+the check logs that and is skipped. The check runs once: if the Cardano data is not
+available yet, it logs a warning and does not retry, and a node started before the
+runtime upgrade checks its keys at its next restart.

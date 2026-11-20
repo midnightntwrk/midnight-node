@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Session key generation (`generate-session-keys`).
+//! Session key generation (`generate-session-keys`) and the startup check of the keystore
+//! against this node's Cardano registration.
 
 pub mod cmd;
 pub mod generate;
+pub mod startup_check;
