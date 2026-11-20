@@ -14,13 +14,54 @@
 use crate::db::{DbDatum, DbDatumIfValid};
 use cardano_serialization_lib::PlutusData;
 use db_sync_sqlx::{Address, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
+use futures::TryStreamExt;
 use log::info;
 use sidechain_domain::{McTxHash, UtxoId, UtxoIndex};
-use sqlx::{PgPool, Pool, Postgres};
+use sqlx::{FromRow, PgPool, Pool, Postgres, Row, ValueRef};
 use std::cell::OnceCell;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+pub(super) const MAX_CANDIDATE_OUTPUTS: usize = 4096;
+pub(super) const MAX_CANDIDATE_ROW_BYTES: usize = 256 * 1024;
+pub(super) const MAX_CANDIDATE_QUERY_BYTES: usize = 8 * 1024 * 1024;
+
+async fn fetch_candidate_outputs(
+	pool: &PgPool,
+	query: &str,
+	address: &Address,
+	block: BlockNumber,
+) -> Result<Vec<MainchainTxOutput>, SqlxError> {
+	let mut rows = sqlx::query(query)
+		.bind(&address.0)
+		.bind(block)
+		.bind((MAX_CANDIDATE_OUTPUTS + 1) as i64)
+		.fetch(pool);
+	let mut outputs = Vec::new();
+	let mut remaining_bytes = MAX_CANDIDATE_QUERY_BYTES;
+	while let Some(row) = rows.try_next().await? {
+		// Check wire sizes before decoding JSON or allocating transaction input lists.
+		let mut row_bytes = 0;
+		for index in 0..row.len() {
+			let value = row.try_get_raw(index)?;
+			if !value.is_null() {
+				row_bytes += value.as_bytes().map_err(sqlx::Error::Decode)?.len();
+			}
+		}
+		if outputs.len() == MAX_CANDIDATE_OUTPUTS
+			|| row_bytes > MAX_CANDIDATE_ROW_BYTES
+			|| row_bytes > remaining_bytes
+		{
+			return Err(
+				sqlx::Error::Protocol("Candidate query resource limit exceeded".into()).into()
+			);
+		}
+		remaining_bytes -= row_bytes;
+		outputs.push(MainchainTxOutput::try_from(MainchainTxOutputRow::from_row(&row)?)?);
+	}
+	Ok(outputs)
+}
 
 /// Error type returned by Db-Sync based data sources
 #[derive(Debug, PartialEq, thiserror::Error)]
@@ -365,15 +406,9 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
 					tx_index_in_block,
 					tx_out.address,
 					datum
-				)";
-	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(query)
-		.bind(&address.0)
-		.bind(block)
-		.fetch_all(pool)
-		.await?;
-	let result: Result<Vec<MainchainTxOutput>, sqlx::Error> =
-		rows.into_iter().map(MainchainTxOutput::try_from).collect();
-	Ok(result?)
+				)
+				LIMIT $3";
+	fetch_candidate_outputs(pool, query, address, block).await
 }
 
 pub(crate) async fn get_utxos_for_address_tx_in_consumed(
@@ -411,15 +446,9 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 					tx_index_in_block,
 					tx_out.address,
 					datum
-				)";
-	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(query)
-		.bind(&address.0)
-		.bind(block)
-		.fetch_all(pool)
-		.await?;
-	let result: Result<Vec<MainchainTxOutput>, sqlx::Error> =
-		rows.into_iter().map(MainchainTxOutput::try_from).collect();
-	Ok(result?)
+				)
+				LIMIT $3";
+	fetch_candidate_outputs(pool, query, address, block).await
 }
 
 /// Used by `get_token_utxo_for_epoch` (CandidatesDataSourceImpl),
@@ -470,4 +499,69 @@ async fn index_exists(pool: &Pool<Postgres>, index_name: &str) -> Result<bool, s
 		.fetch_all(pool)
 		.await
 		.map(|rows| rows.len() == 1)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn candidate_query_byte_boundaries() {
+		let (pool, _db) = super::super::tests::test_db("migrations-tx-in-enabled").await;
+		let query = "SELECT
+			decode(repeat('00', 32), 'hex') AS utxo_id_tx_hash,
+			0::smallint AS utxo_id_index, 0::integer AS tx_block_no,
+			0::bigint AS tx_slot_no, 0::integer AS tx_epoch_no,
+			0::integer AS tx_index_in_block, $1::text AS address,
+			NULL::jsonb AS datum,
+			ARRAY[repeat('00', 32) || '#0']::text[] AS tx_inputs
+			FROM generate_series(1, $2::integer) n LIMIT $3";
+		let row = sqlx::query(query)
+			.bind("")
+			.bind(1_i32)
+			.bind(1_i64)
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+		let overhead: usize = (0..row.len())
+			.map(|i| row.try_get_raw(i).unwrap())
+			.filter(|v| !v.is_null())
+			.map(|v| v.as_bytes().unwrap().len())
+			.sum();
+		let address = Address("x".repeat(MAX_CANDIDATE_ROW_BYTES - overhead));
+		assert_eq!(
+			fetch_candidate_outputs(&pool, query, &address, BlockNumber(1))
+				.await
+				.unwrap()
+				.len(),
+			1
+		);
+		let too_large = Address(format!("{}x", address.0));
+		assert!(fetch_candidate_outputs(&pool, query, &too_large, BlockNumber(1)).await.is_err());
+
+		let rows = 64;
+		let address = Address("x".repeat(MAX_CANDIDATE_QUERY_BYTES / rows - overhead));
+		assert_eq!(
+			fetch_candidate_outputs(&pool, query, &address, BlockNumber(rows as u32))
+				.await
+				.unwrap()
+				.len(),
+			rows
+		);
+		let over_budget = query.replace(
+			"$1::text AS address",
+			"CASE WHEN n = 1 THEN $1::text || 'x' ELSE $1::text END AS address",
+		);
+		assert!(
+			fetch_candidate_outputs(&pool, &over_budget, &address, BlockNumber(rows as u32))
+				.await
+				.is_err()
+		);
+		assert!(
+			fetch_candidate_outputs(&pool, query, &Address("".into()), BlockNumber(0))
+				.await
+				.unwrap()
+				.is_empty()
+		);
+	}
 }
