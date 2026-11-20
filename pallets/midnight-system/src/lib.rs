@@ -30,6 +30,7 @@ pub mod pallet {
 	use midnight_primitives::{
 		LedgerBlockContextProvider, LedgerStateProviderMut,
 		MidnightSystemTransactionBridgeExecutor, MidnightSystemTransactionCNightExecutor,
+		MidnightSystemTransactionRewardExecutor,
 	};
 
 	use alloc::vec::Vec;
@@ -93,6 +94,8 @@ pub mod pallet {
 		SystemTransactionNotAllowedForCNight,
 		#[codec(index = 16)]
 		SystemTransactionNotAllowedForBridge,
+		#[codec(index = 17)]
+		SystemTransactionNotAllowedForRewards,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -224,6 +227,22 @@ pub mod pallet {
 				serialized_system_transaction,
 				LedgerApi::apply_bridge_system_transaction,
 				Error::<T>::SystemTransactionNotAllowedForBridge,
+			)
+		}
+
+		fn is_block_limit_exceeded(err: &DispatchError) -> bool {
+			*err == Error::<T>::BlockLimitExceededError.into()
+		}
+	}
+
+	impl<T: Config> MidnightSystemTransactionRewardExecutor for Pallet<T> {
+		fn execute_system_transaction(
+			serialized_system_transaction: Vec<u8>,
+		) -> Result<Hash, DispatchError> {
+			Self::apply_and_emit(
+				serialized_system_transaction,
+				LedgerApi::apply_reward_system_transaction,
+				Error::<T>::SystemTransactionNotAllowedForRewards,
 			)
 		}
 

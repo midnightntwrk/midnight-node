@@ -405,3 +405,43 @@ mod node_count_tests {
 		assert_eq!(declared_node_count(&long), Err(NodeCountError::TagNotFound));
 	}
 }
+
+/// One output of a reward `DistributeNight` system transaction.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Copy, Eq, PartialEq, Debug)]
+pub struct RewardOutput {
+	/// STAR
+	pub amount: u128,
+	/// Ledger `UserAddress` of the recipient.
+	pub target_address: Hash,
+	pub nonce: Hash,
+}
+
+/// The ledger's NIGHT pools that block rewards move between, in STAR.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Copy, Eq, PartialEq, Debug)]
+pub struct RewardPools {
+	pub reserve_pool: u128,
+	pub block_reward_pool: u128,
+}
+
+/// One dimension of the block limit.
+#[derive(
+	Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Copy, Eq, PartialEq, Debug, Default,
+)]
+pub struct FullnessDimension {
+	/// Accrued by the block so far, clamped to `limit` as the ledger's fee update does.
+	pub used: u64,
+	pub limit: u64,
+}
+
+/// What the block has used of each dimension of the ledger's block limit. Time dimensions are in
+/// picoseconds.
+#[derive(
+	Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Copy, Eq, PartialEq, Debug, Default,
+)]
+pub struct BlockFullness {
+	pub read_time: FullnessDimension,
+	pub compute_time: FullnessDimension,
+	pub block_usage: FullnessDimension,
+	pub bytes_written: FullnessDimension,
+	pub bytes_churned: FullnessDimension,
+}

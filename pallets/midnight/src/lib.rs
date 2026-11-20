@@ -50,7 +50,8 @@ pub mod pallet {
 	use sidechain_domain::byte_string::BoundedString;
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
+		self as LedgerTypes, BlockFullness, GasCost, RewardPools, Tx as LedgerTx, UtxoInfo,
+		active_ledger_bridge as LedgerApi,
 		active_version::{
 			BlockContext, DeserializationError, LedgerApiError, MalformedError, SerializationError,
 			TransactionError,
@@ -127,8 +128,7 @@ pub mod pallet {
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_timestamp::Config {
-		/// Block reward getter.
-		type BlockReward: Get<(u128, Option<LedgerTypes::Hash>)>;
+		type LedgerBlockEnd: midnight_primitives::LedgerBlockEnd;
 
 		#[pallet::constant]
 		type SlotDuration: Get<<Self as pallet_timestamp::Config>::Moment>;
@@ -368,8 +368,14 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 
-			let state_root = LedgerApi::apply_post_block_update(&state_key, block_context.clone())
-				.expect("FATAL: Apply post block update failed");
+			use midnight_primitives::LedgerBlockEnd;
+			let (state_root, fullness) = LedgerApi::apply_post_block_update(
+				&state_key,
+				block_context.clone(),
+				T::LedgerBlockEnd::left_out_of_price().unwrap_or_default(),
+			)
+			.expect("FATAL: Apply post block update failed");
+			T::LedgerBlockEnd::note_block_fullness(fullness);
 
 			StateKey::<T>::put(state_root);
 
@@ -675,6 +681,17 @@ pub mod pallet {
 		pub fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_parameters(&state_key)
+		}
+
+		pub fn get_reward_pools() -> Result<RewardPools, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_reward_pools(&state_key)
+		}
+
+		/// Fullness of the block so far. This pallet's `on_finalize` resets it.
+		pub fn get_block_fullness() -> Result<BlockFullness, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_block_fullness(&state_key)
 		}
 
 		pub fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError> {

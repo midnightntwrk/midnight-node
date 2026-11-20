@@ -8508,6 +8508,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "hex-literal 1.1.0",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
@@ -8542,6 +8543,7 @@ dependencies = [
  "midnight-primitives",
  "midnight-primitives-beefy",
  "midnight-primitives-block-production",
+ "midnight-primitives-block-rewards",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
@@ -8550,6 +8552,7 @@ dependencies = [
  "pallet-babe",
  "pallet-beefy",
  "pallet-beefy-mmr",
+ "pallet-block-rewards",
  "pallet-c2m-bridge",
  "pallet-cnight-observation",
  "pallet-collective",
@@ -8830,6 +8833,18 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
+]
+
+[[package]]
+name = "midnight-primitives-block-rewards"
+version = "0.1.0"
+dependencies = [
+ "hex-literal 1.1.0",
+ "midnight-primitives-block-production",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-arithmetic",
 ]
 
 [[package]]
@@ -10681,6 +10696,24 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-state-machine",
+]
+
+[[package]]
+name = "pallet-block-rewards"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-block-production",
+ "midnight-primitives-block-rewards",
+ "parity-scale-codec",
+ "scale-info",
+ "serde_json",
+ "sp-api",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
 ]
 
 [[package]]
