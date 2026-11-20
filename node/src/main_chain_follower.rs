@@ -544,15 +544,17 @@ mod tests {
 	use super::*;
 
 	fn mock_authorities_cfg() -> MidnightCfg {
+		// Under buck2 (run_from_project_root=True), MN_WORKSPACE_ROOT points at the
+		// staged fixtures root; fall back to the repo-relative path under cargo.
+		let registrations = if let Ok(root) = std::env::var("MN_WORKSPACE_ROOT") {
+			std::path::PathBuf::from(root).join("res/mock-bridge-data/default-registrations.json")
+		} else {
+			std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+				.join("../res/mock-bridge-data/default-registrations.json")
+		};
 		MidnightCfg {
 			use_main_chain_follower_mock: MainChainFollowerMock::Authorities,
-			mock_registrations_file: Some(
-				concat!(
-					env!("CARGO_MANIFEST_DIR"),
-					"/../res/mock-bridge-data/default-registrations.json"
-				)
-				.into(),
-			),
+			mock_registrations_file: Some(registrations.to_string_lossy().into_owned()),
 			mc_epoch_duration_millis: 86_400_000,
 			..Default::default()
 		}

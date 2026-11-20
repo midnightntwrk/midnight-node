@@ -53,6 +53,7 @@ netrc
 
 # Earthly secrets
 .secret
+.arg
 
 # Cardano secret keys
 *.skey
@@ -109,6 +110,14 @@ toolkit-image.tar
 
 # Generated compactc wrapper from `just compactc` (points into the nix store)
 .compact-home/
+
+# buck2
+/buck-out/
+/third-party/.cargo/
+/wasm-deps/.cargo/
+# Vendored upstream crates carry their own CI; we neither run nor pin it, and
+# zizmor skips .gitignored paths, so keep vendored .github/ out of the tree.
+/third-party/**/.github/
 
 # component-rn-draft working dir
 .rn-drafts/
