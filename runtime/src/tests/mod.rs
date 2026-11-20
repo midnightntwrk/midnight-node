@@ -1279,3 +1279,24 @@ mod tx_pause_inherents {
 		});
 	}
 }
+
+mod generate_session_keys {
+	use crate::{Block, CROSS_CHAIN, Runtime};
+	use sp_keystore::{Keystore, KeystoreExt, testing::MemoryKeystore};
+	use sp_session::runtime_decl_for_session_keys::SessionKeysV2;
+	use std::sync::Arc;
+
+	#[test]
+	fn does_not_generate_a_cross_chain_key() {
+		let keystore = Arc::new(MemoryKeystore::new());
+		let mut ext = sp_io::TestExternalities::default();
+		ext.register_extension(KeystoreExt(keystore.clone()));
+
+		ext.execute_with(|| {
+			<Runtime as SessionKeysV2<Block>>::generate_session_keys(vec![0u8; 32], None)
+		});
+
+		assert!(!keystore.keys(sp_runtime::key_types::AURA).unwrap().is_empty());
+		assert!(keystore.keys(CROSS_CHAIN).unwrap().is_empty());
+	}
+}

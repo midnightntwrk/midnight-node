@@ -52,7 +52,7 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoCursor;
-use opaque::{CrossChainKey, SessionKeys};
+use opaque::SessionKeys;
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
@@ -1745,7 +1745,6 @@ impl_runtime_apis! {
 			seed: Option<Vec<u8>>,
 		) -> sp_session::OpaqueGeneratedSessionKeys {
 			// despite being named "generate" this function also adds generated keys to local keystore
-			let _ = CrossChainKey::generate(&owner, seed.clone());
 			SessionKeys::generate(&owner, seed).into()
 		}
 
