@@ -12,4 +12,4 @@ A subscription that receives nothing for a minute, not even a reply to its pings
 from 90 seconds to 5 minutes, above the indexer's longest heartbeat gap, so a slow but live
 wallet is no longer cut off early and synced with incomplete coins.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/PRNUM
+PR: https://github.com/midnightntwrk/midnight-node/pull/2497
