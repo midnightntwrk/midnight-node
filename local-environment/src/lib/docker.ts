@@ -55,7 +55,11 @@ export function stopDockerCompose(options: DockerComposeOptions) {
   });
 }
 
-function spawnDockerCompose(args: string[], env: Record<string, string>, onFail: (code: number | null) => Error): Promise<void> {
+function spawnDockerCompose(
+  args: string[],
+  env: Record<string, string>,
+  onFail: (code: number | null) => Error,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const docker = spawn("docker", args, { stdio: "inherit", env });
     docker.on("error", reject);
@@ -69,24 +73,37 @@ function spawnDockerCompose(args: string[], env: Record<string, string>, onFail:
   });
 }
 
-function runDocker(args: string[], env: Record<string, string>): Promise<number> {
+function runDocker(
+  args: string[],
+  env: Record<string, string>,
+  quiet = false,
+): Promise<number> {
   return new Promise((resolve, reject) => {
-    const docker = spawn("docker", args, { stdio: "inherit", env });
+    const docker = spawn("docker", args, {
+      stdio: quiet ? "ignore" : "inherit",
+      env,
+    });
     docker.on("error", reject);
     docker.on("exit", (code) => resolve(code ?? 1));
   });
 }
 
-/**
- * Make sure `image` is available and up to date: pull it so a moved tag isn't
- * served stale, but if the pull fails (no such repository, offline, ...) fall
- * back to a local copy rather than pulling. Only fails if the image is in
- * neither place.
- */
+type ImagePullPolicy = "always" | "missing" | "never";
+
+/** Refresh mutable tags by default; isolated CI daemons can require preloaded images. */
 export async function ensureImageAvailable(
   image: string,
   env: Record<string, string>,
+  policy: ImagePullPolicy = "always",
 ): Promise<void> {
+  if (policy !== "always") {
+    if ((await runDocker(["image", "inspect", image], env, true)) === 0) return;
+    if (policy === "never") {
+      throw new Error(
+        `Preloaded image '${image}' is missing; registry pulls are disabled.`,
+      );
+    }
+  }
   if ((await runDocker(["pull", image], env)) === 0) return;
 
   const inspectCode = await new Promise<number>((resolve, reject) => {
@@ -103,7 +120,9 @@ export async function ensureImageAvailable(
   console.warn(`⚠️  Could not pull ${image}; using the local copy.`);
 }
 
-function resolveComposeImages(options: DockerComposeOptions): Promise<string[]> {
+function resolveComposeImages(
+  options: DockerComposeOptions,
+): Promise<string[]> {
   const args = [
     "compose",
     ...(options.profiles ?? []).map((p) => `--profile=${p}`),
@@ -151,14 +170,29 @@ function resolveComposeImages(options: DockerComposeOptions): Promise<string[]> 
   });
 }
 
-export async function runDockerCompose(options: DockerComposeOptions): Promise<void> {
+export async function runDockerCompose(
+  options: DockerComposeOptions,
+): Promise<void> {
+  const policy = options.env.LOCAL_ENV_IMAGE_PULL_POLICY ?? "always";
+  if (policy !== "always" && policy !== "missing" && policy !== "never") {
+    throw new Error(
+      `Invalid LOCAL_ENV_IMAGE_PULL_POLICY '${policy}': expected always, missing or never.`,
+    );
+  }
   const images = new Set(await resolveComposeImages(options));
   for (const image of images) {
-    await ensureImageAvailable(image, options.env);
+    await ensureImageAvailable(image, options.env, policy);
   }
 
   const profileArgs = (options.profiles ?? []).map((p) => `--profile=${p}`);
-  const args = ["compose", ...profileArgs, ...fileArgs(options), "up", "--build"];
+  const args = [
+    "compose",
+    ...profileArgs,
+    ...fileArgs(options),
+    "up",
+    "--build",
+  ];
+  if (policy !== "always") args.push("--pull", policy);
   if (options.detach) {
     args.push("--detach");
   }
