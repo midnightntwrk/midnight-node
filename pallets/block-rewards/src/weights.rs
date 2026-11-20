@@ -85,10 +85,10 @@ fn accrue(db: RuntimeDbWeight) -> Weight {
 
 /// Fixed reads: `ParameterSets`, `SettlementHalted`, `Settlement`, `Settled`, `Activation`,
 /// `EscrowTotal`, the ledger's pool, `ClosedEpochs`, `NextClosed`, `SettlementUsage`,
-/// `SettlementBudget`, and `SettlementBudget` written. Per update,
-/// at most: the cursor, the closed epoch and the snapshot's id, pool and a row or a payout, the
-/// bucket, and `Payouts`, `Escrow`, `EscrowTotal` and the cursor written. `updates` is the work
-/// done, not the limit. The ledger's own work is added by the caller.
+/// `SettlementBudget`; fixed write: `SettlementBudget`. Per update, at most: the cursor, the
+/// closed epoch and the snapshot's id, pool and a row or a payout, the bucket, and `Payouts`,
+/// `Escrow`, `EscrowTotal` and the cursor written. `updates` is the work done, not the limit. The
+/// ledger's own work is added by the caller.
 fn settle(db: RuntimeDbWeight, updates: u32) -> Weight {
 	BASE.saturating_add(db.reads_writes(11, 5))
 		.saturating_add(db.reads_writes(6, 4).saturating_mul(updates.into()))
