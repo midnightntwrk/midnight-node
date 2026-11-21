@@ -134,6 +134,10 @@ pub struct MidnightCfg {
 	#[doc_tag(secret)]
 	pub db_sync_postgres_connection_string: Option<String>,
 
+	/// gRPC endpoint of an mc-follower indexer, eg. http://localhost:50051, to read Cardano data
+	/// from instead of db-sync. Genesis commands still read db-sync.
+	pub mc_follower_grpc_endpoint: Option<String>,
+
 	/// see partner-chains CandidateDataSourceCacheConfig and DbSyncBlockDataSourceConfig
 	pub cardano_security_parameter: Option<u32>,
 
@@ -192,8 +196,17 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 			"mock_registrations_file must be defined if use_main_chain_follower_mock is true or authorities.".to_string(),
 		));
 	}
+	if cfg.use_main_chain_follower_mock != MainChainFollowerMock::Disabled
+		&& cfg.mc_follower_grpc_endpoint.is_some()
+	{
+		return Err(validation::Error::Custom(
+			"mc_follower_grpc_endpoint must not be defined if use_main_chain_follower_mock is true or authorities.".to_string(),
+		));
+	}
 	if cfg.use_main_chain_follower_mock != MainChainFollowerMock::All {
-		if cfg.db_sync_postgres_connection_string.is_none() {
+		if cfg.mc_follower_grpc_endpoint.is_none()
+			&& cfg.db_sync_postgres_connection_string.is_none()
+		{
 			return Err(missing("db_sync_postgres_connection_string"));
 		}
 		if cfg.cardano_security_parameter.is_none() {

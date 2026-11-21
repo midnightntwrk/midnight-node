@@ -13,7 +13,7 @@
 
 use crate::data_source::candidates_data_source::observed_async_trait;
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
-use crate::db::{MultiAssetCache, PagedQuery, get_deregistrations, get_registrations};
+use crate::db::{CNightObservationRowSource, DbSyncCNightRows, PagedQuery, RowSourceError};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservationBound,
 	ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
@@ -54,6 +54,17 @@ pub enum MidnightCNightObservationDataSourceError {
 	RowLimitExceeded { rows: usize, limit: usize },
 	#[error("db-sync has no epoch_param row for the epoch of Cardano block {0}")]
 	MissingEpochParams(u32),
+	#[error("Error querying row source: {0}")]
+	RowSourceError(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl From<RowSourceError> for MidnightCNightObservationDataSourceError {
+	fn from(e: RowSourceError) -> Self {
+		match e {
+			RowSourceError::DbSync(e) => Self::DBQueryError(e),
+			RowSourceError::Other(e) => Self::RowSourceError(e),
+		}
+	}
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -72,12 +83,11 @@ pub enum RegistrationDatumDecodeError {
 	DustAddressInvalidLength(usize),
 }
 
-pub struct MidnightCNightObservationDataSourceImpl {
-	pub pool: PgPool,
+pub struct MidnightCNightObservationDataSourceImpl<R = DbSyncCNightRows> {
+	pub rows: R,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
-	multi_asset_cache: MultiAssetCache,
 }
 
 impl MidnightCNightObservationDataSourceImpl {
@@ -86,195 +96,233 @@ impl MidnightCNightObservationDataSourceImpl {
 		metrics_opt: Option<MidnightDataSourceMetrics>,
 		cache_size: u16,
 	) -> Self {
-		let multi_asset_cache = MultiAssetCache::new(pool.clone());
-		Self { pool, metrics_opt, cache_size, multi_asset_cache }
+		Self::with_row_source(DbSyncCNightRows::new(pool), metrics_opt, cache_size)
+	}
+}
+
+impl<R> MidnightCNightObservationDataSourceImpl<R> {
+	pub fn with_row_source(
+		rows: R,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+	) -> Self {
+		Self { rows, metrics_opt, cache_size }
 	}
 }
 
 observed_async_trait!(
-impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSourceImpl {
-	async fn get_utxos_up_to_capacity(
-		&self,
-		config: &CNightAddresses,
-		start_position: &CardanoPosition,
-		start_offset: u32,
-		current_tip: McBlockHash,
-		bound: &ObservationBound,
-		spec_version: u32,
-	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
-		let cnight_asset_name = config.cnight_asset_name.as_bytes();
+	impl<R> MidnightCNightObservationDataSource for MidnightCNightObservationDataSourceImpl<R>
+	where
+		R: CNightObservationRowSource,
+	{
+		async fn get_utxos_up_to_capacity(
+			&self,
+			config: &CNightAddresses,
+			start_position: &CardanoPosition,
+			start_offset: u32,
+			current_tip: McBlockHash,
+			bound: &ObservationBound,
+			spec_version: u32,
+		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+			let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
-		let mapping_validator_address = Address::from_bech32(&config.mapping_validator_address)
-			.map_err(|e| {
-				MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
-					e.to_string(),
+			let mapping_validator_address = Address::from_bech32(&config.mapping_validator_address)
+				.map_err(|e| {
+					MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
+						e.to_string(),
+					)
+				})?;
+
+			let cardano_network = mapping_validator_address.network_id().map_err(|_| {
+				MidnightCNightObservationDataSourceError::CardanoNetworkError(
+					config.mapping_validator_address.clone(),
 				)
 			})?;
 
-		let cardano_network = mapping_validator_address.network_id().map_err(|_| {
-			MidnightCNightObservationDataSourceError::CardanoNetworkError(
-				config.mapping_validator_address.clone(),
-			)
-		})?;
+			let mapping_validator_policy_id =
+				EnterpriseAddress::from_address(&mapping_validator_address)
+					.ok_or(
+						MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
+							"Not EnterpriseAddress".to_string(),
+						),
+					)?
+					.payment_cred()
+					.to_scripthash()
+					.ok_or(
+						MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
+							"MappingValidator address does not contain a script hash".to_string(),
+						),
+					)?;
 
-		let mapping_validator_policy_id =
-			EnterpriseAddress::from_address(&mapping_validator_address)
-				.ok_or(MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
-					"Not EnterpriseAddress".to_string(),
-				))?
-				.payment_cred()
-				.to_scripthash()
-				.ok_or(MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
-					"MappingValidator address does not contain a script hash".to_string(),
-				))?;
-
-		// Resolve multi_asset.id for auth token and cNight token (cached after first call)
-		let auth_token_ident = self
-			.multi_asset_cache
-			.resolve_ident(
-				&mapping_validator_policy_id.to_bytes(),
-				config.auth_token_asset_name.as_bytes(),
-			)
-			.await?;
-
-		let cnight_ident = self
-			.multi_asset_cache
-			.resolve_ident(&config.cnight_policy_id, cnight_asset_name)
-			.await?;
-
-		// Get end position from cardano block hash
-		let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");
-		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
-			.await?
-			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
-			.into();
-		drop(_block_timer);
-
-		let (low_bounds, high_bounds, max_rows_per_tx) = tokio::try_join!(
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
-				crate::db::get_low_bounds(&self.pool, start_position.block_number.into())
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_high_bounds");
-				crate::db::get_high_bounds(&self.pool, end.block_number.into())
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-			},
-			async {
-				let ObservationBound::Cost(_) = bound else { return Ok(0) };
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_max_tx_size");
-				let block = start_position.block_number;
-				let max_tx_size = crate::db::get_max_tx_size(&self.pool, block)
-					.await?
-					.ok_or(MidnightCNightObservationDataSourceError::MissingEpochParams(block))?;
-				Ok::<_, Box<dyn std::error::Error + Send + Sync>>((max_tx_size / MIN_ROW_BYTES) as usize)
-			},
-			)?;
-		let low_bounds = low_bounds.expect("Start position contains block hash that exists in database");
-		let high_bounds = high_bounds.expect("End position contains block hash that exists in database");
-		// Increment the end position to tx_index + 1 of the current mainchain position
-		let end = end.increment();
-		log::debug!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
-
-		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
-		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
-		// ^ We may not have to do the above if the queries are fast enough
-
-		let query = |ledger_gas: fn(&ObservationCostModel) -> u64| PagedQuery {
-			start: start_position,
-			end: &end,
-			limit: page_limit(bound, start_offset as usize, max_rows_per_tx, ledger_gas),
-			offset: 0,
-			low_bound: low_bounds,
-			high_bound: high_bounds,
-		};
-		let mapping_query = query(|_| 0);
-		let create_query = query(|model| model.create_gas);
-		let spend_query = query(|model| model.destroy_gas);
-
-		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_registrations");
-				match auth_token_ident {
-					Some(ident) => self.get_registration_utxos(
-						cardano_network,
-						ident,
-						&config.mapping_validator_address,
-						&mapping_query,
-					)
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(UtxoPage::default()),
-				}
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_deregistrations");
-				self.get_deregistration_utxos(
-					cardano_network,
-					&config.mapping_validator_address,
-					&mapping_query,
+			// Resolve multi_asset.id for auth token and cNight token (cached after first call)
+			let auth_token_ident = self
+				.rows
+				.resolve_asset(
+					&mapping_validator_policy_id.to_bytes(),
+					config.auth_token_asset_name.as_bytes(),
 				)
-				.await
-				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_creates");
-				match cnight_ident {
-					Some(ident) => self.get_asset_create_utxos(
-						cardano_network,
-						ident,
-						&create_query,
+				.await?;
+
+			let cnight_ident =
+				self.rows.resolve_asset(&config.cnight_policy_id, cnight_asset_name).await?;
+
+			// Get end position from cardano block hash
+			let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");
+			let end: CardanoPosition = self
+				.rows
+				.get_block_by_hash(current_tip.clone())
+				.await?
+				.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(
+					current_tip,
+				))?
+				.into();
+			drop(_block_timer);
+
+			let (low_bounds, high_bounds, max_rows_per_tx) = tokio::try_join!(
+				async {
+					let _sq_timer =
+						start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
+					self.rows
+						.get_low_bounds(start_position.block_number.into())
+						.await
+						.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+				},
+				async {
+					let _sq_timer =
+						start_sub_query_timer(&self.metrics_opt, "cnight_get_high_bounds");
+					self.rows
+						.get_high_bounds(end.block_number.into())
+						.await
+						.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+				},
+				async {
+					let ObservationBound::Cost(_) = bound else { return Ok(0) };
+					let _sq_timer =
+						start_sub_query_timer(&self.metrics_opt, "cnight_get_max_tx_size");
+					let block = start_position.block_number;
+					let max_tx_size = self.rows.get_max_tx_size(block).await?.ok_or(
+						MidnightCNightObservationDataSourceError::MissingEpochParams(block),
+					)?;
+					Ok::<_, Box<dyn std::error::Error + Send + Sync>>(
+						(max_tx_size / MIN_ROW_BYTES) as usize,
 					)
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(UtxoPage::default()),
-				}
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_spends");
-				match cnight_ident {
-					Some(ident) => self.get_asset_spend_utxos(
-						cardano_network,
-						ident,
-						&spend_query,
+				},
+			)?;
+			let low_bounds =
+				low_bounds.expect("Start position contains block hash that exists in database");
+			let high_bounds =
+				high_bounds.expect("End position contains block hash that exists in database");
+			// Increment the end position to tx_index + 1 of the current mainchain position
+			let end = end.increment();
+			log::debug!(
+				"Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}",
+				low_bounds,
+				high_bounds,
+				start_position,
+				end
+			);
+
+			// Call db methods to get UTXOs (offset + limit) until we reach our capacity
+			// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
+			// ^ We may not have to do the above if the queries are fast enough
+
+			let query = |ledger_gas: fn(&ObservationCostModel) -> u64| PagedQuery {
+				start: start_position,
+				end: &end,
+				limit: page_limit(bound, start_offset as usize, max_rows_per_tx, ledger_gas),
+				offset: 0,
+				low_bound: low_bounds,
+				high_bound: high_bounds,
+			};
+			let mapping_query = query(|_| 0);
+			let create_query = query(|model| model.create_gas);
+			let spend_query = query(|model| model.destroy_gas);
+
+			let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) =
+				tokio::try_join!(
+					async {
+						let _sq_timer =
+							start_sub_query_timer(&self.metrics_opt, "cnight_get_registrations");
+						match &auth_token_ident {
+							Some(ident) => self
+								.get_registration_utxos(
+									cardano_network,
+									ident,
+									&config.mapping_validator_address,
+									&mapping_query,
+								)
+								.await
+								.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
+							None => Ok(UtxoPage::default()),
+						}
+					},
+					async {
+						let _sq_timer =
+							start_sub_query_timer(&self.metrics_opt, "cnight_get_deregistrations");
+						self.get_deregistration_utxos(
+							cardano_network,
+							&config.mapping_validator_address,
+							&mapping_query,
+						)
+						.await
+						.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+					},
+					async {
+						let _sq_timer =
+							start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_creates");
+						match &cnight_ident {
+							Some(ident) => self
+								.get_asset_create_utxos(cardano_network, ident, &create_query)
+								.await
+								.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
+							None => Ok(UtxoPage::default()),
+						}
+					},
+					async {
+						let _sq_timer =
+							start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_spends");
+						match &cnight_ident {
+							Some(ident) => self
+								.get_asset_spend_utxos(cardano_network, ident, &spend_query)
+								.await
+								.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
+							None => Ok(UtxoPage::default()),
+						}
+					}
+				)?;
+
+			let pages =
+				[registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos];
+			let frontier = match bound {
+				ObservationBound::Count(_) => None,
+				ObservationBound::Cost(_) => earliest_cut_short(&pages),
+			};
+			// Concatenation order matters: the legacy sort is stable over it.
+			let mut utxos = ObservationBatch::new(
+				pages.into_iter().flat_map(|page| page.utxos).collect(),
+				spec_version,
+			);
+			skip_observed(&mut utxos, start_position, start_offset as usize);
+
+			let (utxos, cut) = admit_prefix(utxos, bound, frontier.as_ref());
+			match &cut {
+				Cut::Cost(resume_at)
+					if utxos.last().is_some_and(|u| u.header.tx_position == *resume_at) =>
+				{
+					log::info!(
+						"cNIGHT observation batch ends inside the Cardano transaction at {resume_at}; resuming there"
 					)
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(UtxoPage::default()),
-				}
+				},
+				Cut::Cost(resume_at) => log::warn!(
+					"cNIGHT observation falling behind the Cardano tip: cNIGHT activity exceeds one block's ledger or size budget, admitted {} UTXOs, resuming at {resume_at}",
+					utxos.len()
+				),
+				_ => {},
 			}
-		)?;
-
-		let pages = [registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos];
-		let frontier = match bound {
-			ObservationBound::Count(_) => None,
-			ObservationBound::Cost(_) => earliest_cut_short(&pages),
-		};
-		// Concatenation order matters: the legacy sort is stable over it.
-		let mut utxos = ObservationBatch::new(
-			pages.into_iter().flat_map(|page| page.utxos).collect(),
-			spec_version,
-		);
-		skip_observed(&mut utxos, start_position, start_offset as usize);
-
-		let (utxos, cut) = admit_prefix(utxos, bound, frontier.as_ref());
-		match &cut {
-			Cut::Cost(resume_at) if utxos.last().is_some_and(|u| u.header.tx_position == *resume_at) => log::info!(
-				"cNIGHT observation batch ends inside the Cardano transaction at {resume_at}; resuming there"
-			),
-			Cut::Cost(resume_at) => log::warn!(
-				"cNIGHT observation falling behind the Cardano tip: cNIGHT activity exceeds one block's ledger or size budget, admitted {} UTXOs, resuming at {resume_at}",
-				utxos.len()
-			),
-			_ => {},
+			let end = cut.end(&utxos, start_position, end);
+			Ok(ObservedUtxos { start: start_position.clone(), end, utxos })
 		}
-		let end = cut.end(&utxos, start_position, end);
-		Ok(ObservedUtxos { start: start_position.clone(), end, utxos })
 	}
-}
 );
 
 /// One UTXO kind's page: the UTXOs decoded from its rows and, when the rows filled the
@@ -286,9 +334,9 @@ struct UtxoPage {
 	cut_short_at: Option<CardanoPosition>,
 }
 
-fn check_row_limit(
+fn check_row_limit<B>(
 	rows: usize,
-	query: &PagedQuery<'_>,
+	query: &PagedQuery<'_, B>,
 ) -> Result<(), MidnightCNightObservationDataSourceError> {
 	if rows > query.limit {
 		return Err(MidnightCNightObservationDataSourceError::RowLimitExceeded {
@@ -437,7 +485,7 @@ fn admit_prefix(
 	(utxos, cut)
 }
 
-impl MidnightCNightObservationDataSourceImpl {
+impl<R: CNightObservationRowSource> MidnightCNightObservationDataSourceImpl<R> {
 	fn decode_registration_datum(
 		datum: ConstrPlutusData,
 	) -> Result<(Credential, DustPublicKeyBytes), RegistrationDatumDecodeError> {
@@ -485,11 +533,11 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_registration_utxos(
 		&self,
 		cardano_network: u8,
-		auth_token_ident: i64,
+		auth_token_ident: &R::AssetIdent,
 		address: &str,
-		query: &PagedQuery<'_>,
+		query: &PagedQuery<'_, R::Bounds>,
 	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
-		let rows = get_registrations(&self.pool, address, auth_token_ident, query).await?;
+		let rows = self.rows.get_registrations(address, auth_token_ident, query).await?;
 
 		check_row_limit(rows.len(), query)?;
 		let filled_cap = rows.len() == query.limit;
@@ -547,9 +595,9 @@ impl MidnightCNightObservationDataSourceImpl {
 		&self,
 		cardano_network: u8,
 		address: &str,
-		query: &PagedQuery<'_>,
+		query: &PagedQuery<'_, R::Bounds>,
 	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
-		let rows = get_deregistrations(&self.pool, address, query).await?;
+		let rows = self.rows.get_deregistrations(address, query).await?;
 
 		check_row_limit(rows.len(), query)?;
 		let filled_cap = rows.len() == query.limit;
@@ -606,10 +654,10 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_asset_create_utxos(
 		&self,
 		cardano_network: u8,
-		ident: i64,
-		query: &PagedQuery<'_>,
+		ident: &R::AssetIdent,
+		query: &PagedQuery<'_, R::Bounds>,
 	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
-		let rows = crate::db::get_asset_creates(&self.pool, ident, query).await?;
+		let rows = self.rows.get_asset_creates(ident, query).await?;
 
 		check_row_limit(rows.len(), query)?;
 		let filled_cap = rows.len() == query.limit;
@@ -670,10 +718,10 @@ impl MidnightCNightObservationDataSourceImpl {
 	async fn get_asset_spend_utxos(
 		&self,
 		cardano_network: u8,
-		ident: i64,
-		query: &PagedQuery<'_>,
+		ident: &R::AssetIdent,
+		query: &PagedQuery<'_, R::Bounds>,
 	) -> Result<UtxoPage, MidnightCNightObservationDataSourceError> {
-		let rows = crate::db::get_asset_spends(&self.pool, ident, query).await?;
+		let rows = self.rows.get_asset_spends(ident, query).await?;
 
 		check_row_limit(rows.len(), query)?;
 		let filled_cap = rows.len() == query.limit;

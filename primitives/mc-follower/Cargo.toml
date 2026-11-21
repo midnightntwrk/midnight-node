@@ -1,0 +1,24 @@
+[package]
+name = "midnight-primitives-mc-follower"
+version = "0.1.0"
+edition = "2024"
+description = "mc-follower gRPC row source for the Midnight main chain follower data sources"
+license-file.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+cardano-serialization-lib.workspace = true
+chrono = "0.4.31"
+db-sync-sqlx.workspace = true
+hex = { workspace = true, features = ["std"] }
+midnight-primitives-mainchain-follower = { workspace = true, features = ["std"] }
+partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "bridge"] }
+prost = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true, features = ["std"] }
+sidechain-domain = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio.workspace = true
+tonic.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true

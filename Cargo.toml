@@ -21,6 +21,7 @@ members = [
     "primitives/reserve-observation",
     "primitives/midnight",
     "primitives/ledger",
+    "primitives/mc-follower",
     "primitives/session-info",
     "primitives/consensus-engine",
     "primitives/system-parameters",
@@ -161,6 +162,7 @@ midnight-primitives = { path = "primitives/midnight", default-features = false }
 midnight-primitives-beefy = { path = "primitives/beefy", default-features = false }
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
+midnight-primitives-mc-follower = { path = "primitives/mc-follower" }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-reserve-observation = { path = "primitives/reserve-observation", default-features = false }
@@ -353,6 +355,8 @@ impl-trait-for-tuples = "0.2.2"
 test-log = "0.2"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"] }
 prost = { version = "0.13.5", default-features = false}
+tonic = { version = "0.12.3", default-features = false, features = ["channel", "codegen", "prost"] }
+tonic-build = { version = "0.12.3", default-features = false, features = ["prost", "transport"] }
 reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-tls", "blocking", "json" ] }
 # Used only to pin the process-wide rustls default CryptoProvider to `ring` in binary `main()`s.
 # Both `ring` (via sqlx) and `aws-lc-rs` (via reqwest) are compiled in, so rustls cannot

@@ -82,12 +82,18 @@ impl DbSyncConfigurationProvider {
 	}
 }
 
+/// Cardano block row
 #[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
-pub(crate) struct Block {
+pub struct Block {
+	/// Block number
 	pub block_no: BlockNumber,
+	/// Block hash
 	pub hash: [u8; 32],
+	/// Epoch of the block
 	pub epoch_no: EpochNumber,
+	/// Slot of the block
 	pub slot_no: SlotNumber,
+	/// Slot start time of the block
 	pub time: NaiveDateTime,
 }
 
@@ -187,14 +193,17 @@ impl From<NativeTokenAmount> for u64 {
 }
 
 impl NativeTokenAmount {
+	/// Subtraction, `None` on underflow
 	pub fn checked_sub(self, rhs: NativeTokenAmount) -> Option<NativeTokenAmount> {
 		self.0.checked_sub(rhs.0).map(NativeTokenAmount)
 	}
 
+	/// Subtraction, saturating at zero
 	pub fn saturating_sub(self, rhs: NativeTokenAmount) -> NativeTokenAmount {
 		NativeTokenAmount(self.0.saturating_sub(rhs.0))
 	}
 
+	/// Whether the amount is zero
 	pub fn is_zero(&self) -> bool {
 		self.0 == 0
 	}
@@ -637,27 +646,31 @@ impl From<C2mMetadataIfValid> for Option<JsonValue> {
 	}
 }
 
+/// Cardano transaction moving bridge tokens, with its bridge and reserve token totals
 #[cfg(feature = "bridge")]
 #[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
-pub(crate) struct BridgeTx {
-	pub(crate) block_number: BlockNumber,
-	pub(crate) tx_ix: TxIndexInBlock,
-	pub(crate) tx_hash: TxHash,
+pub struct BridgeTx {
+	/// Number of the block containing the transaction
+	pub block_number: BlockNumber,
+	/// Index of the transaction in its block
+	pub tx_ix: TxIndexInBlock,
+	/// Transaction hash
+	pub tx_hash: TxHash,
 	/// Value of transaction metadata with a specific C-to-M key.
 	/// Not the full metadata JSON. Db-sync metadata uses a separate row per metadata key.
 	///
 	/// Metadata that cannot be decoded is read as `None`, which makes the transfer's recipient
 	/// [sp_partner_chains_bridge::TransferRecipient::Invalid], same as any other unusable value.
 	#[sqlx(try_from = "C2mMetadataIfValid")]
-	pub(crate) c2m_metadata: Option<JsonValue>,
+	pub c2m_metadata: Option<JsonValue>,
 	/// Sum of bridge token amounts in inputs at bridge address for given tx
-	pub(crate) bridge_in: NativeTokenAmount,
+	pub bridge_in: NativeTokenAmount,
 	/// Sum of bridge token amounts in outputs at bridge address for given tx
-	pub(crate) bridge_out: NativeTokenAmount,
-	// Sum of bridge token amounts in inputs at reserve address for given tx
-	pub(crate) reserve_in: NativeTokenAmount,
+	pub bridge_out: NativeTokenAmount,
+	/// Sum of bridge token amounts in inputs at reserve address for given tx
+	pub reserve_in: NativeTokenAmount,
 	/// Sum of bridge token amounts in outputs at reserve address for given tx
-	pub(crate) reserve_out: NativeTokenAmount,
+	pub reserve_out: NativeTokenAmount,
 }
 #[cfg(feature = "bridge")]
 impl BridgeTx {
@@ -673,20 +686,28 @@ impl BridgeTx {
 #[cfg(feature = "bridge")]
 pub(crate) type TxOrderingKey = (BlockNumber, TxIndexInBlock);
 
+/// Position after which bridge transactions are read
 #[cfg(feature = "bridge")]
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub(crate) enum ResolvedBridgeDataCheckpoint {
+pub enum ResolvedBridgeDataCheckpoint {
+	/// Transactions after this transaction
 	Tx {
+		/// Block number of the transaction
 		block_number: BlockNumber,
+		/// Index of the transaction in its block
 		tx_ix: TxIndexInBlock,
 	},
 	/// A transaction that has to be returned again, without its reserve transfer, which has
 	/// already been processed by the runtime.
 	TxReserveTransfer {
+		/// Block number of the transaction
 		block_number: BlockNumber,
+		/// Index of the transaction in its block
 		tx_ix: TxIndexInBlock,
 	},
+	/// Transactions after this block
 	Block {
+		/// Block number
 		number: BlockNumber,
 	},
 }
@@ -702,11 +723,14 @@ impl ResolvedBridgeDataCheckpoint {
 	}
 }
 
+/// Position of a Cardano transaction
 #[cfg(feature = "bridge")]
 #[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
-pub(crate) struct TxBlockInfo {
-	pub(crate) block_number: BlockNumber,
-	pub(crate) tx_ix: TxIndexInBlock,
+pub struct TxBlockInfo {
+	/// Number of the block containing the transaction
+	pub block_number: BlockNumber,
+	/// Index of the transaction in its block
+	pub tx_ix: TxIndexInBlock,
 }
 
 #[cfg(feature = "bridge")]

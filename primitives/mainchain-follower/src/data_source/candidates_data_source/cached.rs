@@ -17,7 +17,7 @@
 //! to allow efficient queries when syncing the chain.
 
 use super::CandidatesDataSourceImpl;
-use super::db_model;
+use super::row_source::{CandidatesRowSource, DbSyncCandidatesRows};
 use async_trait::async_trait;
 use authority_selection_inherents::*;
 use figment::{Figment, providers::Env};
@@ -34,8 +34,8 @@ pub type ArcMut<T> = Arc<Mutex<T>>;
 
 type AriadneParametersCacheKey = (McEpochNumber, PolicyId, PolicyId);
 type CandidatesCacheKey = (McEpochNumber, String);
-pub struct CandidateDataSourceCached {
-	inner: CandidatesDataSourceImpl,
+pub struct CandidateDataSourceCached<R = DbSyncCandidatesRows> {
+	inner: CandidatesDataSourceImpl<R>,
 	get_ariadne_parameters_for_epoch_cache:
 		ArcMut<LruCache<AriadneParametersCacheKey, AriadneParameters>>,
 	get_candidates_for_epoch_cache:
@@ -46,7 +46,7 @@ pub struct CandidateDataSourceCached {
 }
 
 #[async_trait]
-impl AuthoritySelectionDataSource for CandidateDataSourceCached {
+impl<R: CandidatesRowSource> AuthoritySelectionDataSource for CandidateDataSourceCached<R> {
 	async fn get_ariadne_parameters(
 		&self,
 		epoch: McEpochNumber,
@@ -127,9 +127,9 @@ impl CandidateDataSourceCacheConfig {
 	}
 }
 
-impl CandidateDataSourceCached {
+impl<R: CandidatesRowSource> CandidateDataSourceCached<R> {
 	pub fn new(
-		inner: CandidatesDataSourceImpl,
+		inner: CandidatesDataSourceImpl<R>,
 		candidates_for_epoch_cache_size: usize,
 		security_parameter: u32,
 	) -> Self {
@@ -150,7 +150,7 @@ impl CandidateDataSourceCached {
 	}
 
 	pub fn new_from_env(
-		inner: CandidatesDataSourceImpl,
+		inner: CandidatesDataSourceImpl<R>,
 		candidates_for_epoch_cache_size: usize,
 	) -> std::result::Result<Self, Box<dyn Error + Send + Sync + 'static>> {
 		let config = CandidateDataSourceCacheConfig::from_env()?;
@@ -216,7 +216,7 @@ impl CandidateDataSourceCached {
 		{
 			return Ok(true);
 		}
-		match db_model::get_latest_stable_epoch(&self.inner.pool, self.security_parameter).await? {
+		match self.inner.rows.get_latest_stable_epoch(self.security_parameter).await? {
 			Some(stable_epoch) => {
 				let stable_epoch = McEpochNumber(stable_epoch.0);
 				if let Ok(mut highest_seen_stable_epoch) = self.highest_seen_stable_epoch.lock() {

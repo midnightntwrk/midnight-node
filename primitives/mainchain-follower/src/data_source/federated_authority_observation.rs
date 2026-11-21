@@ -14,7 +14,7 @@
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
 use crate::{
 	FederatedAuthorityObservationDataSource,
-	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
+	data_source::candidates_data_source::observed_async_trait, db::FederatedAuthorityRowSource,
 };
 use cardano_serialization_lib::PlutusData;
 use lru::LruCache;
@@ -56,18 +56,14 @@ impl FederatedAuthorityCacheKey {
 	}
 }
 
-pub struct FederatedAuthorityObservationDataSourceImpl {
-	pub pool: PgPool,
+pub struct FederatedAuthorityObservationDataSourceImpl<R = PgPool> {
+	pub pool: R,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	cache: Arc<Mutex<LruCache<FederatedAuthorityCacheKey, FederatedAuthorityData>>>,
 }
 
-impl FederatedAuthorityObservationDataSourceImpl {
-	pub fn new(
-		pool: PgPool,
-		metrics_opt: Option<MidnightDataSourceMetrics>,
-		cache_size: u16,
-	) -> Self {
+impl<R> FederatedAuthorityObservationDataSourceImpl<R> {
+	pub fn new(pool: R, metrics_opt: Option<MidnightDataSourceMetrics>, cache_size: u16) -> Self {
 		let cap = NonZeroUsize::new(cache_size.max(1) as usize).unwrap();
 		let cache = Arc::new(Mutex::new(LruCache::new(cap)));
 		Self { pool, metrics_opt, cache }
@@ -75,115 +71,122 @@ impl FederatedAuthorityObservationDataSourceImpl {
 }
 
 observed_async_trait!(
-impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl {
-	async fn get_federated_authority_data(
-		&self,
-		config: &FederatedAuthorityObservationConfig,
-		mc_block_hash: &McBlockHash,
-	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
-		// Memoize combined council and technical committee data by Cardano block
-		// hash *and* the governance config the query reads from.
-		let cache_key = FederatedAuthorityCacheKey::new(config, mc_block_hash);
-		if let Ok(mut cache) = self.cache.lock()
-			&& let Some(cached) = cache.get(&cache_key)
-		{
-			log::debug!("fedauth cache hit for mc_block_hash {:?}", mc_block_hash);
-			return Ok(cached.clone());
-		}
+	impl<R> FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl<R>
+	where
+		R: FederatedAuthorityRowSource,
+	{
+		async fn get_federated_authority_data(
+			&self,
+			config: &FederatedAuthorityObservationConfig,
+			mc_block_hash: &McBlockHash,
+		) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
+			// Memoize combined council and technical committee data by Cardano block
+			// hash *and* the governance config the query reads from.
+			let cache_key = FederatedAuthorityCacheKey::new(config, mc_block_hash);
+			if let Ok(mut cache) = self.cache.lock()
+				&& let Some(cached) = cache.get(&cache_key)
+			{
+				log::debug!("fedauth cache hit for mc_block_hash {:?}", mc_block_hash);
+				return Ok(cached.clone());
+			}
 
-		// Get block number from hash
-		let _block_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
-		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
-		drop(_block_timer);
+			// Get block number from hash
+			let _block_timer =
+				start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
+			let block = self.pool.get_block_by_hash(mc_block_hash.clone()).await?;
+			drop(_block_timer);
 
-		let block_number = match block {
-			Some(b) => b.block_number.0,
-			None => {
-				return Err(format!("Block not found for hash: {:?}", mc_block_hash).into());
-			},
-		};
+			let block_number = match block {
+				Some(b) => b.block_number.0,
+				None => {
+					return Err(format!("Block not found for hash: {:?}", mc_block_hash).into());
+				},
+			};
 
-		let _council_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
-		let council_utxo = get_governance_body_utxo(
-			&self.pool,
-			&config.council.address,
-			&config.council.policy_id,
-			block_number,
-		)
-		.await?;
-		drop(_council_timer);
+			let _council_timer =
+				start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
+			let council_utxo = self
+				.pool
+				.get_governance_body_utxo(
+					&config.council.address,
+					&config.council.policy_id,
+					block_number,
+				)
+				.await?;
+			drop(_council_timer);
 
-		let council_authorities: AuthoritiesData = match council_utxo {
-			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(datum) => AuthoritiesData::from(datum),
-				Err(e) => {
+			let council_authorities: AuthoritiesData = match council_utxo {
+				Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
+					Ok(datum) => AuthoritiesData::from(datum),
+					Err(e) => {
+						log::warn!(
+							"Failed to decode council datum in Cardano block {}: {}. Using empty list.",
+							utxo.block_number.0,
+							e,
+						);
+						AuthoritiesData { authorities: vec![], round: 0 }
+					},
+				},
+				None => {
 					log::warn!(
-						"Failed to decode council datum in Cardano block {}: {}. Using empty list.",
-						utxo.block_number.0,
-						e,
+						"No council UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
+						block_number,
+						config.council.address,
+						config.council.policy_id
 					);
 					AuthoritiesData { authorities: vec![], round: 0 }
 				},
-			},
-			None => {
-				log::warn!(
-					"No council UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
+			};
+
+			let _techcomm_timer =
+				start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
+			let technical_committee_utxo = self
+				.pool
+				.get_governance_body_utxo(
+					&config.technical_committee.address,
+					&config.technical_committee.policy_id,
 					block_number,
-					config.council.address,
-					config.council.policy_id
-				);
-				AuthoritiesData { authorities: vec![], round: 0 }
-			},
-		};
+				)
+				.await?;
+			drop(_techcomm_timer);
 
-		let _techcomm_timer =
-			start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
-		let technical_committee_utxo = get_governance_body_utxo(
-			&self.pool,
-			&config.technical_committee.address,
-			&config.technical_committee.policy_id,
-			block_number,
-		)
-		.await?;
-		drop(_techcomm_timer);
-
-		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
-			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
-				Ok(datum) => AuthoritiesData::from(datum),
-				Err(e) => {
+			let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
+				Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
+					Ok(datum) => AuthoritiesData::from(datum),
+					Err(e) => {
+						log::warn!(
+							"Failed to decode technical committee datum in Cardano block {}: {}. Using empty list.",
+							utxo.block_number.0,
+							e,
+						);
+						AuthoritiesData { authorities: vec![], round: 0 }
+					},
+				},
+				None => {
 					log::warn!(
-						"Failed to decode technical committee datum in Cardano block {}: {}. Using empty list.",
-						utxo.block_number.0,
-						e,
+						"No technical committee UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
+						block_number,
+						config.technical_committee.address,
+						config.technical_committee.policy_id
 					);
 					AuthoritiesData { authorities: vec![], round: 0 }
 				},
-			},
-			None => {
-				log::warn!(
-					"No technical committee UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
-					block_number,
-					config.technical_committee.address,
-					config.technical_committee.policy_id
-				);
-				AuthoritiesData { authorities: vec![], round: 0 }
-			},
-		};
+			};
 
-		let result = FederatedAuthorityData {
-			council_authorities,
-			technical_committee_authorities,
-			mc_block_hash: mc_block_hash.clone(),
-		};
-		if let Ok(mut cache) = self.cache.lock() {
-			cache.put(cache_key, result.clone());
+			let result = FederatedAuthorityData {
+				council_authorities,
+				technical_committee_authorities,
+				mc_block_hash: mc_block_hash.clone(),
+			};
+			if let Ok(mut cache) = self.cache.lock() {
+				cache.put(cache_key, result.clone());
+			}
+			Ok(result)
 		}
-		Ok(result)
 	}
-}
 );
 
-impl FederatedAuthorityObservationDataSourceImpl {
+impl<R: FederatedAuthorityRowSource> FederatedAuthorityObservationDataSourceImpl<R> {
 	/// Decode PlutusData containing governance body members
 	///
 	/// Expected format (VersionedMultisig)
