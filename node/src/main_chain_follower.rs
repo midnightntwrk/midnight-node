@@ -252,21 +252,12 @@ pub async fn create_cached_data_sources(
 		None
 	};
 	warn_deprecated_allow_non_ssl(&cfg);
-	let postgres_uri = &cfg
+	let postgres_uri = cfg
 		.db_sync_postgres_connection_string
+		.as_deref()
 		.ok_or(missing("db_sync_postgres_connection_string"))?;
 
-	let db_sync_block_data_source_config = DbSyncBlockDataSourceConfig {
-		cardano_security_parameter: cfg
-			.cardano_security_parameter
-			.ok_or(missing("cardano_security_parameter"))?,
-		cardano_active_slots_coeff: cfg
-			.cardano_active_slots_coeff
-			.ok_or(missing("cardano_active_slots_coeff"))?,
-		block_stability_margin: cfg
-			.block_stability_margin
-			.ok_or(missing("block_stability_margin"))?,
-	};
+	let db_sync_block_data_source_config = block_data_source_config(&cfg)?;
 
 	let mc = MainchainEpochConfig {
 		first_epoch_timestamp_millis: Timestamp::from_unix_millis(
