@@ -16,7 +16,7 @@
 //! The row source traits of the data sources, implemented against mc-follower. Responses are
 //! converted into the db-sync row types, failing where decoding the db-sync row fails.
 
-use crate::{McFollowerError, McFollowerRowSource, datum, proto};
+use crate::{McFollowerError, McFollowerRowSource, RESPONSE_TIMEOUT, datum, proto};
 use cardano_serialization_lib::PlutusData;
 use chrono::{DateTime, NaiveDateTime};
 use db_sync_sqlx::{
@@ -150,12 +150,16 @@ fn window(query: &mf::PagedQuery<'_, ()>) -> (Option<proto::PositionWindow>, u32
 	(Some(window), query.limit as u32, query.offset as u32)
 }
 
+/// Collects a streamed response, failing when no message arrives within [RESPONSE_TIMEOUT]
 async fn collect<T, R>(
 	mut stream: tonic::Streaming<T>,
 	convert: impl Fn(T) -> Result<R>,
 ) -> Result<Vec<R>> {
 	let mut rows = Vec::new();
-	while let Some(message) = stream.message().await? {
+	while let Some(message) = tokio::time::timeout(RESPONSE_TIMEOUT, stream.message())
+		.await
+		.map_err(|_| McFollowerError::Timeout)??
+	{
 		rows.push(convert(message)?);
 	}
 	Ok(rows)

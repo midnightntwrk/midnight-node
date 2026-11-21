@@ -17,6 +17,7 @@ prost = { workspace = true, features = ["std", "derive"] }
 serde_json = { workspace = true, features = ["std"] }
 sidechain-domain = { workspace = true, features = ["std"] }
 thiserror = { workspace = true, features = ["std"] }
+tokio.workspace = true
 tonic.workspace = true
 
 [build-dependencies]

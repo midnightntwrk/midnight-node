@@ -26,7 +26,17 @@ pub mod proto {
 }
 
 use proto::mc_follower_client::McFollowerClient;
+use std::time::Duration;
 use tonic::{Status, transport::Channel};
+
+/// Bound on connecting, as the db-sync connection pools' acquire timeout
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bound on waiting for a response, and for each message of a streamed one
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Interval of the HTTP/2 pings and TCP keepalive probes detecting a dead connection
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+/// Wait for a ping's acknowledgement before the connection is considered dead
+const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Every error fails the data source call, as a failed db-sync query does: mc-follower reports
 /// absent data in its responses, so an error never means "no data".
@@ -38,6 +48,8 @@ enum McFollowerError {
 	InvalidResponse(String),
 	#[error("undecodable datum in mc-follower response: {0}")]
 	UndecodableDatum(String),
+	#[error("mc-follower response timed out")]
+	Timeout,
 }
 
 impl From<Status> for McFollowerError {
@@ -57,7 +69,16 @@ impl McFollowerRowSource {
 	pub async fn connect(
 		endpoint: String,
 	) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-		let channel = Channel::from_shared(endpoint)?.connect().await?;
+		// `timeout` bounds only the wait for response headers, not the messages of a stream
+		let channel = Channel::from_shared(endpoint)?
+			.connect_timeout(CONNECT_TIMEOUT)
+			.timeout(RESPONSE_TIMEOUT)
+			.http2_keep_alive_interval(KEEPALIVE_INTERVAL)
+			.keep_alive_timeout(KEEPALIVE_TIMEOUT)
+			.keep_alive_while_idle(true)
+			.tcp_keepalive(Some(KEEPALIVE_INTERVAL))
+			.connect()
+			.await?;
 		Ok(Self { client: McFollowerClient::new(channel) })
 	}
 
