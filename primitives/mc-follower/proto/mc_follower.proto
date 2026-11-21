@@ -1,15 +1,14 @@
 // Copyright (c) 2026, Seungheon Oh
 // SPDX-License-Identifier: BSD-3-Clause
 //
-// mc-follower gRPC contract.
+// mc-follower gRPC contract: the interface between mc-follower, a Cardano
+// indexer, and a Midnight node that reads its Cardano data from it instead
+// of cardano-db-sync.
 //
 // The canonical copy of this file lives in the mc-follower repository
 // (https://github.com/SeungheonOh/mc-follower). Companion documents there:
-// docs/CONTRACT.md (trait mapping, data-model semantics) and docs/SPEC.md
-// (design decisions).
-//
-// Source references below are to midnight-node at tag node-2.1.101; line
-// numbers may have moved since.
+// docs/CONTRACT.md (the SQL each RPC replaces, the node's row-source traits,
+// data-model semantics) and docs/SPEC.md (design).
 //
 // Every RPC except GetStatus replaces exactly one SQL query that a running
 // Midnight node executes against cardano-db-sync (GetBlockByHash replaces two
@@ -18,8 +17,8 @@
 // evaluated against the indexer's current chain (volatile blocks included),
 // exactly as db-sync answers against its current database.
 //
-// Source references are `path:line` in the midnight-node repository.
-// Abbreviations used in comments:
+// Comments name the node's functions and source files, with these
+// abbreviations for paths in the midnight-node repository:
 //   PC   = partner-chains/toolkit/data-sources/db-sync/src
 //   MF   = primitives/mainchain-follower/src
 //
@@ -50,23 +49,30 @@
 //     lexicographically, matching both SQL row comparisons and the Rust
 //     CardanoPosition / TxOrderingKey orderings.
 //   * Absence of a row is encoded in the response (`optional` fields or an
-//     empty stream), never as a gRPC error, because the SQL returns zero rows
-//     and the Rust code decides what absence means.
+//     empty stream) where db-sync would return zero rows too. Where the
+//     indexer cannot vouch that db-sync would have no row (data it does not
+//     know yet), it answers UNAVAILABLE instead, never an empty result.
 //
 // Error model (all RPCs):
 //   * OK with an absent/empty result: the query legitimately has no rows.
-//   * UNAVAILABLE: the store is not open, or the indexer has not yet reached
-//     its configured start point, or a backfill for an address/policy named in
-//     the request is in progress. The node treats this like a failed Postgres
-//     connection (an error from the data source).
+//   * UNAVAILABLE: the store cannot be opened (missing, or of another
+//     network or watch set); no block is indexed yet; a block number bound
+//     above the indexed tip; an epoch bound of GetLatestBlockForEpoch or
+//     GetLatestTokenOutputForEpoch that is not complete in the index (not
+//     below the tip's epoch); or epoch data the indexer does not know (yet):
+//     an epoch nonce, a stake distribution, or a max_tx_size gated by an
+//     unacknowledged proposal (see those RPCs). The node treats this like a
+//     failed Postgres connection (an error from the data source).
 //   * FAILED_PRECONDITION: the request names an address or policy the
 //     indexer is not configured to index. Must never be answered with an empty
 //     result, because db-sync would have returned rows.
-//   * OUT_OF_RANGE: a value the SQL path would fail to decode in Rust (noted
-//     per RPC) appears in a returned row. Prefer returning the raw value and
-//     letting Rust fail; OUT_OF_RANGE is only used where the wire type cannot
-//     carry the value.
-//   * INVALID_ARGUMENT: malformed request (wrong hash length, etc.).
+//   * OUT_OF_RANGE: a returned value the wire type cannot carry (a bridge
+//     sum of 2^128 or more). Values the node fails to decode in Rust but the
+//     wire can carry are returned as they are, and the Rust client fails.
+//   * INVALID_ARGUMENT: malformed request (wrong hash length, missing
+//     required message, limit or offset of 2^31 or more).
+//   * INTERNAL: anything unexpected, including stored epoch data that
+//     contradicts itself (a driver nonce that differs from the shipped one).
 //   * Each RPC is answered from one read snapshot of the store (one SQLite
 //     read transaction for the whole stream).
 
@@ -88,29 +94,29 @@ service McFollower {
   // Block data source (PC/block, used by mc_hash, sidechain_rpc, bridge).
   // ---------------------------------------------------------------------
 
-  // Replaces: get_latest_block_info, PC/db_model.rs:217.
+  // Replaces: get_latest_block_info, PC/db_model.rs.
   //   SELECT block_no, hash, epoch_no, slot_no, time FROM block
   //   WHERE block_no IS NOT NULL ORDER BY block_no DESC LIMIT 1
   // Ordering: block_no DESC. Limit: 1. Bounds: none.
   // Returns the highest-numbered block of the indexer's current chain
   // (volatile part included), or nothing if no block is indexed.
   // Fidelity: SPEC 4.time, 4.ebb.
-  // Callers: BlockDataSourceImpl::get_latest_block_info (PC/block/mod.rs:107),
-  //   is_cardano_ok (PC/block/mod.rs:179), get_stable_block_by_hash_from_db
-  //   (PC/block/mod.rs:403), fill_cache (PC/block/mod.rs:457).
+  // Callers: BlockDataSourceImpl::get_latest_block_info (PC/block/mod.rs),
+  //   is_cardano_ok (PC/block/mod.rs), get_stable_block_by_hash_from_db
+  //   (PC/block/mod.rs), fill_cache (PC/block/mod.rs).
   rpc GetLatestBlock(GetLatestBlockRequest) returns (OptionalBlock);
 
-  // Replaces: get_blocks_by_numbers, PC/db_model.rs:244.
+  // Replaces: get_blocks_by_numbers, PC/db_model.rs.
   //   SELECT block_no, hash, epoch_no, slot_no, time FROM block
   //   WHERE block_no >= $from AND block_no <= $to ORDER BY block_no ASC
   // Ordering: block_no ASC (total: block_no is unique on one chain).
   // Bounds: from_block_no inclusive, to_block_no inclusive. Limit: none.
   // Empty stream if from > to. Fidelity: SPEC 4.time, 4.ebb.
-  // Caller: BlockDataSourceImpl::fill_cache (PC/block/mod.rs:466); the range
+  // Caller: BlockDataSourceImpl::fill_cache (PC/block/mod.rs); the range
   // is at most cache_size (100) + 1 blocks.
   rpc GetBlocksByNumberRange(GetBlocksByNumberRangeRequest) returns (stream Block);
 
-  // Replaces: get_highest_block, PC/db_model.rs:270.
+  // Replaces: get_highest_block, PC/db_model.rs.
   //   SELECT block_no, hash, epoch_no, slot_no, time FROM block
   //   WHERE block_no <= $max_block AND $min_slot <= slot_no AND slot_no <= $max_slot
   //     AND $min_time <= time AND time <= $max_time
@@ -124,15 +130,15 @@ service McFollower {
   //   whole seconds, so the server compares block.time_unix_seconds * 1000
   //   against the *_unix_millis bounds.
   // Fidelity: SPEC 4.time, 4.ebb (EBBs never match: no block_no).
-  // Caller: BlockDataSourceImpl::get_latest_block (PC/block/mod.rs:306);
+  // Caller: BlockDataSourceImpl::get_latest_block (PC/block/mod.rs);
   //   all bound values are computed in Rust from node config and the
   //   reference timestamp (CONTRACT.md section 4).
   rpc GetHighestBlockInWindow(GetHighestBlockInWindowRequest) returns (OptionalBlock);
 
   // Replaces two queries that differ only in the `tx_count` column:
-  //   * get_block_by_hash, PC/db_model.rs:297
+  //   * get_block_by_hash, PC/db_model.rs
   //       SELECT block_no, hash, epoch_no, slot_no, time FROM block WHERE hash = $1
-  //   * get_block_by_hash, MF/db/queries/cnight_observation.rs:369
+  //   * get_block_by_hash, MF/db/queries/cnight_observation.rs
   //       SELECT block_no, hash, epoch_no, slot_no, time, tx_count FROM block WHERE hash = $1
   // Ordering: n/a (hash is unique). Limit: at most one row.
   // Returns the block if it is on the indexer's current chain.
@@ -140,40 +146,40 @@ service McFollower {
   // with NULL block_no that fails to decode in Rust (an error); see
   // CONTRACT.md section 5, item R9.
   // Fidelity: SPEC 4.time, 4.txidx (tx_count counts phase-2-invalid txs), 4.ebb.
-  // Callers: BlockDataSourceImpl::get_block_by_hash (PC/block/mod.rs:151),
-  //   get_stable_block_by_hash_from_db (PC/block/mod.rs:411),
-  //   TokenBridgeDataSourceImpl::get_transfers (PC/bridge/mod.rs:97),
+  // Callers: BlockDataSourceImpl::get_block_by_hash (PC/block/mod.rs),
+  //   get_stable_block_by_hash_from_db (PC/block/mod.rs),
+  //   TokenBridgeDataSourceImpl::get_transfers (PC/bridge/mod.rs),
   //   MidnightCNightObservationDataSourceImpl::get_utxos_up_to_capacity
-  //   (MF/data_source/cnight_observation.rs:147),
+  //   (MF/data_source/cnight_observation.rs),
   //   FederatedAuthorityObservationDataSourceImpl::get_federated_authority_data
-  //   (MF/data_source/federated_authority_observation.rs:96).
+  //   (MF/data_source/federated_authority_observation.rs).
   rpc GetBlockByHash(GetBlockByHashRequest) returns (OptionalBlock);
 
   // ---------------------------------------------------------------------
   // Token bridge (PC/bridge).
   // ---------------------------------------------------------------------
 
-  // Replaces: get_block_info_for_tx_hash, PC/db_model.rs:710.
+  // Replaces: get_block_info_for_tx_hash, PC/db_model.rs.
   //   SELECT block.block_no, tx.block_index FROM tx JOIN block ON block.id = tx.block_id
   //   WHERE tx.hash = $1
   // Ordering: n/a. Limit: at most one row (tx hash unique on one chain).
   // Any transaction of the current chain, valid or phase-2-invalid.
   // Fidelity: SPEC 4.txidx.
   // Callers: TokenBridgeDataSourceImpl::resolve_tx_position
-  //   (PC/bridge/mod.rs:140), CachedTokenBridgeDataSourceImpl::resolve_tx_position
-  //   (PC/bridge/cache.rs:257, only on a miss in the in-memory tx cache).
+  //   (PC/bridge/mod.rs), CachedTokenBridgeDataSourceImpl::resolve_tx_position
+  //   (PC/bridge/cache.rs, only on a miss in the in-memory tx cache).
   rpc GetTxPosition(GetTxPositionRequest) returns (GetTxPositionResponse);
 
-  // Replaces: get_bridge_txs, PC/db_model.rs:732 (both tx_in variants,
-  // PC/db_model.rs:764-824; the gRPC semantics equal the `tx_in` table
+  // Replaces: get_bridge_txs, PC/db_model.rs (both tx_in variants,
+  // PC/db_model.rs; the gRPC semantics equal the `tx_in` table
   // variant, see CONTRACT.md section 3, item S10).
   // Row definition, for each transaction T of the current chain such that:
   //   (a) T produced at least one output at ics_address carrying
-  //       (policy_id, asset_name)  [relevant_txs, PC/db_model.rs:860],
+  //       (policy_id, asset_name)  [relevant_txs, PC/db_model.rs],
   //   (b) block_no(T) <= to_block_no (inclusive),
   //   (c) T is strictly after / at-or-after the lower bound (see `lower`),
   //   (d) bridge_out > bridge_in OR reserve_in > reserve_out
-  //       (PC/db_model.rs:877), compared as exact integers,
+  //       (PC/db_model.rs), compared as exact integers,
   // return one row with:
   //   bridge_in   = sum of the asset quantity over outputs at ics_address
   //                 consumed by T (inputs of T; collateral inputs if T is
@@ -189,15 +195,15 @@ service McFollower {
   // the spent output was created before or after the lower bound.
   // Ordering: (block_no ASC, tx_index ASC) - total.
   // Limit: max_txs if set; unlimited if unset (SQL `LIMIT null`).
-  // Callers: TokenBridgeDataSourceImpl::get_transfers (PC/bridge/mod.rs:118,
+  // Callers: TokenBridgeDataSourceImpl::get_transfers (PC/bridge/mod.rs,
   //   limit max_transfers+1), CachedTokenBridgeDataSourceImpl::fill_cache
-  //   (PC/bridge/cache.rs:210, no limit, lower bound Block(from-1), upper
+  //   (PC/bridge/cache.rs, no limit, lower bound Block(from-1), upper
   //   bound min(to + lookahead, latest stable)).
   // Fidelity: SPEC 4.addr (text equality on both addresses), 4.txidx,
   //   4.invalid (collateral return output counts as an output, collateral
   //   inputs count as inputs), 4.meta.
   // Rust decodes each sum with BigDecimal::to_u64 (NativeTokenAmount,
-  // PC/db_model.rs:208-214): a returned row with a sum > u64::MAX makes the
+  // PC/db_model.rs): a returned row with a sum > u64::MAX makes the
   // whole query fail. The server returns exact 128-bit sums; the Rust client
   // reproduces the failure.
   rpc GetBridgeTxs(GetBridgeTxsRequest) returns (stream BridgeTxRow);
@@ -208,22 +214,24 @@ service McFollower {
   // ---------------------------------------------------------------------
 
   // Replaces: get_latest_block_for_epoch,
-  // MF/data_source/candidates_data_source/db_model.rs:210.
+  // MF/data_source/candidates_data_source/db_model.rs.
   //   SELECT block_no, hash, epoch_no, slot_no FROM block
   //   WHERE epoch_no <= $1 AND slot_no IS NOT NULL AND block_no IS NOT NULL
   //   ORDER BY slot_no DESC LIMIT 1
   // Ordering: slot_no DESC (total among non-EBB blocks: one block per slot).
   // Limit: 1. Bounds: epoch_no <= epoch (inclusive). The block's epoch is the
   // epoch of its slot (CONTRACT.md section 3, item S8).
+  // UNAVAILABLE unless `epoch` is complete in the index (below the tip's
+  // epoch): any further block of the tip's epoch would be the answer.
   // Fidelity: SPEC 4.ebb. Rust reads only block_no
-  // (candidates_data_source/mod.rs:173); the full Block is returned.
+  // (candidates_data_source/mod.rs); the full Block is returned.
   // Caller: CandidatesDataSourceImpl::get_last_block_for_epoch
-  //   (candidates_data_source/mod.rs:171). Reached only via get_candidates
+  //   (candidates_data_source/mod.rs). Reached only via get_candidates
   //   (RPC only in node-2.1.101).
   rpc GetLatestBlockForEpoch(GetLatestBlockForEpochRequest) returns (OptionalBlock);
 
   // Replaces: get_latest_stable_epoch,
-  // MF/data_source/candidates_data_source/db_model.rs:228.
+  // MF/data_source/candidates_data_source/db_model.rs.
   //   SELECT stable_block.epoch_no - 1 AS epoch_no
   //   FROM block INNER JOIN block AS stable_block
   //     ON block.block_no - $k = stable_block.block_no
@@ -235,34 +243,37 @@ service McFollower {
   // into EpochNumber(u32) via i32 -> u32 try_into, which fails on -1. The
   // server returns the signed value; the Rust client reproduces the failure.
   // Caller: CandidateDataSourceCached::can_use_caching_for_request
-  //   (candidates_data_source/cached.rs:219). security_parameter is node
+  //   (candidates_data_source/cached.rs). security_parameter is node
   //   config (CARDANO_SECURITY_PARAMETER), passed through.
   rpc GetLatestStableEpoch(GetLatestStableEpochRequest) returns (GetLatestStableEpochResponse);
 
   // Replaces: get_stake_distribution,
-  // MF/data_source/candidates_data_source/db_model.rs:245.
+  // MF/data_source/candidates_data_source/db_model.rs.
   //   SELECT ph.hash_raw AS pool_hash, SUM(es.amount) AS stake
   //   FROM epoch_stake es INNER JOIN pool_hash ph ON es.pool_id = ph.id
   //   WHERE es.epoch_no = $1 GROUP BY ph.hash_raw
   // One row per pool with stake in db-sync `epoch_stake` for `epoch`,
   // stake = sum over that pool's delegations (SPEC section 3 "Pool stake").
   // Ordering: the SQL has none; the server streams by pool_hash ASC. Rust
-  // folds into a HashMap (candidates_data_source/mod.rs:222), so order is
+  // folds into a HashMap (candidates_data_source/mod.rs), so order is
   // not observable.
-  // Empty stream when the distribution for that epoch is not (completely)
-  // available; Rust maps an empty map to `stake_delegation: None` for every
-  // candidate (candidates_data_source/mod.rs:235), so partial data must never
-  // be served (CONTRACT.md section 5, item R7).
+  // Served only when the indexer holds the complete distribution for that
+  // epoch. Empty stream for epochs before the first Shelley epoch, where
+  // db-sync has no rows either. Otherwise (not obtained yet, incomplete,
+  // outside what the indexer's sources reach) UNAVAILABLE: Rust maps an
+  // empty map to `stake_delegation: None` for every candidate
+  // (candidates_data_source/mod.rs), so partial or missing data must never
+  // be served as empty (CONTRACT.md section 5, item R7).
   // Rust decodes stake with BigDecimal::to_u64 (StakeDelegation,
-  // PC/../utils/db-sync-sqlx/src/lib.rs:206); a per-pool sum cannot exceed
+  // PC/../utils/db-sync-sqlx/src/lib.rs); a per-pool sum cannot exceed
   // the lovelace supply, so uint64 is sufficient.
   // Caller: CandidatesDataSourceImpl::get_candidates
-  //   (candidates_data_source/mod.rs:113). RPC only in node-2.1.101.
+  //   (candidates_data_source/mod.rs). RPC only in node-2.1.101.
   rpc GetStakeDistribution(GetStakeDistributionRequest) returns (stream StakePoolEntry);
 
   // Replaces: get_token_utxo_for_epoch,
-  // MF/data_source/candidates_data_source/db_model.rs:260, together with the
-  // multi_asset id resolution it depends on (MF/db/multi_asset_cache.rs:50).
+  // MF/data_source/candidates_data_source/db_model.rs, together with the
+  // multi_asset id resolution it depends on (MF/db/multi_asset_cache.rs).
   //   SELECT origin_tx.hash, tx_out.index, origin_block.epoch_no,
   //          origin_block.block_no, origin_block.slot_no, origin_tx.block_index,
   //          datum.value
@@ -275,35 +286,44 @@ service McFollower {
   // exact asset (policy_id, asset_name), created in a block whose epoch is
   // <= epoch. If the (policy, name) pair never appeared on chain the result
   // is absent (multi_asset_cache returns None -> no query,
-  // candidates_data_source/mod.rs:82-85).
+  // candidates_data_source/mod.rs).
   // Ordering: (block_no DESC, tx_index DESC). NOT total: two outputs of the
   // same transaction both carrying the asset tie. The server breaks the tie
-  // by output index DESC (recommendation, CONTRACT.md section 5, item R1).
+  // by output index DESC (CONTRACT.md section 5, item R1).
+  // UNAVAILABLE unless `epoch` is complete in the index (below the tip's
+  // epoch): any further block of the tip's epoch can change the answer.
   // Limit: 1.
   // Datum: LEFT JOIN, then decoded with the strict DbDatum decoder
   // (TokenTxOutput.datum: Option<DbDatum>): absent -> None (Rust then returns
-  // ExpectedDataNotFound, candidates_data_source/mod.rs:95); present but not
+  // ExpectedDataNotFound, candidates_data_source/mod.rs); present but not
   // decodable -> the whole query fails. `datum` is set iff SPEC 4.datum
   // resolves the output's datum.
   // Fidelity: SPEC 4.datum, 4.invalid, 4.txidx.
   // Caller: CandidatesDataSourceImpl::get_ariadne_parameters
-  //   (candidates_data_source/mod.rs:83); asset_name is empty in practice.
+  //   (candidates_data_source/mod.rs); asset_name is empty in practice.
   rpc GetLatestTokenOutputForEpoch(GetLatestTokenOutputForEpochRequest) returns (GetLatestTokenOutputForEpochResponse);
 
   // Replaces: get_epoch_nonce,
-  // MF/data_source/candidates_data_source/db_model.rs:289.
+  // MF/data_source/candidates_data_source/db_model.rs.
   //   SELECT nonce FROM epoch_param WHERE epoch_no = $1
   // Returns the epoch nonce in force during `epoch` (db-sync epoch_param
-  // row for that epoch). Absent when the indexer has not yet produced it
-  // (db-sync: row not inserted yet). Rust caches only present values
-  // (candidates_data_source/cached.rs:97). Limit: at most one row.
+  // row for that epoch). Sources, in order: the nonce table shipped with the
+  // indexer, nonces supplied to it at run time, and the nonces its driver
+  // computes from block headers.
+  // Absent only where db-sync has no row or a NULL nonce: epochs before the
+  // table (Byron) and the neutral nonce. A nonce the indexer does not know
+  // (yet), and a driver nonce while the driver disagrees with a local node,
+  // are answered UNAVAILABLE, never absent: the node's authority selection
+  // turns an absent nonce into the empty nonce. A driver nonce that
+  // contradicts the shipped one is INTERNAL. Rust caches only present values
+  // (candidates_data_source/cached.rs). Limit: at most one row.
   // Caller: CandidatesDataSourceImpl::get_epoch_nonce
-  //   (candidates_data_source/mod.rs:128).
+  //   (candidates_data_source/mod.rs).
   rpc GetEpochNonce(GetEpochNonceRequest) returns (GetEpochNonceResponse);
 
   // Replaces: get_utxos_for_address,
-  // MF/data_source/candidates_data_source/db_model.rs:314, both variants
-  // (tx_in table :330, consumed_by_tx_id :378). gRPC semantics equal the
+  // MF/data_source/candidates_data_source/db_model.rs, both variants
+  // (tx_in table, consumed_by_tx_id). gRPC semantics equal the
   // `tx_in` table variant (CONTRACT.md section 3, item S10).
   // Semantics: every output whose address text equals `address`, created in
   // a block with block_no <= block_no, and not consumed by any transaction
@@ -324,32 +344,32 @@ service McFollower {
   // Limit: none.
   // Fidelity: SPEC 4.addr, 4.datum, 4.invalid, 4.txidx.
   // Caller: CandidatesDataSourceImpl::get_registered_candidates
-  //   (candidates_data_source/mod.rs:187). RPC only in node-2.1.101.
+  //   (candidates_data_source/mod.rs). RPC only in node-2.1.101.
   rpc GetUnspentOutputsAtAddress(GetUnspentOutputsAtAddressRequest) returns (stream AddressOutputRow);
 
   // ---------------------------------------------------------------------
   // cNIGHT observation (MF/data_source/cnight_observation.rs).
   //
   // Common window semantics for the four range RPCs below (PagedQuery,
-  // MF/db/types.rs:197): a row's position P is the position of the
+  // MF/db/types.rs): a row's position P is the position of the
   // transaction named per RPC (creating tx or spending tx). A row is in the
   // window iff from_inclusive <= P < to_exclusive, i.e.
   //   (block_no > from.block_no OR (block_no = from.block_no AND tx_index >= from.tx_index))
   //   AND (block_no < to.block_no OR (block_no = to.block_no AND tx_index < to.tx_index)).
   // In practice `to_exclusive` is (tip.block_no, tip.tx_count + 1)
-  // (cnight_observation.rs:147-179, types.rs:100-108).
+  // (cnight_observation.rs, types.rs).
   // Limit/offset: ORDER BY <key> LIMIT limit OFFSET offset, applied after
   // filtering; limit and offset are each < 2^31 (asserted in Rust). The node
-  // currently always sends offset 0 (cnight_observation.rs:190).
+  // currently always sends offset 0 (cnight_observation.rs).
   // The db-sync id-range pre-filters (get_low_bounds / get_high_bounds,
-  // queries/cnight_observation.rs:396,426) are supersets of the window and
+  // queries/cnight_observation.rs) are supersets of the window and
   // are not part of this contract.
   // Rows that Rust later drops (undecodable datum, non-base address) are
   // still returned: they count toward the limit and toward the
-  // "page filled its cap" frontier (cnight_observation.rs:495-514).
+  // "page filled its cap" frontier (cnight_observation.rs).
   // ---------------------------------------------------------------------
 
-  // Replaces: get_registrations, MF/db/queries/cnight_observation.rs:27.
+  // Replaces: get_registrations, MF/db/queries/cnight_observation.rs.
   // Rows: every output O such that
   //   O.address text = mapping_validator_address,
   //   O carries exactly quantity 1 of auth_token (policy, name)
@@ -361,10 +381,10 @@ service McFollower {
   // Datum decoding in Rust: DbDatumIfValid (undecodable -> None -> row
   // dropped after counting).
   // Fidelity: SPEC 4.addr, 4.datum, 4.invalid, 4.txidx, 4.time.
-  // Caller: get_registration_utxos (cnight_observation.rs:492).
+  // Caller: get_registration_utxos (cnight_observation.rs).
   rpc GetMappingRegistrations(GetMappingRegistrationsRequest) returns (stream RegistrationRow);
 
-  // Replaces: get_deregistrations, MF/db/queries/cnight_observation.rs:84.
+  // Replaces: get_deregistrations, MF/db/queries/cnight_observation.rs.
   // Rows: one per (spending transaction T, spent output O) such that
   //   O.address text = mapping_validator_address,
   //   O's datum is resolvable (INNER JOIN datum, SPEC 4.datum),
@@ -376,10 +396,10 @@ service McFollower {
   //   utxo_index ASC) - total.
   // Datum decoding in Rust: DbDatumIfValid.
   // Fidelity: SPEC 4.addr, 4.datum, 4.invalid, 4.txidx, 4.time.
-  // Caller: get_deregistration_utxos (cnight_observation.rs:552).
+  // Caller: get_deregistration_utxos (cnight_observation.rs).
   rpc GetMappingDeregistrations(GetMappingDeregistrationsRequest) returns (stream DeregistrationRow);
 
-  // Replaces: get_asset_creates, MF/db/queries/cnight_observation.rs:137.
+  // Replaces: get_asset_creates, MF/db/queries/cnight_observation.rs.
   // Rows: every output O carrying asset (policy, name) at ANY address,
   // creating tx position in the window. quantity = O's quantity of that
   // asset. holder_address = O.address text.
@@ -389,10 +409,10 @@ service McFollower {
   // when quantity > i64::MAX.
   // Fidelity: SPEC 4.addr (Rust parses holder_address as bech32 and skips
   //   non-base / base58 addresses), 4.invalid, 4.txidx, 4.time.
-  // Caller: get_asset_create_utxos (cnight_observation.rs:612).
+  // Caller: get_asset_create_utxos (cnight_observation.rs).
   rpc GetAssetCreates(GetAssetCreatesRequest) returns (stream AssetCreateRow);
 
-  // Replaces: get_asset_spends, MF/db/queries/cnight_observation.rs:188.
+  // Replaces: get_asset_spends, MF/db/queries/cnight_observation.rs.
   // Rows: one per (spending transaction T, spent output O) where O carries
   // asset (policy, name) at any address and T's position is in the window
   // (inputs of T; collateral inputs if T is phase-2-invalid; reference
@@ -402,18 +422,22 @@ service McFollower {
   //   utxo_index ASC) - total.
   // Same BIGINT note as GetAssetCreates.
   // Fidelity: SPEC 4.addr, 4.invalid, 4.txidx, 4.time.
-  // Caller: get_asset_spend_utxos (cnight_observation.rs:676).
+  // Caller: get_asset_spend_utxos (cnight_observation.rs).
   rpc GetAssetSpends(GetAssetSpendsRequest) returns (stream AssetSpendRow);
 
-  // Replaces: get_max_tx_size, MF/db/queries/cnight_observation.rs:453.
+  // Replaces: get_max_tx_size, MF/db/queries/cnight_observation.rs.
   //   SELECT MAX(epoch_param.max_tx_size)::BIGINT FROM block
   //   JOIN epoch_param ON epoch_param.epoch_no = block.epoch_no
   //   WHERE block.block_no = $1
   // Returns the protocol parameter maxTxSize in force in the epoch of block
-  // `block_no`. Absent if the block is unknown or the epoch's parameters are
-  // not yet available (Rust then fails with MissingEpochParams,
-  // cnight_observation.rs:172).
-  // Caller: get_utxos_up_to_capacity (cnight_observation.rs:170), only for
+  // `block_no`: a local node's value for that epoch if the indexer has one,
+  // else the indexer's per-network table. Absent if the block is unknown or
+  // the table does not cover its epoch (Byron), as db-sync has no row then
+  // (Rust then fails with MissingEpochParams, cnight_observation.rs).
+  // UNAVAILABLE if `block_no` is above the indexed tip, or if a proposal to
+  // change maxTxSize that could be in force in the epoch has not been
+  // acknowledged by the operator (the message names it).
+  // Caller: get_utxos_up_to_capacity (cnight_observation.rs), only for
   //   ObservationBound::Cost, with block_no = start position block.
   rpc GetMaxTxSize(GetMaxTxSizeRequest) returns (GetMaxTxSizeResponse);
 
@@ -423,7 +447,7 @@ service McFollower {
   // ---------------------------------------------------------------------
 
   // Replaces: get_governance_body_utxo,
-  // MF/db/queries/federated_authority_observation.rs:29.
+  // MF/db/queries/federated_authority_observation.rs.
   //   SELECT datum.value, block.block_no, block.hash, tx.block_index, tx.hash, tx_out.index
   //   FROM tx_out JOIN datum ON tx_out.data_hash = datum.hash JOIN tx JOIN block
   //   JOIN ma_tx_out JOIN multi_asset ma ON ma.id = ma_tx_out.ident
@@ -437,12 +461,12 @@ service McFollower {
   // identical rows in SQL; irrelevant under LIMIT 1.
   // Ordering: (block_no DESC, tx_index DESC). NOT total across two outputs
   // of the same transaction; the server breaks the tie by output index DESC
-  // (recommendation, CONTRACT.md section 5, item R1). Limit: 1.
+  // (CONTRACT.md section 5, item R1). Limit: 1.
   // Datum decoding in Rust: strict DbDatum (GovernanceBodyUtxoRow.full_datum,
-  //   MF/db/types.rs:174): undecodable -> the whole query fails.
+  //   MF/db/types.rs): undecodable -> the whole query fails.
   // Fidelity: SPEC 4.addr, 4.datum, 4.invalid, 4.txidx.
   // Callers: get_federated_authority_data
-  //   (federated_authority_observation.rs:107 council, :141 technical committee).
+  //   (federated_authority_observation.rs council, technical committee).
   rpc GetLatestGovernanceOutput(GetLatestGovernanceOutputRequest) returns (GetLatestGovernanceOutputResponse);
 }
 
@@ -450,9 +474,9 @@ service McFollower {
 // Shared types
 // =========================================================================
 
-// A block of the indexer's current chain. Mirrors PC/db_model.rs:85 (Block),
-// MF/db/types.rs:91 (Block, with tx_count) and
-// MF/data_source/candidates_data_source/db_model.rs:134 (Block, no time).
+// A block of the indexer's current chain. Mirrors PC/db_model.rs (Block),
+// MF/db/types.rs (Block, with tx_count) and
+// MF/data_source/candidates_data_source/db_model.rs (Block, no time).
 // EBBs are never returned (SPEC 4.ebb).
 message Block {
   uint32 block_no = 1;            // BlockNumber(u32)
@@ -461,11 +485,11 @@ message Block {
   uint64 slot_no = 4;             // SlotNumber(u64)
   // Slot start time, whole seconds since the Unix epoch, UTC (SPEC 4.time).
   // Rust ends with: MainchainBlock.timestamp = seconds (u64,
-  // PC/db_model.rs:101); NaiveDateTime for window checks (PC/block/mod.rs);
-  // CardanoPosition.block_timestamp = seconds * 1000 (MF/db/types.rs:105).
+  // PC/db_model.rs); NaiveDateTime for window checks (PC/block/mod.rs);
+  // CardanoPosition.block_timestamp = seconds * 1000 (MF/db/types.rs).
   int64 time_unix_seconds = 5;
   // Number of transactions in the block, phase-2-invalid included
-  // (SPEC 4.txidx). Rust: i64 (MF/db/types.rs:97), used as the tip's
+  // (SPEC 4.txidx). Rust: i64 (MF/db/types.rs), used as the tip's
   // CardanoPosition.tx_index_in_block via `as u32`.
   uint64 tx_count = 6;
 }
@@ -539,7 +563,8 @@ message GetStatusResponse {
   // Security parameter k the indexer uses for its own rollback window.
   uint32 security_parameter = 3;
   // True while the indexer is behind its upstream (initial sync, catch-up
-  // after reconnect, or any backfill in progress).
+  // after reconnect), or while any backfill is in progress. Always false
+  // for a server that does not sync itself.
   bool syncing = 4;
   // Upstream tip as last reported by chain-sync (slot and block number), for
   // lag reporting. Absent before the first chain-sync exchange.
@@ -547,8 +572,9 @@ message GetStatusResponse {
   optional uint32 upstream_tip_block_no = 6;
   // First block the index covers (configured per-network start point).
   optional Block start_block = 7;
-  // Backfills in progress, as human-readable identifiers (address text or
-  // hex policy id). Requests naming one of these get UNAVAILABLE.
+  // Backfills in progress, as human-readable identifiers. Today only stake
+  // distributions the indexer expects to obtain:
+  // "stake-distribution:epoch:N". Requests for one of these get UNAVAILABLE.
   repeated string backfilling = 8;
   // Cardano network magic the indexer follows.
   uint32 network_magic = 9;
@@ -585,7 +611,7 @@ message GetTxPositionRequest {
   bytes tx_hash = 1;   // 32 bytes
 }
 
-// Mirrors TxBlockInfo (PC/db_model.rs:704).
+// Mirrors TxBlockInfo (PC/db_model.rs).
 message GetTxPositionResponse {
   optional Position position = 1;
 }
@@ -595,7 +621,7 @@ message GetBridgeTxsRequest {
   string reserve_address = 2;   // reserve validator address
   AssetId token = 3;            // bridge token (policy, name)
   // Lower bound, mirroring ResolvedBridgeDataCheckpoint
-  // (PC/db_model.rs:675, :747-759).
+  // (PC/db_model.rs).
   oneof lower {
     // Block{number}: block_no > after_block_no.
     uint32 after_block_no = 4;
@@ -608,7 +634,7 @@ message GetBridgeTxsRequest {
   optional uint32 max_txs = 8;  // LIMIT; unset = no limit
 }
 
-// Mirrors BridgeTx (PC/db_model.rs:639).
+// Mirrors BridgeTx (PC/db_model.rs).
 message BridgeTxRow {
   uint32 block_no = 1;     // block_number: BlockNumber
   uint32 tx_index = 2;     // tx_ix: TxIndexInBlock
@@ -646,7 +672,7 @@ message GetStakeDistributionRequest {
   uint32 epoch_no = 1;
 }
 
-// Mirrors StakePoolEntry (candidates_data_source/db_model.rs:190).
+// Mirrors StakePoolEntry (candidates_data_source/db_model.rs).
 message StakePoolEntry {
   bytes pool_hash = 1;   // 28 bytes (pool_hash.hash_raw)
   uint64 stake = 2;      // lovelace, summed per pool
@@ -657,7 +683,7 @@ message GetLatestTokenOutputForEpochRequest {
   uint32 epoch_no = 2;   // origin block epoch_no <= this (inclusive)
 }
 
-// Mirrors TokenTxOutput (candidates_data_source/db_model.rs:196).
+// Mirrors TokenTxOutput (candidates_data_source/db_model.rs).
 message TokenTxOutput {
   bytes origin_tx_hash = 1;   // 32 bytes
   uint32 utxo_index = 2;      // TxIndex(u16)
@@ -676,7 +702,7 @@ message GetEpochNonceRequest {
   uint32 epoch_no = 1;
 }
 
-// Mirrors MainchainEpochNonce (candidates_data_source/db_model.rs:208).
+// Mirrors MainchainEpochNonce (candidates_data_source/db_model.rs).
 message GetEpochNonceResponse {
   optional bytes nonce = 1;   // 32 bytes when present
 }
@@ -687,7 +713,7 @@ message GetUnspentOutputsAtAddressRequest {
 }
 
 // Mirrors MainchainTxOutputRow / MainchainTxOutput
-// (candidates_data_source/db_model.rs:142,176).
+// (candidates_data_source/db_model.rs).
 message AddressOutputRow {
   bytes utxo_tx_hash = 1;          // utxo_id_tx_hash
   uint32 utxo_index = 2;           // utxo_id_index: TxIndex(u16)
@@ -710,14 +736,14 @@ message AddressOutputRow {
 message GetMappingRegistrationsRequest {
   string mapping_validator_address = 1;   // text equality
   // Auth token: policy = mapping validator script hash, name = auth token
-  // asset name (cnight_observation.rs:132-138). Rows require quantity = 1.
+  // asset name (cnight_observation.rs). Rows require quantity = 1.
   AssetId auth_token = 2;
   PositionWindow window = 3;              // creating tx position
   uint32 limit = 4;
   uint32 offset = 5;
 }
 
-// Mirrors RegistrationRow (MF/db/types.rs:116).
+// Mirrors RegistrationRow (MF/db/types.rs).
 message RegistrationRow {
   Datum datum = 1;                        // always set (INNER JOIN); DbDatumIfValid in Rust
   uint32 block_no = 2;
@@ -737,7 +763,7 @@ message GetMappingDeregistrationsRequest {
   uint32 offset = 4;
 }
 
-// Mirrors DeregistrationRow (MF/db/types.rs:128).
+// Mirrors DeregistrationRow (MF/db/types.rs).
 message DeregistrationRow {
   Datum datum = 1;                        // always set (INNER JOIN); DbDatumIfValid in Rust
   uint32 block_no = 2;                    // spending block
@@ -756,7 +782,7 @@ message GetAssetCreatesRequest {
   uint32 offset = 4;
 }
 
-// Mirrors AssetCreateRow (MF/db/types.rs:141).
+// Mirrors AssetCreateRow (MF/db/types.rs).
 message AssetCreateRow {
   uint32 block_no = 1;
   bytes block_hash = 2;
@@ -776,7 +802,7 @@ message GetAssetSpendsRequest {
   uint32 offset = 4;
 }
 
-// Mirrors AssetSpendRow (MF/db/types.rs:153).
+// Mirrors AssetSpendRow (MF/db/types.rs).
 message AssetSpendRow {
   uint32 block_no = 1;                    // spending block
   bytes block_hash = 2;
@@ -808,7 +834,7 @@ message GetLatestGovernanceOutputRequest {
   uint32 block_no = 3;    // created at block_no <= this (inclusive)
 }
 
-// Mirrors GovernanceBodyUtxoRow (MF/db/types.rs:173).
+// Mirrors GovernanceBodyUtxoRow (MF/db/types.rs).
 message GovernanceOutput {
   Datum datum = 1;        // always set (INNER JOIN); strict DbDatum in Rust
   uint32 block_no = 2;
