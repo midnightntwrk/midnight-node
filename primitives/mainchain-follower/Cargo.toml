@@ -33,6 +33,7 @@ figment = { workspace = true, optional = true }
 lru = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
+futures = { workspace = true, optional = true }
 
 [dev-dependencies]
 hex-literal.workspace = true
@@ -70,4 +71,5 @@ std = [
     "lru",
     "serde",
     "tokio",
+    "futures",
 ]
