@@ -150,9 +150,11 @@ fn window(query: &mf::PagedQuery<'_, ()>) -> (Option<proto::PositionWindow>, u32
 	(Some(window), query.limit as u32, query.offset as u32)
 }
 
-/// Collects a streamed response, failing when no message arrives within [RESPONSE_TIMEOUT]
+/// Collects a streamed response, failing when it sends more than the `max_rows` the request
+/// allows, or when no message arrives within [RESPONSE_TIMEOUT]
 async fn collect<T, R>(
 	mut stream: tonic::Streaming<T>,
+	max_rows: Option<u64>,
 	convert: impl Fn(T) -> Result<R>,
 ) -> Result<Vec<R>> {
 	let mut rows = Vec::new();
@@ -160,6 +162,11 @@ async fn collect<T, R>(
 		.await
 		.map_err(|_| McFollowerError::Timeout)??
 	{
+		if let Some(max) = max_rows
+			&& rows.len() as u64 >= max
+		{
+			return Err(invalid(format!("more rows than the request limit of {max}")));
+		}
 		rows.push(convert(message)?);
 	}
 	Ok(rows)
@@ -187,8 +194,10 @@ impl McFollowerRowSource {
 	) -> Result<Vec<pc::Block>> {
 		let request =
 			proto::GetBlocksByNumberRangeRequest { from_block_no: from.0, to_block_no: to.0 };
-		collect(self.client().get_blocks_by_number_range(request).await?.into_inner(), pc_block)
-			.await
+		// Block numbers are unique, so the range holds at most this many blocks
+		let max_rows = u64::from(to.0).checked_sub(u64::from(from.0)).map_or(0, |n| n + 1);
+		let stream = self.client().get_blocks_by_number_range(request).await?.into_inner();
+		collect(stream, Some(max_rows), pc_block).await
 	}
 
 	async fn highest_block(
@@ -246,7 +255,8 @@ impl McFollowerRowSource {
 			to_block_no: to_block.0,
 			max_txs,
 		};
-		collect(self.client().get_bridge_txs(request).await?.into_inner(), |row| {
+		let max_rows = max_txs.map(u64::from);
+		collect(self.client().get_bridge_txs(request).await?.into_inner(), max_rows, |row| {
 			Ok(pc::BridgeTx {
 				block_number: BlockNumber(row.block_no),
 				tx_ix: TxIndexInBlock(row.tx_index),
@@ -283,7 +293,7 @@ impl McFollowerRowSource {
 
 	async fn stake_distribution(&self, epoch: EpochNumber) -> Result<Vec<cds::StakePoolEntry>> {
 		let request = proto::GetStakeDistributionRequest { epoch_no: epoch.0 };
-		collect(self.client().get_stake_distribution(request).await?.into_inner(), |entry| {
+		collect(self.client().get_stake_distribution(request).await?.into_inner(), None, |entry| {
 			Ok(cds::StakePoolEntry {
 				pool_hash: bytes_array(entry.pool_hash, "pool hash")?,
 				stake: StakeDelegation(entry.stake),
@@ -337,7 +347,8 @@ impl McFollowerRowSource {
 			address: address.0.clone(),
 			block_no: block.0,
 		};
-		collect(self.client().get_unspent_outputs_at_address(request).await?.into_inner(), |row| {
+		let stream = self.client().get_unspent_outputs_at_address(request).await?.into_inner();
+		collect(stream, None, |row| {
 			let tx_inputs = row
 				.tx_inputs
 				.into_iter()
@@ -385,7 +396,8 @@ impl McFollowerRowSource {
 			limit,
 			offset,
 		};
-		collect(self.client().get_mapping_registrations(request).await?.into_inner(), |row| {
+		let stream = self.client().get_mapping_registrations(request).await?.into_inner();
+		collect(stream, Some(limit.into()), |row| {
 			Ok(mf::RegistrationRow {
 				full_datum: lenient_datum(Some(required(row.datum, "datum")?)).map(mf::DbDatum),
 				block_number: BlockNumber(row.block_no),
@@ -411,7 +423,8 @@ impl McFollowerRowSource {
 			limit,
 			offset,
 		};
-		collect(self.client().get_mapping_deregistrations(request).await?.into_inner(), |row| {
+		let stream = self.client().get_mapping_deregistrations(request).await?.into_inner();
+		collect(stream, Some(limit.into()), |row| {
 			Ok(mf::DeregistrationRow {
 				full_datum: lenient_datum(Some(required(row.datum, "datum")?)).map(mf::DbDatum),
 				block_number: BlockNumber(row.block_no),
@@ -434,7 +447,8 @@ impl McFollowerRowSource {
 		let (window, limit, offset) = window(query);
 		let request =
 			proto::GetAssetCreatesRequest { asset: Some(asset.clone()), window, limit, offset };
-		collect(self.client().get_asset_creates(request).await?.into_inner(), |row| {
+		let stream = self.client().get_asset_creates(request).await?.into_inner();
+		collect(stream, Some(limit.into()), |row| {
 			Ok(mf::AssetCreateRow {
 				block_number: BlockNumber(row.block_no),
 				block_hash: mf::DbBlockHash(bytes_array(row.block_hash, "block hash")?),
@@ -457,7 +471,8 @@ impl McFollowerRowSource {
 		let (window, limit, offset) = window(query);
 		let request =
 			proto::GetAssetSpendsRequest { asset: Some(asset.clone()), window, limit, offset };
-		collect(self.client().get_asset_spends(request).await?.into_inner(), |row| {
+		let stream = self.client().get_asset_spends(request).await?.into_inner();
+		collect(stream, Some(limit.into()), |row| {
 			Ok(mf::AssetSpendRow {
 				block_number: BlockNumber(row.block_no),
 				block_hash: mf::DbBlockHash(bytes_array(row.block_hash, "block hash")?),
