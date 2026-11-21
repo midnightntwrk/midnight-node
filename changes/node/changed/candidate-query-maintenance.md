@@ -3,4 +3,4 @@
 
 Improve resource accounting for mainchain candidate queries across supported database layouts.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2499
