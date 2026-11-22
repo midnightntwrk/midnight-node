@@ -1051,7 +1051,6 @@ check-deps:
     # shear
     RUN --secret NODE_GIT_TOKEN with-git-creds cargo shear
 
-# check-rust runs cargo fmt (clippy moved to buck2 - see +buck2-ci).
 planner:
     FROM +prep
     ARG TARGETARCH
@@ -1076,28 +1075,17 @@ check-rust-prepare:
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
+# check-rust runs cargo fmt, then clippy -D warnings over every first-party
+# target under the lint platform (scripts/buck2/regen.sh LINT_FEATURES).
 check-rust:
-    FROM +check-rust-prepare
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    END
-    COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-
-    RUN cargo fmt --all -- --check
-
-    ENV CARGO_INCREMENTAL=0
-
-    # clippy moved to buck2 (Earthfile +buck2-clippy over the first-party graph),
-    # which shares the warm build+test action cache; this job keeps only the fast
-    # cargo fmt check above. (main's with-git-creds/NODE_GIT_TOKEN on the old cargo
-    # clippy line is moot - the line is gone; buck2 gets its deps from the vendored
-    # third-party graph, not a live private-git fetch.)
-
-    ENV SKIP_WASM_BUILD=1
+    FROM +buck2-prep
+    RUN rustup component add rustfmt && cargo fmt --all -- --check
+    ARG PLATFORM=linux-x86_64
+    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    # Third-party crates live under the root cell too; they are not ours to lint.
+    DO --pass-args buck2+BUCK2 --mode=clippy \
+        --targets="root//... - root//third-party/... - root//wasm-deps/..." \
+        --buck2_args="--target-platforms root//platforms:${PLATFORM}-lint $_wasm"
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching missing dependencies masked by workspace feature unification.
@@ -2327,8 +2315,6 @@ images:
     BUILD +toolkit-image
 
 # buck2 build + test under a bazel-remote action cache (see buck2/Earthfile).
-# Replaces the retired rebuck2 distributed workflow: one buck2 run on a
-# self-hosted runner, the cache making it warm after the first lap.
 #buck2-src The buck2 source set, staged once for +buck2-prep and +buck2-reindeer
 buck2-src:
     FROM scratch
@@ -2349,20 +2335,14 @@ buck2-prep:
     DO buck2+INSTALL
     WORKDIR /work
     COPY --keep-ts --dir +buck2-src/work /
-    # No fixture staging step: buck2 runs tests in-place at the project root (this COPY'd
-    # tree), so they read the real res/, docs/, Cargo.toml directly. Each such file is
-    # listed as a `resources` input (gen-first-party.py TEST_RESOURCES /
-    # TEST_TARGET_RESOURCES) only so the cached test action re-runs when it changes.
     DO --pass-args buck2+CONFIG
 
 #buck2-ci Build the deliverables then run the tests, both under the action cache
 buck2-ci:
     FROM +buck2-prep
-    # Re-run the buck2 steps every CI run (pass --RUN_ID=$GITHUB_RUN_ID): Earthly's
-    # layer cache would otherwise skip them on an unchanged tree, but the point is
-    # to exercise buck2 against the bazel-remote action cache, which is what
-    # provides incrementality. Busting here (not in +buck2-prep) keeps the
-    # toolchain install + source stage cached.
+    # --RUN_ID=$GITHUB_RUN_ID re-runs the buck2 steps on an unchanged tree, which
+    # the layer cache would skip. Busting here, not in +buck2-prep, keeps the
+    # toolchain install and source copy cached.
     ARG RUN_ID=0
     RUN echo "buck2-ci run ${RUN_ID}"
     ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
@@ -2372,31 +2352,8 @@ buck2-ci:
         --targets="root//..." \
         --buck2_args="--target-platforms root//platforms:linux-x86_64 --exclude ci-infra $_wasm"
 
-#buck2-clippy clippy over the first-party graph (replaces cargo clippy in +check-rust)
-buck2-clippy:
-    FROM +buck2-prep
-    # Own job, not a step in +buck2-ci: clippy is non-essential, so a lint nit
-    # must not redden the build+test gate. Shares the bazel-remote action cache
-    # with +buck2-ci, so the dep rmetas build+test compiled are cache hits here;
-    # only the ~1900 first-party clippy-driver passes are this job's own work.
-    ARG RUN_ID=0
-    RUN echo "buck2-clippy run ${RUN_ID}"
-    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
-    # The src we own and actually build. From root//... drop: the vendored
-    # third-party/ + wasm-deps/ dirs (they live under the root cell, so root//...
-    # would otherwise lint 1915 crates incl. windows-only ones); the ci-infra
-    # targets build+test excludes; and relay/ - the midnight-beefy-relay binary
-    # is not a buck2 deliverable (build+test never compiles it) and its rs_merkle
-    # fork resolves to a third-party variant that fails rustc check (generic-array
-    # without more_lengths; see midnight-node-nits.md). Leaves 158 first-party
-    # targets; same platform + wasm shims as build/test so the shared rmetas line up.
-    DO --pass-args buck2+BUCK2 --mode=clippy \
-        --targets="root//... - root//third-party/... - root//wasm-deps/... - root//relay/... - attrfilter('labels', 'ci-infra', root//...)" \
-        --buck2_args="--target-platforms root//platforms:linux-x86_64 $_wasm"
-
-#buck2-test-one Build+test ONE target, for the local spike loop. Defaults to the
-# native arch (PLATFORM=linux-arm64) so it runs on an arm64 dev box via Earthbuild
-# with no x86 emulation; the CI jobs keep the linux-x86_64 pin for CAS alignment.
+#buck2-test-one Build+test one target locally. PLATFORM defaults to linux-arm64,
+# an arm64 dev box's native arch (no emulation); CI pins linux-x86_64.
 buck2-test-one:
     FROM +buck2-prep
     ARG RUN_ID=0
@@ -2440,17 +2397,22 @@ buck2-regen-tar:
     FROM +buck2-reindeer
     RUN find . -type f -newer /tmp/regen-stamp \
             -not -path './third-party/.cargo/*' -not -path './wasm-deps/.cargo/*' \
-        | tar cf /regen.tar -T -
+        | tar cf /regen.tar -T - && \
+        (cd /tmp/before && find . -type f) | while IFS= read -r f; do [ -e "$f" ] || echo "$f"; done > /regen.deleted
     SAVE ARTIFACT /regen.tar
+    SAVE ARTIFACT /regen.deleted
 
 #buck2-regen Regenerate the buck2 graph from the cargo workspace and write it back into the tree
 buck2-regen:
     # Not `SAVE ARTIFACT /out/* AS LOCAL ./`: AS LOCAL of a directory replaces
-    # the host directory, deleting every file beside the regenerated ones
-    # (1486 tracked files, 2026-10-31). A tar unpacks only its members.
+    # the host directory, deleting every file beside the regenerated ones. A tar
+    # unpacks only its members; files the regen removed are listed separately.
     LOCALLY
     COPY +buck2-regen-tar/regen.tar .buck2-regen.tar
-    RUN tar xf .buck2-regen.tar && rm .buck2-regen.tar
+    COPY +buck2-regen-tar/regen.deleted .buck2-regen.deleted
+    RUN tar xf .buck2-regen.tar && \
+        while IFS= read -r f; do rm -f "$f"; done < .buck2-regen.deleted && \
+        rm .buck2-regen.tar .buck2-regen.deleted
 
 #buck2-check-regen Fail if any @generated buck2 file is stale against the cargo workspace
 buck2-check-regen:

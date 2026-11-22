@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
+
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Generate BUCK files for workspace members from cargo metadata.
 
-Usage: gen-first-party.py <meta.json> [member-name ...]
-Without member names, generates for every workspace member.
+Usage: gen-first-party.py <meta.json> <lint-meta.json> <test-meta.json> [member-name ...]
+Without member names, generates for every workspace member. The extra metadata
+come from regen.sh: lint-meta has the lint feature set on (where it differs from
+meta, a target selects on root//platforms:lint); test-meta has the features
+that integration tests name in `required-features`.
 
 Maps path deps to root//<dir>:<name> and external deps to root//third-party:<key>
 (key = the [dependencies] key in third-party/Cargo.toml, i.e. the cargo rename
@@ -13,8 +30,9 @@ Build scripts are NOT run — members with build.rs get a placeholder comment.
 import json, os, re, sys, tomllib
 from collections import defaultdict
 
-META = sys.argv[1]
-only = set(sys.argv[2:])
+META, LINT_META, TEST_META = sys.argv[1:4]
+only = set(sys.argv[4:])
+LINT = "root//platforms:lint"
 
 meta = json.load(open(META))
 ws_root = meta["workspace_root"]
@@ -68,7 +86,15 @@ members = set(meta["workspace_members"])
 pkg_by_id = {p["id"]: p for p in meta["packages"]}
 resolve_by_id = {n["id"]: n for n in meta["resolve"]["nodes"]}
 
-# WASM variant data (task #11). `first-party-wasm.json` (from gen-wasm-deps.py)
+
+def resolve_nodes(path):
+    return {n["id"]: n for n in json.load(open(path))["resolve"]["nodes"]}
+
+
+lint_resolve_by_id = resolve_nodes(LINT_META)
+test_resolve_by_id = resolve_nodes(TEST_META)
+
+# WASM variant data. `first-party-wasm.json` (from gen-wasm-deps.py)
 # maps each first-party crate in the runtime's no_std closure to its wasm feature
 # set; `wasm_names` is the set of wasm-deps buck target names. Together they let
 # each closure crate's lib emit `select()` on `cpu:wasm32` that swaps the std
@@ -147,35 +173,23 @@ def _ledger_helpers_env(pkg, node):
 ENV_HOOKS = {
     "midnight-node-ledger-helpers": _ledger_helpers_env,
     "midnight-primitives-mainchain-follower": lambda p, n: {
-        # sqlx-macros (0.9) verifies query_as!/query! at compile time against the
-        # .sqlx offline cache, found by trying (in order) SQLX_OFFLINE_DIR,
-        # <manifest_dir>/.sqlx, then <workspace_root>/.sqlx — the last shells out to
-        # `cargo metadata`, which EOFs in buck's sandboxed __srcs tree (no cargo
-        # workspace). We land on candidate #2: the crate carries its own real .sqlx/
-        # (SRC_HOOKS globs it into srcs, so it stages exactly like src/*.rs — a
-        # __srcs symlink to project source, which the remote worker materializes),
-        # and CARGO_MANIFEST_DIR="." is auto-absolutized by the rust prelude
-        # (_DIRECTORY_ENV) to the __srcs root, so <manifest_dir>/.sqlx resolves on
-        # both local and RE without cargo metadata. A relative SQLX_OFFLINE_DIR
-        # missed (rustc's CWD is the repo root, not __srcs) and a $(location) one
-        # missed too (that filegroup artifact isn't materialized at its logical
-        # path under rebuck2's CAS). Proven with CARGO=/bin/false: build still green
-        # => cargo metadata was never invoked. CARGO stays set to satisfy sqlx's
-        # pre-offline presence check.
+        # sqlx-macros checks queries at compile time against the .sqlx offline
+        # cache, looked up as SQLX_OFFLINE_DIR, then <manifest_dir>/.sqlx, then
+        # <workspace_root>/.sqlx. The last runs `cargo metadata`, which fails in
+        # buck2's sources tree, so the crate carries its own .sqlx/ (SRCS_HOOKS)
+        # for the second. A relative SQLX_OFFLINE_DIR does not work: rustc's cwd
+        # is the repo root. CARGO only satisfies sqlx's presence check.
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
     },
     # runtime lib.rs include!s $OUT_DIR/wasm_binary.rs; point at the stub dir
     # (WASM_BINARY=None) since substrate-wasm-builder can't run under buck.
     "midnight-node-runtime": lambda p, n: {
-        # Real on-chain blob (task #12): OUT_DIR provides a wasm_binary.rs that
+        # Real on-chain blob: OUT_DIR provides a wasm_binary.rs that
         # include_bytes!'s the wasm-opt'd + zstd-compressed runtime. The runtime
         # lib is std here, but the blob is the wasm cdylib built via the wasm32
-        # configured_alias — so no build cycle. Was :runtime-wasm-stub (None).
+        # configured_alias, so no build cycle.
         "OUT_DIR": "$(location root//:runtime-wasm-binary-rs)",
-    },
-    "partner-chains-demo-runtime": lambda p, n: {
-        "OUT_DIR": "$(location root//:runtime-wasm-stub)",
     },
     # node/build.rs (generate_cargo_keys) emits these from git; provide static
     # values so the CLI --version works without running git under buck.
@@ -185,10 +199,6 @@ ENV_HOOKS = {
     },
 }
 
-# package name -> extra srcs labels (non-rust inputs the crate needs in the
-# rustc srcs tree, e.g. codegen caches or include_str! data). rustc runs with
-# CWD = the __srcs tree root (= CARGO_MANIFEST_DIR "."), so these land relative
-# to it: .env at ./.env, the sqlx filegroup at ./.sqlx/.
 # Crates whose sources include_str!/include_bytes! files ABOVE their own crate
 # dir (e.g. ../../../COMPACTC_VERSION). rustc resolves include! relative to the
 # source file, but buck sandboxes srcs rooted at the target's package, so those
@@ -197,19 +207,12 @@ ENV_HOOKS = {
 # external files at their repo-relative paths — with crate_root/CARGO_MANIFEST_DIR
 # prefixed by <rel>. The external files live in other buck packages, so they're
 # pulled via export_file labels (see EXPORTS). Value: {label: dest-in-tree}.
-# buck2 (the re-cache platform) runs rust tests IN-PLACE at the project root, where the
-# full real repo tree is present - so tests read the real res/, docs/, Cargo.toml etc.
-# via their own workspace-root walk, no copied fixtures (a couple of readers that build a
-# path from env!(CARGO_MANIFEST_DIR) instead of walking get MN_WORKSPACE_ROOT="." - the
-# real root - see UNIT_TEST_ENV). buck2 does NOT materialize `resources` at a path the
-# test can read CWD-relative here; what a
-# resource DOES do is make the file a DECLARED INPUT, so the (remote-cached) test action
-# re-runs when it changes. So resources below exist purely for cache-correctness - a
-# drift/config test must re-run when its fixture changes - and are listed, not placed.
-# A filegroup tracks a whole res/ subdir in one entry. (Verified in-container: the test
-# reads the in-place tree and the listed inputs re-trigger it; a `resources` MAP keyed at
-# <package>/<key> does NOT work, as the files never appear at that path under in-place
-# execution.)
+
+# buck2 runs rust tests in place at the project root, so a test reads res/,
+# docs/, Cargo.toml etc. from the real tree (midnight_node_res::
+# locate_workspace_root). A `resources` entry does not place a file anywhere:
+# it declares the file an input, so the cached test action re-runs when the
+# fixture changes. A filegroup tracks a whole res/ subdir in one entry.
 TEST_RESOURCES = {
     # res tests: locate_workspace_root() walks up from CWD (= project root) for
     # res/cfg/default.toml, then read cfg presets + chainspec/openrpc/genesis blobs.
@@ -274,11 +277,8 @@ TEST_TARGET_RESOURCES = {
 # (the `else` branch gets these via SRCS_HOOKS; the prefix branch needs them here
 # so runtime fixture reads resolve at the project-relative layout).
 PREFIX_DATA_GLOBS = {
-    # res tests walk up from the test's CWD (= project root, since buck2 runs
-    # tests with run_from_project_root=True) for `res/cfg/default.toml`, then read
-    # cfg tomls + chainspec/genesis blobs. Staging res's files at the `res/` prefix
-    # puts them at exactly those project-relative paths. Note the *.toml — the cfg
-    # presets are toml, absent from the .mn/.json/.hbs data set.
+    # What res's tests read: the cfg presets (toml) and the chainspec and
+    # genesis blobs.
     "midnight-node-res": ["**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"],
 }
 
@@ -292,6 +292,11 @@ MAPPED_SRCS_EXTERNAL = {
     # genesis blob at res/genesis/...) and the `../../../res/...` path resolves.
     "midnight-node": {
         "root//res:genesis-state-preview": "res/genesis/genesis_state_preview.mn",
+    },
+    # ledger/src/host_api/ledger_9.rs include_bytes!s the undeployed genesis
+    # state under `runtime-benchmarks`, which the lint platform turns on.
+    "midnight-node-ledger": {
+        "root//res:genesis-state-undeployed": "res/genesis/genesis_state_undeployed.mn",
     },
     "midnight-node-toolkit": {
         "root//:COMPACTC_VERSION": "COMPACTC_VERSION",
@@ -367,9 +372,6 @@ EXPORTS = {
 TEST_ENV_HOOKS = {
     ("midnight-node-toolkit", "cli_tests"): {
         "CARGO_BIN_EXE_midnight-node-toolkit": "$(location :toolkit-hyphen-bin)",
-        # No MN_CLI_FIXTURES_ROOT: cli_tests falls back to CARGO_MANIFEST_DIR (util/toolkit)
-        # and chdirs there in the in-place tree, where tests/cmd/, README.md and the tomls'
-        # `../../res/...` all resolve against the real repo.
         # README show-wallet examples build ledger state -> zk-params cache dir.
         "MIDNIGHT_PP": ".zk-params",
     },
@@ -387,29 +389,18 @@ TEST_ENV_HOOKS = {
 # TEST_ENV_HOOKS instead). Same zk-params reason as above.
 UNIT_TEST_ENV = {
     "midnight-node-ledger-helpers": {"MIDNIGHT_PP": ".zk-params"},
-    # buck2 runs tests in-place at the project root, so the real tree is the current dir:
-    # MN_WORKSPACE_ROOT="." anchors fixture lookups there (not a copied dir). Most reads
-    # would walk up to the same place, but node's main_chain_follower test builds its path
-    # from env!("CARGO_MANIFEST_DIR") (compile-time -> buck's ephemeral sandbox, gone at
-    # runtime) and relies on this override instead; "." makes it read the real res/.
-    "midnight-node": {"MN_WORKSPACE_ROOT": "."},
-    # toolkit unit tests reach res via test_paths::res() and build a LedgerContext.
-    "midnight-node-toolkit": {"MN_WORKSPACE_ROOT": ".", "MIDNIGHT_PP": ".zk-params"},
-    # indexer_client schema-validation tests read graphql/ via env!(CARGO_MANIFEST_DIR)
-    # (buck's sandbox, gone at runtime); "." makes them read the real tree in-place.
-    "midnight-ledger-unsafe-helpers": {"MN_WORKSPACE_ROOT": "."},
+    "midnight-node-toolkit": {"MIDNIGHT_PP": ".zk-params"},
 }
 
-# Crates to skip emitting a unit-test target for. sc-partner-chains-consensus and
-# sc-partner-chains-consensus-aura tests all need substrate-test-runtime's dev wasm
-# binary (a polkadot-sdk internal test fixture built by substrate-wasm-builder) —
-# out of scope: it'd need a second wasm crate-universe + cdylib/compress pipeline
-# just for a third-party test runtime.
+# Crates with no unit-test target. Their tests all need substrate-test-runtime's
+# wasm binary, a polkadot-sdk test fixture built by substrate-wasm-builder, which
+# buck2 cannot run: it would take a second wasm universe for a third-party test
+# runtime. cargo still runs them.
 NO_UNIT_TEST = {"sc-partner-chains-consensus-aura", "sc-partner-chains-consensus"}
 
 # Tests that need external infra (Docker/testcontainers, a live devnet, a Cardano
-# node) get a `ci-infra` label so the distributed CI can `buck2 test root//...
-# --exclude ci-infra`. They still run locally against the real stack.
+# node) get a `ci-infra` label, and CI runs `buck2 test root//... --exclude
+# ci-infra`. The cargo jobs that provide the infra still run them.
 CI_INFRA_UNIT = {
     "partner-chains-db-sync-data-sources",  # testcontainers → postgres
     "midnight-primitives-mainchain-follower",  # #[sqlx::test] → postgres (DATABASE_URL)
@@ -425,19 +416,17 @@ CI_INFRA_INTEGRATION = {
     ("sc-partner-chains-consensus", "verifier_network"),  # substrate-test-runtime wasm
 }
 
-# Extra src globs a crate's TEST targets need (test-data include_str!'d only by
-# #[cfg(test)] code, sqlx::migrate! dirs, …). Applied to unit + integration
-# tests, not the lib/bin.
 # Crates that additionally get a `<name>-wasm-cdylib` shared-library target — the
-# on-chain wasm blob source (task #12). Only the runtime; a configured_alias in
+# on-chain wasm blob source. Only the runtime; a configured_alias in
 # the root BUCK builds it for wasm32, then wasm-opt + zstd produce the blob.
 WASM_CDYLIB = {"midnight-node-runtime"}
 
+# Extra src globs a crate's test targets need (test-data include_str!'d only by
+# #[cfg(test)] code, sqlx::migrate! dirs, ...): unit and integration tests, not
+# the lib or bins.
 TEST_SRCS_HOOKS = {
     "midnight-node-ledger": ["test-data/**"],
     "partner-chains-db-sync-data-sources": ["testdata/**"],
-    # toolkit tests read test-data/ via env!("CARGO_MANIFEST_DIR"), which buck
-    # bakes to the sandbox __srcs dir — map the fixtures in so they resolve.
     # README.md is the trycmd corpus for cli_tests.
     "midnight-node-toolkit": ["test-data/**", "README.md"],
 }
@@ -445,10 +434,9 @@ TEST_SRCS_HOOKS = {
 # each value is a list of starlark expressions added to `srcs` with `+`; a
 # fragment may be a list literal (["..."]) or a glob() call.
 SRCS_HOOKS = {
-    # Crate-local .sqlx/ (real source, copied from the workspace root cache) is
-    # globbed in so it stages like src/*.rs and sqlx finds it via <manifest_dir>/
-    # .sqlx on the remote worker (see ENV_HOOKS). .env kept for local cargo.
-    "midnight-primitives-mainchain-follower": ['glob([".sqlx/**"])', '[".env"]'],
+    # The crate's own .sqlx/ offline cache, which sqlx finds at <manifest_dir>/.sqlx
+    # (see ENV_HOOKS).
+    "midnight-primitives-mainchain-follower": ['glob([".sqlx/**"])'],
     # include_str!("../examples/*.json") — data outside the src/ glob.
     "partner-chains-mock-data-sources": ['glob(["examples/**/*.json"])'],
     # (res moved to the `res/` prefix + PREFIX_DATA_GLOBS — see MAPPED_SRCS_EXTERNAL.)
@@ -533,7 +521,7 @@ def compute_deps(pkg, node, include_dev):
                 named[extern] = label
             else:
                 deps.append(label)
-        # label -> dependency crate name, for the wasm select (task #11): a dep
+        # label -> dependency crate name, for the wasm select: a dep
         # is kept on wasm32 only if its crate name is in the consumer's wasm dep
         # set (sidecar), so std-only deps like ledger's `lazy_static` are dropped.
         label_pkg[label] = dpkg["name"]
@@ -555,6 +543,22 @@ def gen_buck(pkg, prefix=""):
 
     deps, named, label_pkg = compute_deps(pkg, node, include_dev=False)
     dev_deps, dev_named, _ = compute_deps(pkg, node, include_dev=True)
+
+    def variant(by_id, include_dev, own_lib=None):
+        # This package's features and deps as another metadata resolves them.
+        vnode = by_id[pkg["id"]]
+        vdeps, vnamed, _ = compute_deps(pkg, vnode, include_dev)
+        if own_lib and lt:
+            vdeps = sorted(set(vdeps + [f":{own_lib}"]))
+        feats = sorted(f for f in vnode.get("features", []) if f != "default")
+        return {"features": feats, "deps": vdeps, "named": vnamed}
+
+    def lint_variant(include_dev, own_lib=False):
+        # Emitted only where it differs from the default.
+        return variant(
+            lint_resolve_by_id, include_dev, pkg["name"] if own_lib else None
+        )
+
     extra_env = ENV_HOOKS.get(pkg["name"], lambda p, n: {})(pkg, node)
     out = []
     out.append(
@@ -565,45 +569,52 @@ def gen_buck(pkg, prefix=""):
             "# NOTE: this crate has a build.rs which is NOT run under buck2 yet.\n"
         )
 
-    def emit_list_field(field, std_vals, wasm_vals, quote='"{}"'):
-        # Emit a list-valued field, as a `select()` on cpu:wasm32 when a wasm
-        # variant is supplied and differs, else a plain list.
-        def block(indent, vals):
-            for v in vals:
-                out.append(f"{indent}{quote.format(v)},\n")
-
-        if wasm_vals is None or sorted(wasm_vals) == sorted(std_vals):
-            if std_vals:
-                out.append(f"    {field} = [\n")
-                block("        ", std_vals)
-                out.append("    ],\n")
+    def emit_select(field, std, alts, brackets, block, same):
+        # A plain value, or a `select()` when a variant (wasm32, lint) differs.
+        opener, closer = brackets
+        alts = [(c, v) for c, v in alts if v is not None and not same(v, std)]
+        if not alts:
+            if std:
+                out.append(f"    {field} = {opener}\n")
+                block("        ", std)
+                out.append(f"    {closer},\n")
             return
         out.append(f"    {field} = select({{\n")
-        out.append('        "prelude//cpu:wasm32": [\n')
-        block("            ", sorted(wasm_vals))
-        out.append("        ],\n")
-        out.append('        "DEFAULT": [\n')
-        block("            ", std_vals)
-        out.append("        ],\n    }),\n")
+        for cond, vals in alts + [("DEFAULT", std)]:
+            out.append(f'        "{cond}": {opener}\n')
+            block("            ", vals)
+            out.append(f"        {closer},\n")
+        out.append("    }),\n")
 
-    def emit_named_field(field, std_map, wasm_map):
+    def emit_list_field(field, std_vals, wasm_vals, lint_vals=None):
+        def block(indent, vals):
+            for v in vals:
+                out.append(f'{indent}"{v}",\n')
+
+        alts = [("prelude//cpu:wasm32", wasm_vals and sorted(wasm_vals))]
+        same = lambda a, b: sorted(a) == sorted(b)
+        n = len(out)
+        emit_select(field, std_vals, alts, "[]", block, same)
+        # The lint feature set only ever adds, so append its extras rather than
+        # repeating the whole list in a second select.
+        extra = sorted(set(lint_vals or ()) - set(std_vals))
+        if not extra:
+            return
+        if len(out) == n:
+            out.append(f"    {field} = select({{\n")
+        else:
+            out[-1] = out[-1].removesuffix(",\n") + " + select({\n"
+        out.append(f'        "{LINT}": [\n')
+        block("            ", extra)
+        out.append('        ],\n        "DEFAULT": [],\n    }),\n')
+
+    def emit_named_field(field, std_map, wasm_map, lint_map=None):
         def block(indent, m):
             for k, v in sorted(m.items()):
                 out.append(f'{indent}"{k}": "{v}",\n')
 
-        if wasm_map is None or wasm_map == std_map:
-            if std_map:
-                out.append(f"    {field} = {{\n")
-                block("        ", std_map)
-                out.append("    },\n")
-            return
-        out.append(f"    {field} = select({{\n")
-        out.append('        "prelude//cpu:wasm32": {\n')
-        block("            ", wasm_map)
-        out.append("        },\n")
-        out.append('        "DEFAULT": {\n')
-        block("            ", std_map)
-        out.append("        },\n    }),\n")
+        alts = [("prelude//cpu:wasm32", wasm_map), (LINT, lint_map)]
+        emit_select(field, std_map, alts, "{}", block, lambda a, b: a == b)
 
     def emit_target(
         rule,
@@ -615,6 +626,7 @@ def gen_buck(pkg, prefix=""):
         extra=(),
         extra_globs=(),
         wasm=None,
+        lint=None,
         feats=None,
         env_override=None,
         labels=None,
@@ -658,6 +670,7 @@ def gen_buck(pkg, prefix=""):
             "features",
             feats if feats is not None else features,
             wasm["features"] if wasm else None,
+            lint["features"] if lint and feats is None else None,
         )
         vparts = (re.findall(r"\d+", pkg["version"]) + ["0", "0", "0"])[:3]
         out.append("    env = {\n")
@@ -687,11 +700,7 @@ def gen_buck(pkg, prefix=""):
         for k, v in sorted(env.items()):
             out.append(f'        "{k}": {json.dumps(v)},\n')
         out.append("    },\n")
-        # Runtime resources: buck2 runs rust tests IN-PLACE at the project root, where the
-        # real repo tree is present, so a test reads its fixtures from that tree directly.
-        # A `resources` entry does NOT place a file; it declares the file an INPUT of the
-        # (remote-cached) test action, so the action re-runs when a fixture changes. Only
-        # test targets get these.
+        # Declared inputs only (see TEST_RESOURCES).
         if rule == "rust_test":
             res_expr = TEST_TARGET_RESOURCES.get(name) or TEST_RESOURCES.get(
                 pkg["name"]
@@ -705,8 +714,18 @@ def gen_buck(pkg, prefix=""):
             )
         for e in extra:
             out.append(e)
-        emit_list_field("deps", tdeps, wasm["deps"] if wasm else None)
-        emit_named_field("named_deps", tnamed, wasm["named"] if wasm else None)
+        emit_list_field(
+            "deps",
+            tdeps,
+            wasm["deps"] if wasm else None,
+            lint["deps"] if lint else None,
+        )
+        emit_named_field(
+            "named_deps",
+            tnamed,
+            wasm["named"] if wasm else None,
+            lint["named"] if lint else None,
+        )
         if labels:
             out.append("    labels = [" + ", ".join(f'"{l}"' for l in labels) + "],\n")
         out.append('    visibility = ["PUBLIC"],\n')
@@ -720,7 +739,7 @@ def gen_buck(pkg, prefix=""):
     if lt:
         is_proc = "proc-macro" in lt["kind"]
         extra = ["    proc_macro = True,\n"] if is_proc else []
-        # WASM variant (task #11): closure libs (not proc-macros — those build on
+        # WASM variant: closure libs (not proc-macros — those build on
         # the host) get a `select()` swapping std deps/features for the no_std set.
         wasm_lib = None
         if not is_proc and pkg["name"] in wasm_features_map:
@@ -740,8 +759,9 @@ def gen_buck(pkg, prefix=""):
             named,
             extra,
             wasm=wasm_lib,
+            lint=lint_variant(include_dev=False),
         )
-        # cdylib variant of the runtime for the on-chain wasm blob (task #12):
+        # cdylib variant of the runtime for the on-chain wasm blob:
         # always the no_std wasm deps/features, shared linkage, and
         # `--cfg substrate_runtime` (so #[runtime_interface] emits wasm extern
         # stubs). Built for wasm32 via a configured_alias in the root BUCK.
@@ -767,7 +787,13 @@ def gen_buck(pkg, prefix=""):
         bdeps = sorted(set(deps + ([f":{pkg['name']}"] if lt else [])))
         out.append("\n")
         emit_target(
-            "rust_binary", name, underscore(b["name"]), rel_root(b), bdeps, named
+            "rust_binary",
+            name,
+            underscore(b["name"]),
+            rel_root(b),
+            bdeps,
+            named,
+            lint=lint_variant(include_dev=False, own_lib=True),
         )
 
     # ── tests ──────────────────────────────────────────────────────────────
@@ -785,17 +811,37 @@ def gen_buck(pkg, prefix=""):
             dev_deps,
             dev_named,
             extra_globs=test_globs,
+            lint=lint_variant(include_dev=True),
             env_override=UNIT_TEST_ENV.get(pkg["name"]),
             labels=["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else None,
         )
     for t in tests:
-        # Skip integration tests whose required-features aren't in the resolved
-        # feature set, exactly as cargo does. pallet-midnight's persist_refcount
-        # needs `test-utils` (for pallet_midnight::mock, gated on it), which the
-        # default workspace build doesn't enable — so cargo never builds it and
-        # neither should buck2 (the lib dep carries no test-utils either).
+        # cargo skips an integration test whose required-features are off. CI
+        # turns them on for the run (regen.sh TEST_FEATURES), which under buck2
+        # means a second build of the lib with those features for the test to link.
         req = t.get("required-features") or []
         if any(f not in features for f in req):
+            lib = f"{pkg['name']}-{'-'.join(req)}"
+            vlib = variant(test_resolve_by_id, include_dev=False)
+            if not lt or any(f not in vlib["features"] for f in req):
+                continue
+            vtest = variant(test_resolve_by_id, include_dev=True, own_lib=lib)
+            for name, rule, v, globs in (
+                (lib, "rust_library", vlib, ()),
+                (f"{pkg['name']}-{t['name']}", "rust_test", vtest, ("tests/**",)),
+            ):
+                is_test = rule == "rust_test"
+                out.append("\n")
+                emit_target(
+                    rule,
+                    name,
+                    underscore((t if is_test else lt)["name"]),
+                    rel_root(t if is_test else lt),
+                    v["deps"],
+                    v["named"],
+                    extra_globs=globs + (test_globs if is_test else ()),
+                    feats=v["features"],
+                )
             continue
         tdeps = sorted(set(dev_deps + ([f":{pkg['name']}"] if lt else [])))
         out.append("\n")
@@ -807,6 +853,7 @@ def gen_buck(pkg, prefix=""):
             tdeps,
             dev_named,
             extra_globs=("tests/**",) + test_globs,
+            lint=lint_variant(include_dev=True, own_lib=True),
             env_override=TEST_ENV_HOOKS.get((pkg["name"], t["name"])),
             labels=(
                 ["ci-infra"]
@@ -817,18 +864,10 @@ def gen_buck(pkg, prefix=""):
     return "".join(out)
 
 
-# Workspace members intentionally excluded from the buck2 build/test set. The
-# partner-chains demo node + runtime are an example that isn't part of the main
-# product (its runtime isn't in the primary Cargo.toml's build), and building it
-# would need a second wasm crate-universe just for the demo. Out of scope.
-SKIP_MEMBERS = {"partner-chains-demo-node", "partner-chains-demo-runtime"}
-
-count = 0
+written = set()
 for mid in sorted(members):
     pkg = pkg_by_id[mid]
     if only and pkg["name"] not in only:
-        continue
-    if pkg["name"] in SKIP_MEMBERS:
         continue
     rel = member_rel(pkg)
     # mapped-srcs crates (escaping include!s) stay in their own package but
@@ -838,8 +877,24 @@ for mid in sorted(members):
     exports = EXPORTS.get(pkg["name"])
     if exports:
         body = "\n\n".join(exports) + "\n\n" + body
-    with open(os.path.join(ws_root, rel, "BUCK"), "w") as f:
+    path = os.path.join(ws_root, rel, "BUCK")
+    with open(path, "w") as f:
         f.write(body)
     print(f"wrote {rel}/BUCK")
-    count += 1
-print(f"{count} BUCK files")
+    written.add(path)
+print(f"{len(written)} BUCK files")
+
+# A crate that left the workspace leaves its BUCK behind, and root//... then
+# fails to load: remove every BUCK this script once wrote and no longer does.
+SKIP_DIRS = {"target", "buck-out", "node_modules", "third-party", "wasm-deps"}
+if not only:
+    for d, dirs, files in os.walk(ws_root):
+        dirs[:] = [x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS]
+        path = os.path.join(d, "BUCK")
+        if "BUCK" not in files or path in written:
+            continue
+        with open(path) as f:
+            stale = "@generated by scripts/buck2/gen-first-party.py" in f.read()
+        if stale:
+            os.remove(path)
+            print(f"removed {os.path.relpath(path, ws_root)}")

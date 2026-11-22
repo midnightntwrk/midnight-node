@@ -1,23 +1,33 @@
 #!/usr/bin/env bash
-# Wasm cdylib link shim. buck's system_cxx_toolchain infers linker_type from the
-# host OS and appends host-only link flags (darwin `-install_name`, gnu driver
-# `-Wl,…`) that rust-lld's `-flavor wasm` rejects. Strip them, then invoke
-# rust-lld. STOPGAP until a wasm-aware cxx toolchain (linker_type="gnu") exists.
+
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Wasm cdylib link shim. buck2's system_cxx_toolchain infers linker_type from
+# the host OS and appends host-only link flags (darwin `-install_name`, gnu
+# driver `-Wl,...`) that rust-lld's `-flavor wasm` rejects: strip them, then run
+# rust-lld. A wasm-aware cxx toolchain would make this unnecessary.
 set -euo pipefail
 
-# Locate rust-lld under the active rust toolchain's sysroot — portable across
-# machines/OSes/arches (macOS-arm64 dev box AND x86_64 Linux CI). Overridable
-# via $WASM_RUST_LLD for exotic setups. rust-lld ships with the toolchain.
+# rust-lld ships in the toolchain's sysroot; $WASM_RUST_LLD overrides.
 RUST_LLD="${WASM_RUST_LLD:-}"
 if [ -z "$RUST_LLD" ]; then
   sysroot="$(rustc --print sysroot)"
   RUST_LLD="$(find "$sysroot/lib/rustlib" -name rust-lld -type f 2>/dev/null | head -1)"
 fi
 [ -x "$RUST_LLD" ] || { echo "wasm-lld.sh: rust-lld not found (sysroot=$(rustc --print sysroot 2>/dev/null))" >&2; exit 1; }
-# buck's system_cxx_toolchain is darwin (host) and appends clang-driver + darwin
-# link flags. rustc's wasm flavour emits raw lld flags (`-flavor wasm --export`),
-# so every driver/darwin flag here is buck-added noise rust-lld can't parse; drop
-# them (from both direct args and @argfiles) and keep the raw lld flags + objects.
+# rustc's wasm flavour emits raw lld flags, so any driver or darwin flag is one
+# buck2 added: drop them from the args and from @argfiles.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

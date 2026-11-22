@@ -4,7 +4,7 @@ rust_library(
     crate = "midnight_primitives_mainchain_follower",
     crate_root = "src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]) + [".env"],
+    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]),
     features = select({
         "prelude//cpu:wasm32": [
         ],
@@ -100,7 +100,7 @@ rust_test(
     crate = "midnight_primitives_mainchain_follower",
     crate_root = "src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]) + [".env"],
+    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]),
     features = [
         "async-trait",
         "authority-selection-inherents",

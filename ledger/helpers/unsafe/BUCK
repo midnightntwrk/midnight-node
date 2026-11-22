@@ -78,10 +78,10 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "Utilities for toolkit and tests. Do not use in node, especially consensus.",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
-        "MN_WORKSPACE_ROOT": ".",
     },
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
+        "root//res:midnight-node-res",
         "root//third-party:anyhow",
         "root//third-party:apollo-compiler",
         "root//third-party:async-trait",

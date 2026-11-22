@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
+
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # One buck2 step under a bazel-remote action cache (buck2/Earthfile +BUCK2).
 # Expects buck2, bazel-remote and .buckconfig.local in place (+INSTALL, +CONFIG).
-#   build     buck2 build $TARGETS; $BIN, if set, to /usr/local/bin
+#   build     buck2 build $TARGETS
 #   clippy    clippy -D warnings over the rust targets in $TARGETS (a uquery
 #             expression the caller scopes to first-party), failing on any diagnostic
 #   test      buck2 test $TARGETS
-#   release   buck2 build $TARGETS for $PLATFORM, the one output to $OUT
 #
 # BUCK2_ARGS (optional, space-separated) is prepended to every buck2 build/test:
 # midnight-node pins the target platform (linux-x86_64) and points the wasm
@@ -13,7 +26,7 @@
 # sees a *global* -c, not a .buckconfig.local section).
 set -euo pipefail
 
-mode=${1:?usage: buck2-ci.sh build|clippy|test|release}
+mode=${1:?usage: buck2-ci.sh build|clippy|test}
 read -r -a targets <<< "${TARGETS:?TARGETS: the buck2 targets for this step}"
 read -r -a args <<< "${BUCK2_ARGS:-}"
 
@@ -24,9 +37,8 @@ rm -rf "${HOME}/.buck/buckd"
 
 cache_dir=${BAZEL_REMOTE_DIR:-/root/.cache/bazel-remote}
 br_pid=""
-# A shared cache the sandbox cannot reach must not hang buck2 for the whole
-# job (a dropped SYN did exactly that on 2026-10-15): probe it first and
-# fall back to the sidecar, loudly.
+# buck2 hangs for the whole job on a shared cache the sandbox cannot reach
+# (a dropped SYN): probe it first and fall back to the sidecar, loudly.
 reachable() {
     local hostport=${1#*://}
     timeout 5 bash -c "exec 3<> /dev/tcp/${hostport%:*}/${hostport##*:}" 2> /dev/null
@@ -68,9 +80,6 @@ export BUCK2_TEST_FORCE_CACHE_UPLOAD=1
 case "$mode" in
 build)
     buck2 build "${args[@]}" "${targets[@]}"
-    if [ -n "${BIN:-}" ]; then
-        buck2 build "${args[@]}" "$BIN" --out "/usr/local/bin/${BIN##*:}"
-    fi
     ;;
 clippy)
     # clippy only where we have source: TARGETS is a query expression the caller
@@ -112,12 +121,8 @@ clippy)
 test)
     buck2 test "${args[@]}" "${targets[@]}"
     ;;
-release)
-    buck2 build "${args[@]}" "${targets[@]}" --target-platforms "${PLATFORM:?release needs PLATFORM}" \
-        --out "${OUT:?release needs OUT}"
-    ;;
 *)
-    echo "buck2-ci.sh: unknown mode '$mode' (want build|clippy|test|release)" >&2
+    echo "buck2-ci.sh: unknown mode '$mode' (want build|clippy|test)" >&2
     exit 2
     ;;
 esac

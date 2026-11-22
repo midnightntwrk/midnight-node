@@ -18,6 +18,13 @@ rust_library(
             "std",
             "substrate-wasm-builder",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "frame-system-benchmarking",
+            "runtime-benchmarks",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
     }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
@@ -282,7 +289,14 @@ rust_test(
         "frame-try-runtime",
         "std",
         "substrate-wasm-builder",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "frame-system-benchmarking",
+            "runtime-benchmarks",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "midnight-node-runtime",

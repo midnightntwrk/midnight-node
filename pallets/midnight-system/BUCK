@@ -11,6 +11,12 @@ rust_library(
         "DEFAULT": [
             "std",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
     }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
@@ -53,7 +59,13 @@ rust_test(
     srcs = glob(["src/**"]) + ["Cargo.toml"],
     features = [
         "std",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "pallet-midnight-system",

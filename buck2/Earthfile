@@ -132,14 +132,11 @@ BUCK2:
     FUNCTION
     ARG --required mode
     ARG --required targets
-    ARG bin
-    ARG platform
-    ARG out
     # midnight-node pins the host target + the wasm toolchain via global -c.
     ARG buck2_args="--target-platforms root//platforms:linux-x86_64 -c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
     ARG BUCK2_CACHE_ADDR
     CACHE --sharing locked --id buck2-action-cache /root/.cache/bazel-remote
-    RUN TARGETS="$targets" BUCK2_ARGS="$buck2_args" BIN="$bin" PLATFORM="$platform" OUT="$out" buck2-ci.sh "$mode"
+    RUN TARGETS="$targets" BUCK2_ARGS="$buck2_args" buck2-ci.sh "$mode"
 
 script:
     FROM scratch

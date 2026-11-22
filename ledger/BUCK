@@ -2,9 +2,13 @@
 rust_library(
     name = "midnight-node-ledger",
     crate = "midnight_node_ledger",
-    crate_root = "src/lib.rs",
+    crate_root = "ledger/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = select({
         "prelude//cpu:wasm32": [
         ],
@@ -41,9 +45,14 @@ rust_library(
             "zswap-ledger-8",
             "zswap-ledger-9",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
     }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -117,9 +126,13 @@ rust_library(
 rust_test(
     name = "midnight-node-ledger-unit-test",
     crate = "midnight_node_ledger",
-    crate_root = "src/lib.rs",
+    crate_root = "ledger/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**", "test-data/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml", "test-data/**"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = [
         "base-crypto",
         "coin-structure",
@@ -152,9 +165,14 @@ rust_test(
         "v8-to-v9-state-translation",
         "zswap-ledger-8",
         "zswap-ledger-9",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -218,9 +236,13 @@ rust_test(
 rust_test(
     name = "midnight-node-ledger-ledger_stats",
     crate = "ledger_stats",
-    crate_root = "tests/ledger_stats.rs",
+    crate_root = "ledger/tests/ledger_stats.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**", "test-data/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = [
         "base-crypto",
         "coin-structure",
@@ -253,9 +275,14 @@ rust_test(
         "v8-to-v9-state-translation",
         "zswap-ledger-8",
         "zswap-ledger-9",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -320,9 +347,13 @@ rust_test(
 rust_test(
     name = "midnight-node-ledger-offchain_isolation",
     crate = "offchain_isolation",
-    crate_root = "tests/offchain_isolation.rs",
+    crate_root = "ledger/tests/offchain_isolation.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**", "test-data/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = [
         "base-crypto",
         "coin-structure",
@@ -355,9 +386,14 @@ rust_test(
         "v8-to-v9-state-translation",
         "zswap-ledger-8",
         "zswap-ledger-9",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -422,9 +458,13 @@ rust_test(
 rust_test(
     name = "midnight-node-ledger-offchain_isolation_ledger_8",
     crate = "offchain_isolation_ledger_8",
-    crate_root = "tests/offchain_isolation_ledger_8.rs",
+    crate_root = "ledger/tests/offchain_isolation_ledger_8.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**", "test-data/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = [
         "base-crypto",
         "coin-structure",
@@ -457,9 +497,14 @@ rust_test(
         "v8-to-v9-state-translation",
         "zswap-ledger-8",
         "zswap-ledger-9",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -524,9 +569,13 @@ rust_test(
 rust_test(
     name = "midnight-node-ledger-offchain_reads",
     crate = "offchain_reads",
-    crate_root = "tests/offchain_reads.rs",
+    crate_root = "ledger/tests/offchain_reads.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**", "test-data/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = [
         "base-crypto",
         "coin-structure",
@@ -559,9 +608,14 @@ rust_test(
         "v8-to-v9-state-translation",
         "zswap-ledger-8",
         "zswap-ledger-9",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -626,9 +680,13 @@ rust_test(
 rust_test(
     name = "midnight-node-ledger-offchain_validation",
     crate = "offchain_validation",
-    crate_root = "tests/offchain_validation.rs",
+    crate_root = "ledger/tests/offchain_validation.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**", "test-data/**"]) + ["Cargo.toml"],
+    mapped_srcs = dict(
+        [(f, "ledger/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**"])] + [
+            ("root//res:genesis-state-undeployed", "res/genesis/genesis_state_undeployed.mn"),
+        ],
+    ),
     features = [
         "base-crypto",
         "coin-structure",
@@ -661,9 +719,14 @@ rust_test(
         "v8-to-v9-state-translation",
         "zswap-ledger-8",
         "zswap-ledger-9",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "ledger",
         "CARGO_PKG_NAME": "midnight-node-ledger",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",

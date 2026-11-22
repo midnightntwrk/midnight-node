@@ -38,3 +38,23 @@ cargo_env = [
 # crates.io (via midnight-ledger) and the polkadot-sdk git tag, which
 # `cargo vendor` rejects as duplicates.
 vendor = false
+
+# The platforms the graph is resolved for (replaces reindeer's default list).
+# A -lint twin adds the manifest's `lint` feature (gen-third-party.py);
+# third-party/PACKAGE maps root//platforms:lint to it.
+[platform.linux-x86_64]
+target = "x86_64-unknown-linux-gnu"
+
+[platform.linux-arm64]
+target = "aarch64-unknown-linux-gnu"
+
+[platform.macos-arm64]
+target = "aarch64-apple-darwin"
+
+[platform.linux-x86_64-lint]
+target = "x86_64-unknown-linux-gnu"
+features = ["lint"]
+
+[platform.linux-arm64-lint]
+target = "aarch64-unknown-linux-gnu"
+features = ["lint"]

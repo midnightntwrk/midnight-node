@@ -12,6 +12,12 @@ rust_library(
             "pallet-collective",
             "std",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
     }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
@@ -45,6 +51,11 @@ rust_library(
             "root//third-party:scale-info",
             "root//third-party:sp-runtime",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+        ],
+        "DEFAULT": [],
     }),
     visibility = ["PUBLIC"],
 )
@@ -58,7 +69,13 @@ rust_test(
     features = [
         "pallet-collective",
         "std",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "pallet-federated-authority",
@@ -83,6 +100,11 @@ rust_test(
         "root//third-party:sp-core",
         "root//third-party:sp-io",
         "root//third-party:sp-runtime",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+        ],
+        "DEFAULT": [],
+    }),
     visibility = ["PUBLIC"],
 )

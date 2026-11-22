@@ -1,16 +1,20 @@
-# Execution platform with the remote ACTION CACHE (and, for re-exec, remote
-# EXECUTION) enabled — used by the distributed buck2 CI (gilescope/rebuck2). By
-# default (local_enabled=True) execution stays local: buck2 queries the cache by
-# action digest, runs misses locally, uploads results. With local_enabled=False
-# every action goes through the RE Execution service (rebuck2 workers).
-#
-# The prelude's own execution_platform hardcodes remote_enabled=False (-> no
-# cache). We need remote_enabled=True to activate the ActionCacheChecker path,
-# remote_cache_enabled=True for read+write, and remote execution reaches the
-# rebuck2 driver's Execution service (misses fall back to local when it advertises
-# none, e.g. cache-only rebuck).
-#
-# Copied from gilescope/rebuck test/platforms/defs.bzl.
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# An execution platform that runs actions locally behind a remote action cache:
+# buck2 looks an action up by digest, runs a miss locally and uploads the result.
+# The prelude's own execution_platform sets remote_enabled = False, which also
+# turns the cache off.
 
 def _re_cache_execution_platform_impl(ctx: AnalysisContext) -> list[Provider]:
     constraints = dict()
@@ -23,12 +27,12 @@ def _re_cache_execution_platform_impl(ctx: AnalysisContext) -> list[Provider]:
         label = name,
         configuration = cfg,
         executor_config = CommandExecutorConfig(
-            local_enabled = ctx.attrs.local_enabled,
+            local_enabled = True,
             remote_enabled = True,
             remote_cache_enabled = True,
             remote_execution_use_case = "buck2-default",
             remote_execution_properties = {},
-            use_windows_path_separators = ctx.attrs.use_windows_path_separators,
+            use_windows_path_separators = False,
         ),
     )
 
@@ -44,9 +48,5 @@ re_cache_execution_platform = rule(
     attrs = {
         "cpu_configuration": attrs.dep(providers = [ConfigurationInfo]),
         "os_configuration": attrs.dep(providers = [ConfigurationInfo]),
-        # False forces every action through the RE Execution service (rebuck2
-        # workers) — no local fallback inside buck2 itself.
-        "local_enabled": attrs.bool(default = True),
-        "use_windows_path_separators": attrs.bool(default = False),
     },
 )

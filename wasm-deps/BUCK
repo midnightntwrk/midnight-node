@@ -4083,16 +4083,74 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "14",
         "CARGO_PKG_VERSION_PATCH": "7",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :generic-array-0.14-build-script-run[out_dir])",
+    },
+    features = [
+        "more_lengths",
+        "zeroize",
+    ],
+    rustc_flags = ["@$(location :generic-array-0.14-build-script-run[rustc_flags])"],
+    visibility = [],
+    deps = [
+        ":typenum-1",
+        ":zeroize-1",
+    ],
+)
+
+cargo.rust_binary(
+    name = "generic-array-0.14-build-script-build",
+    srcs = [":generic-array-0.14.7.crate"],
+    crate = "build_script_build",
+    crate_root = "generic-array-0.14.7.crate/build.rs",
+    edition = "2015",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "generic-array-0.14.7.crate",
+        "CARGO_PKG_AUTHORS": "Bartłomiej Kamiński <fizyk20@gmail.com>:Aaron Trent <novacrazy@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Generic types implementing functionality of arrays",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "generic-array",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/fizyk20/generic-array.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.14.7",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "7",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
         "more_lengths",
         "zeroize",
     ],
     visibility = [],
-    deps = [
-        ":typenum-1",
-        ":zeroize-1",
+    deps = [":version_check-0.9"],
+)
+
+buildscript_run(
+    name = "generic-array-0.14-build-script-run",
+    package_name = "generic-array",
+    buildscript_rule = ":generic-array-0.14-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "Bartłomiej Kamiński <fizyk20@gmail.com>:Aaron Trent <novacrazy@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Generic types implementing functionality of arrays",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/fizyk20/generic-array.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "7",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "more_lengths",
+        "zeroize",
     ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.14.7",
 )
 
 http_archive(
@@ -13017,6 +13075,41 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["default"],
+    visibility = [],
+)
+
+http_archive(
+    name = "version_check-0.9.5.crate",
+    sha256 = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a",
+    size_bytes = 15554,
+    strip_prefix = "version_check-0.9.5",
+    urls = ["https://static.crates.io/crates/version_check/0.9.5/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "version_check-0.9",
+    srcs = [":version_check-0.9.5.crate"],
+    crate = "version_check",
+    crate_root = "version_check-0.9.5.crate/src/lib.rs",
+    edition = "2015",
+    env = {
+        "CARGO_BIN_NAME": "version_check",
+        "CARGO_CRATE_NAME": "version_check",
+        "CARGO_MANIFEST_DIR": "version_check-0.9.5.crate",
+        "CARGO_PKG_AUTHORS": "Sergio Benitez <sb@sergio.bz>",
+        "CARGO_PKG_DESCRIPTION": "Tiny crate to check the version of the installed/running rustc.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "version_check",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/SergioBenitez/version_check",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.9.5",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "9",
+        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
     visibility = [],
 )
 

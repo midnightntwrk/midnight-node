@@ -16,7 +16,9 @@ concurrency:
 jobs:
   run:
     name: Fomatting and Linting
-    runs-on: ubuntu-latest
+    # Clippy runs under buck2: self-hosted for in-repo branches, where the fleet's
+    # action cache keeps it warm; GitHub-hosted (and cold) for forks.
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     permissions:
       contents: read
       actions: write
@@ -35,7 +37,7 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
-      # Fork PRs get no secrets; +check only pulls public docker.io images.
+      # Fork PRs get no secrets; +check only pulls public images.
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
@@ -60,7 +62,7 @@ jobs:
         env:
           NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
-          . ./.envrc && earth --no-output +check
+          . ./.envrc && earth --no-output +check --BUCK2_CACHE_ADDR="${BUCK2_CACHE_ADDR:-}"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

@@ -570,14 +570,6 @@ cargo.rust_library(
         "default",
         "wincon",
     ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [":anstyle-wincon-3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":anstyle-wincon-3"],
-        ),
-    },
     visibility = [],
     deps = [
         ":anstyle-1",
@@ -700,55 +692,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
-)
-
-http_archive(
-    name = "anstyle-wincon-3.0.11.crate",
-    sha256 = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d",
-    size_bytes = 12638,
-    strip_prefix = "anstyle-wincon-3.0.11",
-    urls = ["https://static.crates.io/crates/anstyle-wincon/3.0.11/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "anstyle-wincon-3",
-    srcs = [":anstyle-wincon-3.0.11.crate"],
-    crate = "anstyle_wincon",
-    crate_root = "anstyle-wincon-3.0.11.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "anstyle_wincon",
-        "CARGO_CRATE_NAME": "anstyle_wincon",
-        "CARGO_MANIFEST_DIR": "anstyle-wincon-3.0.11.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Styling legacy Windows terminals",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "anstyle-wincon",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/rust-cli/anstyle.git",
-        "CARGO_PKG_RUST_VERSION": "1.66.0",
-        "CARGO_PKG_VERSION": "3.0.11",
-        "CARGO_PKG_VERSION_MAJOR": "3",
-        "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "11",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-    deps = [
-        ":anstyle-1",
-        ":once_cell_polyfill-1",
-        ":windows-sys-0.61",
-    ],
 )
 
 alias(
@@ -1560,40 +1504,16 @@ cargo.rust_library(
         "default",
         "xattr",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [
-                ":libc-0.2",
-                ":xattr-1",
-            ],
-        ),
-        "linux-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":xattr-1",
-            ],
-        ),
-        "macos-arm64": dict(
-            deps = [
-                ":libc-0.2",
-                ":xattr-1",
-            ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":xattr-1",
-            ],
-        ),
-    },
     visibility = [],
     deps = [
         ":filetime-0.2",
         ":futures-core-0.3",
+        ":libc-0.2",
         ":portable-atomic-1",
         ":rustc-hash-2",
         ":tokio-1",
         ":tokio-stream-0.1",
+        ":xattr-1",
     ],
 )
 
@@ -2016,22 +1936,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["default"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":nix-0.30"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":nix-0.30"],
-        ),
-        "macos-arm64": dict(
-            deps = [":nix-0.30"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":nix-0.30"],
-        ),
-    },
     visibility = [],
-    deps = [":rand-0.9"],
+    deps = [
+        ":nix-0.30",
+        ":rand-0.9",
+    ],
 )
 
 http_archive(
@@ -2215,26 +2124,13 @@ cargo.rust_binary(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["prebuilt-nasm"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":pkg-config-0.3"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":pkg-config-0.3"],
-        ),
-        "macos-arm64": dict(
-            deps = [":pkg-config-0.3"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":pkg-config-0.3"],
-        ),
-    },
     visibility = [],
     deps = [
         ":cc-1",
         ":cmake-0.1",
         ":dunce-1",
         ":fs_extra-1",
+        ":pkg-config-0.3",
     ],
 )
 
@@ -2267,7 +2163,25 @@ buildscript_run(
                 "PROFILE": "release",
             },
         ),
+        "linux-arm64-lint": dict(
+            env = {
+                "AWS_LC_SYS_CMAKE_BUILDER": "1",
+                "CC": "/usr/bin/clang",
+                "CXX": "/usr/bin/clang++",
+                "DEBUG": "false",
+                "PROFILE": "release",
+            },
+        ),
         "linux-x86_64": dict(
+            env = {
+                "AWS_LC_SYS_CMAKE_BUILDER": "1",
+                "CC": "/usr/bin/clang",
+                "CXX": "/usr/bin/clang++",
+                "DEBUG": "false",
+                "PROFILE": "release",
+            },
+        ),
+        "linux-x86_64-lint": dict(
             env = {
                 "AWS_LC_SYS_CMAKE_BUILDER": "1",
                 "CC": "/usr/bin/clang",
@@ -2478,55 +2392,13 @@ cargo.rust_library(
         "default",
         "std",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [
-                ":addr2line-0.25",
-                ":libc-0.2",
-                ":miniz_oxide-0.8",
-                ":object-0.37",
-            ],
-        ),
-        "linux-x86_64": dict(
-            deps = [
-                ":addr2line-0.25",
-                ":libc-0.2",
-                ":miniz_oxide-0.8",
-                ":object-0.37",
-            ],
-        ),
-        "macos-arm64": dict(
-            deps = [
-                ":addr2line-0.25",
-                ":libc-0.2",
-                ":miniz_oxide-0.8",
-                ":object-0.37",
-            ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":addr2line-0.25",
-                ":libc-0.2",
-                ":miniz_oxide-0.8",
-                ":object-0.37",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":addr2line-0.25",
-                ":libc-0.2",
-                ":miniz_oxide-0.8",
-                ":object-0.37",
-                ":windows-link-0.2",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-link-0.2"],
-        ),
-    },
     visibility = [],
     deps = [
+        ":addr2line-0.25",
         ":cfg-if-1",
+        ":libc-0.2",
+        ":miniz_oxide-0.8",
+        ":object-0.37",
         ":rustc-demangle-0.1",
     ],
 )
@@ -3906,13 +3778,7 @@ cargo.rust_library(
         "linux-x86_64": dict(
             deps = [":cpufeatures-0.3"],
         ),
-        "macos-x86_64": dict(
-            deps = [":cpufeatures-0.3"],
-        ),
-        "windows-gnu": dict(
-            deps = [":cpufeatures-0.3"],
-        ),
-        "windows-msvc": dict(
+        "linux-x86_64-lint": dict(
             deps = [":cpufeatures-0.3"],
         ),
     },
@@ -4155,11 +4021,6 @@ cargo.rust_binary(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["default"],
-    platform = {
-        "windows-msvc": dict(
-            deps = [":glob-0.3"],
-        ),
-    },
     visibility = [],
     deps = [":cc-1"],
 )
@@ -4243,32 +4104,6 @@ cargo.rust_library(
         "tonic",
         "tower-service",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":hyperlocal-0.9"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":hyperlocal-0.9"],
-        ),
-        "macos-arm64": dict(
-            deps = [":hyperlocal-0.9"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":hyperlocal-0.9"],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":hyper-named-pipe-0.1",
-                ":winapi-0.3",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":hyper-named-pipe-0.1",
-                ":winapi-0.3",
-            ],
-        ),
-    },
     visibility = [],
     deps = [
         ":async-stream-0.3",
@@ -4286,6 +4121,7 @@ cargo.rust_library(
         ":hyper-1",
         ":hyper-rustls-0.27",
         ":hyper-util-0.1",
+        ":hyperlocal-0.9",
         ":log-0.4",
         ":num-0.4",
         ":pin-project-lite-0.2",
@@ -5157,24 +4993,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["parallel"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
     deps = [
         ":find-msvc-tools-0.1",
         ":jobserver-0.1",
+        ":libc-0.2",
         ":shlex-1",
     ],
 )
@@ -5362,13 +5185,7 @@ cargo.rust_library(
         "linux-x86_64": dict(
             deps = [":cpufeatures-0.3"],
         ),
-        "macos-x86_64": dict(
-            deps = [":cpufeatures-0.3"],
-        ),
-        "windows-gnu": dict(
-            deps = [":cpufeatures-0.3"],
-        ),
-        "windows-msvc": dict(
+        "linux-x86_64-lint": dict(
             deps = [":cpufeatures-0.3"],
         ),
     },
@@ -5432,28 +5249,9 @@ cargo.rust_library(
         "winapi",
         "windows-link",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":iana-time-zone-0.1"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":iana-time-zone-0.1"],
-        ),
-        "macos-arm64": dict(
-            deps = [":iana-time-zone-0.1"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":iana-time-zone-0.1"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-link-0.2"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-link-0.2"],
-        ),
-    },
     visibility = [],
     deps = [
+        ":iana-time-zone-0.1",
         ":num-traits-0.2",
         ":serde-1",
     ],
@@ -6227,14 +6025,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.45"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.45"],
-        ),
-    },
     visibility = [],
 )
 
@@ -6470,20 +6260,6 @@ cargo.rust_library(
         "default",
         "unicode-width",
     ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [
-                ":encode_unicode-1",
-                ":windows-sys-0.59",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":encode_unicode-1",
-                ":windows-sys-0.59",
-            ],
-        ),
-    },
     visibility = [],
     deps = [
         ":libc-0.2",
@@ -6530,20 +6306,6 @@ cargo.rust_library(
         "std",
         "unicode-width",
     ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [
-                ":encode_unicode-1",
-                ":windows-sys-0.61",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":encode_unicode-1",
-                ":windows-sys-0.61",
-            ],
-        ),
-    },
     visibility = [],
     deps = [
         ":libc-0.2",
@@ -6631,13 +6393,7 @@ cargo.rust_library(
         "linux-x86_64": dict(
             deps = [":cpufeatures-0.2"],
         ),
-        "macos-x86_64": dict(
-            deps = [":cpufeatures-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":cpufeatures-0.2"],
-        ),
-        "windows-msvc": dict(
+        "linux-x86_64-lint": dict(
             deps = [":cpufeatures-0.2"],
         ),
     },
@@ -7465,6 +7221,9 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":libc-0.2"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":libc-0.2"],
+        ),
         "macos-arm64": dict(
             deps = [":libc-0.2"],
         ),
@@ -7506,6 +7265,9 @@ cargo.rust_library(
     },
     platform = {
         "linux-arm64": dict(
+            deps = [":libc-0.2"],
+        ),
+        "linux-arm64-lint": dict(
             deps = [":libc-0.2"],
         ),
         "macos-arm64": dict(
@@ -9301,6 +9063,14 @@ cargo.rust_library(
         "xcm": ":staging-xcm-25",
         "xcm_builder": ":staging-xcm-builder-30",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+    },
     visibility = [],
     deps = [
         ":array-bytes-6",
@@ -9403,6 +9173,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
         "xcm": ":staging-xcm-25",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -9632,19 +9410,7 @@ cargo.rust_library(
                 ":curve25519-dalek-derive-0.1",
             ],
         ),
-        "macos-x86_64": dict(
-            deps = [
-                ":cpufeatures-0.2",
-                ":curve25519-dalek-derive-0.1",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":cpufeatures-0.2",
-                ":curve25519-dalek-derive-0.1",
-            ],
-        ),
-        "windows-msvc": dict(
+        "linux-x86_64-lint": dict(
             deps = [
                 ":cpufeatures-0.2",
                 ":curve25519-dalek-derive-0.1",
@@ -11657,28 +11423,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.48"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.48"],
-        ),
-    },
     visibility = [],
-    deps = [":option-ext-0.2"],
+    deps = [
+        ":libc-0.2",
+        ":option-ext-0.2",
+    ],
 )
 
 http_archive(
@@ -11713,28 +11462,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
-    deps = [":option-ext-0.2"],
+    deps = [
+        ":libc-0.2",
+        ":option-ext-0.2",
+    ],
 )
 
 http_archive(
@@ -11769,27 +11501,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -12739,45 +12452,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "encode_unicode-1.0.0.crate",
-    sha256 = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0",
-    size_bytes = 56986,
-    strip_prefix = "encode_unicode-1.0.0",
-    urls = ["https://static.crates.io/crates/encode_unicode/1.0.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "encode_unicode-1",
-    srcs = [":encode_unicode-1.0.0.crate"],
-    crate = "encode_unicode",
-    crate_root = "encode_unicode-1.0.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "encode_unicode",
-        "CARGO_CRATE_NAME": "encode_unicode",
-        "CARGO_MANIFEST_DIR": "encode_unicode-1.0.0.crate",
-        "CARGO_PKG_AUTHORS": "Torbjørn Birch Moltu <t.b.moltu@lyse.net>",
-        "CARGO_PKG_DESCRIPTION": "UTF-8 and UTF-16 character types, iterators and related methods for char, u8 and u16.\n",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "encode_unicode",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/tormol/encode_unicode",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.0.0",
-        "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "default",
-        "std",
-    ],
-    visibility = [],
-)
-
-http_archive(
     name = "encoding_rs-0.8.35.crate",
     sha256 = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3",
     size_bytes = 1381050,
@@ -13375,67 +13049,8 @@ cargo.rust_library(
         "default",
         "std",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
-)
-
-http_archive(
-    name = "etcetera-0.8.0.crate",
-    sha256 = "136d1b5283a1ab77bd9257427ffd09d8667ced0570b6f938942bc7568ed5b943",
-    size_bytes = 13295,
-    strip_prefix = "etcetera-0.8.0",
-    urls = ["https://static.crates.io/crates/etcetera/0.8.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "etcetera-0.8",
-    srcs = [":etcetera-0.8.0.crate"],
-    crate = "etcetera",
-    crate_root = "etcetera-0.8.0.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "etcetera",
-        "CARGO_CRATE_NAME": "etcetera",
-        "CARGO_MANIFEST_DIR": "etcetera-0.8.0.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "An unopinionated library for obtaining configuration, data, cache, & other directories",
-        "CARGO_PKG_HOMEPAGE": "https://github.com/lunacookies/etcetera",
-        "CARGO_PKG_NAME": "etcetera",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/lunacookies/etcetera",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.8.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "8",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-    deps = [
-        ":cfg-if-1",
-        ":home-0.5",
-        ":windows-sys-0.48",
-    ],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -13469,14 +13084,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "11",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
     },
     visibility = [],
     deps = [":cfg-if-1"],
@@ -14256,27 +13863,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -14311,22 +13899,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "27",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
-    deps = [":cfg-if-1"],
+    deps = [
+        ":cfg-if-1",
+        ":libc-0.2",
+    ],
 )
 
 http_archive(
@@ -15077,6 +14654,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+    },
     visibility = [],
     deps = [
         ":anyhow-1",
@@ -15137,6 +14722,14 @@ cargo.rust_library(
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -15316,6 +14909,20 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":frame-election-provider-solution-type-13",
@@ -15365,6 +14972,14 @@ cargo.rust_library(
     ],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["try-runtime"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["try-runtime"],
+        ),
     },
     visibility = [],
     deps = [
@@ -15511,6 +15126,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+    },
     visibility = [],
     deps = [
         ":cumulus-pallet-parachain-system-0.31",
@@ -15561,6 +15184,20 @@ cargo.rust_library(
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
     },
     visibility = [],
     deps = [
@@ -15751,6 +15388,20 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":cfg-if-1",
@@ -15802,6 +15453,14 @@ cargo.rust_library(
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -15889,6 +15548,14 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["try-runtime"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["try-runtime"],
+        ),
     },
     visibility = [],
     deps = [
@@ -16015,27 +15682,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -16074,27 +15722,8 @@ cargo.rust_library(
         "default",
         "sync",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":rustix-0.38"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":rustix-0.38"],
-        ),
-        "macos-arm64": dict(
-            deps = [":rustix-0.38"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":rustix-0.38"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.48"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.48"],
-        ),
-    },
     visibility = [],
+    deps = [":rustix-0.38"],
 )
 
 http_archive(
@@ -16901,16 +16530,74 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "14",
         "CARGO_PKG_VERSION_PATCH": "7",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :generic-array-0.14-build-script-run[out_dir])",
+    },
+    features = [
+        "more_lengths",
+        "zeroize",
+    ],
+    rustc_flags = ["@$(location :generic-array-0.14-build-script-run[rustc_flags])"],
+    visibility = [],
+    deps = [
+        ":typenum-1",
+        ":zeroize-1",
+    ],
+)
+
+cargo.rust_binary(
+    name = "generic-array-0.14-build-script-build",
+    srcs = [":generic-array-0.14.7.crate"],
+    crate = "build_script_build",
+    crate_root = "generic-array-0.14.7.crate/build.rs",
+    edition = "2015",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "generic-array-0.14.7.crate",
+        "CARGO_PKG_AUTHORS": "Bartłomiej Kamiński <fizyk20@gmail.com>:Aaron Trent <novacrazy@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Generic types implementing functionality of arrays",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "generic-array",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/fizyk20/generic-array.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.14.7",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "7",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
         "more_lengths",
         "zeroize",
     ],
     visibility = [],
-    deps = [
-        ":typenum-1",
-        ":zeroize-1",
+    deps = [":version_check-0.9"],
+)
+
+buildscript_run(
+    name = "generic-array-0.14-build-script-run",
+    package_name = "generic-array",
+    buildscript_rule = ":generic-array-0.14-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "Bartłomiej Kamiński <fizyk20@gmail.com>:Aaron Trent <novacrazy@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Generic types implementing functionality of arrays",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/fizyk20/generic-array.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "14",
+        "CARGO_PKG_VERSION_PATCH": "7",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "more_lengths",
+        "zeroize",
     ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.14.7",
 )
 
 http_archive(
@@ -16945,27 +16632,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -17006,22 +16674,11 @@ cargo.rust_library(
         "std",
         "wasm-bindgen",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
-    deps = [":cfg-if-1"],
+    deps = [
+        ":cfg-if-1",
+        ":libc-0.2",
+    ],
 )
 
 http_archive(
@@ -17057,22 +16714,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["std"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
-    deps = [":cfg-if-1"],
+    deps = [
+        ":cfg-if-1",
+        ":libc-0.2",
+    ],
 )
 
 http_archive(
@@ -17111,23 +16757,10 @@ cargo.rust_library(
         "std",
         "sys_rng",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
     deps = [
         ":cfg-if-1",
+        ":libc-0.2",
         ":rand_core-0.10",
     ],
 )
@@ -18661,13 +18294,7 @@ cargo.rust_library(
         "linux-x86_64": dict(
             deps = [":spin-0.9"],
         ),
-        "macos-x86_64": dict(
-            deps = [":spin-0.9"],
-        ),
-        "windows-gnu": dict(
-            deps = [":spin-0.9"],
-        ),
-        "windows-msvc": dict(
+        "linux-x86_64-lint": dict(
             deps = [":spin-0.9"],
         ),
     },
@@ -19117,14 +18744,6 @@ cargo.rust_library(
         "tokio",
         "tokio-runtime",
     ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [":ipconfig-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":ipconfig-0.3"],
-        ),
-    },
     visibility = [],
     deps = [
         ":cfg-if-1",
@@ -19182,15 +18801,6 @@ cargo.rust_library(
     platform = {
         "macos-arm64": dict(
             deps = [":system-configuration-0.7"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":system-configuration-0.7"],
-        ),
-        "windows-gnu": dict(
-            deps = [":ipconfig-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":ipconfig-0.3"],
         ),
     },
     visibility = [],
@@ -19357,14 +18967,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "12",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
 )
 
@@ -19407,28 +19009,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["default"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-link-0.2"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-link-0.2"],
-        ),
-    },
     visibility = [],
-    deps = [":cfg-if-1"],
+    deps = [
+        ":cfg-if-1",
+        ":libc-0.2",
+    ],
 )
 
 http_archive(
@@ -19950,51 +19535,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "hyper-named-pipe-0.1.0.crate",
-    sha256 = "73b7d8abf35697b81a825e386fc151e0d503e8cb5fcb93cc8669c376dfd6f278",
-    size_bytes = 8522,
-    strip_prefix = "hyper-named-pipe-0.1.0",
-    urls = ["https://static.crates.io/crates/hyper-named-pipe/0.1.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "hyper-named-pipe-0.1",
-    srcs = [":hyper-named-pipe-0.1.0.crate"],
-    crate = "hyper_named_pipe",
-    crate_root = "hyper-named-pipe-0.1.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "hyper_named_pipe",
-        "CARGO_CRATE_NAME": "hyper_named_pipe",
-        "CARGO_MANIFEST_DIR": "hyper-named-pipe-0.1.0.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Hyper client bindings for Windows Named Pipes",
-        "CARGO_PKG_HOMEPAGE": "https://github.com/fussybeaver/hyper-named-pipe",
-        "CARGO_PKG_NAME": "hyper-named-pipe",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/fussybeaver/hyper-named-pipe",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.1.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-    deps = [
-        ":hex-0.4",
-        ":hyper-1",
-        ":hyper-util-0.1",
-        ":pin-project-lite-0.2",
-        ":tokio-1",
-        ":tower-service-0.3",
-        ":winapi-0.3",
-    ],
-)
-
-http_archive(
     name = "hyper-rustls-0.27.7.crate",
     sha256 = "e3c93eb611681b207e1fe55d5a71ecf91572ec8a6705cdb6857f7d8d5242cf58",
     size_bytes = 35435,
@@ -20235,15 +19775,6 @@ cargo.rust_library(
         "macos-arm64": dict(
             deps = [":system-configuration-0.7"],
         ),
-        "macos-x86_64": dict(
-            deps = [":system-configuration-0.7"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-registry-0.6"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-registry-0.6"],
-        ),
     },
     visibility = [],
     deps = [
@@ -20352,9 +19883,6 @@ cargo.rust_library(
     features = ["fallback"],
     platform = {
         "macos-arm64": dict(
-            deps = [":core-foundation-sys-0.8"],
-        ),
-        "macos-x86_64": dict(
             deps = [":core-foundation-sys-0.8"],
         ),
     },
@@ -20802,21 +20330,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -20863,7 +20378,25 @@ cargo.rust_library(
                 ":rtnetlink-0.20",
             ],
         ),
+        "linux-arm64-lint": dict(
+            deps = [
+                ":netlink-packet-core-0.8",
+                ":netlink-packet-route-0.28",
+                ":netlink-proto-0.12",
+                ":netlink-sys-0.8",
+                ":rtnetlink-0.20",
+            ],
+        ),
         "linux-x86_64": dict(
+            deps = [
+                ":netlink-packet-core-0.8",
+                ":netlink-packet-route-0.28",
+                ":netlink-proto-0.12",
+                ":netlink-sys-0.8",
+                ":rtnetlink-0.20",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [
                 ":netlink-packet-core-0.8",
                 ":netlink-packet-route-0.28",
@@ -20878,26 +20411,6 @@ cargo.rust_library(
                 ":if-addrs-0.15",
                 ":system-configuration-0.7",
                 ":tokio-1",
-            ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":core-foundation-0.9",
-                ":if-addrs-0.15",
-                ":system-configuration-0.7",
-                ":tokio-1",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":if-addrs-0.15",
-                ":windows-0.62",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":if-addrs-0.15",
-                ":windows-0.62",
             ],
         ),
     },
@@ -21588,52 +21101,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "ipconfig-0.3.4.crate",
-    sha256 = "4d40460c0ce33d6ce4b0630ad68ff63d6661961c48b6dba35e5a4d81cfb48222",
-    size_bytes = 24620,
-    strip_prefix = "ipconfig-0.3.4",
-    urls = ["https://static.crates.io/crates/ipconfig/0.3.4/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "ipconfig-0.3",
-    srcs = [":ipconfig-0.3.4.crate"],
-    crate = "ipconfig",
-    crate_root = "ipconfig-0.3.4.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "ipconfig",
-        "CARGO_CRATE_NAME": "ipconfig",
-        "CARGO_MANIFEST_DIR": "ipconfig-0.3.4.crate",
-        "CARGO_PKG_AUTHORS": "Liran Ringel <liranringel@gmail.com>",
-        "CARGO_PKG_DESCRIPTION": "Get network adapters information and network configuration for windows.",
-        "CARGO_PKG_HOMEPAGE": "https://github.com/liranringel/ipconfig",
-        "CARGO_PKG_NAME": "ipconfig",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/liranringel/ipconfig",
-        "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "0.3.4",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "4",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "computer",
-        "default",
-    ],
-    visibility = [],
-    deps = [
-        ":socket2-0.6",
-        ":widestring-1",
-        ":windows-registry-0.6",
-        ":windows-result-0.4",
-        ":windows-sys-0.61",
-    ],
-)
-
-http_archive(
     name = "ipnet-2.12.0.crate",
     sha256 = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2",
     size_bytes = 31000,
@@ -21788,27 +21255,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "17",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -22419,27 +21867,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "34",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":getrandom-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":getrandom-0.3"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -23249,6 +22678,9 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":cpufeatures-0.2"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":cpufeatures-0.2"],
+        ),
         "macos-arm64": dict(
             deps = [":cpufeatures-0.2"],
         ),
@@ -23290,6 +22722,9 @@ cargo.rust_library(
     },
     platform = {
         "linux-arm64": dict(
+            deps = [":cpufeatures-0.3"],
+        ),
+        "linux-arm64-lint": dict(
             deps = [":cpufeatures-0.3"],
         ),
         "macos-arm64": dict(
@@ -23696,22 +23131,9 @@ cargo.rust_library(
     },
     features = [
         "default",
+        "extra_traits",
         "std",
     ],
-    platform = {
-        "linux-arm64": dict(
-            features = ["extra_traits"],
-        ),
-        "linux-x86_64": dict(
-            features = ["extra_traits"],
-        ),
-        "macos-arm64": dict(
-            features = ["extra_traits"],
-        ),
-        "macos-x86_64": dict(
-            features = ["extra_traits"],
-        ),
-    },
     rustc_flags = ["@$(location :libc-0.2-build-script-run[rustc_flags])"],
     visibility = [],
 )
@@ -23741,22 +23163,9 @@ cargo.rust_binary(
     },
     features = [
         "default",
+        "extra_traits",
         "std",
     ],
-    platform = {
-        "linux-arm64": dict(
-            features = ["extra_traits"],
-        ),
-        "linux-x86_64": dict(
-            features = ["extra_traits"],
-        ),
-        "macos-arm64": dict(
-            features = ["extra_traits"],
-        ),
-        "macos-x86_64": dict(
-            features = ["extra_traits"],
-        ),
-    },
     visibility = [],
 )
 
@@ -23778,22 +23187,9 @@ buildscript_run(
     },
     features = [
         "default",
+        "extra_traits",
         "std",
     ],
-    platform = {
-        "linux-arm64": dict(
-            features = ["extra_traits"],
-        ),
-        "linux-x86_64": dict(
-            features = ["extra_traits"],
-        ),
-        "macos-arm64": dict(
-            features = ["extra_traits"],
-        ),
-        "macos-x86_64": dict(
-            features = ["extra_traits"],
-        ),
-    },
     rustc_link_lib = True,
     rustc_link_search = True,
     version = "0.2.191",
@@ -25428,31 +24824,20 @@ cargo.rust_library(
     },
     platform = {
         "linux-arm64": dict(
-            deps = [
-                ":libc-0.2",
-                ":neli-0.7",
-            ],
+            deps = [":neli-0.7"],
+        ),
+        "linux-arm64-lint": dict(
+            deps = [":neli-0.7"],
         ),
         "linux-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":neli-0.7",
-            ],
+            deps = [":neli-0.7"],
         ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
+        "linux-x86_64-lint": dict(
+            deps = [":neli-0.7"],
         ),
     },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -26378,21 +25763,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "10",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -26427,21 +25799,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "10",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -29020,27 +28379,8 @@ cargo.rust_library(
         "os-ext",
         "os-poll",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -29953,7 +29293,23 @@ cargo.rust_library(
                 ":openssl-sys-0.9",
             ],
         ),
+        "linux-arm64-lint": dict(
+            deps = [
+                ":log-0.4",
+                ":openssl-0.10",
+                ":openssl-probe-0.2",
+                ":openssl-sys-0.9",
+            ],
+        ),
         "linux-x86_64": dict(
+            deps = [
+                ":log-0.4",
+                ":openssl-0.10",
+                ":openssl-probe-0.2",
+                ":openssl-sys-0.9",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [
                 ":log-0.4",
                 ":openssl-0.10",
@@ -29968,20 +29324,6 @@ cargo.rust_library(
                 ":security-framework-sys-2",
                 ":tempfile-3",
             ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":security-framework-3",
-                ":security-framework-sys-2",
-                ":tempfile-3",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [":schannel-0.1"],
-        ),
-        "windows-msvc": dict(
-            deps = [":schannel-0.1"],
         ),
     },
     visibility = [],
@@ -30281,14 +29623,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
     deps = [
         ":libc-0.2",
@@ -30345,7 +29679,25 @@ cargo.rust_library(
                 "uio",
             ],
         ),
+        "linux-arm64-lint": dict(
+            features = [
+                "mount",
+                "process",
+                "sched",
+                "signal",
+                "uio",
+            ],
+        ),
         "linux-x86_64": dict(
+            features = [
+                "mount",
+                "process",
+                "sched",
+                "signal",
+                "uio",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             features = [
                 "mount",
                 "process",
@@ -30403,7 +29755,25 @@ cargo.rust_binary(
                 "uio",
             ],
         ),
+        "linux-arm64-lint": dict(
+            features = [
+                "mount",
+                "process",
+                "sched",
+                "signal",
+                "uio",
+            ],
+        ),
         "linux-x86_64": dict(
+            features = [
+                "mount",
+                "process",
+                "sched",
+                "signal",
+                "uio",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             features = [
                 "mount",
                 "process",
@@ -30449,7 +29819,25 @@ buildscript_run(
                 "uio",
             ],
         ),
+        "linux-arm64-lint": dict(
+            features = [
+                "mount",
+                "process",
+                "sched",
+                "signal",
+                "uio",
+            ],
+        ),
         "linux-x86_64": dict(
+            features = [
+                "mount",
+                "process",
+                "sched",
+                "signal",
+                "uio",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             features = [
                 "mount",
                 "process",
@@ -30769,47 +30157,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "ntapi-0.4.3.crate",
-    sha256 = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae",
-    size_bytes = 127190,
-    strip_prefix = "ntapi-0.4.3",
-    urls = ["https://static.crates.io/crates/ntapi/0.4.3/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "ntapi-0.4",
-    srcs = [":ntapi-0.4.3.crate"],
-    crate = "ntapi",
-    crate_root = "ntapi-0.4.3.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "ntapi",
-        "CARGO_CRATE_NAME": "ntapi",
-        "CARGO_MANIFEST_DIR": "ntapi-0.4.3.crate",
-        "CARGO_PKG_AUTHORS": "MSxDOS <melcodos@gmail.com>",
-        "CARGO_PKG_DESCRIPTION": "FFI bindings for Native API",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "ntapi",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/MSxDOS/ntapi",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.4.3",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "4",
-        "CARGO_PKG_VERSION_PATCH": "3",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "default",
-        "user",
-    ],
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-    deps = [":winapi-0.3"],
-)
-
-http_archive(
     name = "nu-ansi-term-0.46.0.crate",
     sha256 = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84",
     size_bytes = 24311,
@@ -30840,14 +30187,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "46",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
     },
     visibility = [],
     deps = [":overload-0.1"],
@@ -31397,21 +30736,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 alias(
@@ -32099,42 +31425,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "once_cell_polyfill-1.70.2.crate",
-    sha256 = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe",
-    size_bytes = 7448,
-    strip_prefix = "once_cell_polyfill-1.70.2",
-    urls = ["https://static.crates.io/crates/once_cell_polyfill/1.70.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "once_cell_polyfill-1",
-    srcs = [":once_cell_polyfill-1.70.2.crate"],
-    crate = "once_cell_polyfill",
-    crate_root = "once_cell_polyfill-1.70.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "once_cell_polyfill",
-        "CARGO_CRATE_NAME": "once_cell_polyfill",
-        "CARGO_MANIFEST_DIR": "once_cell_polyfill-1.70.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Polyfill for `OnceCell` stdlib feature for use with older MSRVs",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "once_cell_polyfill",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/polyfill-rs/once_cell_polyfill",
-        "CARGO_PKG_RUST_VERSION": "1.70.0",
-        "CARGO_PKG_VERSION": "1.70.2",
-        "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "70",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["default"],
-    visibility = [],
-)
-
-http_archive(
     name = "opaque-debug-0.2.3.crate",
     sha256 = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c",
     size_bytes = 5643,
@@ -32528,20 +31818,6 @@ buildscript_run(
         "openssl-src",
         "vendored",
     ],
-    platform = {
-        "linux-arm64": dict(
-            env = {
-                "OPENSSL_INCLUDE_DIR": "/usr/include",
-                "OPENSSL_LIB_DIR": "/usr/lib/x86_64-linux-gnu",
-            },
-        ),
-        "linux-x86_64": dict(
-            env = {
-                "OPENSSL_INCLUDE_DIR": "/usr/include",
-                "OPENSSL_LIB_DIR": "/usr/lib/x86_64-linux-gnu",
-            },
-        ),
-    },
     rustc_link_lib = True,
     rustc_link_search = True,
     version = "0.9.116",
@@ -32753,27 +32029,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -33496,6 +32753,22 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":frame-support-49",
@@ -33532,6 +32805,22 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -33579,6 +32868,14 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["try-runtime"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["try-runtime"],
+        ),
     },
     visibility = [],
     deps = [
@@ -33659,6 +32956,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["try-runtime"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["try-runtime"],
+        ),
+    },
     visibility = [],
     deps = [
         ":frame-support-49",
@@ -33701,6 +33006,24 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -33754,6 +33077,24 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":docify-0.2",
@@ -33801,6 +33142,14 @@ cargo.rust_library(
     ],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["try-runtime"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["try-runtime"],
+        ),
     },
     visibility = [],
     deps = [
@@ -33856,6 +33205,20 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":array-bytes-6",
@@ -33908,6 +33271,22 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":fp-coretime-0.2",
@@ -33955,6 +33334,24 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":docify-0.2",
@@ -34000,6 +33397,24 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -34052,6 +33467,24 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":frame-support-49",
@@ -34090,6 +33523,22 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -34140,6 +33589,24 @@ cargo.rust_library(
         "codec": ":parity-scale-codec-3",
         "frame": ":polkadot-sdk-frame-0.19",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":docify-0.2",
@@ -34189,6 +33656,20 @@ cargo.rust_library(
         "codec": ":parity-scale-codec-3",
         "frame": ":polkadot-sdk-frame-0.19",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":log-0.4",
@@ -34233,6 +33714,24 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":frame-support-49",
@@ -34243,6 +33742,42 @@ cargo.rust_library(
         ":sp-io-49",
         ":sp-runtime-49",
     ],
+)
+
+cargo.rust_library(
+    name = "pallet-proxy-50",
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
+    crate = "pallet_proxy",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/proxy/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "pallet_proxy",
+        "CARGO_CRATE_NAME": "pallet_proxy",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/proxy",
+        "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
+        "CARGO_PKG_DESCRIPTION": "FRAME proxying pallet",
+        "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
+        "CARGO_PKG_NAME": "pallet-proxy",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/paritytech/polkadot-sdk.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "50.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "50",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "runtime-benchmarks",
+        "std",
+        "try-runtime",
+    ],
+    named_deps = {
+        "codec": ":parity-scale-codec-3",
+        "frame": ":polkadot-sdk-frame-0.19",
+    },
+    visibility = [],
+    deps = [":scale-info-2"],
 )
 
 alias(
@@ -34278,6 +33813,36 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
         "frame": ":polkadot-sdk-frame-0.19",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "pallet-balances",
+                "pallet-proxy",
+                "pallet-utility",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [
+                ":pallet-balances-51",
+                ":pallet-proxy-50",
+                ":pallet-utility-50",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "pallet-balances",
+                "pallet-proxy",
+                "pallet-utility",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [
+                ":pallet-balances-51",
+                ":pallet-proxy-50",
+                ":pallet-utility-50",
+            ],
+        ),
     },
     visibility = [],
     deps = [
@@ -34318,6 +33883,24 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -34369,6 +33952,20 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":frame-support-49",
@@ -34385,6 +33982,49 @@ cargo.rust_library(
         ":sp-staking-46",
         ":sp-state-machine-0.54",
         ":sp-trie-47",
+    ],
+)
+
+cargo.rust_library(
+    name = "pallet-session-benchmarking-50",
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
+    crate = "pallet_session_benchmarking",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/session/benchmarking/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "pallet_session_benchmarking",
+        "CARGO_CRATE_NAME": "pallet_session_benchmarking",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/session/benchmarking",
+        "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
+        "CARGO_PKG_DESCRIPTION": "FRAME sessions pallet benchmarking",
+        "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
+        "CARGO_PKG_NAME": "pallet-session-benchmarking",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/paritytech/polkadot-sdk.git",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "50.0.0",
+        "CARGO_PKG_VERSION_MAJOR": "50",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "runtime-benchmarks",
+        "std",
+    ],
+    named_deps = {
+        "codec": ":parity-scale-codec-3",
+    },
+    visibility = [],
+    deps = [
+        ":frame-benchmarking-50",
+        ":frame-support-49",
+        ":frame-system-49",
+        ":pallet-session-50",
+        ":pallet-staking-50",
+        ":rand-0.8",
+        ":sp-runtime-49",
+        ":sp-session-46",
     ],
 )
 
@@ -34420,6 +34060,32 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "rand_chacha",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [
+                ":frame-benchmarking-50",
+                ":rand_chacha-0.3",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "rand_chacha",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [
+                ":frame-benchmarking-50",
+                ":rand_chacha-0.3",
+            ],
+        ),
     },
     visibility = [],
     deps = [
@@ -34471,6 +34137,24 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+    },
     visibility = [],
     deps = [
         ":docify-0.2",
@@ -34514,6 +34198,22 @@ cargo.rust_library(
     ],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -34561,6 +34261,20 @@ cargo.rust_library(
         "codec": ":parity-scale-codec-3",
         "frame": ":polkadot-sdk-frame-0.19",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":docify-0.2",
@@ -34594,6 +34308,24 @@ cargo.rust_library(
     features = ["std"],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [":frame-benchmarking-50"],
+        ),
     },
     visibility = [],
     deps = [
@@ -34637,14 +34369,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "4",
         "CARGO_PKG_VERSION_PATCH": "13",
         "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
     },
     visibility = [],
     deps = [
@@ -34696,14 +34420,6 @@ cargo.rust_library(
         "arc",
         "default",
     ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
     deps = [
         ":ahash-0.8",
@@ -35017,31 +34733,12 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :parking_lot_core-0.8-build-script-run[out_dir])",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     rustc_flags = ["@$(location :parking_lot_core-0.8-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":cfg-if-1",
         ":instant-0.1",
+        ":libc-0.2",
         ":smallvec-1",
     ],
 )
@@ -35126,30 +34823,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :parking_lot_core-0.9-build-script-run[out_dir])",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-link-0.2"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-link-0.2"],
-        ),
-    },
     rustc_flags = ["@$(location :parking_lot_core-0.9-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":cfg-if-1",
+        ":libc-0.2",
         ":smallvec-1",
     ],
 )
@@ -36882,7 +36560,13 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":tikv-jemalloc-ctl-0.6"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":tikv-jemalloc-ctl-0.6"],
+        ),
         "linux-x86_64": dict(
+            deps = [":tikv-jemalloc-ctl-0.6"],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [":tikv-jemalloc-ctl-0.6"],
         ),
     },
@@ -36933,6 +36617,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+    },
     visibility = [],
     deps = [
         ":array-bytes-6",
@@ -36979,6 +36671,14 @@ cargo.rust_library(
     ],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -37072,6 +36772,50 @@ cargo.rust_library(
         "codec": ":parity-scale-codec-3",
         "xcm": ":staging-xcm-25",
         "xcm_executor": ":staging-xcm-executor-29",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "frame-election-provider-support",
+                "pallet-mmr",
+                "pallet-session-benchmarking",
+                "runtime-benchmarks",
+                "sp-application-crypto",
+                "sp-std",
+                "static_assertions",
+            ],
+            deps = [
+                ":frame-benchmarking-50",
+                ":frame-election-provider-support-49",
+                ":pallet-mmr-50",
+                ":pallet-session-benchmarking-50",
+                ":sp-application-crypto-49",
+                ":sp-std-14",
+                ":static_assertions-1",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "frame-election-provider-support",
+                "pallet-mmr",
+                "pallet-session-benchmarking",
+                "runtime-benchmarks",
+                "sp-application-crypto",
+                "sp-std",
+                "static_assertions",
+            ],
+            deps = [
+                ":frame-benchmarking-50",
+                ":frame-election-provider-support-49",
+                ":pallet-mmr-50",
+                ":pallet-session-benchmarking-50",
+                ":sp-application-crypto-49",
+                ":sp-std-14",
+                ":static_assertions-1",
+            ],
+        ),
     },
     visibility = [],
     deps = [
@@ -37183,6 +36927,36 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "frame-system-benchmarking",
+                "frame-try-runtime",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [
+                ":frame-benchmarking-50",
+                ":frame-system-benchmarking-50",
+                ":frame-try-runtime-0.55",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "frame-benchmarking",
+                "frame-system-benchmarking",
+                "frame-try-runtime",
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+            deps = [
+                ":frame-benchmarking-50",
+                ":frame-system-benchmarking-50",
+                ":frame-try-runtime-0.55",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":docify-0.2",
@@ -37280,8 +37054,8 @@ cargo.rust_library(
         "linux-x86_64": dict(
             deps = [":polkavm-linux-raw-0.35"],
         ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
+        "linux-x86_64-lint": dict(
+            deps = [":polkavm-linux-raw-0.35"],
         ),
     },
     visibility = [],
@@ -39454,7 +39228,16 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":libc-0.2"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":libc-0.2"],
+        ),
         "linux-x86_64": dict(
+            deps = [
+                ":libc-0.2",
+                ":raw-cpuid-10",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [
                 ":libc-0.2",
                 ":raw-cpuid-10",
@@ -39462,24 +39245,6 @@ cargo.rust_library(
         ),
         "macos-arm64": dict(
             deps = [":mach2-0.4"],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":mach2-0.4",
-                ":raw-cpuid-10",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":raw-cpuid-10",
-                ":winapi-0.3",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":raw-cpuid-10",
-                ":winapi-0.3",
-            ],
         ),
     },
     visibility = [],
@@ -39526,40 +39291,17 @@ cargo.rust_library(
         "flaky_tests",
     ],
     platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
         "linux-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":raw-cpuid-11",
-            ],
+            deps = [":raw-cpuid-11"],
         ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":raw-cpuid-11",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":raw-cpuid-11",
-                ":winapi-0.3",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":raw-cpuid-11",
-                ":winapi-0.3",
-            ],
+        "linux-x86_64-lint": dict(
+            deps = [":raw-cpuid-11"],
         ),
     },
     visibility = [],
     deps = [
         ":crossbeam-utils-0.8",
+        ":libc-0.2",
         ":once_cell-1",
     ],
 )
@@ -39815,14 +39557,6 @@ cargo.rust_library(
         "OUT_DIR": "$(location :quinn-udp-0.6-build-script-run[out_dir])",
     },
     features = ["tracing"],
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     rustc_flags = ["@$(location :quinn-udp-0.6-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
@@ -40046,22 +39780,9 @@ cargo.rust_library(
         "std",
         "std_rng",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
     deps = [
+        ":libc-0.2",
         ":rand_chacha-0.3",
         ":rand_core-0.6",
     ],
@@ -40533,28 +40254,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winapi-0.3"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-0.3"],
-        ),
-    },
     visibility = [],
-    deps = [":rand_core-0.4"],
+    deps = [
+        ":libc-0.2",
+        ":rand_core-0.4",
+    ],
 )
 
 http_archive(
@@ -41423,15 +41127,6 @@ cargo.rust_library(
         "macos-arm64": dict(
             deps = [":system-configuration-0.5"],
         ),
-        "macos-x86_64": dict(
-            deps = [":system-configuration-0.5"],
-        ),
-        "windows-gnu": dict(
-            deps = [":winreg-0.50"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winreg-0.50"],
-        ),
     },
     visibility = [],
     deps = [
@@ -41781,6 +41476,9 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":libc-0.2"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":libc-0.2"],
+        ),
         "macos-arm64": dict(
             deps = [":libc-0.2"],
         ),
@@ -42085,28 +41783,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
-    deps = [":rtoolbox-0.0.3"],
+    deps = [
+        ":libc-0.2",
+        ":rtoolbox-0.0.3",
+    ],
 )
 
 http_archive(
@@ -42275,27 +41956,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.52"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.52"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -42709,16 +42371,16 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":linux-raw-sys-0.4"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":linux-raw-sys-0.4"],
+        ),
         "linux-x86_64": dict(
             deps = [":linux-raw-sys-0.4"],
         ),
-        "macos-arm64": dict(
-            named_deps = {
-                "libc_errno": ":errno-0.3",
-            },
-            deps = [":libc-0.2"],
+        "linux-x86_64-lint": dict(
+            deps = [":linux-raw-sys-0.4"],
         ),
-        "macos-x86_64": dict(
+        "macos-arm64": dict(
             named_deps = {
                 "libc_errno": ":errno-0.3",
             },
@@ -42828,13 +42490,20 @@ cargo.rust_library(
     },
     features = [
         "alloc",
+        "default",
+        "event",
         "fs",
         "libc",
         "libc_errno",
         "mm",
         "net",
         "param",
+        "pipe",
+        "process",
         "std",
+        "termios",
+        "thread",
+        "time",
         "use-libc",
     ],
     named_deps = {
@@ -42842,69 +42511,24 @@ cargo.rust_library(
     },
     platform = {
         "linux-arm64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-            deps = [
-                ":libc-0.2",
-                ":linux-raw-sys-0.12",
-            ],
+            deps = [":linux-raw-sys-0.12"],
+        ),
+        "linux-arm64-lint": dict(
+            deps = [":linux-raw-sys-0.12"],
         ),
         "linux-x86_64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-            deps = [
-                ":libc-0.2",
-                ":linux-raw-sys-0.12",
-            ],
+            deps = [":linux-raw-sys-0.12"],
         ),
-        "macos-arm64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
+        "linux-x86_64-lint": dict(
+            deps = [":linux-raw-sys-0.12"],
         ),
     },
     rustc_flags = ["@$(location :rustix-1-build-script-run[rustc_flags])"],
     visibility = [],
-    deps = [":bitflags-2"],
+    deps = [
+        ":bitflags-2",
+        ":libc-0.2",
+    ],
 )
 
 cargo.rust_binary(
@@ -42932,61 +42556,22 @@ cargo.rust_binary(
     },
     features = [
         "alloc",
+        "default",
+        "event",
         "fs",
         "libc",
         "libc_errno",
         "mm",
         "net",
         "param",
+        "pipe",
+        "process",
         "std",
+        "termios",
+        "thread",
+        "time",
         "use-libc",
     ],
-    platform = {
-        "linux-arm64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-        "linux-x86_64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-        "macos-arm64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-        "macos-x86_64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-    },
     visibility = [],
 )
 
@@ -43008,61 +42593,22 @@ buildscript_run(
     },
     features = [
         "alloc",
+        "default",
+        "event",
         "fs",
         "libc",
         "libc_errno",
         "mm",
         "net",
         "param",
+        "pipe",
+        "process",
         "std",
+        "termios",
+        "thread",
+        "time",
         "use-libc",
     ],
-    platform = {
-        "linux-arm64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-        "linux-x86_64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-        "macos-arm64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-        "macos-x86_64": dict(
-            features = [
-                "default",
-                "event",
-                "pipe",
-                "process",
-                "termios",
-                "thread",
-                "time",
-            ],
-        ),
-    },
     rustc_link_lib = True,
     rustc_link_search = True,
     version = "1.1.4",
@@ -43169,20 +42715,17 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":openssl-probe-0.2"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":openssl-probe-0.2"],
+        ),
         "linux-x86_64": dict(
+            deps = [":openssl-probe-0.2"],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [":openssl-probe-0.2"],
         ),
         "macos-arm64": dict(
             deps = [":security-framework-3"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":security-framework-3"],
-        ),
-        "windows-gnu": dict(
-            deps = [":schannel-0.1"],
-        ),
-        "windows-msvc": dict(
-            deps = [":schannel-0.1"],
         ),
     },
     visibility = [],
@@ -43305,7 +42848,19 @@ cargo.rust_library(
                 ":rustls-webpki-0.103",
             ],
         ),
+        "linux-arm64-lint": dict(
+            deps = [
+                ":rustls-native-certs-0.8",
+                ":rustls-webpki-0.103",
+            ],
+        ),
         "linux-x86_64": dict(
+            deps = [
+                ":rustls-native-certs-0.8",
+                ":rustls-webpki-0.103",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [
                 ":rustls-native-certs-0.8",
                 ":rustls-webpki-0.103",
@@ -43318,20 +42873,6 @@ cargo.rust_library(
                 ":security-framework-3",
                 ":security-framework-sys-2",
             ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":core-foundation-0.10",
-                ":core-foundation-sys-0.8",
-                ":security-framework-3",
-                ":security-framework-sys-2",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.59"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.59"],
         ),
     },
     visibility = [],
@@ -43381,7 +42922,19 @@ cargo.rust_library(
                 ":rustls-webpki-0.103",
             ],
         ),
+        "linux-arm64-lint": dict(
+            deps = [
+                ":rustls-native-certs-0.8",
+                ":rustls-webpki-0.103",
+            ],
+        ),
         "linux-x86_64": dict(
+            deps = [
+                ":rustls-native-certs-0.8",
+                ":rustls-webpki-0.103",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [
                 ":rustls-native-certs-0.8",
                 ":rustls-webpki-0.103",
@@ -43394,20 +42947,6 @@ cargo.rust_library(
                 ":security-framework-3",
                 ":security-framework-sys-2",
             ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":core-foundation-0.10",
-                ":core-foundation-sys-0.8",
-                ":security-framework-3",
-                ":security-framework-sys-2",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
         ),
     },
     visibility = [],
@@ -43742,14 +43281,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "6",
         "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-util-0.1"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-util-0.1"],
-        ),
     },
     visibility = [],
 )
@@ -44247,6 +43778,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
         "prometheus_endpoint": ":substrate-prometheus-endpoint-0.17",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -46068,6 +45607,14 @@ cargo.rust_library(
         "codec": ":parity-scale-codec-3",
         "prometheus_endpoint": ":substrate-prometheus-endpoint-0.17",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+    },
     visibility = [],
     deps = [
         ":async-trait-0.1",
@@ -47195,42 +46742,6 @@ cargo.rust_library(
         ":thiserror-2",
         ":yap-0.12",
     ],
-)
-
-http_archive(
-    name = "schannel-0.1.29.crate",
-    sha256 = "91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939",
-    size_bytes = 34352,
-    strip_prefix = "schannel-0.1.29",
-    urls = ["https://static.crates.io/crates/schannel/0.1.29/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "schannel-0.1",
-    srcs = [":schannel-0.1.29.crate"],
-    crate = "schannel",
-    crate_root = "schannel-0.1.29.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "schannel",
-        "CARGO_CRATE_NAME": "schannel",
-        "CARGO_MANIFEST_DIR": "schannel-0.1.29.crate",
-        "CARGO_PKG_AUTHORS": "Steven Fackler <sfackler@gmail.com>:Steffen Butzer <steffen.butzer@outlook.com>",
-        "CARGO_PKG_DESCRIPTION": "Schannel bindings for rust, allowing SSL/TLS (e.g. https) without openssl",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "schannel",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/steffengy/schannel-rs",
-        "CARGO_PKG_RUST_VERSION": "1.71.0",
-        "CARGO_PKG_VERSION": "0.1.29",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "29",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-    deps = [":windows-sys-0.61"],
 )
 
 http_archive(
@@ -51144,26 +50655,6 @@ cargo.rust_library(
         "diff",
         "dir",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
     deps = [
         ":anstream-1",
@@ -51171,6 +50662,7 @@ cargo.rust_library(
         ":content_inspector-0.2",
         ":dunce-1",
         ":filetime-0.2",
+        ":libc-0.2",
         ":normalize-line-endings-0.3",
         ":os_pipe-1",
         ":similar-2",
@@ -51298,27 +50790,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["all"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.52"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.52"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -51354,27 +50827,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["all"],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 http_archive(
@@ -52948,6 +52402,20 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
     },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            features = [
+                "runtime-benchmarks",
+                "try-runtime",
+            ],
+        ),
+    },
     visibility = [],
     deps = [
         ":binary-merkle-tree-16",
@@ -53143,6 +52611,14 @@ cargo.rust_library(
     ],
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -53865,37 +53341,7 @@ cargo.rust_library(
                 "lock_api_crate": ":lock_api-0.4",
             },
         ),
-        "macos-x86_64": dict(
-            features = [
-                "barrier",
-                "default",
-                "lazy",
-                "lock_api",
-                "lock_api_crate",
-                "mutex",
-                "rwlock",
-                "spin_mutex",
-            ],
-            named_deps = {
-                "lock_api_crate": ":lock_api-0.4",
-            },
-        ),
-        "windows-gnu": dict(
-            features = [
-                "barrier",
-                "default",
-                "lazy",
-                "lock_api",
-                "lock_api_crate",
-                "mutex",
-                "rwlock",
-                "spin_mutex",
-            ],
-            named_deps = {
-                "lock_api_crate": ":lock_api-0.4",
-            },
-        ),
-        "windows-msvc": dict(
+        "linux-x86_64-lint": dict(
             features = [
                 "barrier",
                 "default",
@@ -54337,14 +53783,6 @@ cargo.rust_library(
         "migrate",
         "offline",
     ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [":etcetera-0.8"],
-        ),
-        "windows-msvc": dict(
-            deps = [":etcetera-0.8"],
-        ),
-    },
     visibility = [],
     deps = [
         ":atoi-2",
@@ -54563,14 +54001,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "24",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
     deps = [
         ":cfg-if-1",
@@ -54612,6 +54042,14 @@ cargo.rust_library(
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -54659,6 +54097,14 @@ cargo.rust_library(
         "codec": ":parity-scale-codec-3",
         "xcm": ":staging-xcm-25",
         "xcm_executor": ":staging-xcm-executor-29",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -54710,6 +54156,14 @@ cargo.rust_library(
     named_deps = {
         "codec": ":parity-scale-codec-3",
         "xcm": ":staging-xcm-25",
+    },
+    platform = {
+        "linux-arm64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
+        "linux-x86_64-lint": dict(
+            features = ["runtime-benchmarks"],
+        ),
     },
     visibility = [],
     deps = [
@@ -54800,33 +54254,19 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":libc-0.2"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":libc-0.2"],
+        ),
         "linux-x86_64": dict(
+            deps = [":libc-0.2"],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [":libc-0.2"],
         ),
         "macos-arm64": dict(
             deps = [
                 ":parking_lot-0.12",
                 ":parking_lot_core-0.9",
-            ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":parking_lot-0.12",
-                ":parking_lot_core-0.9",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":parking_lot-0.12",
-                ":parking_lot_core-0.9",
-                ":winapi-0.3",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":parking_lot-0.12",
-                ":parking_lot_core-0.9",
-                ":winapi-0.3",
             ],
         ),
     },
@@ -56849,7 +56289,13 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":once_cell-1"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":once_cell-1"],
+        ),
         "linux-x86_64": dict(
+            deps = [":once_cell-1"],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [":once_cell-1"],
         ),
         "macos-arm64": dict(
@@ -56860,29 +56306,6 @@ cargo.rust_library(
                 "-lframework=DiskArbitration",
             ],
             deps = [":core-foundation-sys-0.8"],
-        ),
-        "macos-x86_64": dict(
-            rustc_flags = [
-                "-lframework=IOKit",
-                "-lframework=Foundation",
-                "-lframework=CoreFoundation",
-                "-lframework=DiskArbitration",
-            ],
-            deps = [":core-foundation-sys-0.8"],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":ntapi-0.4",
-                ":once_cell-1",
-                ":windows-0.52",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":ntapi-0.4",
-                ":once_cell-1",
-                ":windows-0.52",
-            ],
         ),
     },
     visibility = [],
@@ -56945,31 +56368,6 @@ cargo.rust_library(
                 ":objc2-core-foundation-0.3",
                 ":objc2-io-kit-0.3",
                 ":objc2-open-directory-0.3",
-            ],
-        ),
-        "macos-x86_64": dict(
-            rustc_flags = [
-                "-lframework=IOKit",
-                "-lframework=Foundation",
-                "-lframework=CoreFoundation",
-                "-lframework=DiskArbitration",
-            ],
-            deps = [
-                ":objc2-core-foundation-0.3",
-                ":objc2-io-kit-0.3",
-                ":objc2-open-directory-0.3",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":ntapi-0.4",
-                ":windows-0.62",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":ntapi-0.4",
-                ":windows-0.62",
             ],
         ),
     },
@@ -57437,31 +56835,12 @@ cargo.rust_library(
         "default",
         "getrandom",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [":rustix-1"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":rustix-1"],
-        ),
-        "macos-arm64": dict(
-            deps = [":rustix-1"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":rustix-1"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
     deps = [
         ":fastrand-2",
         ":getrandom-0.4",
         ":once_cell-1",
+        ":rustix-1",
     ],
 )
 
@@ -57496,14 +56875,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "4",
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-util-0.1"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-util-0.1"],
-        ),
     },
     visibility = [],
 )
@@ -57540,27 +56911,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "4",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":rustix-1"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":rustix-1"],
-        ),
-        "macos-arm64": dict(
-            deps = [":rustix-1"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":rustix-1"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
+    deps = [":rustix-1"],
 )
 
 http_archive(
@@ -58940,44 +58292,14 @@ cargo.rust_library(
         "tokio-macros",
         "windows-sys",
     ],
-    platform = {
-        "linux-arm64": dict(
-            deps = [
-                ":libc-0.2",
-                ":signal-hook-registry-1",
-            ],
-        ),
-        "linux-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":signal-hook-registry-1",
-            ],
-        ),
-        "macos-arm64": dict(
-            deps = [
-                ":libc-0.2",
-                ":signal-hook-registry-1",
-            ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":libc-0.2",
-                ":signal-hook-registry-1",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.61"],
-        ),
-    },
     visibility = [],
     deps = [
         ":bytes-1",
+        ":libc-0.2",
         ":mio-1",
         ":parking_lot-0.12",
         ":pin-project-lite-0.2",
+        ":signal-hook-registry-1",
         ":socket2-0.6",
         ":tokio-macros-2",
     ],
@@ -62520,6 +61842,41 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "version_check-0.9.5.crate",
+    sha256 = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a",
+    size_bytes = 15554,
+    strip_prefix = "version_check-0.9.5",
+    urls = ["https://static.crates.io/crates/version_check/0.9.5/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "version_check-0.9",
+    srcs = [":version_check-0.9.5.crate"],
+    crate = "version_check",
+    crate_root = "version_check-0.9.5.crate/src/lib.rs",
+    edition = "2015",
+    env = {
+        "CARGO_BIN_NAME": "version_check",
+        "CARGO_CRATE_NAME": "version_check",
+        "CARGO_MANIFEST_DIR": "version_check-0.9.5.crate",
+        "CARGO_PKG_AUTHORS": "Sergio Benitez <sb@sergio.bz>",
+        "CARGO_PKG_DESCRIPTION": "Tiny crate to check the version of the installed/running rustc.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "version_check",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/SergioBenitez/version_check",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.9.5",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "9",
+        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+http_archive(
     name = "virtue-0.0.18.crate",
     sha256 = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1",
     size_bytes = 33545,
@@ -62625,21 +61982,8 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-    },
     visibility = [],
+    deps = [":libc-0.2"],
 )
 
 alias(
@@ -62679,14 +62023,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "5",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-util-0.1"],
-        ),
-        "windows-msvc": dict(
-            deps = [":winapi-util-0.1"],
-        ),
     },
     visibility = [],
     deps = [":same-file-1"],
@@ -63454,42 +62790,25 @@ cargo.rust_library(
     },
     platform = {
         "linux-arm64": dict(
-            deps = [
-                ":memfd-0.6",
-                ":rustix-1",
-            ],
+            deps = [":memfd-0.6"],
+        ),
+        "linux-arm64-lint": dict(
+            deps = [":memfd-0.6"],
         ),
         "linux-x86_64": dict(
             deps = [
                 ":ittapi-0.4",
                 ":memfd-0.6",
-                ":rustix-1",
+            ],
+        ),
+        "linux-x86_64-lint": dict(
+            deps = [
+                ":ittapi-0.4",
+                ":memfd-0.6",
             ],
         ),
         "macos-arm64": dict(
-            deps = [
-                ":mach2-0.4",
-                ":rustix-1",
-            ],
-        ),
-        "macos-x86_64": dict(
-            deps = [
-                ":ittapi-0.4",
-                ":mach2-0.4",
-                ":rustix-1",
-            ],
-        ),
-        "windows-gnu": dict(
-            deps = [
-                ":ittapi-0.4",
-                ":windows-sys-0.60",
-            ],
-        ),
-        "windows-msvc": dict(
-            deps = [
-                ":ittapi-0.4",
-                ":windows-sys-0.60",
-            ],
+            deps = [":mach2-0.4"],
         ),
     },
     rustc_flags = ["@$(location :wasmtime-36-build-script-run[rustc_flags])"],
@@ -63511,6 +62830,7 @@ cargo.rust_library(
         ":postcard-1",
         ":pulley-interpreter-36",
         ":rayon-1",
+        ":rustix-1",
         ":serde-1",
         ":serde_derive-1",
         ":serde_json-1",
@@ -63738,26 +63058,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :wasmtime-internal-cache-36-build-script-run[out_dir])",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":rustix-1"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":rustix-1"],
-        ),
-        "macos-arm64": dict(
-            deps = [":rustix-1"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":rustix-1"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.60"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.60"],
-        ),
-    },
     rustc_flags = ["@$(location :wasmtime-internal-cache-36-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
@@ -63766,6 +63066,7 @@ cargo.rust_library(
         ":directories-next-2",
         ":log-0.4",
         ":postcard-1",
+        ":rustix-1",
         ":serde-1",
         ":serde_derive-1",
         ":sha2-0.10",
@@ -63930,7 +63231,13 @@ cargo.rust_library(
         "linux-arm64": dict(
             deps = [":rustix-1"],
         ),
+        "linux-arm64-lint": dict(
+            deps = [":rustix-1"],
+        ),
         "linux-x86_64": dict(
+            deps = [":rustix-1"],
+        ),
+        "linux-x86_64-lint": dict(
             deps = [":rustix-1"],
         ),
     },
@@ -63970,30 +63277,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "19",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    platform = {
-        "linux-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "linux-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-arm64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "macos-x86_64": dict(
-            deps = [":libc-0.2"],
-        ),
-        "windows-gnu": dict(
-            deps = [":windows-sys-0.60"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows-sys-0.60"],
-        ),
-    },
     visibility = [],
     deps = [
         ":anyhow-1",
         ":cfg-if-1",
+        ":libc-0.2",
     ],
 )
 
@@ -64630,1626 +63918,6 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "widestring-1.2.1.crate",
-    sha256 = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471",
-    size_bytes = 90350,
-    strip_prefix = "widestring-1.2.1",
-    urls = ["https://static.crates.io/crates/widestring/1.2.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "widestring-1",
-    srcs = [":widestring-1.2.1.crate"],
-    crate = "widestring",
-    crate_root = "widestring-1.2.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "widestring",
-        "CARGO_CRATE_NAME": "widestring",
-        "CARGO_MANIFEST_DIR": "widestring-1.2.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "A wide string Rust library for converting to and from wide strings, such as those often used in Windows API or other FFI libaries. Both `u16` and `u32` string types are provided, including support for UTF-16 and UTF-32, malformed encoding, C-style strings, etc.",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "widestring",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/VoidStarKat/widestring-rs",
-        "CARGO_PKG_RUST_VERSION": "1.58",
-        "CARGO_PKG_VERSION": "1.2.1",
-        "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "alloc",
-        "default",
-        "std",
-    ],
-    visibility = [],
-)
-
-http_archive(
-    name = "winapi-0.3.9.crate",
-    sha256 = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419",
-    size_bytes = 1200382,
-    strip_prefix = "winapi-0.3.9",
-    urls = ["https://static.crates.io/crates/winapi/0.3.9/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "winapi-0.3",
-    srcs = [":winapi-0.3.9.crate"],
-    crate = "winapi",
-    crate_root = "winapi-0.3.9.crate/src/lib.rs",
-    edition = "2015",
-    env = {
-        "CARGO_BIN_NAME": "winapi",
-        "CARGO_CRATE_NAME": "winapi",
-        "CARGO_MANIFEST_DIR": "winapi-0.3.9.crate",
-        "CARGO_PKG_AUTHORS": "Peter Atashian <retep998@gmail.com>",
-        "CARGO_PKG_DESCRIPTION": "Raw FFI bindings for all of Windows API.",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "winapi",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/retep998/winapi-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.3.9",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "9",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "cfg",
-        "consoleapi",
-        "errhandlingapi",
-        "evntrace",
-        "fileapi",
-        "handleapi",
-        "in6addr",
-        "inaddr",
-        "iphlpapi",
-        "iptypes",
-        "knownfolders",
-        "minwinbase",
-        "minwindef",
-        "netioapi",
-        "ntdef",
-        "ntsecapi",
-        "ntstatus",
-        "objbase",
-        "processenv",
-        "processthreadsapi",
-        "profileapi",
-        "shlobj",
-        "std",
-        "synchapi",
-        "sysinfoapi",
-        "winbase",
-        "windef",
-        "winerror",
-        "winioctl",
-        "winnt",
-        "ws2def",
-        "ws2ipdef",
-    ],
-    platform = {
-        "windows-gnu": dict(
-            deps = [":winapi-x86_64-pc-windows-gnu-0.4"],
-        ),
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "winapi-util-0.1.11.crate",
-    sha256 = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22",
-    size_bytes = 13368,
-    strip_prefix = "winapi-util-0.1.11",
-    urls = ["https://static.crates.io/crates/winapi-util/0.1.11/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "winapi-util-0.1",
-    srcs = [":winapi-util-0.1.11.crate"],
-    crate = "winapi_util",
-    crate_root = "winapi-util-0.1.11.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "winapi_util",
-        "CARGO_CRATE_NAME": "winapi_util",
-        "CARGO_MANIFEST_DIR": "winapi-util-0.1.11.crate",
-        "CARGO_PKG_AUTHORS": "Andrew Gallant <jamslam@gmail.com>",
-        "CARGO_PKG_DESCRIPTION": "A dumping ground for high level safe wrappers over windows-sys.",
-        "CARGO_PKG_HOMEPAGE": "https://github.com/BurntSushi/winapi-util",
-        "CARGO_PKG_NAME": "winapi-util",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/BurntSushi/winapi-util",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.1.11",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "11",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-    deps = [":windows-sys-0.61"],
-)
-
-http_archive(
-    name = "winapi-x86_64-pc-windows-gnu-0.4.0.crate",
-    sha256 = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f",
-    size_bytes = 2947998,
-    strip_prefix = "winapi-x86_64-pc-windows-gnu-0.4.0",
-    urls = ["https://static.crates.io/crates/winapi-x86_64-pc-windows-gnu/0.4.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "winapi-x86_64-pc-windows-gnu-0.4",
-    srcs = [":winapi-x86_64-pc-windows-gnu-0.4.0.crate"],
-    crate = "winapi_x86_64_pc_windows_gnu",
-    crate_root = "winapi-x86_64-pc-windows-gnu-0.4.0.crate/src/lib.rs",
-    edition = "2015",
-    env = {
-        "CARGO_BIN_NAME": "winapi_x86_64_pc_windows_gnu",
-        "CARGO_CRATE_NAME": "winapi_x86_64_pc_windows_gnu",
-        "CARGO_MANIFEST_DIR": "winapi-x86_64-pc-windows-gnu-0.4.0.crate",
-        "CARGO_PKG_AUTHORS": "Peter Atashian <retep998@gmail.com>",
-        "CARGO_PKG_DESCRIPTION": "Import libraries for the x86_64-pc-windows-gnu target. Please don't use this crate directly, depend on winapi instead.",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "winapi-x86_64-pc-windows-gnu",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/retep998/winapi-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.4.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "4",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows-0.52.0.crate",
-    sha256 = "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be",
-    size_bytes = 11843715,
-    strip_prefix = "windows-0.52.0",
-    urls = ["https://static.crates.io/crates/windows/0.52.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-0.52",
-    srcs = [":windows-0.52.0.crate"],
-    crate = "windows",
-    crate_root = "windows-0.52.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows",
-        "CARGO_CRATE_NAME": "windows",
-        "CARGO_MANIFEST_DIR": "windows-0.52.0.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.56",
-        "CARGO_PKG_VERSION": "0.52.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "52",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Wdk",
-        "Wdk_System",
-        "Wdk_System_SystemInformation",
-        "Wdk_System_SystemServices",
-        "Wdk_System_Threading",
-        "Win32",
-        "Win32_Foundation",
-        "Win32_NetworkManagement",
-        "Win32_NetworkManagement_IpHelper",
-        "Win32_NetworkManagement_Ndis",
-        "Win32_NetworkManagement_NetManagement",
-        "Win32_Networking",
-        "Win32_Networking_WinSock",
-        "Win32_Security",
-        "Win32_Security_Authentication",
-        "Win32_Security_Authentication_Identity",
-        "Win32_Security_Authorization",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Com",
-        "Win32_System_Diagnostics",
-        "Win32_System_Diagnostics_Debug",
-        "Win32_System_IO",
-        "Win32_System_Ioctl",
-        "Win32_System_Kernel",
-        "Win32_System_LibraryLoader",
-        "Win32_System_Memory",
-        "Win32_System_Ole",
-        "Win32_System_Performance",
-        "Win32_System_Power",
-        "Win32_System_ProcessStatus",
-        "Win32_System_Registry",
-        "Win32_System_RemoteDesktop",
-        "Win32_System_Rpc",
-        "Win32_System_SystemInformation",
-        "Win32_System_SystemServices",
-        "Win32_System_Threading",
-        "Win32_System_Variant",
-        "Win32_System_WindowsProgramming",
-        "Win32_System_Wmi",
-        "Win32_UI",
-        "Win32_UI_Shell",
-        "default",
-    ],
-    visibility = [],
-    deps = [
-        ":windows-core-0.52",
-        ":windows-targets-0.52",
-    ],
-)
-
-http_archive(
-    name = "windows-0.62.2.crate",
-    sha256 = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580",
-    size_bytes = 9360572,
-    strip_prefix = "windows-0.62.2",
-    urls = ["https://static.crates.io/crates/windows/0.62.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-0.62",
-    srcs = [":windows-0.62.2.crate"],
-    crate = "windows",
-    crate_root = "windows-0.62.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows",
-        "CARGO_CRATE_NAME": "windows",
-        "CARGO_MANIFEST_DIR": "windows-0.62.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.62.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "62",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Wdk",
-        "Wdk_System",
-        "Wdk_System_SystemInformation",
-        "Wdk_System_SystemServices",
-        "Wdk_System_Threading",
-        "Win32",
-        "Win32_Foundation",
-        "Win32_NetworkManagement",
-        "Win32_NetworkManagement_IpHelper",
-        "Win32_NetworkManagement_Ndis",
-        "Win32_NetworkManagement_NetManagement",
-        "Win32_Networking",
-        "Win32_Networking_WinSock",
-        "Win32_Security",
-        "Win32_Security_Authentication",
-        "Win32_Security_Authentication_Identity",
-        "Win32_Security_Authorization",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Com",
-        "Win32_System_Diagnostics",
-        "Win32_System_Diagnostics_Debug",
-        "Win32_System_Diagnostics_ToolHelp",
-        "Win32_System_IO",
-        "Win32_System_Ioctl",
-        "Win32_System_Kernel",
-        "Win32_System_Memory",
-        "Win32_System_Ole",
-        "Win32_System_Performance",
-        "Win32_System_Power",
-        "Win32_System_ProcessStatus",
-        "Win32_System_Registry",
-        "Win32_System_RemoteDesktop",
-        "Win32_System_Rpc",
-        "Win32_System_SystemInformation",
-        "Win32_System_SystemServices",
-        "Win32_System_Threading",
-        "Win32_System_Variant",
-        "Win32_System_WindowsProgramming",
-        "Win32_System_Wmi",
-        "Win32_UI",
-        "Win32_UI_Shell",
-        "default",
-        "std",
-    ],
-    visibility = [],
-    deps = [
-        ":windows-collections-0.3",
-        ":windows-core-0.62",
-        ":windows-future-0.3",
-        ":windows-numerics-0.3",
-    ],
-)
-
-http_archive(
-    name = "windows-collections-0.3.2.crate",
-    sha256 = "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610",
-    size_bytes = 13510,
-    strip_prefix = "windows-collections-0.3.2",
-    urls = ["https://static.crates.io/crates/windows-collections/0.3.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-collections-0.3",
-    srcs = [":windows-collections-0.3.2.crate"],
-    crate = "windows_collections",
-    crate_root = "windows-collections-0.3.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_collections",
-        "CARGO_CRATE_NAME": "windows_collections",
-        "CARGO_MANIFEST_DIR": "windows-collections-0.3.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows collection types",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-collections",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.3.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["std"],
-    visibility = [],
-    deps = [":windows-core-0.62"],
-)
-
-http_archive(
-    name = "windows-core-0.52.0.crate",
-    sha256 = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9",
-    size_bytes = 42154,
-    strip_prefix = "windows-core-0.52.0",
-    urls = ["https://static.crates.io/crates/windows-core/0.52.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-core-0.52",
-    srcs = [":windows-core-0.52.0.crate"],
-    crate = "windows_core",
-    crate_root = "windows-core-0.52.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_core",
-        "CARGO_CRATE_NAME": "windows_core",
-        "CARGO_MANIFEST_DIR": "windows-core-0.52.0.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-core",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.56",
-        "CARGO_PKG_VERSION": "0.52.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "52",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["default"],
-    visibility = [],
-    deps = [":windows-targets-0.52"],
-)
-
-http_archive(
-    name = "windows-core-0.62.2.crate",
-    sha256 = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb",
-    size_bytes = 36932,
-    strip_prefix = "windows-core-0.62.2",
-    urls = ["https://static.crates.io/crates/windows-core/0.62.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-core-0.62",
-    srcs = [":windows-core-0.62.2.crate"],
-    crate = "windows_core",
-    crate_root = "windows-core-0.62.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_core",
-        "CARGO_CRATE_NAME": "windows_core",
-        "CARGO_MANIFEST_DIR": "windows-core-0.62.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Core type support for COM and Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-core",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.62.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "62",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["std"],
-    visibility = [],
-    deps = [
-        ":windows-implement-0.60",
-        ":windows-interface-0.59",
-        ":windows-link-0.2",
-        ":windows-result-0.4",
-        ":windows-strings-0.5",
-    ],
-)
-
-http_archive(
-    name = "windows-future-0.3.2.crate",
-    sha256 = "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb",
-    size_bytes = 17944,
-    strip_prefix = "windows-future-0.3.2",
-    urls = ["https://static.crates.io/crates/windows-future/0.3.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-future-0.3",
-    srcs = [":windows-future-0.3.2.crate"],
-    crate = "windows_future",
-    crate_root = "windows-future-0.3.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_future",
-        "CARGO_CRATE_NAME": "windows_future",
-        "CARGO_MANIFEST_DIR": "windows-future-0.3.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows async types",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-future",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.3.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["std"],
-    visibility = [],
-    deps = [
-        ":windows-core-0.62",
-        ":windows-link-0.2",
-        ":windows-threading-0.2",
-    ],
-)
-
-http_archive(
-    name = "windows-implement-0.60.2.crate",
-    sha256 = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf",
-    size_bytes = 15325,
-    strip_prefix = "windows-implement-0.60.2",
-    urls = ["https://static.crates.io/crates/windows-implement/0.60.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-implement-0.60",
-    srcs = [":windows-implement-0.60.2.crate"],
-    crate = "windows_implement",
-    crate_root = "windows-implement-0.60.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_implement",
-        "CARGO_CRATE_NAME": "windows_implement",
-        "CARGO_MANIFEST_DIR": "windows-implement-0.60.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "The implement macro for the Windows crates",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-implement",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.74",
-        "CARGO_PKG_VERSION": "0.60.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "60",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    proc_macro = True,
-    visibility = [],
-    deps = [
-        ":proc-macro2-1",
-        ":quote-1",
-        ":syn-2",
-    ],
-)
-
-http_archive(
-    name = "windows-interface-0.59.3.crate",
-    sha256 = "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358",
-    size_bytes = 11809,
-    strip_prefix = "windows-interface-0.59.3",
-    urls = ["https://static.crates.io/crates/windows-interface/0.59.3/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-interface-0.59",
-    srcs = [":windows-interface-0.59.3.crate"],
-    crate = "windows_interface",
-    crate_root = "windows-interface-0.59.3.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_interface",
-        "CARGO_CRATE_NAME": "windows_interface",
-        "CARGO_MANIFEST_DIR": "windows-interface-0.59.3.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "The interface macro for the Windows crates",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-interface",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.74",
-        "CARGO_PKG_VERSION": "0.59.3",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "59",
-        "CARGO_PKG_VERSION_PATCH": "3",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    proc_macro = True,
-    visibility = [],
-    deps = [
-        ":proc-macro2-1",
-        ":quote-1",
-        ":syn-2",
-    ],
-)
-
-http_archive(
-    name = "windows-link-0.2.1.crate",
-    sha256 = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5",
-    size_bytes = 6133,
-    strip_prefix = "windows-link-0.2.1",
-    urls = ["https://static.crates.io/crates/windows-link/0.2.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-link-0.2",
-    srcs = [":windows-link-0.2.1.crate"],
-    crate = "windows_link",
-    crate_root = "windows-link-0.2.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_link",
-        "CARGO_CRATE_NAME": "windows_link",
-        "CARGO_MANIFEST_DIR": "windows-link-0.2.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Linking for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-link",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "0.2.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-)
-
-http_archive(
-    name = "windows-numerics-0.3.1.crate",
-    sha256 = "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26",
-    size_bytes = 9772,
-    strip_prefix = "windows-numerics-0.3.1",
-    urls = ["https://static.crates.io/crates/windows-numerics/0.3.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-numerics-0.3",
-    srcs = [":windows-numerics-0.3.1.crate"],
-    crate = "windows_numerics",
-    crate_root = "windows-numerics-0.3.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_numerics",
-        "CARGO_CRATE_NAME": "windows_numerics",
-        "CARGO_MANIFEST_DIR": "windows-numerics-0.3.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows numeric types",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-numerics",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.3.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "3",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["std"],
-    visibility = [],
-    deps = [
-        ":windows-core-0.62",
-        ":windows-link-0.2",
-    ],
-)
-
-http_archive(
-    name = "windows-registry-0.6.1.crate",
-    sha256 = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720",
-    size_bytes = 13358,
-    strip_prefix = "windows-registry-0.6.1",
-    urls = ["https://static.crates.io/crates/windows-registry/0.6.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-registry-0.6",
-    srcs = [":windows-registry-0.6.1.crate"],
-    crate = "windows_registry",
-    crate_root = "windows-registry-0.6.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_registry",
-        "CARGO_CRATE_NAME": "windows_registry",
-        "CARGO_MANIFEST_DIR": "windows-registry-0.6.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows registry",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-registry",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.6.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "6",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "default",
-        "std",
-    ],
-    visibility = [],
-    deps = [
-        ":windows-link-0.2",
-        ":windows-result-0.4",
-        ":windows-strings-0.5",
-    ],
-)
-
-http_archive(
-    name = "windows-result-0.4.1.crate",
-    sha256 = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5",
-    size_bytes = 13381,
-    strip_prefix = "windows-result-0.4.1",
-    urls = ["https://static.crates.io/crates/windows-result/0.4.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-result-0.4",
-    srcs = [":windows-result-0.4.1.crate"],
-    crate = "windows_result",
-    crate_root = "windows-result-0.4.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_result",
-        "CARGO_CRATE_NAME": "windows_result",
-        "CARGO_MANIFEST_DIR": "windows-result-0.4.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows error handling",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-result",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.4.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "4",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "default",
-        "std",
-    ],
-    visibility = [],
-    deps = [":windows-link-0.2"],
-)
-
-http_archive(
-    name = "windows-strings-0.5.1.crate",
-    sha256 = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091",
-    size_bytes = 13966,
-    strip_prefix = "windows-strings-0.5.1",
-    urls = ["https://static.crates.io/crates/windows-strings/0.5.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-strings-0.5",
-    srcs = [":windows-strings-0.5.1.crate"],
-    crate = "windows_strings",
-    crate_root = "windows-strings-0.5.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_strings",
-        "CARGO_CRATE_NAME": "windows_strings",
-        "CARGO_MANIFEST_DIR": "windows-strings-0.5.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows string types",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-strings",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.5.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "5",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = ["std"],
-    visibility = [],
-    deps = [":windows-link-0.2"],
-)
-
-http_archive(
-    name = "windows-sys-0.45.0.crate",
-    sha256 = "75283be5efb2831d37ea142365f009c02ec203cd29a3ebecbc093d52315b66d0",
-    size_bytes = 2568659,
-    strip_prefix = "windows-sys-0.45.0",
-    urls = ["https://static.crates.io/crates/windows-sys/0.45.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-sys-0.45",
-    srcs = [":windows-sys-0.45.0.crate"],
-    crate = "windows_sys",
-    crate_root = "windows-sys-0.45.0.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_sys",
-        "CARGO_CRATE_NAME": "windows_sys",
-        "CARGO_MANIFEST_DIR": "windows-sys-0.45.0.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-sys",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.48",
-        "CARGO_PKG_VERSION": "0.45.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "45",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Win32",
-        "Win32_Foundation",
-        "Win32_System",
-        "Win32_System_Console",
-        "default",
-    ],
-    visibility = [],
-    deps = [":windows-targets-0.42"],
-)
-
-http_archive(
-    name = "windows-sys-0.48.0.crate",
-    sha256 = "677d2418bec65e3338edb076e806bc1ec15693c5d0104683f2efe857f61056a9",
-    size_bytes = 2628884,
-    strip_prefix = "windows-sys-0.48.0",
-    urls = ["https://static.crates.io/crates/windows-sys/0.48.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-sys-0.48",
-    srcs = [":windows-sys-0.48.0.crate"],
-    crate = "windows_sys",
-    crate_root = "windows-sys-0.48.0.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_sys",
-        "CARGO_CRATE_NAME": "windows_sys",
-        "CARGO_MANIFEST_DIR": "windows-sys-0.48.0.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-sys",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.48",
-        "CARGO_PKG_VERSION": "0.48.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "48",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Win32",
-        "Win32_Foundation",
-        "Win32_Globalization",
-        "Win32_Security",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Com",
-        "Win32_System_Diagnostics",
-        "Win32_System_Diagnostics_Debug",
-        "Win32_System_IO",
-        "Win32_System_Registry",
-        "Win32_System_Time",
-        "Win32_UI",
-        "Win32_UI_Shell",
-        "default",
-    ],
-    visibility = [],
-    deps = [":windows-targets-0.48"],
-)
-
-http_archive(
-    name = "windows-sys-0.52.0.crate",
-    sha256 = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d",
-    size_bytes = 2576877,
-    strip_prefix = "windows-sys-0.52.0",
-    urls = ["https://static.crates.io/crates/windows-sys/0.52.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-sys-0.52",
-    srcs = [":windows-sys-0.52.0.crate"],
-    crate = "windows_sys",
-    crate_root = "windows-sys-0.52.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_sys",
-        "CARGO_CRATE_NAME": "windows_sys",
-        "CARGO_MANIFEST_DIR": "windows-sys-0.52.0.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-sys",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.56",
-        "CARGO_PKG_VERSION": "0.52.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "52",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Win32",
-        "Win32_Foundation",
-        "Win32_Networking",
-        "Win32_Networking_WinSock",
-        "Win32_Security",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Console",
-        "Win32_System_IO",
-        "Win32_System_SystemServices",
-        "Win32_System_Threading",
-        "Win32_System_WindowsProgramming",
-        "default",
-    ],
-    visibility = [],
-    deps = [":windows-targets-0.52"],
-)
-
-http_archive(
-    name = "windows-sys-0.59.0.crate",
-    sha256 = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b",
-    size_bytes = 2387323,
-    strip_prefix = "windows-sys-0.59.0",
-    urls = ["https://static.crates.io/crates/windows-sys/0.59.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-sys-0.59",
-    srcs = [":windows-sys-0.59.0.crate"],
-    crate = "windows_sys",
-    crate_root = "windows-sys-0.59.0.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_sys",
-        "CARGO_CRATE_NAME": "windows_sys",
-        "CARGO_MANIFEST_DIR": "windows-sys-0.59.0.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-sys",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.60",
-        "CARGO_PKG_VERSION": "0.59.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "59",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Win32",
-        "Win32_Foundation",
-        "Win32_Security",
-        "Win32_Security_Cryptography",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Console",
-        "Win32_UI",
-        "Win32_UI_Input",
-        "Win32_UI_Input_KeyboardAndMouse",
-        "default",
-    ],
-    visibility = [],
-    deps = [":windows-targets-0.52"],
-)
-
-http_archive(
-    name = "windows-sys-0.60.2.crate",
-    sha256 = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb",
-    size_bytes = 2518479,
-    strip_prefix = "windows-sys-0.60.2",
-    urls = ["https://static.crates.io/crates/windows-sys/0.60.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-sys-0.60",
-    srcs = [":windows-sys-0.60.2.crate"],
-    crate = "windows_sys",
-    crate_root = "windows-sys-0.60.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_sys",
-        "CARGO_CRATE_NAME": "windows_sys",
-        "CARGO_MANIFEST_DIR": "windows-sys-0.60.2.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-sys",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.60",
-        "CARGO_PKG_VERSION": "0.60.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "60",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Win32",
-        "Win32_Foundation",
-        "Win32_Security",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Diagnostics",
-        "Win32_System_Diagnostics_Debug",
-        "Win32_System_Kernel",
-        "Win32_System_Memory",
-        "Win32_System_SystemInformation",
-        "Win32_System_Threading",
-        "default",
-    ],
-    visibility = [],
-    deps = [":windows-targets-0.53"],
-)
-
-http_archive(
-    name = "windows-sys-0.61.2.crate",
-    sha256 = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc",
-    size_bytes = 2517186,
-    strip_prefix = "windows-sys-0.61.2",
-    urls = ["https://static.crates.io/crates/windows-sys/0.61.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-sys-0.61",
-    srcs = [":windows-sys-0.61.2.crate"],
-    crate = "windows_sys",
-    crate_root = "windows-sys-0.61.2.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_sys",
-        "CARGO_CRATE_NAME": "windows_sys",
-        "CARGO_MANIFEST_DIR": "windows-sys-0.61.2.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Rust for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-sys",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "0.61.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "61",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    features = [
-        "Wdk",
-        "Wdk_Foundation",
-        "Wdk_Storage",
-        "Wdk_Storage_FileSystem",
-        "Wdk_System",
-        "Wdk_System_IO",
-        "Win32",
-        "Win32_Foundation",
-        "Win32_Globalization",
-        "Win32_NetworkManagement",
-        "Win32_NetworkManagement_IpHelper",
-        "Win32_NetworkManagement_Ndis",
-        "Win32_Networking",
-        "Win32_Networking_WinSock",
-        "Win32_Security",
-        "Win32_Security_Authentication",
-        "Win32_Security_Authentication_Identity",
-        "Win32_Security_Credentials",
-        "Win32_Security_Cryptography",
-        "Win32_Storage",
-        "Win32_Storage_FileSystem",
-        "Win32_System",
-        "Win32_System_Com",
-        "Win32_System_Console",
-        "Win32_System_Diagnostics",
-        "Win32_System_Diagnostics_Debug",
-        "Win32_System_IO",
-        "Win32_System_LibraryLoader",
-        "Win32_System_Memory",
-        "Win32_System_Pipes",
-        "Win32_System_Registry",
-        "Win32_System_SystemInformation",
-        "Win32_System_SystemServices",
-        "Win32_System_Threading",
-        "Win32_System_WindowsProgramming",
-        "Win32_UI",
-        "Win32_UI_Input",
-        "Win32_UI_Input_KeyboardAndMouse",
-        "Win32_UI_Shell",
-        "default",
-    ],
-    visibility = [],
-    deps = [":windows-link-0.2"],
-)
-
-http_archive(
-    name = "windows-targets-0.42.2.crate",
-    sha256 = "8e5180c00cd44c9b1c88adb3693291f1cd93605ded80c250a75d472756b4d071",
-    size_bytes = 5492,
-    strip_prefix = "windows-targets-0.42.2",
-    urls = ["https://static.crates.io/crates/windows-targets/0.42.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-targets-0.42",
-    srcs = [":windows-targets-0.42.2.crate"],
-    crate = "windows_targets",
-    crate_root = "windows-targets-0.42.2.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_targets",
-        "CARGO_CRATE_NAME": "windows_targets",
-        "CARGO_MANIFEST_DIR": "windows-targets-0.42.2.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import libs for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-targets",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.42.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "42",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows_x86_64_gnu-0.42"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows_x86_64_msvc-0.42"],
-        ),
-    },
-    visibility = [],
-)
-
-http_archive(
-    name = "windows-targets-0.48.5.crate",
-    sha256 = "9a2fa6e2155d7247be68c096456083145c183cbbbc2764150dda45a87197940c",
-    size_bytes = 6904,
-    strip_prefix = "windows-targets-0.48.5",
-    urls = ["https://static.crates.io/crates/windows-targets/0.48.5/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-targets-0.48",
-    srcs = [":windows-targets-0.48.5.crate"],
-    crate = "windows_targets",
-    crate_root = "windows-targets-0.48.5.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_targets",
-        "CARGO_CRATE_NAME": "windows_targets",
-        "CARGO_MANIFEST_DIR": "windows-targets-0.48.5.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import libs for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-targets",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.48.5",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "48",
-        "CARGO_PKG_VERSION_PATCH": "5",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows_x86_64_gnu-0.48"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows_x86_64_msvc-0.48"],
-        ),
-    },
-    visibility = [],
-)
-
-http_archive(
-    name = "windows-targets-0.52.6.crate",
-    sha256 = "9b724f72796e036ab90c1021d4780d4d3d648aca59e491e6b98e725b84e99973",
-    size_bytes = 6403,
-    strip_prefix = "windows-targets-0.52.6",
-    urls = ["https://static.crates.io/crates/windows-targets/0.52.6/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-targets-0.52",
-    srcs = [":windows-targets-0.52.6.crate"],
-    crate = "windows_targets",
-    crate_root = "windows-targets-0.52.6.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_targets",
-        "CARGO_CRATE_NAME": "windows_targets",
-        "CARGO_MANIFEST_DIR": "windows-targets-0.52.6.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import libs for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-targets",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.56",
-        "CARGO_PKG_VERSION": "0.52.6",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "52",
-        "CARGO_PKG_VERSION_PATCH": "6",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows_x86_64_gnu-0.52"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows_x86_64_msvc-0.52"],
-        ),
-    },
-    visibility = [],
-)
-
-http_archive(
-    name = "windows-targets-0.53.5.crate",
-    sha256 = "4945f9f551b88e0d65f3db0bc25c33b8acea4d9e41163edf90dcd0b19f9069f3",
-    size_bytes = 7126,
-    strip_prefix = "windows-targets-0.53.5",
-    urls = ["https://static.crates.io/crates/windows-targets/0.53.5/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-targets-0.53",
-    srcs = [":windows-targets-0.53.5.crate"],
-    crate = "windows_targets",
-    crate_root = "windows-targets-0.53.5.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_targets",
-        "CARGO_CRATE_NAME": "windows_targets",
-        "CARGO_MANIFEST_DIR": "windows-targets-0.53.5.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Import libs for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-targets",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.60",
-        "CARGO_PKG_VERSION": "0.53.5",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "53",
-        "CARGO_PKG_VERSION_PATCH": "5",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    platform = {
-        "windows-gnu": dict(
-            deps = [":windows_x86_64_gnu-0.53"],
-        ),
-        "windows-msvc": dict(
-            deps = [":windows_x86_64_msvc-0.53"],
-        ),
-    },
-    visibility = [],
-)
-
-http_archive(
-    name = "windows-threading-0.2.1.crate",
-    sha256 = "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37",
-    size_bytes = 9686,
-    strip_prefix = "windows-threading-0.2.1",
-    urls = ["https://static.crates.io/crates/windows-threading/0.2.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows-threading-0.2",
-    srcs = [":windows-threading-0.2.1.crate"],
-    crate = "windows_threading",
-    crate_root = "windows-threading-0.2.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_threading",
-        "CARGO_CRATE_NAME": "windows_threading",
-        "CARGO_MANIFEST_DIR": "windows-threading-0.2.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Windows threading",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows-threading",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.82",
-        "CARGO_PKG_VERSION": "0.2.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-    deps = [":windows-link-0.2"],
-)
-
-http_archive(
-    name = "windows_x86_64_gnu-0.42.2.crate",
-    sha256 = "8de912b8b8feb55c064867cf047dda097f92d51efad5b491dfb98f6bbb70cb36",
-    size_bytes = 699373,
-    strip_prefix = "windows_x86_64_gnu-0.42.2",
-    urls = ["https://static.crates.io/crates/windows_x86_64_gnu/0.42.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_gnu-0.42",
-    srcs = [":windows_x86_64_gnu-0.42.2.crate"],
-    crate = "windows_x86_64_gnu",
-    crate_root = "windows_x86_64_gnu-0.42.2.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_gnu",
-        "CARGO_CRATE_NAME": "windows_x86_64_gnu",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_gnu-0.42.2.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_gnu",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.42.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "42",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_gnu-0.48.5.crate",
-    sha256 = "53d40abd2583d23e4718fddf1ebec84dbff8381c07cae67ff7768bbf19c6718e",
-    size_bytes = 801619,
-    strip_prefix = "windows_x86_64_gnu-0.48.5",
-    urls = ["https://static.crates.io/crates/windows_x86_64_gnu/0.48.5/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_gnu-0.48",
-    srcs = [":windows_x86_64_gnu-0.48.5.crate"],
-    crate = "windows_x86_64_gnu",
-    crate_root = "windows_x86_64_gnu-0.48.5.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_gnu",
-        "CARGO_CRATE_NAME": "windows_x86_64_gnu",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_gnu-0.48.5.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_gnu",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.48.5",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "48",
-        "CARGO_PKG_VERSION_PATCH": "5",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_gnu-0.52.6.crate",
-    sha256 = "147a5c80aabfbf0c7d901cb5895d1de30ef2907eb21fbbab29ca94c5b08b1a78",
-    size_bytes = 836363,
-    strip_prefix = "windows_x86_64_gnu-0.52.6",
-    urls = ["https://static.crates.io/crates/windows_x86_64_gnu/0.52.6/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_gnu-0.52",
-    srcs = [":windows_x86_64_gnu-0.52.6.crate"],
-    crate = "windows_x86_64_gnu",
-    crate_root = "windows_x86_64_gnu-0.52.6.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_gnu",
-        "CARGO_CRATE_NAME": "windows_x86_64_gnu",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_gnu-0.52.6.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_gnu",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.56",
-        "CARGO_PKG_VERSION": "0.52.6",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "52",
-        "CARGO_PKG_VERSION_PATCH": "6",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_gnu-0.53.1.crate",
-    sha256 = "9c3842cdd74a865a8066ab39c8a7a473c0778a3f29370b5fd6b4b9aa7df4a499",
-    size_bytes = 903712,
-    strip_prefix = "windows_x86_64_gnu-0.53.1",
-    urls = ["https://static.crates.io/crates/windows_x86_64_gnu/0.53.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_gnu-0.53",
-    srcs = [":windows_x86_64_gnu-0.53.1.crate"],
-    crate = "windows_x86_64_gnu",
-    crate_root = "windows_x86_64_gnu-0.53.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_gnu",
-        "CARGO_CRATE_NAME": "windows_x86_64_gnu",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_gnu-0.53.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_gnu",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.60",
-        "CARGO_PKG_VERSION": "0.53.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "53",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_msvc-0.42.2.crate",
-    sha256 = "9aec5da331524158c6d1a4ac0ab1541149c0b9505fde06423b02f5ef0106b9f0",
-    size_bytes = 666936,
-    strip_prefix = "windows_x86_64_msvc-0.42.2",
-    urls = ["https://static.crates.io/crates/windows_x86_64_msvc/0.42.2/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_msvc-0.42",
-    srcs = [":windows_x86_64_msvc-0.42.2.crate"],
-    crate = "windows_x86_64_msvc",
-    crate_root = "windows_x86_64_msvc-0.42.2.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_msvc",
-        "CARGO_CRATE_NAME": "windows_x86_64_msvc",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_msvc-0.42.2.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_msvc",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.42.2",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "42",
-        "CARGO_PKG_VERSION_PATCH": "2",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_msvc-0.48.5.crate",
-    sha256 = "ed94fce61571a4006852b7389a063ab983c02eb1bb37b47f8272ce92d06d9538",
-    size_bytes = 798412,
-    strip_prefix = "windows_x86_64_msvc-0.48.5",
-    urls = ["https://static.crates.io/crates/windows_x86_64_msvc/0.48.5/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_msvc-0.48",
-    srcs = [":windows_x86_64_msvc-0.48.5.crate"],
-    crate = "windows_x86_64_msvc",
-    crate_root = "windows_x86_64_msvc-0.48.5.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_msvc",
-        "CARGO_CRATE_NAME": "windows_x86_64_msvc",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_msvc-0.48.5.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_msvc",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.48.5",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "48",
-        "CARGO_PKG_VERSION_PATCH": "5",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_msvc-0.52.6.crate",
-    sha256 = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec",
-    size_bytes = 832564,
-    strip_prefix = "windows_x86_64_msvc-0.52.6",
-    urls = ["https://static.crates.io/crates/windows_x86_64_msvc/0.52.6/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_msvc-0.52",
-    srcs = [":windows_x86_64_msvc-0.52.6.crate"],
-    crate = "windows_x86_64_msvc",
-    crate_root = "windows_x86_64_msvc-0.52.6.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_msvc",
-        "CARGO_CRATE_NAME": "windows_x86_64_msvc",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_msvc-0.52.6.crate",
-        "CARGO_PKG_AUTHORS": "Microsoft",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_msvc",
-        "CARGO_PKG_README": "",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.56",
-        "CARGO_PKG_VERSION": "0.52.6",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "52",
-        "CARGO_PKG_VERSION_PATCH": "6",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
-    name = "windows_x86_64_msvc-0.53.1.crate",
-    sha256 = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650",
-    size_bytes = 837950,
-    strip_prefix = "windows_x86_64_msvc-0.53.1",
-    urls = ["https://static.crates.io/crates/windows_x86_64_msvc/0.53.1/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "windows_x86_64_msvc-0.53",
-    srcs = [":windows_x86_64_msvc-0.53.1.crate"],
-    crate = "windows_x86_64_msvc",
-    crate_root = "windows_x86_64_msvc-0.53.1.crate/src/lib.rs",
-    edition = "2021",
-    env = {
-        "CARGO_BIN_NAME": "windows_x86_64_msvc",
-        "CARGO_CRATE_NAME": "windows_x86_64_msvc",
-        "CARGO_MANIFEST_DIR": "windows_x86_64_msvc-0.53.1.crate",
-        "CARGO_PKG_AUTHORS": "",
-        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "windows_x86_64_msvc",
-        "CARGO_PKG_README": "readme.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
-        "CARGO_PKG_RUST_VERSION": "1.60",
-        "CARGO_PKG_VERSION": "0.53.1",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "53",
-        "CARGO_PKG_VERSION_PATCH": "1",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    target_compatible_with = ["config//os:windows"],
-    visibility = [],
-)
-
-http_archive(
     name = "winnow-0.7.15.crate",
     sha256 = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945",
     size_bytes = 187092,
@@ -66330,45 +63998,6 @@ cargo.rust_library(
         "std",
     ],
     visibility = [],
-)
-
-http_archive(
-    name = "winreg-0.50.0.crate",
-    sha256 = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1",
-    size_bytes = 29703,
-    strip_prefix = "winreg-0.50.0",
-    urls = ["https://static.crates.io/crates/winreg/0.50.0/download"],
-    visibility = [],
-)
-
-cargo.rust_library(
-    name = "winreg-0.50",
-    srcs = [":winreg-0.50.0.crate"],
-    crate = "winreg",
-    crate_root = "winreg-0.50.0.crate/src/lib.rs",
-    edition = "2018",
-    env = {
-        "CARGO_BIN_NAME": "winreg",
-        "CARGO_CRATE_NAME": "winreg",
-        "CARGO_MANIFEST_DIR": "winreg-0.50.0.crate",
-        "CARGO_PKG_AUTHORS": "Igor Shaula <gentoo90@gmail.com>",
-        "CARGO_PKG_DESCRIPTION": "Rust bindings to MS Windows Registry API",
-        "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_PKG_NAME": "winreg",
-        "CARGO_PKG_README": "README.md",
-        "CARGO_PKG_REPOSITORY": "https://github.com/gentoo90/winreg-rs",
-        "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.50.0",
-        "CARGO_PKG_VERSION_MAJOR": "0",
-        "CARGO_PKG_VERSION_MINOR": "50",
-        "CARGO_PKG_VERSION_PATCH": "0",
-        "CARGO_PKG_VERSION_PRE": "",
-    },
-    visibility = [],
-    deps = [
-        ":cfg-if-1",
-        ":windows-sys-0.48",
-    ],
 )
 
 http_archive(

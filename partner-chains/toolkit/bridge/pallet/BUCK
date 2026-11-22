@@ -11,6 +11,12 @@ rust_library(
         "DEFAULT": [
             "std",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
     }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
@@ -45,6 +51,11 @@ rust_library(
             "root//third-party:parity-scale-codec",
             "root//third-party:scale-info",
         ],
+    }) + select({
+        "root//platforms:lint": [
+            "root//third-party:sp-core",
+        ],
+        "DEFAULT": [],
     }),
     visibility = ["PUBLIC"],
 )
@@ -57,7 +68,13 @@ rust_test(
     srcs = glob(["src/**"]) + ["Cargo.toml"],
     features = [
         "std",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": ".",
         "CARGO_PKG_NAME": "pallet-partner-chains-bridge",

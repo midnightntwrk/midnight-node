@@ -30,6 +30,7 @@ rust_test(
         "root//util/toolkit:fetcher-runtimes",
     ] + glob(["*.md"]),
     deps = [
+        "root//res:midnight-node-res",
         "root//third-party:serde",
         "root//third-party:toml",
     ],

@@ -72,7 +72,12 @@ rust_library(
         "sp-session-validator-management",
         "std",
         "test",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "res",
         "CARGO_PKG_NAME": "midnight-node-res",
@@ -128,7 +133,12 @@ rust_test(
         "sp-session-validator-management",
         "std",
         "test",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "res",
         "CARGO_PKG_NAME": "midnight-node-res",
@@ -187,7 +197,12 @@ rust_test(
         "sp-session-validator-management",
         "std",
         "test",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "runtime-benchmarks",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "res",
         "CARGO_PKG_NAME": "midnight-node-res",

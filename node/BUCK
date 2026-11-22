@@ -11,6 +11,17 @@ rust_library(
             ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
         ],
     ),
+    features = select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "frame-try-runtime",
+            "pallet-staking",
+            "runtime-benchmarks",
+            "tempfile",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
@@ -151,7 +162,15 @@ rust_library(
         "root//third-party:tikv-jemallocator",
         "root//third-party:tokio",
         "root//util/documented:documented",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+            "root//third-party:frame-try-runtime",
+            "root//third-party:pallet-staking",
+            "root//third-party:tempfile",
+        ],
+        "DEFAULT": [],
+    }),
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },
@@ -168,6 +187,17 @@ rust_binary(
             ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
         ],
     ),
+    features = select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "frame-try-runtime",
+            "pallet-staking",
+            "runtime-benchmarks",
+            "tempfile",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
@@ -309,7 +339,15 @@ rust_binary(
         "root//third-party:tikv-jemallocator",
         "root//third-party:tokio",
         "root//util/documented:documented",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+            "root//third-party:frame-try-runtime",
+            "root//third-party:pallet-staking",
+            "root//third-party:tempfile",
+        ],
+        "DEFAULT": [],
+    }),
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },
@@ -326,6 +364,17 @@ rust_test(
             ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
         ],
     ),
+    features = select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "frame-try-runtime",
+            "pallet-staking",
+            "runtime-benchmarks",
+            "tempfile",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
@@ -337,7 +386,6 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "Midnight blockchain node",
         "CARGO_PKG_REPOSITORY": "https://github.com/substrate-developer-hub/substrate-node-template/",
         "CARGO_PKG_HOMEPAGE": "https://substrate.io/",
-        "MN_WORKSPACE_ROOT": ".",
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "3.0.0-buck",
     },
@@ -477,7 +525,14 @@ rust_test(
         "root//third-party:tokio-util",
         "root//third-party:yamux",
         "root//util/documented:documented",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+            "root//third-party:frame-try-runtime",
+            "root//third-party:pallet-staking",
+        ],
+        "DEFAULT": [],
+    }),
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },
@@ -494,6 +549,17 @@ rust_test(
             ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
         ],
     ),
+    features = select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "frame-try-runtime",
+            "pallet-staking",
+            "runtime-benchmarks",
+            "tempfile",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
@@ -640,7 +706,14 @@ rust_test(
         "root//third-party:tokio-util",
         "root//third-party:yamux",
         "root//util/documented:documented",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+            "root//third-party:frame-try-runtime",
+            "root//third-party:pallet-staking",
+        ],
+        "DEFAULT": [],
+    }),
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },
@@ -657,6 +730,17 @@ rust_test(
             ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
         ],
     ),
+    features = select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "frame-try-runtime",
+            "pallet-staking",
+            "runtime-benchmarks",
+            "tempfile",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
@@ -803,7 +887,14 @@ rust_test(
         "root//third-party:tokio-util",
         "root//third-party:yamux",
         "root//util/documented:documented",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+            "root//third-party:frame-try-runtime",
+            "root//third-party:pallet-staking",
+        ],
+        "DEFAULT": [],
+    }),
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },
@@ -820,6 +911,17 @@ rust_test(
             ("root//res:genesis-state-preview", "res/genesis/genesis_state_preview.mn"),
         ],
     ),
+    features = select({
+        "root//platforms:lint": [
+            "frame-benchmarking",
+            "frame-try-runtime",
+            "pallet-staking",
+            "runtime-benchmarks",
+            "tempfile",
+            "try-runtime",
+        ],
+        "DEFAULT": [],
+    }),
     env = {
         "CARGO_MANIFEST_DIR": "node",
         "CARGO_PKG_NAME": "midnight-node",
@@ -966,7 +1068,14 @@ rust_test(
         "root//third-party:tokio-util",
         "root//third-party:yamux",
         "root//util/documented:documented",
-    ],
+    ] + select({
+        "root//platforms:lint": [
+            "root//third-party:frame-benchmarking",
+            "root//third-party:frame-try-runtime",
+            "root//third-party:pallet-staking",
+        ],
+        "DEFAULT": [],
+    }),
     named_deps = {
         "prometheus_endpoint": "root//third-party:substrate-prometheus-endpoint",
     },

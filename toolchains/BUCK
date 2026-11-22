@@ -5,21 +5,17 @@ load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
 
-# Wasm32 C toolchain. Absolute paths only — the cc shim `cd`s before exec'ing,
-# so a relative wrapper name wouldn't resolve. Default is macOS-arm64's Homebrew
-# LLVM clang (its wasm backend + cc-rs's own --target handling build the vendored
-# C fine locally). Linux CI overrides `[wasm] cc/cxx/ar` to an absolute path to
-# the wasm-cc.sh / wasm-ar.sh wrappers (which force --target=wasm32-unknown-
-# unknown — cc-rs doesn't pass it for `wasm32v1-none` under distro clang). Mirror
-# of ../midnight-node (bazel) toolchains/wasm32_cc.sh.
+# Wasm32 C toolchain. Absolute paths only: the cc shim `cd`s before exec'ing,
+# so a relative wrapper name would not resolve. The default is macOS-arm64's
+# Homebrew LLVM clang. Linux CI overrides `[wasm] cc/cxx/ar` with the wasm-cc.sh
+# and wasm-ar.sh wrappers, which force --target=wasm32-unknown-unknown (cc-rs
+# does not pass it for `wasm32v1-none` under the distro's clang).
 _WASM_CC = read_config("wasm", "cc", "/opt/homebrew/opt/llvm/bin/clang")
 _WASM_CXX = read_config("wasm", "cxx", "/opt/homebrew/opt/llvm/bin/clang++")
 _WASM_AR = read_config("wasm", "ar", "/opt/homebrew/opt/llvm/bin/llvm-ar")
-# The wasm linker wrapper. Default is the in-repo relative path (works for a
-# local build from the repo root); under distributed RE it must be an absolute
-# path present on every worker (the relative path isn't staged into the remote
-# action's cwd -> "toolchains/wasm-lld.sh: No such file"), so CI overrides
-# `[wasm] linker` to /usr/local/bin/wasm-lld.sh (installed by the composite).
+# The wasm linker wrapper. The in-repo relative path works for a build from the
+# repo root; CI overrides `[wasm] linker` with the copy buck2/Earthfile +CONFIG
+# installs at /usr/local/bin/wasm-lld.sh.
 _WASM_LINKER = read_config("wasm", "linker", "toolchains/wasm-lld.sh")
 
 system_genrule_toolchain(

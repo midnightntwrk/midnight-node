@@ -1,15 +1,34 @@
 #!/usr/bin/env python3
+
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Generate third-party/Cargo.toml for reindeer from workspace cargo metadata.
 
 Collects every external (non-path) normal/build dependency declared by any
 workspace member, unioning features and default-features across declarations.
-Dev-deps are skipped for now (node-binary milestone).
+
+Usage: gen-third-party.py <meta.json> <out Cargo.toml> [<lint-meta.json>]
+lint-meta is `cargo metadata` with the lint feature set on (see regen.sh): the
+features it adds become the manifest's `lint` feature, which only reindeer's
+lint platforms enable.
 """
 import json, os, re, sys, tomllib, urllib.parse
 from collections import defaultdict
 
 META = sys.argv[1]
 OUT = sys.argv[2]
+LINT_META = sys.argv[3] if len(sys.argv) > 3 else None
 
 meta = json.load(open(META))
 root_manifest = tomllib.load(open(meta["workspace_root"] + "/Cargo.toml", "rb"))
@@ -110,19 +129,25 @@ def satisfies(version, req):
 # (runtime "std" -> "pallet-collective/std") is on. Without this, reindeer
 # resolves features from the third-party manifest alone and FRAME crates build
 # no_std, breaking every std-only genesis_build/host-function path.
-resolved_features = {
-    n["id"]: set(n.get("features") or []) for n in meta["resolve"]["nodes"]
-}
+def features_by_id(m):
+    return {n["id"]: set(n.get("features") or []) for n in m["resolve"]["nodes"]}
+
+
+resolved_features = features_by_id(meta)
+
 
 # Match by name + version-satisfies only, NOT source: a [patch]'d dep keeps its
 # original registry source in the dependency record while the resolved package
 # is git, so a source-kind filter would miss every patched crate (all the
 # midnight-ledger ones) and leave their serde/fixed-point features off.
-for e in entries.values():
+def resolved_for(e, by_id):
     cands = [p for p in meta["packages"] if p["name"] == e["name"]]
     matched = [p for p in cands if satisfies(p["version"], e["req"])] or cands
-    for p in matched:
-        e["features"].update(resolved_features.get(p["id"], set()))
+    return set().union(*(by_id.get(p["id"], set()) for p in matched))
+
+
+for e in entries.values():
+    e["features"].update(resolved_for(e, resolved_features))
 
 # All versions of each crate present in the workspace-resolved graph.
 graph_versions = defaultdict(set)
@@ -238,6 +263,15 @@ def fmt_entry(e):
     return "{ " + ", ".join(parts) + " }"
 
 
+# What the lint feature set adds to each entry, as `key/feature`. Computed after
+# the merges above so it is relative to the final default feature set.
+lint_features = set()
+if LINT_META:
+    lint_resolved = features_by_id(json.load(open(LINT_META)))
+    for e in entries.values():
+        extra = resolved_for(e, lint_resolved) - e["features"]
+        lint_features.update(f'{e["key"]}/{f}' for f in extra)
+
 plain = sorted((e for e in entries.values() if not e["target"]), key=lambda e: e["key"])
 targeted = defaultdict(list)
 for e in entries.values():
@@ -283,6 +317,12 @@ path = "top/main.rs"
             if e["key"] in seen:
                 continue  # already unconditional with merged features
             f.write(f'{e["key"]} = {fmt_entry(e)}\n')
+
+    if lint_features:
+        f.write("\n[features]\nlint = [\n")
+        for feat in sorted(lint_features):
+            f.write(f"    {toml_str(feat)},\n")
+        f.write("]\n")
 
     # Propagate the workspace's [patch] sections — some members declare
     # registry versions that only resolve via these git redirects.

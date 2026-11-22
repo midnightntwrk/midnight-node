@@ -17,12 +17,12 @@ genrule(
     visibility = ["PUBLIC"],
 )
 
-# ── On-chain WASM runtime blob (task #12) ──────────────────────────────────
+# ── On-chain WASM runtime blob ─────────────────────────────────────────────
 # gen-first-party emits root//runtime:midnight-node-runtime-wasm-cdylib (a
 # shared-lib rust_library, --cfg substrate_runtime, no_std wasm deps/features).
 # Build it for wasm32 via a configured_alias, then wasm-opt + zstd-compress to
 # the substrate sp-maybe-compressed-blob format, then a wasm_binary.rs that
-# include_bytes!'s the blob — the real replacement for :runtime-wasm-stub.
+# include_bytes!'s the blob.
 
 # Build the runtime cdylib under the wasm32 platform. [cdylib] selects the
 # shared-lib (`.wasm`) output rather than the default rmeta.
@@ -68,4 +68,3 @@ export_file(
     src = "COMPACTC_VERSION",
     visibility = ["PUBLIC"],
 )
-
