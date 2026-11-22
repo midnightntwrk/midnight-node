@@ -1,31 +1,15 @@
 name: "buck2"
 
 # buck2 build + test on the self-hosted pool, under a bazel-remote action cache
-# (Earthfile +buck2-ci -> buck2/Earthfile). Replaces the retired rebuck2
-# distributed workflow (buck2-distributed.yml): the self-hosted runners have the
-# muscle the free runners lacked, so no mesh is needed - just buck2 + a cache
-# that persists across runs on the buildkitd.
+# (Earthfile +buck2-ci -> buck2/Earthfile).
 on:
   workflow_dispatch: {}
-  # Every PR: the regen check is a few minutes warm and the generated graph has
-  # inputs all over the tree (every Cargo.toml, the fixture sources), so a
-  # paths filter would only add gaps. The build + test job is push-only.
+  # No paths filter: the graph's inputs are all over the tree (every Cargo.toml,
+  # every source file), so a filter would only add gaps. PRs get the regen
+  # check; build + test is push-only.
   pull_request: {}
   push:
-    branches: [giles-buck2-build]
-    paths:
-      - "**/BUCK"
-      - ".buckconfig"
-      - "platforms/**"
-      - "toolchains/**"
-      - "third-party/**"
-      - "wasm-deps/**"
-      - "tools/wasm-compress/**"
-      - "scripts/buck2/**"
-      - "buck2/**"
-      - "Earthfile"
-      - ".earth/config.selfhosted.yml"
-      - ".github/workflows/buck2.yml"
+    branches: [main, giles-buck2-build]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +17,7 @@ concurrency:
 
 jobs:
   # The generated graph (third-party + wasm-deps universes, every member's
-  # BUCK, the copied test fixtures) must match the cargo workspace: regenerate
+  # BUCK) must match the cargo workspace: regenerate
   # with the pinned reindeer and fail on any diff, so a Cargo.lock bump that
   # skipped `earth +buck2-regen` cannot build stale crates. Fork PRs are
   # untrusted code, so they get a GitHub-hosted runner and no fleet config.
@@ -57,7 +41,7 @@ jobs:
 
       - name: Use the fleet's earth config
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        run: echo "EARTH_CONFIG=${{ github.workspace }}/.earth/config.selfhosted.yml" >> "$GITHUB_ENV"
+        run: echo "EARTH_CONFIG=$GITHUB_WORKSPACE/.earth/config.selfhosted.yml" >> "$GITHUB_ENV"
 
       - name: Regenerate and diff
         run: earth --ci +buck2-check-regen
