@@ -2,9 +2,13 @@
 rust_library(
     name = "midnight-primitives-mainchain-follower",
     crate = "midnight_primitives_mainchain_follower",
-    crate_root = "src/lib.rs",
+    crate_root = "primitives/mainchain-follower/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]),
+    mapped_srcs = dict(
+        [(f, "primitives/mainchain-follower/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
+            ("root//:sqlx-cache", "primitives/mainchain-follower/.sqlx"),
+        ],
+    ),
     features = select({
         "prelude//cpu:wasm32": [
         ],
@@ -28,7 +32,7 @@ rust_library(
         ],
     }),
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "primitives/mainchain-follower",
         "CARGO_PKG_NAME": "midnight-primitives-mainchain-follower",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -98,9 +102,13 @@ rust_library(
 rust_test(
     name = "midnight-primitives-mainchain-follower-unit-test",
     crate = "midnight_primitives_mainchain_follower",
-    crate_root = "src/lib.rs",
+    crate_root = "primitives/mainchain-follower/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]),
+    mapped_srcs = dict(
+        [(f, "primitives/mainchain-follower/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
+            ("root//:sqlx-cache", "primitives/mainchain-follower/.sqlx"),
+        ],
+    ),
     features = [
         "async-trait",
         "authority-selection-inherents",
@@ -120,7 +128,7 @@ rust_test(
         "tokio",
     ],
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "primitives/mainchain-follower",
         "CARGO_PKG_NAME": "midnight-primitives-mainchain-follower",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",

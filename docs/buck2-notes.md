@@ -81,7 +81,7 @@ Two feature sets are layered on top, both named in `regen.sh`:
 **Build scripts do not run for first-party crates.** `gen-first-party.py` supplies
 what they would have: `ENV_HOOKS` for compile-time env (ledger versions, the
 runtime's `OUT_DIR`, the node's version strings) and `SRCS_HOOKS` for non-Rust
-inputs (the crate-local `.sqlx/` cache, metadata blobs, graphql schemas).
+inputs (metadata blobs, graphql schemas).
 Third-party build scripts run where a fixup says so.
 
 **The runtime is a second universe.** `wasm-deps/` is the runtime's dependency

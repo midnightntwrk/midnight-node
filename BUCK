@@ -2,13 +2,11 @@
 
 export_file(name = "readme", src = "README.md", visibility = ["PUBLIC"])
 
-# WASM_BINARY = None stub for the runtime. runtime/src/lib.rs does
-# include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs")); the real file is
-# emitted by substrate-wasm-builder (build.rs), which spawns cargo and can't
-# run under buck. This stub lets the runtime lib + node binary compile and link
-# with an empty embedded runtime. Building the actual on-chain wasm blob is a
-# separate no_std crate-universe phase (see docs/buck2-notes.md). The runtime
-# target sets OUT_DIR=$(location :runtime-wasm-stub) — see gen-first-party.py.
+# A WASM_BINARY = None stub. runtime/src/lib.rs include!s
+# $OUT_DIR/wasm_binary.rs, which substrate-wasm-builder (build.rs) emits by
+# spawning cargo. The wasm cdylib that becomes the blob takes this stub as its
+# OUT_DIR: the real wasm_binary.rs embeds that cdylib, so using it there would
+# be a cycle.
 genrule(
     name = "runtime-wasm-stub",
     out = "out",
@@ -68,3 +66,7 @@ export_file(
     src = "COMPACTC_VERSION",
     visibility = ["PUBLIC"],
 )
+
+# The workspace's sqlx offline cache, for the crates whose queries it checks
+# (gen-first-party.py ENV_HOOKS).
+export_file(name = "sqlx-cache", src = ".sqlx", visibility = ["PUBLIC"])

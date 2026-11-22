@@ -174,11 +174,11 @@ ENV_HOOKS = {
     "midnight-node-ledger-helpers": _ledger_helpers_env,
     "midnight-primitives-mainchain-follower": lambda p, n: {
         # sqlx-macros checks queries at compile time against the .sqlx offline
-        # cache, looked up as SQLX_OFFLINE_DIR, then <manifest_dir>/.sqlx, then
-        # <workspace_root>/.sqlx. The last runs `cargo metadata`, which fails in
-        # buck2's sources tree, so the crate carries its own .sqlx/ (SRCS_HOOKS)
-        # for the second. A relative SQLX_OFFLINE_DIR does not work: rustc's cwd
-        # is the repo root. CARGO only satisfies sqlx's presence check.
+        # cache, which it looks for at <manifest_dir>/.sqlx and then, by running
+        # `cargo metadata`, at the workspace root. That fails in buck2's sources
+        # tree, so MAPPED_SRCS_EXTERNAL puts the workspace's cache at the first.
+        # (sqlx 0.8 reads SQLX_OFFLINE_DIR from a .env file only, never the
+        # environment.) CARGO only satisfies sqlx's presence check.
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
     },
@@ -292,6 +292,9 @@ MAPPED_SRCS_EXTERNAL = {
     # genesis blob at res/genesis/...) and the `../../../res/...` path resolves.
     "midnight-node": {
         "root//res:genesis-state-preview": "res/genesis/genesis_state_preview.mn",
+    },
+    "midnight-primitives-mainchain-follower": {
+        "root//:sqlx-cache": "primitives/mainchain-follower/.sqlx",
     },
     # ledger/src/host_api/ledger_9.rs include_bytes!s the undeployed genesis
     # state under `runtime-benchmarks`, which the lint platform turns on.
@@ -434,9 +437,6 @@ TEST_SRCS_HOOKS = {
 # each value is a list of starlark expressions added to `srcs` with `+`; a
 # fragment may be a list literal (["..."]) or a glob() call.
 SRCS_HOOKS = {
-    # The crate's own .sqlx/ offline cache, which sqlx finds at <manifest_dir>/.sqlx
-    # (see ENV_HOOKS).
-    "midnight-primitives-mainchain-follower": ['glob([".sqlx/**"])'],
     # include_str!("../examples/*.json") — data outside the src/ glob.
     "partner-chains-mock-data-sources": ['glob(["examples/**/*.json"])'],
     # (res moved to the `res/` prefix + PREFIX_DATA_GLOBS — see MAPPED_SRCS_EXTERNAL.)
