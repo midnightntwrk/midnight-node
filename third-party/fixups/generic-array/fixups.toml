@@ -13,4 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-buildscript.run = false
+# build.rs sets cfg(relaxed_coherence), which gates `From<GenericArray<T, N>> for [T; N]`.
+buildscript.run = true

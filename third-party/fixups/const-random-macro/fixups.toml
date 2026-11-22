@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# const-random-macro reads env!("CONST_RANDOM_SEED") at compile time to seed
-# ahash's hasher. Pin it so buck2 builds are reproducible (same input ->
-# same artifact); the value is arbitrary but must be fixed.
+# cargo seeds const_random! from getrandom on every build; a fixed seed keeps
+# the action cacheable. Neither user needs it unpredictable: macro_magic_core
+# uses it as an ident-collision tag, and dlv-list as a list generation id on
+# its no_std path only (std builds use RandomState). Nothing hashes with it.
 [env]
 CONST_RANDOM_SEED = "midnight-node"
