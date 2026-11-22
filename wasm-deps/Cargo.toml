@@ -20,6 +20,7 @@ path = "src/lib.rs"
 
 [dependencies]
 async-trait = { version = "^0.1.89", default-features = false }
+bech32 = { version = "^0.11.1", default-features = false }
 binary-merkle-tree = { git = "https://github.com/shieldedtech/polkadot-sdk.git", tag = "midnight-polkadot-stable2609", default-features = false }
 blake2b_simd = { version = "^1.0.2", default-features = false }
 derive-new = { version = "^0.7.0", default-features = false }

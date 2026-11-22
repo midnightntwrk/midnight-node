@@ -3,6 +3,8 @@
 # ../third-party/fixups); no external/shared fixup source. Non-vendored;
 # --cfg substrate_runtime is applied globally by the wasm rust toolchain, not here.
 vendor = false
+rustc_link_lib = true
+rustc_link_search = true
 
 cargo_env = [
     "CARGO_MANIFEST_DIR", "CARGO_PKG_NAME", "CARGO_PKG_VERSION",

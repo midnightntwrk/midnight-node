@@ -5,6 +5,11 @@
 # its Apache-2.0 header. No external/shared fixup source: the graph is
 # self-contained and reviewable in-tree.
 
+# Honour a build script's cargo::rustc-link-lib / rustc-link-search, as cargo
+# does: native libs here come from build scripts, not Buck targets.
+rustc_link_lib = true
+rustc_link_search = true
+
 # Default Cargo env vars for every crate that has no crate-specific `cargo_env`
 # fixup. Cargo sets these at compile time; without them, codec/serde derives
 # (via proc-macro-crate, which reads $CARGO_MANIFEST_DIR/Cargo.toml) and any

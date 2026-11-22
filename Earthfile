@@ -2345,7 +2345,7 @@ buck2-src:
 
 #buck2-prep Install the buck2 toolchain + stage sources + write .buckconfig.local
 buck2-prep:
-    FROM rust:1.98.1-trixie
+    FROM rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
     DO buck2+INSTALL
     WORKDIR /work
     COPY --keep-ts --dir +buck2-src/work /
@@ -2410,13 +2410,12 @@ buck2-test-one:
 
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
 buck2-reindeer:
-    FROM rust:1.98.1-trixie
-    # Upstream reindeer; what it lacks (facebookincubator/reindeer PRs 118, 119)
-    # is applied to its output by scripts/buck2/normalize-git-sources.py. Not on
-    # crates.io (that name is an unrelated crate), so pin a rev - and regenerate
+    FROM rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
+    # Not on crates.io (that name is an unrelated crate), so pin a rev. Regenerate
     # with this rev only: another reindeer diffs the graph.
     ARG REINDEER_GIT=https://github.com/facebookincubator/reindeer
-    ARG REINDEER_REV=b15f92a7c0408f689997f1aae23a854fb4693e81
+    # v2026.11.16.00
+    ARG REINDEER_REV=741192de2c944c7ea478b382675f3f4b45c6d007
     # python3 >= 3.11 (tomllib) for the generators; trixie ships 3.13.
     RUN apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 && \
         rm -rf /var/lib/apt/lists/*

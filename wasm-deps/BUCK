@@ -4,7 +4,7 @@ load("@prelude//rust:cargo_buildscript.bzl", "buildscript_run")
 load("@prelude//rust:cargo_package.bzl", "cargo")
 
 git_fetch(
-    name = "polkadot-sdk-85dfdc130bdc75089c7455ea.git",
+    name = "polkadot-sdk-30af3dfacae5ee9b.git",
     repo = "https://github.com/shieldedtech/polkadot-sdk.git",
     rev = "9c7455eabd0cc2e77da867e837dfb466b11fbcf6",
     sub_targets = [
@@ -18,12 +18,12 @@ git_fetch(
         "substrate/frame/revive/src/precompiles/builtin/testdata/256-p256_verify.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/3-ripemd160.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json",
-        "substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add.json",
+        "substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/7-bn128mul.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/8-bn128pairing.json",
-        "substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f.json",
+        "substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_128.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_256.json",
         "substrate/frame/revive/src/precompiles/builtin/testdata/900-to_account_id.json",
@@ -469,6 +469,47 @@ cargo.rust_library(
 )
 
 alias(
+    name = "bech32",
+    actual = ":bech32-0.11",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "bech32-0.11.1.crate",
+    sha256 = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f",
+    size_bytes = 66591,
+    strip_prefix = "bech32-0.11.1",
+    urls = ["https://static.crates.io/crates/bech32/0.11.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "bech32-0.11",
+    srcs = [":bech32-0.11.1.crate"],
+    crate = "bech32",
+    crate_root = "bech32-0.11.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "bech32",
+        "CARGO_CRATE_NAME": "bech32",
+        "CARGO_MANIFEST_DIR": "bech32-0.11.1.crate",
+        "CARGO_PKG_AUTHORS": "Clark Moody:Andrew Poelstra:Tobin Harding",
+        "CARGO_PKG_DESCRIPTION": "Encodes and decodes the Bech32 format and implements the bech32 and bech32m checksums",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "bech32",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/rust-bitcoin/rust-bech32",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.11.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "11",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+alias(
     name = "binary-merkle-tree",
     actual = ":binary-merkle-tree-16",
     visibility = ["PUBLIC"],
@@ -476,14 +517,14 @@ alias(
 
 cargo.rust_library(
     name = "binary-merkle-tree-16",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "binary_merkle_tree",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/utils/binary-merkle-tree/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/utils/binary-merkle-tree/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "binary_merkle_tree",
         "CARGO_CRATE_NAME": "binary_merkle_tree",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/utils/binary-merkle-tree",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/utils/binary-merkle-tree",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "A no-std/Substrate compatible library to construct binary merkle tree.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -1502,6 +1543,8 @@ buildscript_run(
         "default",
         "limit_128",
     ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "0.2.4",
 )
 
@@ -1713,6 +1756,8 @@ buildscript_run(
         "precomputed-tables",
         "zeroize",
     ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "4.1.3",
 )
 
@@ -2816,6 +2861,8 @@ buildscript_run(
         "syn",
         "syndicate",
     ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "2.2.1",
 )
 
@@ -3058,14 +3105,14 @@ alias(
 
 cargo.rust_library(
     name = "frame-executive-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_executive",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/executive/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/executive/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_executive",
         "CARGO_CRATE_NAME": "frame_executive",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/executive",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/executive",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME executives engine",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3151,14 +3198,14 @@ alias(
 
 cargo.rust_library(
     name = "frame-support-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_support",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_support",
         "CARGO_CRATE_NAME": "frame_support",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Support code for the runtime.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3173,7 +3220,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     mapped_srcs = {
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/support/test/example-readme.md]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/test/example-readme.md",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/support/test/example-readme.md]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/test/example-readme.md",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -3218,14 +3265,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "frame-support-procedural-41",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_support_procedural",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/procedural/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/procedural/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_support_procedural",
         "CARGO_CRATE_NAME": "frame_support_procedural",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/procedural",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/procedural",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Proc macro of Support code for the runtime.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3260,14 +3307,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "frame-support-procedural-tools-10",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_support_procedural_tools",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/procedural/tools/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/procedural/tools/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_support_procedural_tools",
         "CARGO_CRATE_NAME": "frame_support_procedural_tools",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/procedural/tools",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/procedural/tools",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Proc macro helpers for procedural macros",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3293,14 +3340,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "frame-support-procedural-tools-derive-11",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_support_procedural_tools_derive",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/procedural/tools/derive/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/procedural/tools/derive/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_support_procedural_tools_derive",
         "CARGO_CRATE_NAME": "frame_support_procedural_tools_derive",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/procedural/tools/derive",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/procedural/tools/derive",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Use to derive parsing for parsing struct.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3331,14 +3378,14 @@ alias(
 
 cargo.rust_library(
     name = "frame-system-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_system",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/system/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/system/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_system",
         "CARGO_CRATE_NAME": "frame_system",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/system",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/system",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME system module",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3353,7 +3400,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     mapped_srcs = {
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -3382,14 +3429,14 @@ alias(
 
 cargo.rust_library(
     name = "frame-system-rpc-runtime-api-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "frame_system_rpc_runtime_api",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/system/rpc/runtime-api/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/system/rpc/runtime-api/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "frame_system_rpc_runtime_api",
         "CARGO_CRATE_NAME": "frame_system_rpc_runtime_api",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/system/rpc/runtime-api",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/system/rpc/runtime-api",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Runtime API definition required by System RPC extensions.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -3493,6 +3540,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "2.11.0",
 )
 
@@ -5249,6 +5298,8 @@ buildscript_run(
         "default",
         "std",
     ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "0.2.191",
 )
 
@@ -5346,6 +5397,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["static-context"],
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "0.7.2",
 )
 
@@ -6110,6 +6163,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["i128"],
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "0.2.19",
 )
 
@@ -6162,14 +6217,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-aura-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_aura",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/aura/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/aura/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_aura",
         "CARGO_CRATE_NAME": "pallet_aura",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/aura",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/aura",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME AURA consensus pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6201,14 +6256,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "pallet-authorship-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_authorship",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/authorship/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/authorship/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_authorship",
         "CARGO_CRATE_NAME": "pallet_authorship",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/authorship",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/authorship",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Block and Uncle Author tracking for the FRAME",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6243,14 +6298,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-babe-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_babe",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/babe/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/babe/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_babe",
         "CARGO_CRATE_NAME": "pallet_babe",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/babe",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/babe",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Consensus extension module for BABE consensus. Collects on-chain randomness from VRF outputs and manages epoch transitions.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6288,14 +6343,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "pallet-balances-51",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_balances",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/balances/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/balances/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_balances",
         "CARGO_CRATE_NAME": "pallet_balances",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/balances",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/balances",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME pallet to manage balances",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6332,14 +6387,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-beefy-51",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_beefy",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/beefy/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/beefy/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_beefy",
         "CARGO_CRATE_NAME": "pallet_beefy",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/beefy",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/beefy",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "BEEFY FRAME pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6379,14 +6434,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-beefy-mmr-51",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_beefy_mmr",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/beefy-mmr/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/beefy-mmr/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_beefy_mmr",
         "CARGO_CRATE_NAME": "pallet_beefy_mmr",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/beefy-mmr",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/beefy-mmr",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "BEEFY + MMR runtime utilities",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6430,14 +6485,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-collective-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_collective",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/collective/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/collective/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_collective",
         "CARGO_CRATE_NAME": "pallet_collective",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/collective",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/collective",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Collective system: Members of a set of account IDs can make their collective feelings known through dispatched calls from one of two specialized origins.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6475,14 +6530,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-grandpa-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_grandpa",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/grandpa/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/grandpa/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_grandpa",
         "CARGO_CRATE_NAME": "pallet_grandpa",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/grandpa",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/grandpa",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME pallet for GRANDPA finality gadget",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6525,14 +6580,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-membership-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_membership",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/membership/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/membership/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_membership",
         "CARGO_CRATE_NAME": "pallet_membership",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/membership",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/membership",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME membership management pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6569,14 +6624,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-migrations-20",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_migrations",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/migrations/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/migrations/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_migrations",
         "CARGO_CRATE_NAME": "pallet_migrations",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/migrations",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/migrations",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME pallet to execute multi-block migrations.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -6617,14 +6672,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-mmr-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_mmr",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/merkle-mountain-range/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/merkle-mountain-range/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_mmr",
         "CARGO_CRATE_NAME": "pallet_mmr",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/merkle-mountain-range",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/merkle-mountain-range",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME Merkle Mountain Range pallet.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6658,14 +6713,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-preimage-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_preimage",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/preimage/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/preimage/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_preimage",
         "CARGO_CRATE_NAME": "pallet_preimage",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/preimage",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/preimage",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME pallet for storing preimages of hashes",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6701,14 +6756,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-safe-mode-31",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_safe_mode",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/safe-mode/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/safe-mode/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_safe_mode",
         "CARGO_CRATE_NAME": "pallet_safe_mode",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/safe-mode",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/safe-mode",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME safe-mode pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6741,14 +6796,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-scheduler-51",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_scheduler",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/scheduler/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/scheduler/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_scheduler",
         "CARGO_CRATE_NAME": "pallet_scheduler",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/scheduler",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/scheduler",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME Scheduler pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6786,14 +6841,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-session-50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_session",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/session/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/session/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_session",
         "CARGO_CRATE_NAME": "pallet_session",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/session",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/session",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME sessions pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6841,14 +6896,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-timestamp-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_timestamp",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/timestamp/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/timestamp/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_timestamp",
         "CARGO_CRATE_NAME": "pallet_timestamp",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/timestamp",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/timestamp",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME Timestamp Module",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -6887,14 +6942,14 @@ alias(
 
 cargo.rust_library(
     name = "pallet-tx-pause-31",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "pallet_tx_pause",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/tx-pause/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/tx-pause/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "pallet_tx_pause",
         "CARGO_CRATE_NAME": "pallet_tx_pause",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/tx-pause",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/tx-pause",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "FRAME transaction pause pallet",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -7228,14 +7283,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "polkadot-sdk-frame-0.19",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "polkadot_sdk_frame",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "polkadot_sdk_frame",
         "CARGO_CRATE_NAME": "polkadot_sdk_frame",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "The single package to get you started with building frame pallets and runtimes",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io",
@@ -7267,33 +7322,33 @@ cargo.rust_library(
         "sp-version",
     ],
     mapped_srcs = {
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/broker/README.md]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/broker/README.md",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/contracts/fixtures/build/Cargo.toml]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/contracts/fixtures/build/Cargo.toml",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/README.md]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/README.md",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/fixtures/build/_Cargo.toml]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/fixtures/build/_Cargo.toml",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/1-ecRecover.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/1-ecRecover.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/2-sha256.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/2-sha256.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/256-p256_verify.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/256-p256_verify.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/3-ripemd160.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/3-ripemd160.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/7-bn128mul.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/7-bn128mul.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/8-bn128pairing.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/8-bn128pairing.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_128.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_128.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_256.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_256.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/precompiles/builtin/testdata/900-to_account_id.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/precompiles/builtin/testdata/900-to_account_id.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/tests/json_trace/call_evm.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/tests/json_trace/call_evm.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/tests/json_trace/call_pvm.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/tests/json_trace/call_pvm.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/tests/json_trace/delegatecall_evm.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/tests/json_trace/delegatecall_evm.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/tests/json_trace/delegatecall_pvm.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/tests/json_trace/delegatecall_pvm.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/sassafras/src/data/25_tickets_100_auths.bin]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/sassafras/src/data/25_tickets_100_auths.bin",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/support/test/example-readme.md]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/support/test/example-readme.md",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/broker/README.md]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/broker/README.md",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/contracts/fixtures/build/Cargo.toml]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/contracts/fixtures/build/Cargo.toml",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/README.md]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/README.md",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/fixtures/build/_Cargo.toml]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/fixtures/build/_Cargo.toml",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/1-ecRecover.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/1-ecRecover.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/2-sha256.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/2-sha256.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/256-p256_verify.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/256-p256_verify.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/3-ripemd160.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/3-ripemd160.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/7-bn128mul.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/7-bn128mul.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/8-bn128pairing.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/8-bn128pairing.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_128.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_128.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_256.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_256.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/precompiles/builtin/testdata/900-to_account_id.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/precompiles/builtin/testdata/900-to_account_id.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/tests/json_trace/call_evm.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/tests/json_trace/call_evm.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/tests/json_trace/call_pvm.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/tests/json_trace/call_pvm.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/tests/json_trace/delegatecall_evm.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/tests/json_trace/delegatecall_evm.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/tests/json_trace/delegatecall_pvm.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/tests/json_trace/delegatecall_pvm.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/sassafras/src/data/25_tickets_100_auths.bin]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/sassafras/src/data/25_tickets_100_auths.bin",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/support/test/example-readme.md]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/support/test/example-readme.md",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm]": "polkadot-sdk-30af3dfacae5ee9b/substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -7728,6 +7783,8 @@ buildscript_run(
             features = ["default"],
         ),
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.0.106",
 )
 
@@ -8058,6 +8115,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PATCH": "25",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.0.25",
 )
 
@@ -8428,6 +8487,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PATCH": "22",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.0.22",
 )
 
@@ -9198,6 +9259,8 @@ buildscript_run(
             ],
         ),
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.0.228",
 )
 
@@ -9325,6 +9388,8 @@ buildscript_run(
             features = ["std"],
         ),
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.0.228",
 )
 
@@ -9506,6 +9571,8 @@ buildscript_run(
             features = ["std"],
         ),
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.0.149",
 )
 
@@ -9858,14 +9925,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-api-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_api",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/api/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/api/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_api",
         "CARGO_CRATE_NAME": "sp_api",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/api",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/api",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate runtime api primitives",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -9902,14 +9969,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-api-proc-macro-15",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_api_proc_macro",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/api/proc-macro/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/api/proc-macro/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_api_proc_macro",
         "CARGO_CRATE_NAME": "sp_api_proc_macro",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/api/proc-macro",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/api/proc-macro",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Macros for declaring and implementing runtime apis.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -9938,14 +10005,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-application-crypto-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_application_crypto",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/application-crypto/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/application-crypto/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_application_crypto",
         "CARGO_CRATE_NAME": "sp_application_crypto",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/application-crypto",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/application-crypto",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Provides facilities for generating application specific crypto wrapper types.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -9974,14 +10041,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-arithmetic-29",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_arithmetic",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/arithmetic/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/arithmetic/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_arithmetic",
         "CARGO_CRATE_NAME": "sp_arithmetic",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/arithmetic",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/arithmetic",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Minimal fixed point arithmetic primitives and types for runtime.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10018,14 +10085,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-block-builder-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_block_builder",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/block-builder/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/block-builder/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_block_builder",
         "CARGO_CRATE_NAME": "sp_block_builder",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/block-builder",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/block-builder",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "The block builder runtime api.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10058,14 +10125,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-consensus-aura-0.50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_consensus_aura",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/aura/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/aura/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_consensus_aura",
         "CARGO_CRATE_NAME": "sp_consensus_aura",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/aura",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/aura",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Primitives for Aura consensus",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10102,14 +10169,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-consensus-babe-0.50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_consensus_babe",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/babe/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/babe/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_consensus_babe",
         "CARGO_CRATE_NAME": "sp_consensus_babe",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/babe",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/babe",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Primitives for BABE consensus",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10148,14 +10215,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-consensus-beefy-32",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_consensus_beefy",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/beefy/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/beefy/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_consensus_beefy",
         "CARGO_CRATE_NAME": "sp_consensus_beefy",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/beefy",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/beefy",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Primitives for BEEFY protocol.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10171,7 +10238,7 @@ cargo.rust_library(
     },
     features = ["serde"],
     mapped_srcs = {
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/primitives/consensus/beefy/test-res/large-raw-commitment]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/beefy/test-res/large-raw-commitment",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/primitives/consensus/beefy/test-res/large-raw-commitment]": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/beefy/test-res/large-raw-commitment",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -10201,14 +10268,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-consensus-grandpa-31",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_consensus_grandpa",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/grandpa/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/grandpa/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_consensus_grandpa",
         "CARGO_CRATE_NAME": "sp_consensus_grandpa",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/grandpa",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/grandpa",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Primitives for GRANDPA integration, suitable for WASM compilation.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10247,14 +10314,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-consensus-slots-0.50",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_consensus_slots",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/slots/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/slots/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_consensus_slots",
         "CARGO_CRATE_NAME": "sp_consensus_slots",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/consensus/slots",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/consensus/slots",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Primitives for slots-based consensus",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10288,14 +10355,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-core-28",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_core",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/core/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/core/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_core",
         "CARGO_CRATE_NAME": "sp_core",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/core",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/core",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Shareable Substrate types.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10361,14 +10428,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-crypto-hashing-0.1",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_crypto_hashing",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/crypto/hashing/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/crypto/hashing/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_crypto_hashing",
         "CARGO_CRATE_NAME": "sp_crypto_hashing",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/crypto/hashing",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/crypto/hashing",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Hashing primitives.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10395,14 +10462,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-crypto-hashing-proc-macro-0.1",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_crypto_hashing_proc_macro",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/crypto/hashing/proc-macro/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/crypto/hashing/proc-macro/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_crypto_hashing_proc_macro",
         "CARGO_CRATE_NAME": "sp_crypto_hashing_proc_macro",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/crypto/hashing/proc-macro",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/crypto/hashing/proc-macro",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Procedural macros for calculating static hashes.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10427,14 +10494,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-debug-derive-14",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_debug_derive",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/debug-derive/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/debug-derive/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_debug_derive",
         "CARGO_CRATE_NAME": "sp_debug_derive",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/debug-derive",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/debug-derive",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Macros to derive runtime debug implementation.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10466,14 +10533,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-externalities-0.25",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_externalities",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/externalities/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/externalities/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_externalities",
         "CARGO_CRATE_NAME": "sp_externalities",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/externalities",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/externalities",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate externalities abstraction",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10505,14 +10572,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-genesis-builder-0.25",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_genesis_builder",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/genesis-builder/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/genesis-builder/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_genesis_builder",
         "CARGO_CRATE_NAME": "sp_genesis_builder",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/genesis-builder",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/genesis-builder",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate RuntimeGenesisConfig builder API",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10546,14 +10613,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-inherents-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_inherents",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/inherents/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/inherents/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_inherents",
         "CARGO_CRATE_NAME": "sp_inherents",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/inherents",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/inherents",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Provides types and traits for creating and checking inherents.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10585,14 +10652,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-io-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_io",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/io/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/io/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_io",
         "CARGO_CRATE_NAME": "sp_io",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/io",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/io",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "I/O for Substrate runtimes",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10638,14 +10705,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-keyring-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_keyring",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/keyring/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/keyring/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_keyring",
         "CARGO_CRATE_NAME": "sp_keyring",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/keyring",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/keyring",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Keyring support code for the runtime. A set of test accounts.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10669,14 +10736,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-keystore-0.34",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_keystore",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/keystore/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/keystore/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_keystore",
         "CARGO_CRATE_NAME": "sp_keystore",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/keystore",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/keystore",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Keystore primitives.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10702,14 +10769,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-metadata-ir-0.6",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_metadata_ir",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/metadata-ir/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/metadata-ir/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_metadata_ir",
         "CARGO_CRATE_NAME": "sp_metadata_ir",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/metadata-ir",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/metadata-ir",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Intermediate representation of the runtime metadata.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10736,14 +10803,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-mmr-primitives-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_mmr_primitives",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/merkle-mountain-range/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/merkle-mountain-range/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_mmr_primitives",
         "CARGO_CRATE_NAME": "sp_mmr_primitives",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/merkle-mountain-range",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/merkle-mountain-range",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Merkle Mountain Range primitives.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10780,14 +10847,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-offchain-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_offchain",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/offchain/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/offchain/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_offchain",
         "CARGO_CRATE_NAME": "sp_offchain",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/offchain",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/offchain",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate offchain workers primitives",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10817,14 +10884,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-runtime-49",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_runtime",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_runtime",
         "CARGO_CRATE_NAME": "sp_runtime",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Runtime Modules shared primitive types.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10840,7 +10907,7 @@ cargo.rust_library(
     },
     features = ["serde"],
     mapped_srcs = {
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[docs]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime/docs",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[docs]": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime/docs",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -10879,14 +10946,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-runtime-interface-37",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_runtime_interface",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime-interface/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime-interface/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_runtime_interface",
         "CARGO_CRATE_NAME": "sp_runtime_interface",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime-interface",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime-interface",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate runtime interface",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10918,14 +10985,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-runtime-interface-proc-macro-17",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_runtime_interface_proc_macro",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime-interface/proc-macro/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime-interface/proc-macro/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_runtime_interface_proc_macro",
         "CARGO_CRATE_NAME": "sp_runtime_interface_proc_macro",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/runtime-interface/proc-macro",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/runtime-interface/proc-macro",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "This crate provides procedural macros for usage within the context of the Substrate runtime interface.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -10959,14 +11026,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-session-46",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_session",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/session/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/session/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_session",
         "CARGO_CRATE_NAME": "sp_session",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/session",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/session",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Primitives for sessions",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11001,14 +11068,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-staking-46",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_staking",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/staking/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/staking/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_staking",
         "CARGO_CRATE_NAME": "sp_staking",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/staking",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/staking",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "A crate which contains primitives that are useful for implementation that uses staking approaches in general. Definitions related to sessions, slashing, etc go here.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11038,14 +11105,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-state-machine-0.54",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_state_machine",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/state-machine/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/state-machine/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_state_machine",
         "CARGO_CRATE_NAME": "sp_state_machine",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/state-machine",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/state-machine",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate State Machine",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11082,14 +11149,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-std-14",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_std",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/std/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/std/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_std",
         "CARGO_CRATE_NAME": "sp_std",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/std",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/std",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Lowest-abstraction level for the Substrate runtime: just exports useful primitives from std or client/alloc to be used with any code that depends on the runtime.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11114,14 +11181,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-storage-19",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_storage",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/storage/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/storage/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_storage",
         "CARGO_CRATE_NAME": "sp_storage",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/storage",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/storage",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Storage related primitives",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11153,14 +11220,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-timestamp-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_timestamp",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/timestamp/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/timestamp/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_timestamp",
         "CARGO_CRATE_NAME": "sp_timestamp",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/timestamp",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/timestamp",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Substrate core types and inherents for timestamps.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11192,14 +11259,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-tracing-16",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_tracing",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/tracing/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/tracing/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_tracing",
         "CARGO_CRATE_NAME": "sp_tracing",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/tracing",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/tracing",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Instrumentation primitives and macros for Substrate.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11231,14 +11298,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-transaction-pool-44",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_transaction_pool",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/transaction-pool/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/transaction-pool/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_transaction_pool",
         "CARGO_CRATE_NAME": "sp_transaction_pool",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/transaction-pool",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/transaction-pool",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Transaction pool runtime facing API.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11261,14 +11328,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-trie-47",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_trie",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/trie/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/trie/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_trie",
         "CARGO_CRATE_NAME": "sp_trie",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/trie",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/trie",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Patricia trie stuff using a parity-scale-codec node format",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11283,10 +11350,10 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     mapped_srcs = {
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/primitives/trie/test-res/invalid-delta-order]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/trie/test-res/invalid-delta-order",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/primitives/trie/test-res/proof]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/trie/test-res/proof",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/primitives/trie/test-res/storage_root]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/trie/test-res/storage_root",
-        ":polkadot-sdk-85dfdc130bdc75089c7455ea.git[substrate/primitives/trie/test-res/valid-delta-order]": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/trie/test-res/valid-delta-order",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/primitives/trie/test-res/invalid-delta-order]": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/trie/test-res/invalid-delta-order",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/primitives/trie/test-res/proof]": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/trie/test-res/proof",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/primitives/trie/test-res/storage_root]": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/trie/test-res/storage_root",
+        ":polkadot-sdk-30af3dfacae5ee9b.git[substrate/primitives/trie/test-res/valid-delta-order]": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/trie/test-res/valid-delta-order",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -11313,14 +11380,14 @@ alias(
 
 cargo.rust_library(
     name = "sp-version-47",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_version",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/version/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/version/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_version",
         "CARGO_CRATE_NAME": "sp_version",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/version",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/version",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Version module for the Substrate runtime; Provides a function that returns the runtime version.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11356,14 +11423,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-version-proc-macro-13",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_version_proc_macro",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/version/proc-macro/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/version/proc-macro/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_version_proc_macro",
         "CARGO_CRATE_NAME": "sp_version_proc_macro",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/version/proc-macro",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/version/proc-macro",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Macro for defining a runtime version.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11392,14 +11459,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-wasm-interface-20",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_wasm_interface",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/wasm-interface/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/wasm-interface/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_wasm_interface",
         "CARGO_CRATE_NAME": "sp_wasm_interface",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/wasm-interface",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/wasm-interface",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Types and traits for interfacing between the host and the wasm runtime.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11422,14 +11489,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "sp-weights-37",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "sp_weights",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/weights/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/weights/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "sp_weights",
         "CARGO_CRATE_NAME": "sp_weights",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/primitives/weights",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/primitives/weights",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Types and traits for interfacing between the host and the wasm runtime.",
         "CARGO_PKG_HOMEPAGE": "https://paritytech.github.io/polkadot-sdk/",
@@ -11582,6 +11649,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "1.51.0",
 )
 
@@ -11705,14 +11774,14 @@ cargo.rust_library(
 
 cargo.rust_library(
     name = "substrate-bip39-0.4",
-    srcs = [":polkadot-sdk-85dfdc130bdc75089c7455ea.git"],
+    srcs = [":polkadot-sdk-30af3dfacae5ee9b.git"],
     crate = "substrate_bip39",
-    crate_root = "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/utils/substrate-bip39/src/lib.rs",
+    crate_root = "polkadot-sdk-30af3dfacae5ee9b/substrate/utils/substrate-bip39/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "substrate_bip39",
         "CARGO_CRATE_NAME": "substrate_bip39",
-        "CARGO_MANIFEST_DIR": "polkadot-sdk-85dfdc130bdc75089c7455ea/substrate/utils/substrate-bip39",
+        "CARGO_MANIFEST_DIR": "polkadot-sdk-30af3dfacae5ee9b/substrate/utils/substrate-bip39",
         "CARGO_PKG_AUTHORS": "Parity Technologies <admin@parity.io>",
         "CARGO_PKG_DESCRIPTION": "Converting BIP39 entropy to valid Substrate (sr25519) SecretKeys",
         "CARGO_PKG_HOMEPAGE": "",
@@ -12012,6 +12081,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_PATCH": "18",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    rustc_link_lib = True,
+    rustc_link_search = True,
     version = "2.0.18",
 )
 

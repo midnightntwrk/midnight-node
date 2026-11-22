@@ -23,10 +23,6 @@
 # because build.rs reads it with expect_env and panics when it is absent.
 cargo_env = true
 
-[buildscript.run]
-rustc_link_lib = true
-rustc_link_search = true
-
 [buildscript.run.env]
 OPT_LEVEL = "3"
 NUM_JOBS = "4"

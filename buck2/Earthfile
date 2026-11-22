@@ -1,11 +1,11 @@
 VERSION 0.8
 
 # buck2 for an Earthfile, image-agnostic: the caller picks its own FROM (a
-# Debian-based rust image, e.g. rust:1.98.1-trixie) and its sources.
+# Debian-based rust image, e.g. rust:1.100.0-trixie) and its sources.
 #
 #   IMPORT ./buck2
 #   prep:
-#       FROM rust:1.98.1-trixie
+#       FROM rust:1.100.0-trixie
 #       DO buck2+INSTALL
 #       ...COPY sources...
 #       DO --pass-args buck2+CONFIG
@@ -34,7 +34,7 @@ INSTALL:
     ARG RUST_WASM_TARGET=wasm32v1-none
 
     RUN command -v apt-get > /dev/null && command -v curl > /dev/null && command -v dpkg > /dev/null || \
-        { echo "buck2+INSTALL needs a Debian-based image with curl (e.g. rust:1.98.1-trixie)" >&2; exit 1; }
+        { echo "buck2+INSTALL needs a Debian-based image with curl (e.g. rust:1.100.0-trixie)" >&2; exit 1; }
     # clang+lld: the prelude's C++ toolchain links `clang++ -fuse-ld=lld`, and
     #   the on-chain wasm blob's secp256k1 needs clang's WebAssembly backend.
     # protobuf-compiler: substrate sc-network*/litep2p prost-build codegen.

@@ -414,6 +414,7 @@
  },
  "sidechain-domain": {
   "deps": [
+   "bech32",
    "blake2b_simd",
    "byte-string-derive",
    "derive-where",
