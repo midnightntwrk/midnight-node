@@ -96,10 +96,9 @@ clippy)
         exit 2
     fi
     # The prelude's [clippy.txt] subtarget is a report, not a gate: it always
-    # succeeds and writes the diagnostics to a file. Build every report in ONE
-    # buck2 invocation (a per-target loop was ~1900 client round-trips), then
-    # read each via --show-output and fail on any diagnostic. -D warnings comes
-    # from the targets' rustc_flags.
+    # succeeds and writes the diagnostics to a file. Build every report in one
+    # buck2 invocation, then read each: any warning or error line fails the
+    # step, which is what makes this -D warnings.
     subtargets=("${ctargets[@]/%/[clippy.txt]}")
     show=$(mktemp)
     if ! buck2 build "${args[@]}" "${subtargets[@]}" --show-output > "$show"; then
@@ -107,15 +106,27 @@ clippy)
         exit 1
     fi
     clippy_rc=0
+    reports_read=0
     while read -r tgt report; do
-        [ -n "${report:-}" ] || continue
-        if sed -E 's/\x1b\[[0-9;]*m//g' "$report" | grep -q -E '^(error|warning)(\[|:)'; then
+        if [ ! -f "${report:-}" ]; then
+            echo "clippy: no report for $tgt (expected a file at '${report:-}')" >&2
+            exit 1
+        fi
+        reports_read=$((reports_read + 1))
+        # Into a variable first: under pipefail, `sed | grep -q` reads a large
+        # dirty report as clean, because grep's early exit kills sed.
+        text=$(sed -E 's/\x1b\[[0-9;]*m//g' "$report")
+        if grep -q -E '^(error|warning)(\[|:)' <<< "$text"; then
             echo "clippy: $tgt"
-            sed -E 's/\x1b\[[0-9;]*m//g' "$report"
+            printf '%s\n' "$text"
             clippy_rc=1
         fi
     done < "$show"
-    [ "$clippy_rc" -eq 0 ] && echo "clippy: clean (${#ctargets[@]} targets)"
+    if [ "$reports_read" -ne "${#ctargets[@]}" ]; then
+        echo "clippy: read $reports_read reports for ${#ctargets[@]} targets" >&2
+        exit 1
+    fi
+    [ "$clippy_rc" -eq 0 ] && echo "clippy: clean ($reports_read targets)"
     exit "$clippy_rc"
     ;;
 test)

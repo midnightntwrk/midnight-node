@@ -19,6 +19,8 @@ jobs:
     # Clippy runs under buck2: self-hosted for in-repo branches, where the fleet's
     # action cache keeps it warm; GitHub-hosted (and cold) for forks.
     runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
+    # A fork's run is cold: no shared action cache on a GitHub-hosted runner.
+    timeout-minutes: 180
     permissions:
       contents: read
       actions: write
