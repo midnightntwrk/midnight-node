@@ -310,6 +310,8 @@ MAPPED_SRCS_EXTERNAL = {
         "root//res:test-contract-tx1": "res/test-contract/contract_tx_1_deploy_undeployed.mn",
         "root//res:genesis-block-undeployed": "res/genesis/genesis_block_undeployed.mn",
         "root//res:serialized-tx": "res/test-tx-deserialize/serialized_tx.mn",
+        # toolkit_e2e include_str!s it.
+        "root//res:undeployed-genesis-seeds": "res/dev/undeployed-genesis-seeds.json",
     },
 }
 
@@ -337,6 +339,9 @@ EXPORTS = {
         'filegroup(name = "fg-test-tx-deserialize", srcs = glob(["test-tx-deserialize/*.mn"]), visibility = ["PUBLIC"])',
         'filegroup(name = "fg-mock-bridge-data", srcs = glob(["mock-bridge-data/*.json"]), visibility = ["PUBLIC"])',
         'export_file(name = "cfg-default", src = "cfg/default.toml", visibility = ["PUBLIC"])',
+        'export_file(\n    name = "undeployed-genesis-seeds",\n'
+        '    src = "dev/undeployed-genesis-seeds.json",\n'
+        '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "genesis-state-undeployed",\n'
         '    src = "genesis/genesis_state_undeployed.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
@@ -372,9 +377,26 @@ EXPORTS = {
 # Per-(package, test-name) env overrides for integration tests. cli_tests (trycmd)
 # needs CARGO_BIN_EXE_<name> to locate the binary (cargo sets it; buck doesn't) —
 # point it at the hyphen-named copy so clap's usage strings match the README.
+
+
+class Starlark(str):
+    """An env value emitted as a Starlark expression, not a string literal."""
+
+
+# Where a test finds the toolkit binary. Clippy only needs the variable to
+# exist, so the lint platform gets a name, not a dependency on building it.
+TOOLKIT_BIN = Starlark(
+    f'select({{"{LINT}": "midnight-node-toolkit", '
+    '"DEFAULT": "$(location :toolkit-hyphen-bin)"})'
+)
+
 TEST_ENV_HOOKS = {
+    # env!("CARGO_BIN_EXE_...") at compile time.
+    ("midnight-node-toolkit", "indexer_e2e"): {
+        "CARGO_BIN_EXE_midnight-node-toolkit": TOOLKIT_BIN,
+    },
     ("midnight-node-toolkit", "cli_tests"): {
-        "CARGO_BIN_EXE_midnight-node-toolkit": "$(location :toolkit-hyphen-bin)",
+        "CARGO_BIN_EXE_midnight-node-toolkit": TOOLKIT_BIN,
         # README show-wallet examples build ledger state -> zk-params cache dir.
         "MIDNIGHT_PP": ".zk-params",
     },
@@ -698,7 +720,8 @@ def gen_buck(pkg, prefix=""):
         if env_override:
             env.update(env_override)
         for k, v in sorted(env.items()):
-            out.append(f'        "{k}": {json.dumps(v)},\n')
+            value = v if isinstance(v, Starlark) else json.dumps(v)
+            out.append(f'        "{k}": {value},\n')
         out.append("    },\n")
         # Declared inputs only (see TEST_RESOURCES).
         if rule == "rust_test":

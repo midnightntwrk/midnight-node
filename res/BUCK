@@ -11,6 +11,12 @@ filegroup(name = "fg-mock-bridge-data", srcs = glob(["mock-bridge-data/*.json"])
 export_file(name = "cfg-default", src = "cfg/default.toml", visibility = ["PUBLIC"])
 
 export_file(
+    name = "undeployed-genesis-seeds",
+    src = "dev/undeployed-genesis-seeds.json",
+    visibility = ["PUBLIC"],
+)
+
+export_file(
     name = "genesis-state-undeployed",
     src = "genesis/genesis_state_undeployed.mn",
     visibility = ["PUBLIC"],
