@@ -66,7 +66,7 @@ Implementation of the Midnight blockchain node, providing consensus, transaction
 [1] [Midnight Indexer](https://github.com/midnightntwrk/midnight-indexer)
 
 > **Security Note:** Database connections to PostgreSQL require SSL/TLS by default. Set `ALLOW_NON_SSL=true` only for local development environments without SSL certificates.
-> 
+>
 > Please also see https://docs.polkadot.com/infrastructure/running-a-validator/onboarding-and-offboarding/set-up-validator/ for further security recommendations on running validators.
 
 ## Components
@@ -170,7 +170,7 @@ that we are still in the process of being release. As such:
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
-- [Buck2 Build Notes](docs/buck2-notes.md) - Experimental buck2 build of the node, toolkit, and tests
+- [Buck2 Build Notes](docs/buck2-notes.md) - The buck2 graph CI builds, tests and lints alongside cargo
 - [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
   - [Runtime Upgrade Guide](docs/governance/example/runtime-upgrade.md) - Step-by-step guide for runtime upgrades via governance
 - [Security](docs/security/image-signing.md) - Container image signing and verification
@@ -382,4 +382,3 @@ See [fork-testing.md](docs/fork-testing.md)
 ### Migrating AURA to BABE
 
 See [aura-to-babe-migration-runbook.md](docs/aura-to-babe-migration-runbook.md)
-

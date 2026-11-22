@@ -26,8 +26,8 @@ earthly doc                               # List all available targets
 earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 ```
 
-**Buck2 (the CI build system):** cargo is still the daily driver; buck2 is what CI builds and
-tests with (`.github/workflows/buck2.yml`). See [Buck2 notes](docs/buck2-notes.md) for depth.
+**Buck2:** cargo is the daily driver; CI also builds and tests with buck2
+(`.github/workflows/buck2.yml`) and lints with it (`+check-rust`). See [Buck2 notes](docs/buck2-notes.md) for depth.
 ```bash
 # Build the deliverables
 buck2 build root//node:midnight-node-bin root//util/toolkit:midnight-node-toolkit-bin root//:runtime-wasm
@@ -35,7 +35,7 @@ buck2 build root//node:midnight-node-bin root//util/toolkit:midnight-node-toolki
 buck2 test root//... --exclude ci-infra
 buck2 test root//docs:docs-docs_tests            # a single target
 earth +buck2-test-one --TARGET=root//node:midnight-node-unit-test --PLATFORM=linux-arm64  # one target in a container (arm64 dev box)
-earth +buck2-clippy                              # clippy over the first-party graph (replaces cargo clippy)
+earth +check-rust --PLATFORM=linux-arm64         # cargo fmt + clippy over the first-party graph (arm64 dev box)
 ```
 **Altering dependencies:** edit `Cargo.toml`/`Cargo.lock` as usual, then regenerate the vendored
 buck2 graph and commit it — CI's `+buck2-check-regen` fails if you skip this:
