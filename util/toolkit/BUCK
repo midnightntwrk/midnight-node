@@ -16,7 +16,7 @@ rust_library(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -95,7 +95,7 @@ rust_binary(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -175,7 +175,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -273,7 +273,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -364,7 +364,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -464,7 +464,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -553,7 +553,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -643,7 +643,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -733,7 +733,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -822,7 +822,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
@@ -912,7 +912,7 @@ rust_test(
     mapped_srcs = dict(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
-            ("root//node:cargo-toml", "node/Cargo.toml"),
+            ("root//node:node-cargo-toml", "node/Cargo.toml"),
             ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
             ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),

@@ -23,9 +23,9 @@ rust_test(
     resources = [
         "root//res:cfg-default",
         "root//runtime:lib-rs",
-        "root//runtime:cargo-toml",
-        "root//node:cargo-toml",
-        "root//metadata:cargo-toml",
+        "root//runtime:runtime-cargo-toml",
+        "root//node:node-cargo-toml",
+        "root//metadata:metadata-cargo-toml",
         "root//:readme",
         "root//util/toolkit:fetcher-runtimes",
     ] + glob(["*.md"]),

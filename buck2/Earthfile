@@ -19,16 +19,13 @@ VERSION 0.8
 # buck2 has no local action cache - a fresh daemon recompiles everything - so
 # every +BUCK2 step runs under bazel-remote on a CACHE mount that persists
 # across runs on a self-hosted buildkitd (or a shared per-host cache via
-# --BUCK2_CACHE_ADDR). Pinned to buck2 2026-06-01 to match midnightntwrk/season
-# on the shared pool: identical toolchain -> identical action digests -> shared
-# cache hits. (Also pre-dates the 2026-08-10 prelude change that dropped
-# cpu/constraints:wasm32, which platforms/wasm32v1-none references.)
+# --BUCK2_CACHE_ADDR). The prelude is bundled, so BUCK2_VERSION pins it too.
 
 # INSTALL puts buck2, bazel-remote, buck2-ci.sh and the wasm/substrate build
 # toolchain on PATH. Image-agnostic: no repo sources yet.
 INSTALL:
     FUNCTION
-    ARG BUCK2_VERSION=2026-06-01
+    ARG BUCK2_VERSION=2026-11-15
     ARG BAZEL_REMOTE_VERSION=2.6.1
     ARG BINARYEN_VERSION=version_130
     ARG RUST_WASM_TARGET=wasm32v1-none
@@ -59,14 +56,14 @@ INSTALL:
 
     # buck2 + bazel-remote. Checksums from the release assets (neither project
     # publishes them); bump version and checksums together. Use the image's own
-    # arch (dpkg), not ARG TARGETARCH, which rth gets wrong inside a FUNCTION.
+    # arch (dpkg), not ARG TARGETARCH, which earth gets wrong inside a FUNCTION.
     RUN case "$(dpkg --print-architecture)" in \
           amd64) TRIPLE=x86_64-unknown-linux-gnu; \
-                 BUCK2_SHA=4dd9ae54c87fdcf795101074f8788232af55523885135d5e3358c77365993555; \
+                 BUCK2_SHA=51d209f834c3509bc83024bf4ede62cd907135e7b289b29ed69d763dcde67b04; \
                  BR_ARCH=linux-amd64; \
                  BR_SHA=025d53aeb03a7fdd4a0e76262a5ae9eeee9f64d53ca510deff1c84cf3f276784 ;; \
           arm64) TRIPLE=aarch64-unknown-linux-gnu; \
-                 BUCK2_SHA=623af318a44e3b81a17bf1660c23dd5a75ca8686727c3f0f94c8e8ca694daca1; \
+                 BUCK2_SHA=c41f9926e5e2dd58b520ebe3e81eff1ff8e9d98d493c71b6378224eaeb165fbe; \
                  BR_ARCH=linux-arm64; \
                  BR_SHA=b8b9456d669d45bb8c5480ce0529ca4fa9d445e0c33b3aeed779df802d8164db ;; \
           *) echo "unsupported arch: $(dpkg --print-architecture)" >&2 && exit 1 ;; \

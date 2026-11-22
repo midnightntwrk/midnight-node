@@ -7,8 +7,8 @@ load(":defs.bzl", "re_cache_execution_platform")
 platform(
     name = "wasm32v1-none",
     constraint_values = [
-        "prelude//os/constraints:none",
-        "prelude//cpu/constraints:wasm32",
+        "prelude//os/constraints:os[none]",
+        "prelude//cpu/constraints:cpu[wasm32]",
     ],
     visibility = ["PUBLIC"],
 )
@@ -35,8 +35,8 @@ re_cache_execution_platform(
 platform(
     name = "linux-x86_64",
     constraint_values = [
-        "prelude//os/constraints:linux",
-        "prelude//cpu/constraints:x86_64",
+        "prelude//os/constraints:os[linux]",
+        "prelude//cpu/constraints:cpu[x86_64]",
     ],
     visibility = ["PUBLIC"],
 )
@@ -48,8 +48,8 @@ platform(
 platform(
     name = "linux-arm64",
     constraint_values = [
-        "prelude//os/constraints:linux",
-        "prelude//cpu/constraints:arm64",
+        "prelude//os/constraints:os[linux]",
+        "prelude//cpu/constraints:cpu[arm64]",
     ],
     visibility = ["PUBLIC"],
 )
