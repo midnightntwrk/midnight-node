@@ -24,21 +24,15 @@ pub mod networks;
 pub static CFG_ROOT: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 pub const CFG_PATH: &str = "res/cfg/";
 
-/// Locate the workspace root by walking up from the current dir until
-/// `res/cfg/default.toml` is found. The working dir differs between build tools
-/// (`cargo` runs a crate's tests from the crate dir, `buck2` from the workspace
-/// root), so tests anchor `CFG_ROOT` to this instead of a fixed `"../"`.
+/// Test helper: the workspace root, found by walking up from the current dir
+/// until `res/cfg/default.toml` appears. `cargo` runs a crate's tests from the
+/// crate dir and `buck2` from the workspace root, so tests anchor repo paths to
+/// this instead of a fixed `"../"`.
 ///
 /// # Panics
 /// If no `res/cfg/default.toml` exists in the current dir or any ancestor.
+#[doc(hidden)]
 pub fn locate_workspace_root() -> PathBuf {
-	// buck2 runs tests from the project root in a hermetic sandbox that lacks the
-	// res/ tree, and the upward walk can only find fixtures at or above cwd. Let a
-	// test target instead point at a staged fixtures root via MN_WORKSPACE_ROOT
-	// (unset under cargo, so the walk is the default).
-	if let Some(root) = std::env::var_os("MN_WORKSPACE_ROOT") {
-		return PathBuf::from(root);
-	}
 	let mut dir = std::env::current_dir().expect("cwd");
 	loop {
 		if dir.join(CFG_PATH).join("default.toml").exists() {

@@ -3547,6 +3547,7 @@ dependencies = [
 name = "docs"
 version = "0.1.0"
 dependencies = [
+ "midnight-node-res",
  "serde",
  "toml 0.9.12+spec-1.1.0",
 ]
@@ -8065,6 +8066,7 @@ dependencies = [
  "midnight-ledger",
  "midnight-ledger-v9",
  "midnight-node-ledger-helpers",
+ "midnight-node-res",
  "midnight-serialize",
  "midnight-storage 3.0.0",
  "midnight-transient-crypto 2.2.0",
@@ -8512,6 +8514,7 @@ dependencies = [
  "midnight-ledger-unsafe-helpers",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
+ "midnight-node-res",
  "midnight-primitives-ics-observation",
  "midnight-primitives-reserve-observation",
  "ogmios-client",

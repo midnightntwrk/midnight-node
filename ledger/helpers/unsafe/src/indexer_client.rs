@@ -1337,13 +1337,8 @@ mod tests {
 		assert_eq!(decode_hex("0102").unwrap(), vec![1, 2]);
 	}
 
-	// buck2 runs tests in-place at the project root and sets MN_WORKSPACE_ROOT=".";
-	// cargo runs from the crate dir. Resolve the vendored graphql dir for both.
 	fn graphql_dir() -> std::path::PathBuf {
-		match std::env::var_os("MN_WORKSPACE_ROOT") {
-			Some(root) => std::path::PathBuf::from(root).join("ledger/helpers/unsafe/graphql"),
-			None => std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("graphql"),
-		}
+		midnight_node_res::locate_workspace_root().join("ledger/helpers/unsafe/graphql")
 	}
 
 	/// The schema path the derives compile against must exist (the indexer submodule must be

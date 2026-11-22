@@ -25,38 +25,13 @@ pub mod toolkit_js;
 pub mod tx_generator;
 pub mod utils;
 
-/// Test-only path helpers. Fixtures live under the workspace's `res/`, which
-/// tests historically reached via `../../res/...` assuming cargo's CWD = crate
-/// dir. Buck2 runs tests from the workspace root, so anchor to the root instead:
-/// walk up until `res/cfg/default.toml` is found (works under both).
+/// Test-only path helpers: cargo runs tests from the crate dir, buck2 from the
+/// workspace root, so neither `../../res` nor a compile-time `env!` path holds
+/// under both.
 #[cfg(test)]
 pub(crate) mod test_paths {
-	use std::path::PathBuf;
-
-	pub fn workspace_root() -> PathBuf {
-		// buck2 runs tests from the project root in a hermetic sandbox lacking the
-		// repo tree; MN_WORKSPACE_ROOT points at a staged fixtures root (see the test
-		// target's resources). Unset under cargo, so the upward walk is the default.
-		if let Some(root) = std::env::var_os("MN_WORKSPACE_ROOT") {
-			return PathBuf::from(root);
-		}
-		let mut dir = std::env::current_dir().expect("cwd");
-		loop {
-			if dir.join("res/cfg/default.toml").exists() {
-				return dir;
-			}
-			if !dir.pop() {
-				panic!(
-					"could not locate workspace root (res/cfg/default.toml not found above cwd)"
-				);
-			}
-		}
-	}
-
-	/// CARGO_MANIFEST_DIR resolved at RUNTIME (cargo and buck2 both set it; buck2 runs
-	/// tests from the project root so the value is relative). Compile-time env!() bakes
-	/// buck2's ephemeral build-sandbox path, which is gone when the test runs on another
-	/// RE worker — so test-data reads must go through this, not env!().
+	/// The crate dir, read at run time: `env!("CARGO_MANIFEST_DIR")` would bake
+	/// in buck2's build-sandbox path.
 	pub fn manifest_dir() -> String {
 		std::env::var("CARGO_MANIFEST_DIR")
 			.unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string())
@@ -64,7 +39,8 @@ pub(crate) mod test_paths {
 
 	/// Absolute path to a `res/`-relative fixture, e.g. `res("dev/ics-config.json")`.
 	pub fn res(rel: &str) -> String {
-		workspace_root().join("res").join(rel).to_string_lossy().into_owned()
+		let root = midnight_node_res::locate_workspace_root();
+		root.join("res").join(rel).to_string_lossy().into_owned()
 	}
 }
 
