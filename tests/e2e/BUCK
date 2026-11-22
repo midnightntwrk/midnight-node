@@ -127,6 +127,6 @@ rust_test(
         "root//util/aiken-contracts-lib:aiken-contracts-lib",
         "root//util/toolkit:midnight-node-toolkit",
     ],
-    labels = ["ci-infra"],
+    labels = ["ci-infra", "no-clippy"],
     visibility = ["PUBLIC"],
 )

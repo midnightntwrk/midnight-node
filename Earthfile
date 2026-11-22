@@ -1083,8 +1083,9 @@ check-rust:
     ARG PLATFORM=linux-x86_64
     ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
     # Third-party crates live under the root cell too; they are not ours to lint.
+    # `no-clippy` marks what cargo's --all-targets skips (gen-first-party.py).
     DO --pass-args buck2+BUCK2 --mode=clippy \
-        --targets="root//... - root//third-party/... - root//wasm-deps/..." \
+        --targets="root//... - root//third-party/... - root//wasm-deps/... - attrfilter('labels', 'no-clippy', root//...)" \
         --buck2_args="--target-platforms root//platforms:${PLATFORM}-lint $_wasm"
 
 # check-feature-unification verifies each crate compiles without dev-deps,

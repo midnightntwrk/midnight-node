@@ -131,7 +131,9 @@ action cache: the host's shared one via `--BUCK2_CACHE_ADDR`, else a per-job
 sidecar. Fork PRs run on GitHub-hosted runners with no shared cache.
 
 **Clippy** is `+check-rust`: `-D warnings` over every first-party target (libs,
-bins, unit and integration tests) under the lint platform. The workspace
+bins, unit and integration tests) under the lint platform. A test target with
+`test = false` in its manifest is left out, as `cargo clippy --all-targets` leaves
+it out. The workspace
 `[lints]` table is translated to rustc flags for crates that opt in.
 
 **Tests buck2 does not run.** CI excludes the `ci-infra` label, set on tests that

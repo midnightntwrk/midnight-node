@@ -878,11 +878,16 @@ def gen_buck(pkg, prefix=""):
             extra_globs=("tests/**",) + test_globs,
             lint=lint_variant(include_dev=True, own_lib=True),
             env_override=TEST_ENV_HOOKS.get((pkg["name"], t["name"])),
-            labels=(
-                ["ci-infra"]
-                if (pkg["name"], t["name"]) in CI_INFRA_INTEGRATION
-                else None
-            ),
+            labels=[
+                label
+                for label, on in (
+                    ("ci-infra", (pkg["name"], t["name"]) in CI_INFRA_INTEGRATION),
+                    # `test = false`: cargo's --all-targets skips it, so
+                    # +check-rust does too.
+                    ("no-clippy", t.get("test") is False),
+                )
+                if on
+            ],
         )
     return "".join(out)
 
