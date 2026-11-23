@@ -9,3 +9,5 @@ The indexer checks every transaction on the chain for a wallet it has not seen b
 the first one. On a chain with millions of transactions that takes hours per wallet, so commands
 that only move NIGHT or spend DUST waited on a sync whose result they never use. A cached shielded
 state is kept as it was, so a later run without the flag resumes from it.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2512
