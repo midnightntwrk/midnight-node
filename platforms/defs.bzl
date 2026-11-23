@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# An execution platform that runs actions locally behind a remote action cache:
-# buck2 looks an action up by digest, runs a miss locally and uploads the result.
-# The prelude's own execution_platform sets remote_enabled = False, which also
-# turns the cache off.
+# An execution platform that runs every action locally behind a remote action
+# cache: buck2 looks an action up by digest, runs a miss locally and uploads the
+# result. Nothing is executed remotely, so remote_enabled stays off: with it on,
+# buck2 uploads each miss's inputs for a remote run the cache cannot perform.
 
 def _re_cache_execution_platform_impl(ctx: AnalysisContext) -> list[Provider]:
     constraints = dict()
@@ -30,8 +30,9 @@ def _re_cache_execution_platform_impl(ctx: AnalysisContext) -> list[Provider]:
         configuration = cfg,
         executor_config = CommandExecutorConfig(
             local_enabled = True,
-            remote_enabled = True,
+            remote_enabled = False,
             remote_cache_enabled = True,
+            allow_cache_uploads = True,
             remote_execution_use_case = "buck2-default",
             remote_execution_properties = {},
             use_windows_path_separators = False,
