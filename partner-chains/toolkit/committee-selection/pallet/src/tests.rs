@@ -96,6 +96,7 @@ mod inherent_tests {
 				validators: Default::default(),
 				for_epoch_number: pallet::QueuedCommittee::<Test>::get().epoch + 1,
 				selection_inputs_hash,
+				mc_epoch: MOCK_MC_EPOCH,
 			};
 			assert!(
 				<SessionCommitteeManagement as ProvideInherent>::check_inherent(
@@ -147,10 +148,12 @@ mod inherent_tests {
 			pallet::CurrentCommittee::<Test>::put(CommitteeInfo {
 				committee: ids_and_keys_fn(&[CHARLIE, DAVE]),
 				epoch: 42,
+				mc_epoch: None,
 			});
 			pallet::NextCommittee::<Test>::put(CommitteeInfo {
 				committee: ids_and_keys_fn(&[ALICE, BOB]),
 				epoch: 43,
+				mc_epoch: None,
 			});
 			let (inherent_data_from_which_committee_cannot_be_selected, selection_inputs_hash) =
 				create_inherent_data(&[]);
@@ -158,6 +161,7 @@ mod inherent_tests {
 				validators: ids_and_keys_fn(&[ALICE, BOB]),
 				for_epoch_number: 43,
 				selection_inputs_hash,
+				mc_epoch: MOCK_MC_EPOCH,
 			};
 			assert_ok!(<SessionCommitteeManagement as ProvideInherent>::check_inherent(
 				&set_call,
@@ -180,6 +184,7 @@ mod inherent_tests {
 				validators: ids_and_keys_fn(&genesis_validators),
 				for_epoch_number: 43,
 				selection_inputs_hash,
+				mc_epoch: MOCK_MC_EPOCH,
 			};
 			// Should be Ok, because check_inherent should use CurrentCommittee value.
 			assert_ok!(<SessionCommitteeManagement as ProvideInherent>::check_inherent(
@@ -201,6 +206,7 @@ mod inherent_tests {
 				validators: ids_and_keys_fn(&genesis_validators),
 				for_epoch_number: 43,
 				selection_inputs_hash: selection_inputs_hash.clone(),
+				mc_epoch: MOCK_MC_EPOCH,
 			};
 
 			let expected_err =
@@ -230,6 +236,7 @@ mod inherent_tests {
 				validators: ids_and_keys_fn(&genesis_validators),
 				for_epoch_number: 43,
 				selection_inputs_hash: incorrect_selection_inputs_hash.clone(),
+				mc_epoch: MOCK_MC_EPOCH,
 			};
 
 			let expected_err = InherentError::InvalidValidatorsHashMismatch(
@@ -489,4 +496,205 @@ fn initialize_first_committee() {
 fn rotate_committee() -> Option<Vec<u64>> {
 	let committee = SessionCommitteeManagement::rotate_committee_to_next_epoch()?;
 	Some(committee.into_iter().map(|(id, _)| id).collect())
+}
+
+mod mc_epoch {
+	use super::*;
+	use crate::{
+		CommitteeInfo,
+		migrations::{v2, v3},
+		pallet,
+	};
+	use frame_support::{BoundedVec, inherent::InherentData, traits::UncheckedOnRuntimeUpgrade};
+	use parity_scale_codec::Encode;
+	use sidechain_domain::McEpochNumber;
+	use sp_session_validator_management::InherentError;
+
+	fn selection_data(validators: &[MockValidator], mc_epoch: u32) -> InherentData {
+		create_inherent_data_with_mc_epoch(validators, McEpochNumber(mc_epoch)).0
+	}
+
+	fn call_mc_epoch(call: &pallet::Call<Test>) -> McEpochNumber {
+		let pallet::Call::set { mc_epoch, .. } = call else { panic!("expected a set call") };
+		*mc_epoch
+	}
+
+	#[test]
+	fn a_selected_committee_points_to_the_cardano_epoch_of_its_data() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			let data = selection_data(&[ALICE], 501);
+			let call = SessionCommitteeManagement::create_inherent(&data).unwrap();
+			assert_eq!(call_mc_epoch(&call), McEpochNumber(501));
+			assert_ok!(SessionCommitteeManagement::check_inherent(&call, &data));
+			assert_ok!(call.dispatch_bypass_filter(RuntimeOrigin::none()));
+			assert_eq!(
+				pallet::NextCommittee::<Test>::get().unwrap().mc_epoch,
+				Some(McEpochNumber(501))
+			);
+		});
+	}
+
+	#[test]
+	fn the_pointer_travels_with_the_committee_to_current() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			let data = selection_data(&[ALICE], 501);
+			let call = SessionCommitteeManagement::create_inherent(&data).unwrap();
+			assert_ok!(call.dispatch_bypass_filter(RuntimeOrigin::none()));
+
+			increment_epoch();
+			rotate_committee();
+			assert_eq!(pallet::QueuedCommittee::<Test>::get().mc_epoch, Some(McEpochNumber(501)));
+			assert_eq!(pallet::CurrentCommittee::<Test>::get().mc_epoch, None);
+
+			increment_epoch();
+			rotate_committee();
+			let current = pallet::CurrentCommittee::<Test>::get();
+			assert_eq!(current.committee, ids_and_keys_fn(&[ALICE]));
+			assert_eq!(current.mc_epoch, Some(McEpochNumber(501)));
+		});
+	}
+
+	#[test]
+	fn a_kept_committee_keeps_the_cardano_epoch_of_its_members() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			pallet::QueuedCommittee::<Test>::mutate(|queued| {
+				queued.mc_epoch = Some(McEpochNumber(499))
+			});
+			SELECT_EMPTY_COMMITTEE.with(|flag| flag.set(true));
+
+			let data = selection_data(&[], 501);
+			let call = SessionCommitteeManagement::create_inherent(&data).unwrap();
+			assert_eq!(call_mc_epoch(&call), McEpochNumber(499));
+			assert_ok!(SessionCommitteeManagement::check_inherent(&call, &data));
+		});
+	}
+
+	#[test]
+	fn a_kept_committee_stored_without_an_epoch_takes_the_provided_one() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			assert_eq!(pallet::QueuedCommittee::<Test>::get().mc_epoch, None);
+			SELECT_EMPTY_COMMITTEE.with(|flag| flag.set(true));
+
+			let data = selection_data(&[], 501);
+			let call = SessionCommitteeManagement::create_inherent(&data).unwrap();
+			assert_eq!(call_mc_epoch(&call), McEpochNumber(501));
+			assert_ok!(SessionCommitteeManagement::check_inherent(&call, &data));
+		});
+	}
+
+	#[test]
+	fn a_block_pointing_elsewhere_than_the_verifier_computes_is_rejected() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			let call = SessionCommitteeManagement::create_inherent(&selection_data(&[ALICE], 501))
+				.unwrap();
+			assert_eq!(
+				SessionCommitteeManagement::check_inherent(&call, &selection_data(&[ALICE], 500)),
+				Err(InherentError::InvalidMcEpoch(McEpochNumber(501), McEpochNumber(500)))
+			);
+		});
+	}
+
+	#[test]
+	#[should_panic(expected = "the node predates runtime API version 3")]
+	fn inputs_without_the_cardano_epoch_cannot_select_a_committee() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			SessionCommitteeManagement::create_inherent(&create_inputs_only_inherent_data(&[
+				ALICE,
+			]));
+		});
+	}
+
+	#[test]
+	fn a_block_verified_with_inputs_alone_fails_with_a_readable_error() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			let call = SessionCommitteeManagement::create_inherent(&selection_data(&[ALICE], 501))
+				.unwrap();
+			assert_eq!(
+				SessionCommitteeManagement::check_inherent(
+					&call,
+					&create_inputs_only_inherent_data(&[ALICE])
+				),
+				Err(InherentError::UndecodableSelectionInherentData)
+			);
+		});
+	}
+
+	#[test]
+	fn the_selection_inputs_hash_covers_the_inputs_alone() {
+		new_test_ext().execute_with(|| {
+			initialize_first_committee();
+			let call = SessionCommitteeManagement::create_inherent(&selection_data(&[ALICE], 501))
+				.unwrap();
+			let pallet::Call::set { selection_inputs_hash, .. } = &call else { panic!() };
+			assert_eq!(
+				*selection_inputs_hash,
+				create_inherent_data_with_mc_epoch(&[ALICE], McEpochNumber(1)).1
+			);
+		});
+	}
+
+	#[test]
+	fn migration_keeps_the_committees_and_points_them_nowhere() {
+		new_test_ext().execute_with(|| {
+			let old = |epoch: u64, members: &[MockValidator]| v2::CommitteeInfoV2Of::<Test> {
+				epoch,
+				committee: BoundedVec::truncate_from(ids_and_keys_fn(members).into_inner()),
+			};
+			v2::CurrentCommittee::<Test>::put(old(7, &[ALICE]));
+			v2::QueuedCommittee::<Test>::put(old(8, &[BOB]));
+			v2::NextCommittee::<Test>::put(old(9, &[CHARLIE]));
+
+			v3::InnerMigrateV2ToV3::<Test>::on_runtime_upgrade();
+
+			let expected = |epoch: u64, members: &[MockValidator]| CommitteeInfo {
+				epoch,
+				committee: ids_and_keys_fn(members),
+				mc_epoch: None,
+			};
+			let encoded = |info: CommitteeInfo<_, _, _>| info.encode();
+			assert_eq!(
+				encoded(pallet::CurrentCommittee::<Test>::get()),
+				encoded(expected(7, &[ALICE]))
+			);
+			assert_eq!(
+				encoded(pallet::QueuedCommittee::<Test>::get()),
+				encoded(expected(8, &[BOB]))
+			);
+			assert_eq!(
+				pallet::NextCommittee::<Test>::get().map(encoded),
+				Some(encoded(expected(9, &[CHARLIE])))
+			);
+		});
+	}
+}
+
+#[cfg(feature = "try-runtime")]
+mod try_runtime {
+	use super::*;
+	use crate::migrations::{v2, v3};
+	use frame_support::{BoundedVec, traits::UncheckedOnRuntimeUpgrade};
+
+	#[test]
+	fn the_v3_checks_accept_the_migrated_state() {
+		new_test_ext().execute_with(|| {
+			let old = |epoch: u64, members: &[MockValidator]| v2::CommitteeInfoV2Of::<Test> {
+				epoch,
+				committee: BoundedVec::truncate_from(ids_and_keys_fn(members).into_inner()),
+			};
+			v2::CurrentCommittee::<Test>::put(old(7, &[ALICE]));
+			v2::QueuedCommittee::<Test>::put(old(8, &[BOB]));
+			v2::NextCommittee::<Test>::kill();
+
+			let state = v3::InnerMigrateV2ToV3::<Test>::pre_upgrade().unwrap();
+			v3::InnerMigrateV2ToV3::<Test>::on_runtime_upgrade();
+			v3::InnerMigrateV2ToV3::<Test>::post_upgrade(state).unwrap();
+		});
+	}
 }

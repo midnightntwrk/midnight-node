@@ -199,7 +199,8 @@ pub mod authority_keys {
 		migrations::VersionedMigration, traits::UncheckedOnRuntimeUpgrade, weights::Weight,
 	};
 	use pallet_session_validator_management::{
-		CommitteeInfo, CurrentCommittee, NextCommittee, QueuedCommittee,
+		CurrentCommittee, NextCommittee,
+		migrations::v2::{self, CommitteeInfoV2},
 	};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::{impl_opaque_keys, traits::OpaqueKeys};
@@ -257,20 +258,18 @@ pub mod authority_keys {
 	pub(crate) type PreUpgradeCommitteeMember =
 		CommitteeMember<CrossChainPublic, PreUpgradeSessionKeys>;
 
-	pub(crate) type PreUpgradeCommitteeInfo = CommitteeInfo<
+	pub(crate) type PreUpgradeCommitteeInfo = CommitteeInfoV2<
 		<Runtime as pallet_session_validator_management::Config>::ScEpochNumber,
 		PreUpgradeCommitteeMember,
 		<Runtime as pallet_session_validator_management::Config>::MaxValidators,
 	>;
 
-	fn upgrade_committee_info(
-		old: PreUpgradeCommitteeInfo,
-	) -> CommitteeInfo<
-		<Runtime as pallet_session_validator_management::Config>::ScEpochNumber,
-		<Runtime as pallet_session_validator_management::Config>::CommitteeMember,
-		<Runtime as pallet_session_validator_management::Config>::MaxValidators,
-	> {
-		CommitteeInfo {
+	/// The committee as this migration writes it: storage version 2, which
+	/// `pallet_session_validator_management::migrations::v3` then upgrades.
+	pub(crate) type V2CommitteeInfo = v2::CommitteeInfoV2Of<Runtime>;
+
+	fn upgrade_committee_info(old: PreUpgradeCommitteeInfo) -> V2CommitteeInfo {
+		CommitteeInfoV2 {
 			epoch: old.epoch,
 			committee: sp_runtime::BoundedVec::truncate_from(
 				old.committee.into_iter().map(upgrade).collect(),
@@ -375,20 +374,20 @@ pub mod authority_keys {
 			// typed as the post-BABE `CommitteeMember` — reading them with the new type first
 			// would try to decode still-legacy bytes as the new shape and silently come back
 			// empty (a `ValueQuery`/`OptionQuery` decode failure looks the same as "absent").
-			let current_translated =
-				CurrentCommittee::<Runtime>::translate::<PreUpgradeCommitteeInfo, _>(
-					|old: Option<PreUpgradeCommitteeInfo>| old.map(upgrade_committee_info),
-				)
-				.expect("Decoding of the pre-upgrade CurrentCommittee must succeed");
+			let current_translated = v2::CurrentCommittee::<Runtime>::translate::<
+				PreUpgradeCommitteeInfo,
+				_,
+			>(|old| old.map(upgrade_committee_info))
+			.expect("Decoding of the pre-upgrade CurrentCommittee must succeed");
 			if current_translated.is_some() {
 				weight = weight.saturating_add(db.writes(1));
 			}
 
-			let next_translated =
-				NextCommittee::<Runtime>::translate::<PreUpgradeCommitteeInfo, _>(
-					|old: Option<PreUpgradeCommitteeInfo>| old.map(upgrade_committee_info),
-				)
-				.expect("Decoding of the pre-upgrade NextCommittee must succeed");
+			let next_translated = v2::NextCommittee::<Runtime>::translate::<
+				PreUpgradeCommitteeInfo,
+				_,
+			>(|old| old.map(upgrade_committee_info))
+			.expect("Decoding of the pre-upgrade NextCommittee must succeed");
 			if next_translated.is_some() {
 				weight = weight.saturating_add(db.writes(1));
 			}
@@ -397,7 +396,7 @@ pub mod authority_keys {
 			// committees immediately, so `CurrentCommittee` was both the active and the queued
 			// validator set). Seed it from the just-translated `CurrentCommittee` rather than
 			// translating whatever old-shaped bytes might be there.
-			QueuedCommittee::<Runtime>::put(CurrentCommittee::<Runtime>::get());
+			v2::QueuedCommittee::<Runtime>::put(current_translated.unwrap_or_default());
 
 			// `upgrade_keys` translates the entire `NextKeys` map (1 read + 1 write per entry) and
 			// rewrites `KeyOwner` for every old/new key type per entry (pure writes). `QueuedKeys`
@@ -488,20 +487,22 @@ pub mod authority_keys {
 			let cross_chain_keys =
 				cross_chain_keys_of(core::iter::once(old_current.clone()).chain(old_next.clone()));
 
-			let new_current = CurrentCommittee::<Runtime>::get();
+			let new_current =
+				v2::CurrentCommittee::<Runtime>::get().ok_or("CurrentCommittee must be set")?;
 			ensure!(old_current.epoch == new_current.epoch, "current epoch should be preserved");
 			ensure!(
 				upgrade_committee_info(old_current).encode() == new_current.encode(),
 				"current committee membership should be preserved"
 			);
 
-			let new_queued = QueuedCommittee::<Runtime>::get();
+			let new_queued =
+				v2::QueuedCommittee::<Runtime>::get().ok_or("QueuedCommittee must be set")?;
 			ensure!(
 				new_queued.encode() == new_current.encode(),
 				"queued committee should be seeded from current committee"
 			);
 
-			let new_next = NextCommittee::<Runtime>::get();
+			let new_next = v2::NextCommittee::<Runtime>::get();
 			ensure!(
 				old_next.is_some() == new_next.is_some(),
 				"next committee presence should be preserved"
@@ -660,6 +661,7 @@ mod tests {
 			);
 
 			InnerMigrateV1ToV2AddBabeAndBeefySessionKeys::on_runtime_upgrade();
+			pallet_session_validator_management::migrations::v3::InnerMigrateV2ToV3::<Runtime>::on_runtime_upgrade();
 
 			let want: sp_consensus_beefy::ecdsa_crypto::AuthorityId =
 				sp_core::ecdsa::Public::from(cross_chain.clone().into_inner()).into();

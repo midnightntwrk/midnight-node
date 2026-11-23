@@ -52,7 +52,7 @@ pub mod benchmarks {
 		let for_epoch_number = T::current_epoch_number() + One::one();
 
 		#[extrinsic_call]
-		_(RawOrigin::None, validators, for_epoch_number, Default::default());
+		_(RawOrigin::None, validators, for_epoch_number, Default::default(), Default::default());
 	}
 
 	#[benchmark]

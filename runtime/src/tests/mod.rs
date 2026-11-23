@@ -259,6 +259,7 @@ mod runtime_api_views {
 		CommitteeInfo {
 			epoch: ScEpochNumber(epoch),
 			committee: BoundedVec::truncate_from(members.iter().map(member).collect()),
+			mc_epoch: None,
 		}
 	}
 
@@ -580,7 +581,10 @@ pub fn set_committee_through_inherent_data(expected_authorities: &[TestKeys]) ->
 	inherent_data
 		.put_data(
 			SessionCommitteeManagement::INHERENT_IDENTIFIER,
-			&inherent_data_struct.data.unwrap(),
+			&sp_session_validator_management::SelectionInherentData {
+				inputs: inherent_data_struct.data.unwrap(),
+				mc_epoch: crate::mock::MOCK_MC_EPOCH,
+			},
 		)
 		.expect("Setting inherent data should not fail");
 	let call = <SessionCommitteeManagement as ProvideInherent>::create_inherent(&inherent_data)

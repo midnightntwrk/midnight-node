@@ -268,19 +268,48 @@ pub fn set_validators_directly(
 		BoundedVec::truncate_from(expected_validators),
 		for_epoch,
 		data_hash,
+		MOCK_MC_EPOCH,
 	)
 }
 
-pub fn create_inherent_data(validators: &[MockValidator]) -> (InherentData, SizedByteString<32>) {
-	let mut inherent_data = InherentData::new();
-	let data: BoundedVec<_, ConstU32<32>> =
-		BoundedVec::truncate_from(validators.iter().map(MockValidator::ids_and_keys).collect());
-	inherent_data
-		.put_data(SessionCommitteeManagement::INHERENT_IDENTIFIER, &data)
-		.unwrap();
+/// Cardano epoch that [create_inherent_data] provides
+pub const MOCK_MC_EPOCH: sidechain_domain::McEpochNumber = sidechain_domain::McEpochNumber(500);
 
-	let data_hash = SizedByteString(blake2_256(&data.encode()));
-	(inherent_data, data_hash)
+pub fn create_inherent_data(validators: &[MockValidator]) -> (InherentData, SizedByteString<32>) {
+	create_inherent_data_with_mc_epoch(validators, MOCK_MC_EPOCH)
+}
+
+pub fn create_inherent_data_with_mc_epoch(
+	validators: &[MockValidator],
+	mc_epoch: sidechain_domain::McEpochNumber,
+) -> (InherentData, SizedByteString<32>) {
+	let inputs = selection_inputs(validators);
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(
+			SessionCommitteeManagement::INHERENT_IDENTIFIER,
+			&sp_session_validator_management::SelectionInherentData {
+				inputs: inputs.clone(),
+				mc_epoch,
+			},
+		)
+		.unwrap();
+	(inherent_data, SizedByteString(blake2_256(&inputs.encode())))
+}
+
+/// Inherent data in the format of runtime API versions before 3: the selection inputs alone
+pub fn create_inputs_only_inherent_data(validators: &[MockValidator]) -> InherentData {
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(SessionCommitteeManagement::INHERENT_IDENTIFIER, &selection_inputs(validators))
+		.unwrap();
+	inherent_data
+}
+
+fn selection_inputs(
+	validators: &[MockValidator],
+) -> BoundedVec<(AuthorityId, AuthorityKeys), ConstU32<32>> {
+	BoundedVec::truncate_from(validators.iter().map(MockValidator::ids_and_keys).collect())
 }
 
 pub fn create_inherent_set_validators_call(

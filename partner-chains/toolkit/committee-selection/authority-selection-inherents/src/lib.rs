@@ -17,7 +17,7 @@ mod filter_invalid_candidates;
 mod select_authorities;
 
 pub use {
-	ariadne_inherent_data_provider::AriadneInherentDataProvider,
+	ariadne_inherent_data_provider::{AriadneInherentDataProvider, InherentDataFormat},
 	authority_selection_inputs::{AriadneParameters, AuthoritySelectionInputs},
 	filter_invalid_candidates::{
 		PermissionedCandidateDataError, RegisterValidatorSignedMessage, RegistrationDataError,
