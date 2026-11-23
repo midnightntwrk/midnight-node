@@ -10,9 +10,9 @@ holds, it logs the public keys at INFO instead, so they can be compared with the
 registered for the validator. Non-validators log nothing.
 
 The check reads only the plain keystore, so keys loaded by seed file and by `key insert` are
-both seen, and an AURA key does not count as a BABE key. The previous
-`No BABE public key found in keystore` WARN is removed; the
-`BABE public key(s) in keystore: …` INFO line stays.
+both seen, and an AURA key does not count as a BABE key. It replaces the
+`BABE public key(s) in keystore: …` / `No BABE public key found in keystore` start-up lines
+(target `babe-key-readiness`), which are removed.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2513
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2509
