@@ -630,16 +630,6 @@ mod babe_fork_choice_tests {
 		link: sc_consensus_babe::BabeLink<TestBlock>,
 	}
 
-	/// False where substrate-test-runtime was built without its wasm (buck2,
-	/// `SKIP_WASM_BUILD`). The tests below execute it, so they skip there.
-	fn has_test_runtime() -> bool {
-		let built = substrate_test_runtime_client::runtime::WASM_BINARY.is_some();
-		if !built {
-			eprintln!("skipped: substrate-test-runtime's wasm binary is not built");
-		}
-		built
-	}
-
 	fn chain() -> Chain {
 		let (client, longest_chain) = TestClientBuilder::new().build_with_longest_chain();
 		let client = Arc::new(client);
@@ -733,10 +723,11 @@ mod babe_fork_choice_tests {
 	}
 
 	#[test]
+	#[cfg_attr(
+		substrate_test_runtime_stubbed,
+		ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+	)]
 	fn babe_block_outweighs_a_longer_aura_best_block() {
-		if !has_test_runtime() {
-			return;
-		}
 		let chain = chain();
 		let genesis = chain.client.info().genesis_hash;
 		let a1 = import_aura(&chain, aura_block(&chain, genesis, 1));
@@ -754,10 +745,11 @@ mod babe_fork_choice_tests {
 	}
 
 	#[test]
+	#[cfg_attr(
+		substrate_test_runtime_stubbed,
+		ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+	)]
 	fn babe_import_fails_against_an_aura_best_block_without_a_weight() {
-		if !has_test_runtime() {
-			return;
-		}
 		let chain = chain();
 		let genesis = chain.client.info().genesis_hash;
 		let a1 = aura_block(&chain, genesis, 1);

@@ -285,6 +285,10 @@ fn importable_block(
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn wrapped_babe_import_checks_pc_inherents_and_skips_babes_inherent_check() {
 	let mut bed = TestBed::new();
 	let block = importable_block(&bed.client, &bed.link, Slot::from(1), true);
@@ -312,6 +316,10 @@ async fn wrapped_babe_import_checks_pc_inherents_and_skips_babes_inherent_check(
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn unwrapped_babe_import_runs_its_body_gated_inherent_check() {
 	// Control for the canary above: importing through the real BABE import *without*
 	// the Partner Chains wrapper (body present) must run its inherent check, proving
@@ -334,6 +342,10 @@ async fn unwrapped_babe_import_runs_its_body_gated_inherent_check() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn rejects_block_without_partner_chains_digest() {
 	let mut bed = TestBed::new();
 	let block = importable_block(&bed.client, &bed.link, Slot::from(1), false);

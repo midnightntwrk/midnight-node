@@ -203,3 +203,7 @@ experimental = []
 # Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled
 # at run time through `MALLOC_CONF`; see docs/operations/heap-profiling.md.
 jemalloc-profiling = ["tikv-jemallocator/profiling"]
+
+[lints.rust]
+# Set by the buck2 graph on test targets that cannot have substrate-test-runtime's wasm.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_test_runtime_stubbed)'] }

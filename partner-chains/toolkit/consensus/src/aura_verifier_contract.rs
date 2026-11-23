@@ -499,6 +499,10 @@ fn generate_key(keystore: &KeystorePtr, seed: &str) -> AuthorityId {
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn accepts_sealed_block_and_runs_partner_chains_check_with_header_extracted_values() {
 	let client = Arc::new(substrate_test_runtime_client::new());
 	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
@@ -523,6 +527,10 @@ async fn accepts_sealed_block_and_runs_partner_chains_check_with_header_extracte
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn rejects_block_sealed_by_the_wrong_authority_despite_withheld_body() {
 	let client = Arc::new(substrate_test_runtime_client::new());
 	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
@@ -547,6 +555,10 @@ async fn rejects_block_sealed_by_the_wrong_authority_despite_withheld_body() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn rejects_block_without_partner_chains_digest() {
 	let client = Arc::new(substrate_test_runtime_client::new());
 	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
@@ -565,6 +577,10 @@ async fn rejects_block_without_partner_chains_digest() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn standard_aura_verifier_runs_its_body_gated_inherent_check() {
 	// Control for the canary above: verifying through the standard Aura verifier, without
 	// the Partner Chains wrapper (body present) must call `check_inherents`, proving the
@@ -587,6 +603,10 @@ async fn standard_aura_verifier_runs_its_body_gated_inherent_check() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn standard_aura_verifier_skips_inherent_check_without_body() {
 	let inner = Arc::new(substrate_test_runtime_client::new());
 	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
@@ -607,6 +627,10 @@ async fn standard_aura_verifier_skips_inherent_check_without_body() {
 }
 
 #[tokio::test]
+#[cfg_attr(
+	substrate_test_runtime_stubbed,
+	ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+)]
 async fn skip_execution_checks_bypasses_partner_chains_check_and_delegates_to_aura() {
 	// Pins the warp-sync / gap-sync short-circuit in PartnerChainsVerifier: when the
 	// import skips execution, the wrapper must hand the block (body included) to the

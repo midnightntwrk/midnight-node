@@ -88,11 +88,12 @@ mod test {
 
 	#[test]
 	fn test_beefy_keys_file() {
-		// get sample data
-		let beefy_keys_file = "test-data/beefy-keys.json";
+		// The crate dir at run time: cargo runs tests there, buck2 at the workspace root.
+		let crate_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+		let beefy_keys_file = format!("{crate_dir}/test-data/beefy-keys.json");
 
 		let beefy_keys: Vec<crate::beefy_keys::BeefyKeyInfo> =
-			keys_from_file(beefy_keys_file).expect("Failed to get beefykeyinfo");
+			keys_from_file(&beefy_keys_file).expect("Failed to get beefykeyinfo");
 
 		assert_eq!(beefy_keys.len(), 2);
 
