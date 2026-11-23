@@ -24,7 +24,7 @@ use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
-	extensions::ExtensionsFactory,
+	extensions::{ExtensionsFactory, LedgerContextExecutor},
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
 	metrics_push::{MetricsPushConfig, run_metrics_push_task},
@@ -54,7 +54,9 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-use crate::consensus_engine_dispatch::{EngineDispatchBlockImport, EngineDispatchVerifier};
+use crate::consensus_engine_dispatch::{
+	AuraWeightBlockImport, EngineDispatchBlockImport, EngineDispatchVerifier, in_block_gap,
+};
 use crate::engine_digests::EngineSlotExtractor;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
@@ -224,8 +226,8 @@ pub type HostFunctions = (
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
-/// required `HostFunctions`.
-pub type RuntimeExecutor = sc_executor::WasmExecutor<HostFunctions>;
+/// required `HostFunctions`, and marks block authoring and import for the ledger host functions.
+pub type RuntimeExecutor = LedgerContextExecutor<sc_executor::WasmExecutor<HostFunctions>>;
 
 pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, RuntimeExecutor>;
 pub(crate) type FullBackend = sc_service::TFullBackend<Block>;
@@ -314,7 +316,7 @@ pub fn new_partial(
 		})
 		.transpose()?;
 
-	let executor = sc_service::new_wasm_executor(&config.executor);
+	let executor = LedgerContextExecutor(sc_service::new_wasm_executor(&config.executor));
 
 	let mut db_config = config.db_config();
 	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
@@ -368,6 +370,8 @@ pub fn new_partial(
 			false,
 		)?;
 	let client = Arc::new(client);
+
+	BabeKeyProbe::log_babe_public_keys(keystore_container.keystore());
 
 	// Register Prometheus Ledger Metrics
 	let ledger_metrics =
@@ -572,7 +576,13 @@ pub fn new_partial(
 			babe_verifier,
 		),
 		Box::new(crate::warp_ledger_sync::block_import::GatedBlockImport::new(
-			EngineDispatchBlockImport::new(grandpa_block_import.clone(), babe_block_import),
+			EngineDispatchBlockImport::new(
+				AuraWeightBlockImport::new(
+					grandpa_block_import.clone(),
+					in_block_gap(client.clone()),
+				),
+				babe_block_import,
+			),
 			recovery_gate.clone(),
 			backend.clone(),
 		)),
@@ -679,7 +689,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		sc_consensus_beefy::communication::request_response::BeefyJustifsRequestHandler::new::<
 			_,
 			Network,
-		>(&genesis_hash, config.chain_spec.fork_id(), client.clone(), prometheus_registry.clone());
+		>(
+			&genesis_hash, config.chain_spec.fork_id(), client.clone(), prometheus_registry.clone()
+		);
 
 	// enable beefy
 	let (beefy_notification_config, beefy_notification_service) =
@@ -829,6 +841,23 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
 
+	#[cfg(target_os = "linux")]
+	match prometheus_registry
+		.as_ref()
+		.map(crate::allocator_metrics::AllocatorMetrics::register)
+	{
+		Some(Ok(metrics)) => task_manager.spawn_handle().spawn(
+			"allocator-metrics",
+			None,
+			metrics.run(crate::allocator_metrics::DEFAULT_INTERVAL),
+		),
+		Some(Err(err)) => log::error!(
+			target: "prometheus",
+			"Failed to register allocator metrics: {err}",
+		),
+		None => {},
+	}
+
 	let subscription_metrics =
 		prometheus_registry.as_ref().and_then(|r| SubscriptionMetrics::register(r).ok());
 	let subscription_tracker =
@@ -969,17 +998,24 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				slot_duration: sc_slot_config.slot_duration,
 				client: client.clone(),
 				select_chain: select_chain.clone(),
-				block_import,
+				// Own AURA blocks get the same zero BABE weight as imported ones.
+				block_import: AuraWeightBlockImport::new(
+					block_import,
+					in_block_gap(client.clone()),
+				),
 				proposer_factory: aura_proposer_factory,
 				create_inherent_data_providers: make_proposal_cidp(),
 				force_authoring,
 				backoff_authoring_blocks: backoff_authoring_blocks.clone(),
 				keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
-				// Wrapping oracle: keeps AURA from authoring until the warp-recovered ledger is
-				// verified; a no-op passthrough on full sync.
-				sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
-					sync_service.clone(),
-					warp_ledger_recovery_gate.clone(),
+				// Wrapping oracles: no AURA authoring until the warp-recovered ledger is verified
+				// (a no-op on full sync), nor while the best block's state selects BABE.
+				sync_oracle: crate::babe_authoring::EngineGatedSyncOracle::new(
+					crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+						sync_service.clone(),
+						warp_ledger_recovery_gate.clone(),
+					),
+					crate::babe_authoring::aura_authoring_gate(client.clone()),
 				),
 				justification_sync_link: sync_service.clone(),
 				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
@@ -1006,11 +1042,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			select_chain,
 			env: babe_proposer_factory,
 			block_import: babe_authoring_block_import,
-			// Same wrapping oracle as AURA: no BABE authoring until the warp-recovered ledger is
-			// verified; a no-op passthrough on full sync.
-			sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
-				sync_service.clone(),
-				warp_ledger_recovery_gate.clone(),
+			// Same wrapping oracles as AURA, gated on the best block's state selecting BABE.
+			sync_oracle: crate::babe_authoring::EngineGatedSyncOracle::new(
+				crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+					sync_service.clone(),
+					warp_ledger_recovery_gate.clone(),
+				),
+				crate::babe_authoring::babe_authoring_gate(client.clone(), babe_link.clone()),
 			),
 			justification_sync_link: sync_service.clone(),
 			create_inherent_data_providers: make_proposal_cidp(),
@@ -1022,29 +1060,19 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
 		})?;
 
-		// A single supervisor is the authoring gate: it drives AURA until the flip, seeds the
-		// BABE epoch tree, then drives BABE. Only one engine is polled at a time.
-		let authoring_supervisor = crate::babe_authoring::run_authoring_supervisor(
-			client.clone(),
-			babe_link,
-			aura_worker,
-			babe_worker,
-		);
+		let authoring = crate::babe_authoring::run_authoring_workers(aura_worker, babe_worker);
 
 		// Authoring is essential: if it stops, the service goes down with it.
 		task_manager.spawn_essential_handle().spawn_blocking(
-			"authoring-supervisor",
+			"block-authoring",
 			Some("block-authoring"),
-			authoring_supervisor,
+			authoring,
 		);
 
 		task_manager.spawn_handle().spawn(
 			"committee-membership-watch",
 			None,
-			crate::committee_membership::watch(
-				client.clone(),
-				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
-			),
+			crate::committee_membership::watch(client.clone(), keystore_container.keystore()),
 		);
 
 		// Report whether this validator holds a BABE key registered on Cardano, so
@@ -1080,7 +1108,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			),
 		}
 	}
-	// Non-authorities need no flip watcher: the epoch tree they need to *import* the first BABE
+	// Non-authorities need no authoring gate: the epoch tree they need to *import* the first BABE
 	// block is seeded on the import path by `BabeEpochSeeder` (see `EngineDispatchVerifier`).
 
 	if enable_grandpa {

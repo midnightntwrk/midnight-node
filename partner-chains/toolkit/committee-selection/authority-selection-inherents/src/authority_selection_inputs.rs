@@ -47,6 +47,9 @@ pub enum AuthoritySelectionInputsCreationError {
 	#[cfg_attr(feature = "std", error("Failed to get epoch nonce for epoch: {0}: {1}."))]
 	/// Failed to get epoch nonce for epoch
 	GetEpochNonceQuery(McEpochNumber, Box<dyn std::error::Error + Send + Sync>),
+	#[cfg_attr(feature = "std", error("Cardano epoch nonce for epoch {0} not found."))]
+	/// Epoch nonce for epoch is not available in the data source
+	EpochNonceNotFound(McEpochNumber),
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -139,21 +142,22 @@ impl AuthoritySelectionInputs {
 			Some(permissioned_candidates) => permissioned_candidates,
 		};
 
-		let registered_candidates: Vec<CandidateRegistrations> = candidate_data_source
-			.get_candidates(for_epoch, scripts.committee_candidate_address.clone())
+		if d_parameter.num_registered_candidates > 0 {
+			log::warn!(
+				"D-parameter for Cardano epoch {} reserves {} registered seat(s), but querying registered candidates is disabled. Those seats will be filled with permissioned candidates ({} permissioned seat(s) configured). The R part of the D-parameter should be 0",
+				for_epoch,
+				d_parameter.num_registered_candidates,
+				d_parameter.num_permissioned_candidates,
+			);
+		}
+		let registered_candidates: Vec<CandidateRegistrations> = Vec::new();
+		let epoch_nonce = candidate_data_source
+			.get_epoch_nonce(for_epoch)
 			.await
 			.map_err(|err| {
-				AuthoritySelectionInputsCreationError::GetCandidatesQuery(
-					for_epoch,
-					scripts.committee_candidate_address.to_string(),
-					err,
-				)
-			})?;
-		let epoch_nonce_response =
-			candidate_data_source.get_epoch_nonce(for_epoch).await.map_err(|err| {
 				AuthoritySelectionInputsCreationError::GetEpochNonceQuery(for_epoch, err)
-			})?;
-		let epoch_nonce = epoch_nonce_response.unwrap_or(EpochNonce(vec![]));
+			})?
+			.ok_or(AuthoritySelectionInputsCreationError::EpochNonceNotFound(for_epoch))?;
 
 		Ok(Self { d_parameter, permissioned_candidates, registered_candidates, epoch_nonce })
 	}

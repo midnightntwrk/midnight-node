@@ -15,7 +15,7 @@
 
 if [[ -z $TOOLKIT_IMAGE ]]; then
     echo "Building container..."
-    earthly +toolkit-image
+    earth +toolkit-image
     TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:latest"
 fi
 

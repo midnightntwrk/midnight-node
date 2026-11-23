@@ -66,7 +66,7 @@ impl PostgresBackend {
 
 		sqlx::query(
 			r#"
-            CREATE TABLE IF NOT EXISTS raw_block_data_v2 (
+            CREATE TABLE IF NOT EXISTS raw_block_data_v3 (
                 chain_id BYTEA NOT NULL,
                 block_number BIGINT NOT NULL,
                 data BYTEA NOT NULL,
@@ -76,11 +76,11 @@ impl PostgresBackend {
 		)
 		.execute(&mut *tx)
 		.await
-		.expect("failed to create raw_block_data_v2 table");
+		.expect("failed to create raw_block_data_v3 table");
 
 		sqlx::query(
 			r#"
-            CREATE TABLE IF NOT EXISTS highest_verified (
+            CREATE TABLE IF NOT EXISTS highest_verified_v3 (
                 chain_id BYTEA PRIMARY KEY,
                 height BIGINT NOT NULL
             )
@@ -88,7 +88,7 @@ impl PostgresBackend {
 		)
 		.execute(&mut *tx)
 		.await
-		.expect("failed to create highest_verified table");
+		.expect("failed to create highest_verified_v3 table");
 
 		tx.commit().await.expect("failed to commit init_tables transaction");
 	}
@@ -100,7 +100,7 @@ impl PostgresBackend {
 	fn deserialize_block_data(data: &[u8]) -> RawBlockData {
 		postcard::from_bytes(data).unwrap_or_else(|e| {
 			panic!(
-				"failed to decode cached block data ({e}); these `raw_block_data_v2` rows were \
+				"failed to decode cached block data ({e}); these `raw_block_data_v3` rows were \
 				 written by a toolkit with a different wire format - drop them and re-fetch"
 			)
 		})
@@ -111,7 +111,7 @@ impl FetchStorage for PostgresBackend {
 	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let result: Option<PgRow> = sqlx::query(
 			r#"
-            SELECT data FROM raw_block_data_v2
+            SELECT data FROM raw_block_data_v3
             WHERE chain_id = $1 AND block_number = $2
             "#,
 		)
@@ -145,7 +145,7 @@ impl FetchStorage for PostgresBackend {
 			r#"
             SELECT bd.data
             FROM UNNEST($2::BIGINT[]) WITH ORDINALITY AS bn(block_number, ord)
-            LEFT JOIN raw_block_data_v2 bd ON bd.chain_id = $1 AND bd.block_number = bn.block_number
+            LEFT JOIN raw_block_data_v3 bd ON bd.chain_id = $1 AND bd.block_number = bn.block_number
             ORDER BY bn.ord
             "#,
 		)
@@ -168,7 +168,7 @@ impl FetchStorage for PostgresBackend {
 
 		sqlx::query(
 			r#"
-            INSERT INTO raw_block_data_v2 (chain_id, block_number, data)
+            INSERT INTO raw_block_data_v3 (chain_id, block_number, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (chain_id, block_number)
             DO UPDATE SET data = EXCLUDED.data
@@ -202,7 +202,7 @@ impl FetchStorage for PostgresBackend {
 
 			sqlx::query(
 				r#"
-                INSERT INTO raw_block_data_v2 (chain_id, block_number, data)
+                INSERT INTO raw_block_data_v3 (chain_id, block_number, data)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (chain_id, block_number)
                 DO UPDATE SET data = EXCLUDED.data
@@ -222,7 +222,7 @@ impl FetchStorage for PostgresBackend {
 	async fn get_highest_verified_block(&self, chain_id: H256) -> Option<u64> {
 		let result: Option<PgRow> = sqlx::query(
 			r#"
-            SELECT height FROM highest_verified
+            SELECT height FROM highest_verified_v3
             WHERE chain_id = $1
             "#,
 		)
@@ -240,7 +240,7 @@ impl FetchStorage for PostgresBackend {
 	async fn set_highest_verified_block(&self, chain_id: H256, height: u64) {
 		sqlx::query(
 			r#"
-            INSERT INTO highest_verified (chain_id, height)
+            INSERT INTO highest_verified_v3 (chain_id, height)
             VALUES ($1, $2)
             ON CONFLICT (chain_id)
             DO UPDATE SET height = EXCLUDED.height

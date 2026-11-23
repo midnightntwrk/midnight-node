@@ -130,6 +130,60 @@ fn genesis_config_initializes_terms_and_conditions() {
 }
 
 #[test]
+fn update_d_parameter_rejects_zero_seats() {
+	new_test_ext().execute_with(|| {
+		assert_noop!(
+			SystemParameters::update_d_parameter(RuntimeOrigin::root(), 0, 0),
+			Error::<Test>::DParameterEmpty
+		);
+	});
+}
+
+#[test]
+fn update_d_parameter_rejects_total_above_max_committee_size() {
+	new_test_ext().execute_with(|| {
+		// The u16 sum overflows here; validation must use the mathematical total.
+		assert_noop!(
+			SystemParameters::update_d_parameter(RuntimeOrigin::root(), 1, u16::MAX),
+			Error::<Test>::DParameterTooLarge
+		);
+		assert_noop!(
+			SystemParameters::update_d_parameter(RuntimeOrigin::root(), 5_000, 5_001),
+			Error::<Test>::DParameterTooLarge
+		);
+	});
+}
+
+#[test]
+fn update_d_parameter_accepts_total_equal_to_max_committee_size() {
+	new_test_ext().execute_with(|| {
+		assert_ok!(SystemParameters::update_d_parameter(RuntimeOrigin::root(), 5_000, 5_000));
+		assert_ok!(SystemParameters::update_d_parameter(RuntimeOrigin::root(), 1, 0));
+		assert_ok!(SystemParameters::update_d_parameter(RuntimeOrigin::root(), 0, 1));
+	});
+}
+
+#[test]
+#[should_panic(expected = "Genesis D-Parameter is invalid")]
+fn genesis_panics_with_overflowing_d_parameter() {
+	new_test_ext_with_genesis(
+		Some(DEFAULT_TERMS_AND_CONDITIONS_HASH),
+		Some(DEFAULT_TERMS_AND_CONDITIONS_URL.to_string()),
+		Some(DParameter::new(1, u16::MAX)),
+	);
+}
+
+#[test]
+#[should_panic(expected = "Genesis D-Parameter is invalid")]
+fn genesis_panics_with_zero_seat_d_parameter() {
+	new_test_ext_with_genesis(
+		Some(DEFAULT_TERMS_AND_CONDITIONS_HASH),
+		Some(DEFAULT_TERMS_AND_CONDITIONS_URL.to_string()),
+		Some(DParameter::new(0, 0)),
+	);
+}
+
+#[test]
 fn genesis_config_initializes_d_parameter() {
 	let d_param = DParameter::new(15, 10);
 

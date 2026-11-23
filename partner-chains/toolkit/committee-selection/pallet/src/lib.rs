@@ -20,7 +20,6 @@
 #![allow(clippy::type_complexity)]
 #![deny(missing_docs)]
 
-pub mod migrations;
 /// [`pallet_session`] integration.
 pub mod pallet_session_support;
 
@@ -41,6 +40,8 @@ pub use sp_session_validator_management::CommitteeMember;
 pub use weights::WeightInfo;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use super::*;
 	use crate::pallet_session_support::provide_committee_accounts;
@@ -203,6 +204,8 @@ pub mod pallet {
 		InvalidEpoch,
 		/// [Pallet::set] has been called a second time for the same next epoch
 		NextCommitteeAlreadySet,
+		/// [Pallet::set] has been called with an empty committee
+		EmptyCommittee,
 	}
 
 	#[pallet::genesis_config]
@@ -269,7 +272,7 @@ pub mod pallet {
 				let (authority_selection_inputs, selection_inputs_hash) =
 					Self::inherent_data_to_authority_selection_inputs(data);
 				if let Some(validators) =
-					T::select_authorities(authority_selection_inputs, for_epoch_number)
+					Self::select_non_empty_authorities(authority_selection_inputs, for_epoch_number)
 				{
 					Some(Call::set { validators, for_epoch_number, selection_inputs_hash })
 				} else {
@@ -296,16 +299,18 @@ pub mod pallet {
 
 			let (authority_selection_inputs, computed_selection_inputs_hash) =
 				Self::inherent_data_to_authority_selection_inputs(data);
-			let validators =
-				T::select_authorities(authority_selection_inputs, *for_epoch_number_param)
-					.unwrap_or_else(|| {
-						// Proposed block should keep the same committee if calculation of new one was impossible.
-						// This is code is executed before the committee rotation, so the NextCommittee should be used.
-						let committee_info = NextCommittee::<T>::get()
-							// Needed only for verification of the block no 1, before any `set` call is executed.
-							.unwrap_or_else(QueuedCommittee::<T>::get);
-						committee_info.committee
-					});
+			let validators = Self::select_non_empty_authorities(
+				authority_selection_inputs,
+				*for_epoch_number_param,
+			)
+			.unwrap_or_else(|| {
+				// Proposed block should keep the same committee if calculation of new one was impossible.
+				// This is code is executed before the committee rotation, so the NextCommittee should be used.
+				let committee_info = NextCommittee::<T>::get()
+					// Needed only for verification of the block no 1, before any `set` call is executed.
+					.unwrap_or_else(QueuedCommittee::<T>::get);
+				committee_info.committee
+			});
 
 			if *validators_param != validators {
 				if *call_selection_inputs_hash == computed_selection_inputs_hash {
@@ -358,6 +363,8 @@ pub mod pallet {
 			let expected_epoch_number = QueuedCommittee::<T>::get().epoch + One::one();
 			ensure!(for_epoch_number == expected_epoch_number, Error::<T>::InvalidEpoch);
 			ensure!(!NextCommittee::<T>::exists(), Error::<T>::NextCommitteeAlreadySet);
+			// GRANDPA does not accept an empty authority set.
+			ensure!(!validators.is_empty(), Error::<T>::EmptyCommittee);
 			let len = validators.len();
 			info!(
 				"💼 Storing committee of size {len} for epoch {for_epoch_number}, input data hash: {}",
@@ -449,7 +456,22 @@ pub mod pallet {
 			authority_selection_inputs: T::AuthoritySelectionInputs,
 			sidechain_epoch: T::ScEpochNumber,
 		) -> Option<Vec<T::CommitteeMember>> {
-			T::select_authorities(authority_selection_inputs, sidechain_epoch).map(|c| c.to_vec())
+			Self::select_non_empty_authorities(authority_selection_inputs, sidechain_epoch)
+				.map(|c| c.to_vec())
+		}
+
+		/// Runs `select_authorities`, treating an empty committee as a failed selection so that
+		/// the queued committee is kept instead.
+		fn select_non_empty_authorities(
+			authority_selection_inputs: T::AuthoritySelectionInputs,
+			sidechain_epoch: T::ScEpochNumber,
+		) -> Option<BoundedVec<T::CommitteeMember, T::MaxValidators>> {
+			let selected = T::select_authorities(authority_selection_inputs, sidechain_epoch)?;
+			if selected.is_empty() {
+				warn!("Selected committee for epoch {sidechain_epoch} is empty");
+				return None;
+			}
+			Some(selected)
 		}
 
 		/// Rotates the committees one step: [QueuedCommittee] — whose keys the session machinery

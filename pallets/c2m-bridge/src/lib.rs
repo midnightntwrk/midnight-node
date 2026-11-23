@@ -47,6 +47,8 @@ pub struct SubminimalTransfersState {
 }
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use super::*;
 	use alloc::vec::Vec;
@@ -190,6 +192,8 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		// TransferCounter is absent at both block boundaries, so this kill never reaches
+		// the trie and needs no weight reserved for it in on_initialize.
 		fn on_finalize(_n: BlockNumberFor<T>) {
 			TransferCounter::<T>::kill();
 		}
@@ -409,6 +413,12 @@ pub mod pallet {
 		fn handle_incoming_transfer(
 			transfer: BridgeTransferV1<BridgeRecipient>,
 		) -> Result<(), TransferHandlerError> {
+			// A 'Reserve' transfer is not paid out to any address, so the ledger's minimum
+			// bridge amount does not apply to it and it is never subminimal.
+			if matches!(transfer.recipient, TransferRecipient::Reserve) {
+				return Self::handle_reserve_transfer(transfer.mc_tx_hash, transfer.amount);
+			}
+
 			match T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount() {
 				Ok(min_amount) => {
 					if u128::from(transfer.amount) < min_amount {

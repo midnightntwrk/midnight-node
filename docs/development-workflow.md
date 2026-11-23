@@ -141,7 +141,20 @@ Required when:
 
 The output of this will be a chain spec file which contains the hex of the genesis.
 
-### Step 5: Run Tests
+### Step 5: Pin the `StateKey` Contract for a New Ledger-State Version
+
+midnight-indexer validates every block by recomputing `pallet_midnight::StateKey`: the tagged arena
+key of `Ledger { state, block_fullness }` with zero `block_fullness` at the end of a block. When the
+`ledger-state[vNN]` tag changes (a new ledger module or a ledger crate bump),
+`latest_ledger_state_version_has_its_state_key_contract_pinned` in `ledger/src/lib.rs` fails until:
+- a golden block-0 `StateKey` test exists for the new version (like `ledger_9::storage::tests`),
+  read from a real node and its genesis state,
+- the end-of-block fullness tests and the `is_block_start`/`block_start_state_key` dispatch arms in
+  `ledger/src/lib.rs` cover it,
+- midnight-indexer mirrors any change to the `Ledger` wrapper (`node_state_key.rs`) and pins the
+  same vector in `node_state_key_matches_node_at_genesis`.
+
+### Step 6: Run Tests
 
 ```bash
 cargo test                    # Unit and integration tests

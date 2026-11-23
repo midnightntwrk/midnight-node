@@ -13,6 +13,8 @@
 
 extern crate alloc;
 
+#[cfg(target_os = "linux")]
+pub mod allocator_metrics;
 mod aura_to_babe_migration_keystore;
 pub mod babe_authoring;
 pub mod babe_key_readiness;
@@ -31,6 +33,8 @@ pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
 pub mod inherent_data;
+#[cfg(target_os = "linux")]
+pub mod landlock;
 pub mod ledger_stats_rpc;
 pub mod main_chain_follower;
 pub mod memory_monitor;
@@ -44,5 +48,7 @@ pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
+#[cfg(feature = "try-runtime")]
+pub mod try_runtime;
 mod util;
 pub mod warp_ledger_sync;

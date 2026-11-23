@@ -45,6 +45,8 @@ mod benchmarking;
 pub mod weights;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use super::*;
 	use crate::weights::WeightInfo;
@@ -121,6 +123,18 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
+			// An empty address means unset, so that the default config still builds.
+			for (field, address) in [
+				("council_address", &self.council_address),
+				("technical_committee_address", &self.technical_committee_address),
+			] {
+				if let (false, Err(e)) =
+					(address.bytes().is_empty(), address.validate_enterprise_script_address())
+				{
+					panic!("genesis: federatedAuthorityObservation.{field} is invalid: {e:?}");
+				}
+			}
+
 			MainChainCouncilAddress::<T>::set(self.council_address.clone());
 			MainChainCouncilPolicyId::<T>::set(self.council_policy_id.clone());
 			MainChainTechnicalCommitteeAddress::<T>::set(self.technical_committee_address.clone());
@@ -168,6 +182,8 @@ pub mod pallet {
 		DuplicatedMembers,
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
+		/// The address is not a Cardano enterprise script address
+		InvalidMainchainAddress,
 	}
 
 	#[pallet::hooks]
@@ -400,6 +416,9 @@ pub mod pallet {
 			address: MainchainAddress,
 		) -> DispatchResult {
 			ensure_root(origin)?;
+			address
+				.validate_enterprise_script_address()
+				.map_err(|_| Error::<T>::InvalidMainchainAddress)?;
 			MainChainCouncilAddress::<T>::set(address);
 
 			Ok(())
@@ -413,6 +432,9 @@ pub mod pallet {
 			address: MainchainAddress,
 		) -> DispatchResult {
 			ensure_root(origin)?;
+			address
+				.validate_enterprise_script_address()
+				.map_err(|_| Error::<T>::InvalidMainchainAddress)?;
 			MainChainTechnicalCommitteeAddress::<T>::set(address);
 
 			Ok(())
@@ -460,8 +482,10 @@ pub mod pallet {
 			let technical_committee_authorities: BoundedVec<
 				(T::AccountId, MainchainMember),
 				T::TechnicalCommitteeMaxMembers,
-			> = Self::decode_auth_members(fed_auth_data.technical_committee_authorities.authorities)
-				.ok()?;
+			> = Self::decode_auth_members(
+				fed_auth_data.technical_committee_authorities.authorities,
+			)
+			.ok()?;
 
 			let has_empty_members =
 				council_authorities.is_empty() || technical_committee_authorities.is_empty();

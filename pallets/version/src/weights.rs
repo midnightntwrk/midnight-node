@@ -19,12 +19,16 @@ pub trait WeightInfo {
 	fn on_initialize() -> Weight;
 }
 
-/// Weights for `pallet_timestamp` using the Substrate node and recommended hardware.
+/// Fallback weights for `pallet_version`, used until the benchmarked weights in
+/// `runtime/src/weights/pallet_version.rs` are wired in.
+///
+/// `on_initialize` appends one digest log per block, which is a single storage
+/// write. Previously this returned `Weight::zero()`, which under-reported the
+/// hook on every block.
 pub struct VersionWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for VersionWeight<T> {
 	fn on_initialize() -> Weight {
-		// TODO: Specifiy the correct version::on_initialize() weights
-		Weight::zero()
+		Weight::zero().saturating_add(ParityDbWeight::get().writes(1_u64))
 	}
 }
 

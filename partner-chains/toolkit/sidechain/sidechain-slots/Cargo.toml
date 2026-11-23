@@ -36,7 +36,9 @@ std = [
 	'sp-blockchain',
     'sp-core/std',
     'sp-consensus-slots/std',
+    # envy is only used with serde too (read_from_env is cfg(all(std, serde)))
     'envy',
+    'serde',
 ]
 serde = [
     "dep:serde",

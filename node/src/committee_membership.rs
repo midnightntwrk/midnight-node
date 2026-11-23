@@ -24,6 +24,9 @@
 //! uses [`AuraApi::authorities`], BABE uses [`BabeApi::current_epoch`]. Both
 //! encodings are stable; `SessionKeys` is never decoded on the native side.
 //! A runtime older than `ConsensusEngineApi` is treated as AURA.
+//!
+//! Under BABE a committee key held only as an AURA key counts as in the committee,
+//! matching the per-key AURA fallback BABE authoring uses.
 
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
@@ -103,34 +106,91 @@ where
 			},
 		};
 
-		let (key_type, engine_label) = match engine {
-			ActiveEngine::Aura => (key_types::AURA, "AURA"),
-			ActiveEngine::Babe => (key_types::BABE, "BABE"),
+		let engine_label = match engine {
+			ActiveEngine::Aura => "AURA",
+			ActiveEngine::Babe => "BABE",
 		};
-		let local_keys = keystore.sr25519_public_keys(key_type);
 		let committee_size = producers.len();
-		let local_match = local_keys.iter().find(|local| producers.iter().any(|p| p == *local));
 
-		match local_match {
-			Some(key) => log::info!(
-				target: LOG_TARGET,
-				"Session {session_index}: this node IS in the committee for this session \
-				 ({engine_label} key: 0x{}, committee size: {committee_size})",
-				hex::encode(AsRef::<[u8]>::as_ref(key)),
-			),
-			None => {
-				let local_hex: Vec<String> = local_keys
-					.iter()
-					.map(|k| format!("0x{}", hex::encode(AsRef::<[u8]>::as_ref(k))))
-					.collect();
+		match local_producer(&*keystore, &producers, engine) {
+			Some(LocalProducer { key, via_aura_fallback }) => {
+				let fallback_note =
+					if via_aura_fallback { ", held as an AURA key (BABE fallback)" } else { "" };
 				log::info!(
 					target: LOG_TARGET,
-					"Session {session_index}: this node IS NOT in the committee \
-					 for this session (local {engine_label} keys: {local_hex:?}, committee size: {committee_size})."
-				);
+					"Session {session_index}: this node IS in the committee for this session \
+					 ({engine_label} key: 0x{}{fallback_note}, committee size: {committee_size})",
+					hex::encode(AsRef::<[u8]>::as_ref(&key)),
+				)
+			},
+			None => {
+				let local_hex = |key_type| -> Vec<String> {
+					keystore
+						.sr25519_public_keys(key_type)
+						.iter()
+						.map(|k| format!("0x{}", hex::encode(AsRef::<[u8]>::as_ref(k))))
+						.collect()
+				};
+				match engine {
+					ActiveEngine::Aura => log::info!(
+						target: LOG_TARGET,
+						"Session {session_index}: this node IS NOT in the committee \
+						 for this session (local AURA keys: {:?}, committee size: {committee_size}).",
+						local_hex(key_types::AURA),
+					),
+					ActiveEngine::Babe => log::info!(
+						target: LOG_TARGET,
+						"Session {session_index}: this node IS NOT in the committee \
+						 for this session (local BABE keys: {:?}, local AURA keys: {:?}, \
+						 committee size: {committee_size}).",
+						local_hex(key_types::BABE),
+						local_hex(key_types::AURA),
+					),
+				}
 			},
 		}
 	}
+}
+
+/// A committee key this node can produce blocks with.
+#[derive(Debug, PartialEq, Eq)]
+struct LocalProducer {
+	key: sr25519::Public,
+	/// The key is held under the AURA key type and BABE authors with it through the
+	/// keystore fallback ([`crate::aura_to_babe_migration_keystore`]).
+	via_aura_fallback: bool,
+}
+
+/// Finds the first committee key this node can sign with, mirroring how authoring
+/// resolves keys.
+///
+/// Must be called with the *unwrapped* keystore. BABE authoring falls back to the
+/// AURA key type per requested public, so a committee key held only as AURA still
+/// produces blocks even when unrelated BABE keys are loaded. Listing BABE keys and
+/// intersecting them with the committee misses that case (#2295).
+fn local_producer(
+	keystore: &dyn Keystore,
+	producers: &[sr25519::Public],
+	engine: ActiveEngine,
+) -> Option<LocalProducer> {
+	let holds = |key: &sr25519::Public, key_type| {
+		keystore.has_keys(&[(AsRef::<[u8]>::as_ref(key).to_vec(), key_type)])
+	};
+	let (primary, fallback) = match engine {
+		ActiveEngine::Aura => (key_types::AURA, None),
+		ActiveEngine::Babe => (key_types::BABE, Some(key_types::AURA)),
+	};
+	producers
+		.iter()
+		.find(|key| holds(key, primary))
+		.map(|key| LocalProducer { key: *key, via_aura_fallback: false })
+		.or_else(|| {
+			let fallback = fallback?;
+			producers
+				.iter()
+				.find(|key| holds(key, fallback))
+				.map(|key| LocalProducer { key: *key, via_aura_fallback: true })
+		})
 }
 
 fn producing_authorities<C>(
@@ -150,5 +210,99 @@ where
 		ActiveEngine::Babe => api
 			.current_epoch(block_hash)
 			.map(|epoch| epoch.authorities.into_iter().map(|(id, _weight)| id.into()).collect()),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use sp_core::crypto::KeyTypeId;
+	use sp_keystore::testing::MemoryKeystore;
+
+	fn gen_key(ks: &MemoryKeystore, key_type: KeyTypeId, seed: &str) -> sr25519::Public {
+		ks.sr25519_generate_new(key_type, Some(seed)).unwrap()
+	}
+
+	fn stranger(seed: &str) -> sr25519::Public {
+		use sp_core::Pair;
+		sr25519::Pair::from_string(seed, None).unwrap().public()
+	}
+
+	#[test]
+	fn babe_key_in_committee() {
+		let ks = MemoryKeystore::new();
+		let babe = gen_key(&ks, key_types::BABE, "//Babe");
+		let producers = [stranger("//Other"), babe];
+
+		assert_eq!(
+			local_producer(&ks, &producers, ActiveEngine::Babe),
+			Some(LocalProducer { key: babe, via_aura_fallback: false }),
+		);
+	}
+
+	#[test]
+	fn babe_falls_back_to_aura_key_without_babe_keys() {
+		let ks = MemoryKeystore::new();
+		let aura = gen_key(&ks, key_types::AURA, "//Aura");
+
+		assert_eq!(
+			local_producer(&ks, &[aura], ActiveEngine::Babe),
+			Some(LocalProducer { key: aura, via_aura_fallback: true }),
+		);
+	}
+
+	/// Regression for #2295: an unrelated BABE key (e.g. the next key loaded ahead of
+	/// rotation) must not hide the AURA key the node is authoring with.
+	#[test]
+	fn babe_falls_back_to_aura_key_with_unrelated_babe_key_loaded() {
+		let ks = MemoryKeystore::new();
+		let aura = gen_key(&ks, key_types::AURA, "//Aura");
+		let _next_babe = gen_key(&ks, key_types::BABE, "//BabeNext");
+
+		assert_eq!(
+			local_producer(&ks, &[stranger("//Other"), aura], ActiveEngine::Babe),
+			Some(LocalProducer { key: aura, via_aura_fallback: true }),
+		);
+	}
+
+	#[test]
+	fn babe_prefers_babe_key_over_aura_fallback() {
+		let ks = MemoryKeystore::new();
+		let aura = gen_key(&ks, key_types::AURA, "//Aura");
+		let babe = gen_key(&ks, key_types::BABE, "//Babe");
+
+		assert_eq!(
+			local_producer(&ks, &[aura, babe], ActiveEngine::Babe),
+			Some(LocalProducer { key: babe, via_aura_fallback: false }),
+		);
+	}
+
+	#[test]
+	fn babe_not_in_committee() {
+		let ks = MemoryKeystore::new();
+		gen_key(&ks, key_types::AURA, "//Aura");
+		gen_key(&ks, key_types::BABE, "//Babe");
+
+		assert_eq!(local_producer(&ks, &[stranger("//Other")], ActiveEngine::Babe), None);
+	}
+
+	/// AURA authoring never uses BABE keys.
+	#[test]
+	fn aura_ignores_babe_keys() {
+		let ks = MemoryKeystore::new();
+		let babe = gen_key(&ks, key_types::BABE, "//Babe");
+
+		assert_eq!(local_producer(&ks, &[babe], ActiveEngine::Aura), None);
+	}
+
+	#[test]
+	fn aura_key_in_committee() {
+		let ks = MemoryKeystore::new();
+		let aura = gen_key(&ks, key_types::AURA, "//Aura");
+
+		assert_eq!(
+			local_producer(&ks, &[aura], ActiveEngine::Aura),
+			Some(LocalProducer { key: aura, via_aura_fallback: false }),
+		);
 	}
 }

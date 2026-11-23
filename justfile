@@ -7,9 +7,9 @@ compactc compact_repo="LFDT-Minokawa/compact" compact_tag_prefix="compactc-v":
   COMPACTC_SUBMODULE_VERSION=$(bash scripts/compact-submodule-version.sh); \
   COMPACTC_VERSION=$(cat COMPACTC_VERSION); \
   if [ "$COMPACTC_VERSION" = "$COMPACTC_SUBMODULE_VERSION" ]; then \
-      earthly +compactc-build-local; \
+      earth +compactc-build-local; \
     else \
-      earthly +compactc-fetch-local \
+      earth +compactc-fetch-local \
         --VERSION="$COMPACTC_VERSION" \
         --COMPACT_REPO={{compact_repo}} \
         --COMPACT_TAG_PREFIX={{compact_tag_prefix}}; \

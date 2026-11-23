@@ -9,6 +9,10 @@ on:
       release-tag:
         description: "The release tag to archive under (e.g. node-1.2.3-toolkit-0.4.5)"
         required: true
+      previous-tag:
+        description: "Previous release tag on the same release branch (e.g. node-1.0.300). If set, only change files added or modified since it are archived"
+        required: false
+        default: ""
       archive-changes:
         type: boolean
         description: "Archive changes for this release"
@@ -54,6 +58,9 @@ on:
       release-tag:
         type: string
         required: true
+      previous-tag:
+        type: string
+        default: ""
       archive-changes:
         type: boolean
         default: true
@@ -132,24 +139,46 @@ jobs:
         if: inputs.archive-changes == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin tag "$GIT_TAG_RELEASE"
+          PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        run: |
+          git fetch origin tag "$GIT_TAG_RELEASE"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            git fetch origin tag "$PREVIOUS_TAG"
+          fi
 
       - name: Archive changes
         if: inputs.archive-changes == true
         env:
           ARCHIVE_MODE: ${{ inputs.archive-mode }}
+          PREVIOUS_TAG: ${{ inputs.previous-tag }}
           SKIP_NODE: ${{ inputs.skip-node }}
           SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
         run: |
-          if [ "$SKIP_NODE" != "true" ]; then
-            season archive-changes --changes-dir changes/node --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
-          fi
-          if [ "$SKIP_TOOLKIT" != "true" ]; then
-            season archive-changes --changes-dir changes/toolkit --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
-          fi
-          if [ "$SKIP_RUNTIME" != "true" ]; then
-            season archive-changes --changes-dir changes/runtime --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+          set -euo pipefail
+          ARCHIVE=".changes_archive/$GIT_TAG_RELEASE"
+
+          # One run over all of changes/: --force replaces the archive dir, so
+          # per-component runs each wiped the previous one's output.
+          season archive-changes --changes-dir changes --tag "$GIT_TAG_RELEASE" --archive-mode "$ARCHIVE_MODE" --force
+
+          for c in node toolkit runtime; do
+            skip_var="SKIP_${c^^}"
+            if [ "${!skip_var}" = "true" ]; then
+              rm -rf "${ARCHIVE:?}/$c"
+              git checkout HEAD -- "changes/$c"
+            fi
+          done
+
+          # Release branches never reset changes/, so the tag carries every
+          # change since the branch was cut; keep only this release's delta.
+          if [ -n "$PREVIOUS_TAG" ]; then
+            delta="$(git diff --name-only --diff-filter=AM "$PREVIOUS_TAG" "$GIT_TAG_RELEASE" -- changes/)"
+            find "$ARCHIVE" -type f ! -path "$ARCHIVE/index.md" -print0 |
+              while IFS= read -r -d '' f; do
+                grep -qxF "changes/${f#"$ARCHIVE"/}" <<< "$delta" || rm "$f"
+              done
+            find "$ARCHIVE" -type d -empty -delete
           fi
 
       - name: Reset changes

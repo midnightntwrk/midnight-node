@@ -21,13 +21,20 @@ earthly -P +rebuild-genesis-state-<NETWORK>  # Rebuild genesis for specific netw
 earthly -P +rebuild-all-genesis-states    # Rebuild all network genesis states
 earthly +node-image                       # Build node Docker image
 earthly +toolkit-image                    # Build toolkit image
+earthly -P +try-runtime-dry-run-all       # Dry-run the runtime upgrade against live networks
 earthly doc                               # List all available targets
+earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 ```
 
 **GitHub PR bots:** Comment on a PR to trigger rebuilds:
 - `/bot rebuild-metadata` - Rebuild runtime metadata
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks
 - `/bot cargo-fmt` - Run cargo fmt
+
+CI prepares local e2e test binaries alongside node-image builds on the existing
+self-hosted pool. Fork PRs retain inline compilation. The local environment CI
+check retains the complete suite and its existing execution settings. See
+`docs/ci/pr-critical-path.md` for timing and coverage validation.
 
 **E2E tests (just):**
 ```bash
@@ -141,6 +148,22 @@ CFLAGS_wasm32_unknown_unknown = "-Wno-error=implicit-function-declaration"
 
 The symbols still resolve at link time from the real wasi/libc pulled in by the Substrate runtime build.
 
+## Gating Node Behaviour on the Runtime
+
+**Don't gate node behaviour on a hard-coded `spec_version`** (e.g. `if spec_version >= SOME_SPEC_VERSION`).
+That bakes in a guess about which release a change ships in, and a node that doesn't know about a
+newer behaviour silently runs the old one instead of failing.
+
+Gate on API versions instead:
+- **Node depends on new runtime behaviour:** bump the runtime API's `#[api_version(N)]` and branch on
+  `client.runtime_api().api_version::<dyn MyApi<Block>>(at)` (see `node/src/babe_authoring.rs`).
+- **Runtime depends on new node behaviour:** add a new `#[version(N)]` host function in the
+  `#[runtime_interface]` (see `ledger/src/host_api/`). A runtime that calls a version the node
+  binary lacks fails to instantiate. That is an explicit error, not silently wrong behaviour.
+
+Existing offenders (`DATA_ORDERED_UTXOS_SPEC_VERSION`, `ACTIVATION_SPEC_VERSION`) predate this
+rule. Don't copy them.
+
 ## When to Rebuild
 
 **Metadata** (use `/bot rebuild-metadata` on PR, or `earthly -P +rebuild-metadata`):
@@ -182,13 +205,15 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 - When creating PRs, add the `bot:ai-assisted` label
   - Remove the deprecated `ai-assisted` label (without `bot:` prefix) if found
 
+**Comment pass before pushing:** Before every `git push`, run the comment-cleanup skill (`.claude/skills/comment-cleanup/SKILL.md`) over the unpushed commits.
+
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
 - This applies especially to change files - if you need to add a PR link after creating the PR, make a separate commit
 
 **Signed commits:** All commits must be signed. Use `git commit -S` or configure Git to sign commits by default with `git config commit.gpgsign true`.
 
-**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant GitHub issue link and add labels as needed:
+**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Before creating the PR, run an agentic review (e.g. `/code-review`) against the PR's base branch and let the user triage the findings. Tick "Run agentic review" and name the skill used. Prompt the user for a relevant GitHub issue link and add labels as needed:
 - No issue link: add `-l skip-changes-check-issue`
 - No change file: add `-l skip-changes-check-all`
 

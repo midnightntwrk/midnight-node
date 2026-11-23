@@ -24,6 +24,15 @@
 
 pub mod extract_tx_with_context;
 
+/// Typed GraphQL/WebSocket client for the Midnight indexer, plus the sync-progress accounting and
+/// concurrency/timeout policy layered over its subscriptions.
+///
+/// Version-independent (hex blobs, not ledger types), so `ledger_8` and `ledger_9` share it, as
+/// with `CoinSelectionStrategy` below. Only decoding the blobs into wallet updates is
+/// per-generation, in each `ledger_N::context::indexer_context`.
+pub mod indexer_client;
+pub use indexer_client::{IndexerClient, IndexerClientError, WalletSyncState};
+
 /// Process-wide counters of replayed transactions that did not fully apply,
 /// shared by every ledger generation's `LedgerContext`.
 pub mod replay_stats {
@@ -45,6 +54,32 @@ pub enum CoinSelectionStrategy {
 	LargestFirst,
 	/// Use the smallest coins/UTXOs first. Consolidates dust.
 	SmallestFirst,
+}
+
+/// An untagged-serialized zswap `WalletState`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZswapWalletStateRaw(pub Vec<u8>);
+
+/// An untagged-serialized `DustLocalState`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DustLocalStateRaw(pub Vec<u8>);
+
+/// Where a verified DUST fast sync left each spend chain: the snapshot block, and every
+/// untagged-serialized `QualifiedDustOutput` the wallet held unspent there.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DustFrontierRaw {
+	pub height: u64,
+	pub block_hash: [u8; 32],
+	pub heads: Vec<Vec<u8>>,
+	/// A dust ledger-event id at or before the first event after `height`, if one was known.
+	pub event_cursor: Option<u64>,
+}
+
+/// An unshielded UTXO as its untagged-serialized `Utxo` plus its creation time.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UnshieldedUtxoRaw {
+	pub utxo: Vec<u8>,
+	pub ctime_secs: u64,
 }
 
 /// Struct to store serialized verifying key bytes

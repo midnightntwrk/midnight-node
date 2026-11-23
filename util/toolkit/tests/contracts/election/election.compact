@@ -1,0 +1,163 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * Election Contract
+ *
+ * Commit-reveal ballot run by an authority through phases setup -> commit -> reveal ->
+ * final. Voting rights are an allowlist: the authority inserts each voter's public key into
+ * a Merkle tree and committing proves membership in it. Commitments go into a second tree
+ * that reveals are checked against, and two nullifier sets stop double-commit and
+ * double-reveal.
+ *
+ * Test intent: two Merkle trees where membership in one gates writes to the other, plus
+ * `$`-separated witness names and an enum crossing the witness boundary.
+ */
+
+pragma language_version >= 0.17.0;
+
+import CompactStandardLibrary;
+
+export {vote_commit, vote_reveal, advance, set_topic, add_voter, voter_public_key}
+// Re-exports from std, so TypeScript types are generated for them.
+export {Maybe, MerkleTreePath}
+
+export enum PublicState { setup, commit, reveal, final, }
+export enum PrivateState { initial, committed, revealed, }
+export enum PermissibleVotes { yes, no, }
+
+export ledger authority: Bytes<32>;
+export ledger state: PublicState;
+export ledger topic: Maybe<Opaque<"string">>;
+export ledger tally_yes: Counter;
+export ledger tally_no: Counter;
+export ledger committed_votes: MerkleTree<10, Bytes<32>>;
+export ledger eligible_voters: MerkleTree<10, Bytes<32>>;
+export ledger committed: Set<Bytes<32>>;
+export ledger revealed: Set<Bytes<32>>;
+
+// Taking the secret key here separates deploying the contract from owning it, as in dao.
+constructor(authority_secret_key: Bytes<32>) {
+  authority = public_key(authority_secret_key);
+  state = PublicState.setup;
+}
+
+witness private$secret_key(): Bytes<32>;
+witness private$state(): PrivateState;
+witness private$state$advance(): [];
+witness private$vote$record(ballot: PermissibleVotes): [];
+witness private$vote(): PermissibleVotes;
+witness context$eligible_voters$path_of(pk: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>;
+witness context$committed_votes$path_of(cm: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>;
+
+// Should probably be replaced with a builtin...
+circuit ballot_repr(ballot: PermissibleVotes): Bytes<32> {
+  return ballot == PermissibleVotes.yes ? pad(32, "yes") : pad(32, "no");
+}
+
+circuit vote_commit(in_favor: Boolean): [] {
+  assert (state == PublicState.commit && private$state() == PrivateState.initial, "In illegal state for committing");
+  const ballot = in_favor ? PermissibleVotes.yes : PermissibleVotes.no;
+  private$vote$record(ballot);
+  const sk = private$secret_key();
+  const com_nul = commitment_nullifier(sk);
+  assert (!committed.member(com_nul), "Unexpected attempt to double use of nullifier");
+  const pk = public_key(sk);
+  const path = disclose(context$eligible_voters$path_of(pk));
+  assert (path.is_some &&
+          eligible_voters.checkRoot(merkleTreePathRoot<10, Bytes<32>>(path.value)) &&
+          pk == path.value.leaf, "Attempted to vote without authorization - need to add-voter");
+  const cm = commit_with_sk(ballot_repr(ballot), sk);
+  committed_votes.insert(cm);
+  committed.insert(com_nul);
+  private$state$advance();
+}
+
+circuit vote_reveal(): [] {
+  assert (state == PublicState.reveal && private$state() == PrivateState.committed, "In illegal state for revealing");
+  const sk = private$secret_key();
+  const rev_nul = reveal_nullifier(sk);
+  assert (!revealed.member(rev_nul), "Attempted to double vote");
+  const vote = disclose(private$vote());
+  const cm = commit_with_sk(ballot_repr(vote), sk);
+  const path = disclose(context$committed_votes$path_of(cm));
+  assert (path.is_some &&
+          committed_votes.checkRoot(merkleTreePathRoot<10, Bytes<32>>(path.value)) &&
+          cm == path.value.leaf, "Attempted to reveal incorrectly");
+  if(vote == PermissibleVotes.yes) {
+    tally_yes.increment(1);
+  } else {
+    tally_no.increment(1);
+  }
+  revealed.insert(rev_nul);
+  private$state$advance();
+}
+
+circuit advance(): [] {
+  const sk = private$secret_key();
+  const apk = public_key(sk);
+  assert (apk == authority, "Attempted to advance state without authorization");
+  assert (topic.is_some, "Attempted to start election without a topic");
+  state = successor(state);
+}
+
+circuit successor(s: PublicState): PublicState {
+  if(s == PublicState.setup) {
+    return PublicState.commit;
+  } else if(s == PublicState.commit) {
+    return PublicState.reveal;
+  } else {
+    return PublicState.final;
+  }
+}
+
+circuit set_topic(t: Opaque<"string">): [] {
+  const sk = private$secret_key();
+  const apk = public_key(sk);
+  assert (apk == authority, "Attempted to set topic without authorization");
+  assert (state == PublicState.setup, "Attempted to set topic after setup phase");
+  topic = some<Opaque<"string">>(disclose(t));
+}
+
+circuit add_voter(pk: Bytes<32>): [] {
+  assert (!context$eligible_voters$path_of(pk).is_some, "Attempted to add a voter twice");
+  const sk = private$secret_key();
+  const apk = public_key(sk);
+  assert (apk == authority, "Attempted to add a voter without authorization");
+  assert (state == PublicState.setup, "Attempted to add a voter after setup phase");
+  eligible_voters.insert(disclose(pk));
+}
+
+// Test support: a voter reads the key the authority has to allowlist.
+circuit voter_public_key(): Bytes<32> {
+  assert (state == PublicState.setup, "Voters register during setup");
+  return public_key(private$secret_key());
+}
+
+circuit commitment_nullifier(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "lares:election:cm-nul:"), sk]));
+}
+
+circuit reveal_nullifier(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "lares:election:rv-nul:"), sk]));
+}
+
+circuit public_key(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "lares:election:pk:"), sk]));
+}
+
+circuit commit_with_sk(ballot: Bytes<32>, sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([ballot, sk]));
+}

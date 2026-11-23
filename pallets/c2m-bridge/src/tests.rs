@@ -14,6 +14,7 @@
 use crate::mock::*;
 use crate::*;
 use frame_support::{assert_noop, assert_ok, traits::ConstU32};
+use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
 use midnight_primitives::BridgeRecipient;
 use pallet_partner_chains_bridge::{TransferHandler, TransferHandlerError};
 use sidechain_domain::McTxHash;
@@ -59,6 +60,16 @@ fn subminimal_transfer() -> BridgeTransferV1<BridgeRecipient> {
 		amount: 90,
 		mc_tx_hash: McTxHash([4; 32]),
 		recipient: TransferRecipient::Address { recipient: recipient() },
+	}
+}
+
+// A 'Reserve' transfer below the same threshold. The minimum does not apply to it, because
+// nothing is paid out to an address, so it must not be treated as subminimal.
+fn subminimal_reserve_transfer() -> BridgeTransferV1<BridgeRecipient> {
+	BridgeTransferV1 {
+		amount: 90,
+		mc_tx_hash: McTxHash([5; 32]),
+		recipient: TransferRecipient::Reserve,
 	}
 }
 
@@ -475,6 +486,57 @@ fn subminimal_unapproved_user_accumulates_not_unlocks() {
 		);
 		assert!(subminimal_events().is_empty());
 		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+	})
+}
+
+#[test]
+fn subminimal_reserve_transfer_is_distributed_not_accumulated() {
+	new_test_ext().execute_with(|| {
+		// Frame system drops events from block 0.
+		frame_system::Pallet::<Test>::set_block_number(1);
+		set_flush_threshold(1_000);
+
+		// A subminimal addressed transfer accumulates, as it always did.
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+
+		// A 'Reserve' transfer of the very same amount is distributed straight away.
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_reserve_transfer()));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 },
+			"a 'Reserve' transfer must not enter the subminimal accumulator"
+		);
+
+		assert_eq!(
+			frame_system::Pallet::<Test>::read_events_for_pallet::<Event<Test>>(),
+			vec![Event::ReserveTransfer {
+				mc_tx_hash: McTxHash([5; 32]),
+				amount: 90,
+				midnight_tx_hash: [0u8; 32],
+			}]
+		);
+	})
+}
+
+#[test]
+fn subminimal_reserve_transfer_distributes_the_reserve_rather_than_unlocking_to_treasury() {
+	new_test_ext().execute_with(|| {
+		set_flush_threshold(1_000);
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_reserve_transfer()));
+
+		// The two system transactions debit different pools, so the one that is produced
+		// decides where the amount comes from as well as where it goes. It has to be the
+		// reserve distribution, exactly as for a transfer above the minimum.
+		let expected: BoundedVec<u8, MaxTxLength> =
+			LedgerApi::construct_distribute_reserve_system_tx(90)
+				.unwrap()
+				.try_into()
+				.unwrap();
+		assert_eq!(mock_pallet::Transfers::<Test>::get(), vec![expected]);
 	})
 }
 

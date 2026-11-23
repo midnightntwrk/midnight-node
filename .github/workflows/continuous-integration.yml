@@ -13,6 +13,15 @@ env:
   # and the mirror push is a no-op. Same derivation .envrc forwards to earthly as build args.
   GHCR_REGISTRY: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnight-ntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
   GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+  # Fork PRs get no secrets and a read-only token, so they cannot push images to GHCR.
+  # Their builds hand images to downstream jobs as artifacts instead, named under
+  # FORK_IMAGE_REGISTRY (see .github/actions/save-fork-images and load-fork-images).
+  # Internal PRs and merge_group never take the fork path.
+  IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+  # 172.17.0.1 is Docker's default bridge (docker0) gateway, the one address both the
+  # host daemon and earthly's buildkitd container can reach; :5000 is the throwaway
+  # registry load-fork-images starts. load-fork-images fails if the gateway differs.
+  FORK_IMAGE_REGISTRY: 172.17.0.1:5000
 
 on:
   merge_group:
@@ -34,6 +43,52 @@ concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
 jobs:
+  prepare-local-e2e:
+    name: Prepare local integration test binary
+    if: contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Isolate registry credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      - name: Prepare local integration test binary
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          test -n "$CACHE_KEY"
+          . ./.envrc
+          earth -P \
+            +local-env-ci-prepare --CACHE_KEY="$CACHE_KEY"
+
   run:
     name: Build node and images (linux/amd64, self-hosted-tier:large, amd64)
     permissions:
@@ -41,9 +96,9 @@ jobs:
       contents: read
     # TEST PR — points at the new self-hosted runner pool to validate end-to-end
     # build performance. Revert before merge.
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
@@ -55,9 +110,9 @@ jobs:
       toolkit_image: ${{ steps.image_tags.outputs.toolkit_image }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           # Keep `use-cache: false` — that flag controls whether EarthBuild
           # caches state into GitHub Actions cache (which sets up TLS-secured
@@ -98,7 +153,8 @@ jobs:
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        if: env.IS_FORK_PR != 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -113,8 +169,9 @@ jobs:
       # still pulls + pushes without these creds. Dependabot runs don't have
       # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
+        if: env.IS_FORK_PR != 'true'
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -124,6 +181,7 @@ jobs:
       # before the build so an auth regression surfaces here rather than as an
       # opaque anonymous-token 403 mid-push.
       - name: Verify registry creds visible to earthly
+        if: env.IS_FORK_PR != 'true'
         run: |
           echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
           echo "Registries with creds:"
@@ -138,13 +196,17 @@ jobs:
           # rather than overwriting midnight-node. Taken from $GITHUB_REPOSITORY rather than
           # github.event.repository.name, which is absent from merge_group/schedule payloads.
           image_repo="${GITHUB_REPOSITORY#*/}"
+          registry="$GHCR_REGISTRY"
+          if [ "$IS_FORK_PR" = "true" ]; then
+            registry="${FORK_IMAGE_REGISTRY}/${GHCR_REGISTRY#ghcr.io/}"
+          fi
           {
             echo "node_image_tag=${version}-dev-${content_hash}-amd64"
             echo "node_image_tag_no_dev=${version}-${content_hash}-amd64"
             echo "toolkit_image_tag=${version}-${content_hash}-amd64"
             echo "image_repo=${image_repo}"
-            echo "node_image=${GHCR_REGISTRY}/${image_repo}"
-            echo "toolkit_image=${GHCR_REGISTRY}/${image_repo}-toolkit"
+            echo "node_image=${registry}/${image_repo}"
+            echo "toolkit_image=${registry}/${image_repo}-toolkit"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
@@ -156,7 +218,8 @@ jobs:
           TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
           TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
-          if [ "$FORCE_REBUILD" = "true" ]; then
+          # Fork PRs can't reuse GHCR images, so they always build.
+          if [ "$FORCE_REBUILD" = "true" ] || [ "$IS_FORK_PR" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -172,6 +235,7 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true,
           # so /tmp is in a per-service mount namespace that dockerd (and therefore
@@ -189,6 +253,7 @@ jobs:
           # accept GHA's ACTIONS_RUNTIME_TOKEN.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
+          STRIP_BINARIES: ${{ github.event.repository.visibility != 'public' }}
         run: |
           # Retry the earthly invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
@@ -200,10 +265,17 @@ jobs:
           #
           # No ::group:: wrapping — failures need to be visible by default in
           # the GHA log, not collapsed.
+          #
+          # Fork PRs build without --push; earthly loads the images into the local
+          # daemon for the save step below.
+          PUSH_FLAG="--push"
+          if [ "$IS_FORK_PR" = "true" ]; then
+            PUSH_FLAG=""
+          fi
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P $PUSH_FLAG +images --STRIP_BINARIES="$STRIP_BINARIES"; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
@@ -215,15 +287,38 @@ jobs:
           echo "earthly failed after 3 attempts"
           exit 1
 
+      # Earthly tags images under GHCR_REGISTRY; retag them under the fork names the
+      # downstream jobs were given.
+      - name: Tag images for downstream jobs (fork PRs)
+        if: env.IS_FORK_PR == 'true'
+        env:
+          IMAGE_REPO: ${{ steps.image_tags.outputs.image_repo }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
+        run: |
+          docker tag "${GHCR_REGISTRY}/${IMAGE_REPO}:${NODE_IMAGE_TAG}" "${NODE_IMAGE}:${NODE_IMAGE_TAG}"
+          docker tag "${GHCR_REGISTRY}/${IMAGE_REPO}-toolkit:${TOOLKIT_IMAGE_TAG}" "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}"
+
+      - name: Save images for downstream jobs (fork PRs)
+        if: env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/save-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-name: fork-images-amd64
+          images: |
+            ${{ steps.image_tags.outputs.node_image }}:${{ steps.image_tags.outputs.node_image_tag }}
+            ${{ steps.image_tags.outputs.toolkit_image }}:${{ steps.image_tags.outputs.toolkit_image_tag }}
+
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Wasm Runtime and binaries (amd64)
           path: artifacts-amd64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Test artifacts (amd64)
@@ -237,6 +332,8 @@ jobs:
       attestations: write
     name: SBOM/Scan Node
     needs: [run]
+    # Scans the image pushed to GHCR, which fork PRs don't have.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
@@ -255,6 +352,8 @@ jobs:
       attestations: write
     name: SBOM/Scan Toolkit
     needs: [run]
+    # Scans the image pushed to GHCR, which fork PRs don't have.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
       image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
@@ -274,9 +373,9 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -286,7 +385,8 @@ jobs:
           submodules: true
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        if: env.IS_FORK_PR != 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -314,7 +414,7 @@ jobs:
           TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
           TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
-          if [ "$FORCE_REBUILD" = "true" ]; then
+          if [ "$FORCE_REBUILD" = "true" ] || [ "$IS_FORK_PR" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -330,19 +430,25 @@ jobs:
       - name: Run build
         if: steps.check_images.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
+          # Fork PRs only check that arm64 builds; nothing downstream consumes the images.
+          PUSH_FLAG="--push"
+          if [ "$IS_FORK_PR" = "true" ]; then
+            PUSH_FLAG=""
+          fi
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P $PUSH_FLAG +images
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Wasm Runtime and binaries (arm64)
           path: artifacts-arm64/
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: (success() || failure()) && steps.check_images.outputs.skip_build != 'true'
         with:
           name: Test artifacts (arm64)
@@ -353,6 +459,8 @@ jobs:
   push-combined-manifest:
     name: Push combined multi-arch manifest
     needs: [run, run-arm64]
+    # Fork PRs push no per-platform images to combine.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       packages: write
@@ -362,7 +470,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -446,17 +554,19 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Check Deps
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
         run: |
-          . ./.envrc && earthly +check-deps
+          . ./.envrc && earth +check-deps
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -483,20 +593,27 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Load images (fork PRs)
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-pattern: fork-images-amd64
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       - name: Generate dummy genesis seeds
         if: steps.guard.outputs.hit != 'true'
@@ -510,13 +627,14 @@ jobs:
       - name: Check Genesis Rebuild
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
           TOOLKIT_IMAGE: ${{ needs.run.outputs.toolkit_image }}
           TOOLKIT_IMAGE_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             --build-arg "TOOLKIT_IMAGE=${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" \
             +rebuild-genesis
@@ -532,7 +650,10 @@ jobs:
       contents: read
       actions: write
     name: Test Pallet Fixtures
-    runs-on: ubuntu-latest
+    # The fixture tests compile midnight-node-ledger with both ledger generations (and both
+    # storage lines) in one crate; rustc is SIGKILLed on the 16 GB ubuntu-latest runner.
+    # Same routing as Test Toolkit: self-hosted large for in-repo branches, GitHub-hosted for forks.
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -544,10 +665,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -558,6 +679,7 @@ jobs:
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
           # under actions/checkout; reach for the actual head/ref name instead.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
@@ -568,7 +690,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P --strict \
+          . ./.envrc && earth -P \
             +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -576,16 +698,83 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
+  # No `needs`, so the toolkit test compile overlaps the node build. test-toolkit picks the
+  # archive up from the runner's shared BuildKit cache (a miss rebuilds it there). Skipped where
+  # the two jobs can't share a daemon: hosted runners compile inside test-toolkit instead.
+  build-toolkit-tests:
+    if: contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
+    permissions:
+      contents: read
+      actions: read
+    name: Build Toolkit Tests
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      # Lookup only, against test-toolkit's key: a tree test-toolkit already passed needs no archive.
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          check-name: test-toolkit
+
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          version: v0.8.18
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Isolate docker config
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to Docker Hub
+        if: steps.guard.outputs.hit != 'true'
+        continue-on-error: true
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      - name: Free disk space
+        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
+
+      - name: Disable earthly TLS (self-hosted runner has no certs)
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+
+      - name: Build toolkit test archive
+        if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
+          TMPDIR: ${{ runner.temp }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+        run: |
+          . ./.envrc && earth -P +toolkit-test-archive
+
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
     permissions:
       contents: read
       actions: write
     name: Test Toolkit
-    needs: [run]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
+    needs: [run, build-toolkit-tests]
+    if: ${{ !cancelled() && !failure() }}
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:large"]') || fromJSON('["ubuntu-latest"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -597,10 +786,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -613,8 +802,8 @@ jobs:
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -627,9 +816,9 @@ jobs:
       # public, so the build proceeds without these creds (e.g. Dependabot runs,
       # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
-        if: steps.guard.outputs.hit != 'true'
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -637,6 +826,13 @@ jobs:
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
+
+      - name: Load images (fork PRs)
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-pattern: fork-images-amd64
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
 
       # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
@@ -650,12 +846,12 @@ jobs:
       - name: Run toolkit tests
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
           # pulls (empty on fork PRs → anonymous, rate-limited).
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true.
           # Force earthly's tempdir to live under $RUNNER_TEMP which is
           # outside the per-service PrivateTmp namespace.
@@ -668,32 +864,16 @@ jobs:
           # wrong auth; override to empty for the earthly call.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
-          # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
-          # cache mount. Pass the PR ref so the cache is scoped per-branch — see
-          # +test's `Run build` step for the full rationale and why
-          # EARTHLY_GIT_BRANCH is unsafe here.
-          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
+        # No --remote-cache: it would export +test-toolkit's own layers, which hold the per-commit archive.
         run: |
-          PUSH_FLAG=""
-          if [ "$EVENT_NAME" = "merge_group" ]; then
-            PUSH_FLAG="--push"
-          fi
-          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-          if [ -z "$CACHE_KEY" ]; then
-            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
-            exit 1
-          fi
-          echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            -P --strict $PUSH_FLAG \
-            --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
+            -P \
             +test-toolkit \
-              --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
-              --CACHE_KEY="$CACHE_KEY"
+              --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -721,6 +901,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -747,6 +928,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -773,6 +955,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -799,6 +982,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -825,6 +1009,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -844,27 +1029,35 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
+      - name: Load images (fork PRs)
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-pattern: fork-images-amd64
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
+
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
-          . ./.envrc && earthly --ci -P \
+          . ./.envrc && earth --no-output -P \
             --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
@@ -894,7 +1087,7 @@ jobs:
   #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
   #     - name: Login to GHCR
-  #       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+  #       uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
   #       with:
   #         registry: ghcr.io
   #         username: MidnightCI
@@ -921,7 +1114,7 @@ jobs:
 
   #     - name: Upload sync logs on failure
   #       if: failure()
-  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+  #       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7.0.2
   #       with:
   #         name: mainnet-sync-logs
   #         path: |
@@ -950,6 +1143,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -975,6 +1169,7 @@ jobs:
           just-command: startup-dev-e2e
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -991,11 +1186,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        if: env.IS_FORK_PR != 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Load images (fork PRs)
+        if: env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-pattern: fork-images-amd64
 
       - name: Run chainspec validation harness
         env:
@@ -1023,6 +1225,7 @@ jobs:
           node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          images-artifact: ${{ env.IS_FORK_PR == 'true' && 'fork-images-amd64' || '' }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -1046,6 +1249,7 @@ jobs:
           submodules: true
 
       - name: Login to GHCR
+        if: env.IS_FORK_PR != 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: echo "$REGISTRY_TOKEN" | docker login ghcr.io -u MidnightCI --password-stdin
@@ -1057,14 +1261,19 @@ jobs:
         run: |
           # Use the indexer submodule's tree hash — indexer images depend on submodule content, not main repo
           content_hash=$(git -C indexer rev-parse "HEAD^{tree}" | cut -c1-12)
+          registry="$GHCR_REGISTRY"
+          if [ "$IS_FORK_PR" = "true" ]; then
+            registry="${FORK_IMAGE_REGISTRY}/${GHCR_REGISTRY#ghcr.io/}"
+          fi
           {
-            echo "indexer_api_image=${GHCR_REGISTRY}/indexer-api:${content_hash}"
-            echo "chain_indexer_image=${GHCR_REGISTRY}/chain-indexer:${content_hash}"
-            echo "wallet_indexer_image=${GHCR_REGISTRY}/wallet-indexer:${content_hash}"
+            echo "indexer_api_image=${registry}/indexer-api:${content_hash}"
+            echo "chain_indexer_image=${registry}/chain-indexer:${content_hash}"
+            echo "wallet_indexer_image=${registry}/wallet-indexer:${content_hash}"
             echo "content_hash=${content_hash}"
           } >> "$GITHUB_OUTPUT"
 
-          if [ "$FORCE_REBUILD" = "true" ]; then
+          # Fork PRs can't reuse GHCR images, so they always build.
+          if [ "$FORCE_REBUILD" = "true" ] || [ "$IS_FORK_PR" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -1086,15 +1295,16 @@ jobs:
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 #v2.87.18
+        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 #v2.90.0
         with:
           tool: just
 
       - name: Build indexer images
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
-          REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-          CONTENT_HASH: ${{ steps.image_meta.outputs.content_hash }}
+          INDEXER_API_IMAGE: ${{ steps.image_meta.outputs.indexer_api_image }}
+          CHAIN_INDEXER_IMAGE: ${{ steps.image_meta.outputs.chain_indexer_image }}
+          WALLET_INDEXER_IMAGE: ${{ steps.image_meta.outputs.wallet_indexer_image }}
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -1112,22 +1322,36 @@ jobs:
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag with submodule's content hash (CONTENT_HASH comes from the step env)
+          # Retag with the submodule's content hash
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
 
-          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
-          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/chain-indexer:${CONTENT_HASH}"
-          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/wallet-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "$INDEXER_API_IMAGE"
+          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "$CHAIN_INDEXER_IMAGE"
+          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "$WALLET_INDEXER_IMAGE"
 
-          docker push "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
-          docker push "${GHCR_REGISTRY}/chain-indexer:${CONTENT_HASH}"
-          docker push "${GHCR_REGISTRY}/wallet-indexer:${CONTENT_HASH}"
+          # Fork PRs hand the images on as an artifact (next step) instead.
+          if [ "$IS_FORK_PR" != "true" ]; then
+            docker push "$INDEXER_API_IMAGE"
+            docker push "$CHAIN_INDEXER_IMAGE"
+            docker push "$WALLET_INDEXER_IMAGE"
+          fi
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 #v2.9.2
+      - name: Save indexer images for downstream jobs (fork PRs)
+        if: steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/save-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-name: fork-images-indexer
+          images: |
+            ${{ steps.image_meta.outputs.indexer_api_image }}
+            ${{ steps.image_meta.outputs.chain_indexer_image }}
+            ${{ steps.image_meta.outputs.wallet_indexer_image }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 #v2.9.3
         if: steps.image_meta.outputs.skip_build != 'true'
 
+      # Fork PRs have no token, and an empty one in the rewrite would break public clones.
       - name: Configure git for private repos
-        if: steps.image_meta.outputs.skip_build != 'true'
+        if: steps.image_meta.outputs.skip_build != 'true' && env.IS_FORK_PR != 'true'
         run: |
           git config --global url."https://${GH_PAT}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
         env:
@@ -1141,8 +1365,14 @@ jobs:
       - name: just test
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
+          NODE_GIT_TOKEN: ${{ secrets.NODE_GIT_TOKEN }}
           APP__INFRA__SECRET: ${{ secrets.APP__INFRA__SECRET }}
         run: |
+          # Fork PRs don't get the secret. The tests only need some 32-byte hex key.
+          if [ -z "$APP__INFRA__SECRET" ]; then
+            APP__INFRA__SECRET=$(openssl rand -hex 32)
+            export APP__INFRA__SECRET
+          fi
           . ./.envrc
           git config --global url."https://@github.com".insteadOf "ssh://git@github.com"
           cd indexer || exit 1
@@ -1150,11 +1380,11 @@ jobs:
 
   local-environment-tests:
     name: Local Environment Tests
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    needs: [run, build-indexer-images]
-    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
-    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
+    if: ${{ !cancelled() && !failure() && needs.run.result == 'success' && needs.build-indexer-images.result == 'success' && ((github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group') }}
+    needs: [run, build-indexer-images, prepare-local-e2e]
+    # Self-hosted only in our own orgs (other repos have no such runners and would queue
+    # forever) and never for fork PRs (keeps untrusted code off our infrastructure).
+    runs-on: ${{ (contains(fromJSON('["midnightntwrk", "shieldedtech"]'), github.repository_owner) && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON('["self-hosted", "tier:medium"]') || fromJSON('["ubuntu-latest"]') }}
     # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
@@ -1185,10 +1415,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
+      - name: Load images (fork PRs)
+        if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR == 'true'
+        uses: ./.github/actions/load-fork-images # zizmor: ignore[self-repository] actionlint does not yet accept $/
+        with:
+          artifact-pattern: fork-images-*
+          registry: ${{ env.FORK_IMAGE_REGISTRY }}
+
       - name: Deploy and test against local environment
         if: steps.guard.outputs.hit != 'true'
         uses: ./.github/actions/local-environment-tests
         with:
+          node-git-token: ${{ secrets.NODE_GIT_TOKEN }}
           tag: CI
           image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
@@ -1198,6 +1436,7 @@ jobs:
           indexer-tag: unused
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
+          ci-execution: ${{ github.run_id }}-${{ github.run_attempt }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
           # Empty on fork PRs → the in-DinD docker login is skipped and public
           # images (postgres, kupo, …) fall back to anonymous, rate-limited pulls.

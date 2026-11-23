@@ -168,6 +168,7 @@ mod tests {
 	use super::*;
 	use crate::test_support::*;
 	use sc_consensus::block_import::ForkChoiceStrategy;
+	use sp_api::CallContext;
 	use std::sync::Mutex;
 	use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -234,6 +235,7 @@ mod tests {
 			TestSlotExtractor,
 			TestInherentDigest,
 		>,
+		client: Arc<TestClient>,
 		check_inherents_called: Arc<AtomicBool>,
 		consensus_saw_body: Arc<AtomicBool>,
 		terminal_received_body: Arc<Mutex<Option<Option<Vec<<Block as BlockT>::Extrinsic>>>>>,
@@ -251,10 +253,19 @@ mod tests {
 			inner: PartnerChainsBodyRestore::new(terminal),
 			saw_body: consensus_saw_body.clone(),
 		};
-		let import =
-			PartnerChainsBlockImport::new(consensus, client, test_create_inherent_data_providers());
+		let import = PartnerChainsBlockImport::new(
+			consensus,
+			client.clone(),
+			test_create_inherent_data_providers(),
+		);
 
-		Sandwich { import, check_inherents_called, consensus_saw_body, terminal_received_body }
+		Sandwich {
+			import,
+			client,
+			check_inherents_called,
+			consensus_saw_body,
+			terminal_received_body,
+		}
 	}
 
 	fn importable(body: Option<Vec<<Block as BlockT>::Extrinsic>>) -> BlockImportParams<Block> {
@@ -278,6 +289,24 @@ mod tests {
 		// while the import below the restore stage receives the complete block.
 		assert!(!sandwich.consensus_saw_body.load(Ordering::SeqCst));
 		assert_eq!(*sandwich.terminal_received_body.lock().unwrap(), Some(Some(vec![])));
+	}
+
+	#[tokio::test]
+	async fn checks_inherents_in_the_on_chain_call_context() {
+		// Same requirement as for the verifier: check with the runtime the block was built
+		// with, which around a staged runtime upgrade only the on-chain context resolves.
+		let sandwich = sandwich(false);
+
+		sandwich
+			.import
+			.import_block(importable(Some(vec![])))
+			.await
+			.expect("import succeeds");
+
+		assert_eq!(
+			sandwich.client.check_inherents_call_context(),
+			Some(CallContext::Onchain { import: false })
+		);
 	}
 
 	#[tokio::test]

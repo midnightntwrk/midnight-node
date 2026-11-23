@@ -9,8 +9,6 @@ use clap::Parser;
 use cli_commands::registration_signatures::RegistrationSignaturesCmd;
 use frame_support::sp_runtime::traits::NumberFor;
 use parity_scale_codec::{Decode, Encode};
-use partner_chains_cli::DefaultCmdRunContext;
-pub use partner_chains_cli::PartnerChainRuntime;
 use sc_cli::{CliConfiguration, SharedParams, SubstrateCli};
 use sc_service::TaskManager;
 use sidechain_domain::*;
@@ -95,7 +93,7 @@ static REGISTRATION_STATUS_AFTER_HELP: once_cell::sync::Lazy<String> = once_cell
 #[derive(Clone, Debug, clap::Subcommand)]
 #[allow(clippy::large_enum_variant)]
 /// Entry point for all Partner Chains specific subcommand.
-pub enum PartnerChainsSubcommand<RuntimeBindings: PartnerChainRuntime + Send + Sync> {
+pub enum PartnerChainsSubcommand {
 	/// Returns sidechain parameters.
 	/// Requires --chain parameter that results in loading a properly configured chain spec.
 	SidechainParams(SidechainParamsCmd),
@@ -117,21 +115,11 @@ pub enum PartnerChainsSubcommand<RuntimeBindings: PartnerChainRuntime + Send + S
 
 	/// Generates registration signatures for partner chains committee candidates
 	RegistrationSignatures(RegistrationSignaturesCmd),
-
-	/// Partner Chains text "wizards" for setting up chain
-	#[command(subcommand)]
-	Wizards(partner_chains_cli::Command<RuntimeBindings>),
 }
 
 #[allow(deprecated)]
 /// Runs a Partner Chains subcommand.
-pub fn run<
-	Cli,
-	Block,
-	CommitteeMember,
-	Client,
-	RuntimeBindings: PartnerChainRuntime + Send + Sync,
->(
+pub fn run<Cli, Block, CommitteeMember, Client>(
 	cli: &Cli,
 	get_deps: impl FnOnce(
 		sc_service::Configuration,
@@ -139,7 +127,7 @@ pub fn run<
 		(Arc<Client>, TaskManager, Arc<dyn AuthoritySelectionDataSource + Send + Sync>),
 		sc_service::error::Error,
 	>,
-	cmd: PartnerChainsSubcommand<RuntimeBindings>,
+	cmd: PartnerChainsSubcommand,
 ) -> sc_cli::Result<()>
 where
 	Cli: SubstrateCli,
@@ -193,37 +181,7 @@ where
 			})
 		},
 		PartnerChainsSubcommand::RegistrationSignatures(cmd) => Ok(println!("{}", cmd.execute())),
-		PartnerChainsSubcommand::Wizards(cmd) => {
-			setup_log4rs()?;
-			Ok(cmd
-				.run(&DefaultCmdRunContext)
-				.map_err(|e| sc_cli::Error::Application(e.into()))?)
-		},
 	}
-}
-
-/// This sets logging to stderr, leaving stdout for smart-contracts JSON outputs.
-/// Ogmios interactions are logged to a file.
-fn setup_log4rs() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let stderr = log4rs::append::console::ConsoleAppender::builder()
-		.target(log4rs::append::console::Target::Stderr)
-		.build();
-	let ogmios_log = log4rs::append::file::FileAppender::builder().build("ogmios_client.log")?;
-
-	let log_config = log4rs::config::Config::builder()
-		.appender(log4rs::config::Appender::builder().build("stderr", Box::new(stderr)))
-		.appender(log4rs::config::Appender::builder().build("ogmios-log", Box::new(ogmios_log)))
-		.logger(
-			log4rs::config::Logger::builder()
-				.appender("ogmios-log")
-				.additive(false)
-				.build("ogmios_client::jsonrpsee", log::LevelFilter::Debug),
-		)
-		.build(log4rs::config::Root::builder().appender("stderr").build(log::LevelFilter::Info))?;
-
-	log4rs::init_config(log_config)?;
-
-	Ok(())
 }
 
 async fn print_result<FIn>(command_future: FIn) -> Result<(), sc_cli::Error>

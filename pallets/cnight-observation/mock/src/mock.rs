@@ -29,6 +29,8 @@ type AccountId = u64;
 type Block = frame_system::mocking::MockBlock<Test>;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod mock_pallet {
 	use frame_support::pallet_prelude::*;
 	use sidechain_domain::*;
@@ -102,6 +104,7 @@ impl Get<BlockReward> for LedgerBlockReward {
 impl pallet_midnight::Config for Test {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }
 
 impl pallet_midnight_system::Config for Test {
@@ -150,7 +153,7 @@ impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
 	type LedgerStateProvider = Midnight;
 	type LedgerBlockContextProvider = Midnight;
-	type WeightInfo = ();
+	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Test>;
 }
 
 impl mock_pallet::Config for Test {}

@@ -10,16 +10,29 @@ external process first.
 
 ## Supported snapshot inputs
 
-`--from-snapshot` currently accepts an `http://` or `https://` URL pointing to
-one of these archive formats:
+`--from-snapshot` accepts an `http://` or `https://` URL, or a local archive
+(a path or `file://` URL), in one of these formats:
 
 - `.tar`
 - `.tar.gz` or `.tgz`
 - `.tar.zst`
 
+A local archive skips the download, so fetch a large snapshot once and
+reuse it across forks:
+
+```bash
+curl -fLo ~/snapshots/preview.tar.gz <snapshot URL>
+npm run run:preview -- --from-snapshot ~/snapshots/preview.tar.gz --num-validators 3
+```
+
+The archive is downloaded and extracted into a staging dir inside the
+network's `data/` dir, then cloned into each node's data dir, so only that
+filesystem needs the space (preview: ~110 GB). On macOS, put `data/` on APFS
+to get copy-on-write clones.
+
 Local restore requires:
 
-- `curl`
+- `curl` (URLs only)
 - `tar`
 - `zstd` for `.zst` archives
 
@@ -82,9 +95,10 @@ authority data is rejected.
 The restore flow:
 
 1. Downloads and extracts the archive.
-2. Replicates the extracted node state into every compose `data/` mount for the
-   selected network.
-3. Runs `mock-authorities convert` over the restored state.
+2. Runs `mock-authorities convert --node-dir` once over the extracted state.
+3. Replicates the converted state into every compose `data/` mount for the
+   selected network, validators and non-validators (e.g. `boot-node`) alike,
+   so every peer starts from the same fork block.
 4. Generates a compose override that mounts the generated validator seeds and
    switches the main-chain follower into mock mode. When `--num-validators` is
    provided, the override also disables validator services above that count.

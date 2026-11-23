@@ -23,8 +23,6 @@ pub use pallet::*;
 mod check_throttle;
 pub use check_throttle::CheckThrottle;
 
-pub mod migrations;
-
 /// `InvalidTransaction::Custom` code returned when a signed transaction would take its
 /// account over the per-window byte or transaction limit.
 ///
@@ -40,6 +38,8 @@ mod mock;
 mod tests;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;

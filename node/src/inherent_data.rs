@@ -37,7 +37,7 @@ use sidechain_mc_hash::McHashDataSource;
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
 use sidechain_mc_hash::McHashInherentError;
 use sidechain_slots::ScSlotConfig;
-use sp_api::ProvideRuntimeApi;
+use sp_api::{CallApiAt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_consensus_aura::Slot;
 use sp_inherents::CreateInherentDataProviders;
@@ -65,7 +65,8 @@ const DEFAULT_CARDANO_CHECK_BACKOFF: Duration = Duration::from_secs(5);
 /// re-checks Cardano before giving up and propagating the error.
 const DEFAULT_CARDANO_CHECK_MAX_RETRIES: u32 = 60;
 
-#[allow(clippy::too_many_arguments)]
+// redundant_field_names: clippy 1.100 lints `derive(new)` output.
+#[allow(clippy::too_many_arguments, clippy::redundant_field_names)]
 #[derive(new)]
 pub(crate) struct ProposalCIDP<T> {
 	config: CreateInherentDataConfig,
@@ -81,7 +82,7 @@ pub(crate) struct ProposalCIDP<T> {
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, ()> for ProposalCIDP<T>
 where
-	T: ProvideRuntimeApi<Block> + Send + Sync + 'static,
+	T: ProvideRuntimeApi<Block> + CallApiAt<Block> + Send + Sync + 'static,
 	T: HeaderBackend<Block>,
 	T::Api: SessionValidatorManagementApi<
 			Block,
@@ -98,7 +99,6 @@ where
 		sp_timestamp::InherentDataProvider,
 		McHashIDP,
 		AriadneIDP,
-		//BlockBeneficiaryInherentProvider<BeneficiaryId>,
 		MidnightCNightObservationInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
 		TokenBridgeInherentDataProvider<BridgeRecipient>,
@@ -154,13 +154,6 @@ where
 			log::warn!("Failed to create authority_selection inherent data for proposal: {e}");
 			e
 		})?;
-		/*
-		#[cfg(feature = "experimental")]
-		let block_beneficiary_provider = BlockBeneficiaryInherentProvider::<BeneficiaryId>::from_env(
-			"SIDECHAIN_BLOCK_BENEFICIARY",
-		)?;
-		 */
-
 		let cnight_observation = MidnightCNightObservationInherentDataProvider::new(
 			client.clone(),
 			cnight_observation_data_source.as_ref(),
@@ -202,8 +195,6 @@ where
 			timestamp,
 			mc_hash,
 			ariadne_data_provider,
-			//#[cfg(feature = "experimental")]
-			//block_beneficiary_provider,
 			cnight_observation,
 			federated_authority,
 			bridge,
@@ -211,7 +202,8 @@ where
 	}
 }
 
-#[allow(clippy::too_many_arguments)]
+// redundant_field_names: clippy 1.100 lints `derive(new)` output.
+#[allow(clippy::too_many_arguments, clippy::redundant_field_names)]
 #[derive(new)]
 pub struct VerifierCIDP<T> {
 	config: CreateInherentDataConfig,
@@ -244,7 +236,7 @@ impl<T> Clone for VerifierCIDP<T> {
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
 where
-	T: ProvideRuntimeApi<Block> + Send + Sync + HeaderBackend<Block> + 'static,
+	T: ProvideRuntimeApi<Block> + CallApiAt<Block> + Send + Sync + HeaderBackend<Block> + 'static,
 	T::Api: SessionValidatorManagementApi<
 			Block,
 			CommitteeMember<CrossChainPublic, SessionKeys>,

@@ -37,9 +37,9 @@ on:
           - devnet
           - qanet
       mock_authorities_tag:
-        description: "mock-authorities image tag. Use >= 4d8d772: it carries the GRANDPA client aux-storage rewrite (PR #77) required so forks of >=2.0.0 runtimes finalize (older tags such as 368fd98 rotate the voter via a ForcedChange digest that deadlocks GRANDPA and finality stalls), and it still includes the Council/Technical Committee membership rewrite needed for the runtime and full upgrade modes."
+        description: "mock-authorities image tag. Use >= f6cbf91: it writes a mock-follower main-chain hash into the fork block (older tags keep the real Cardano hash, which >=2.x nodes reject as regressing, midnight-node#2307). The default, 14cee4b, opens node 2.x databases with parity-db 0.5 (midnight-node-ops#127; older tags cannot see a long chain's grandpa_voters, so finality stalls), builds the fork block through the runtime (#110), and gives it the parent's MNSV digest and an empty body so the indexer can decode it (older tags crash chain-indexer at the fork block). Older floor 4d8d772: it carries the GRANDPA client aux-storage rewrite (PR #77) required so forks of >=2.0.0 runtimes finalize (older tags such as 368fd98 rotate the voter via a ForcedChange digest that deadlocks GRANDPA and finality stalls), and it still includes the Council/Technical Committee membership rewrite needed for the runtime and full upgrade modes."
         required: true
-        default: "4d8d772"
+        default: "14cee4b"
       node_image:
         description: "Full Docker image reference to fork from, e.g. ghcr.io/midnight-ntwrk/midnight-node:1.0.0 or a CI tag like ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-<tree-hash>-amd64 — not a git branch/sha/URL. Must match the snapshot's runtime host fns"
         required: true
@@ -100,9 +100,9 @@ jobs:
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24.18.0"
+          node-version: "24.22.2"
 
       - name: Update NPM
         run: npm install -g npm@12.0.2
@@ -111,7 +111,7 @@ jobs:
       # the pull-or-inspect fallback below to hit cached images.
       - name: Login to GHCR
         if: ${{ env.ACT != 'true' }}
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -467,7 +467,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: forked-${{ inputs.network }}-logs
           path: /tmp/forked-network-logs/

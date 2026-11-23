@@ -20,13 +20,15 @@ macro_rules! with_migration_versions {
 		$(
 			async fn $name($pool: PgPool, $tx_in_cfg: TxInConfiguration) $body
 
-			#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-			async fn $name_v1($pool: PgPool) {
+			#[tokio::test]
+			async fn $name_v1() {
+				let ($pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-enabled").await;
 				$name($pool, TxInConfiguration::Enabled).await
 			}
 
-			#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
-			async fn $name_v2($pool: PgPool) {
+			#[tokio::test]
+			async fn $name_v2() {
+				let ($pool, _db) = crate::test_db::test_db("./testdata/migrations-tx-in-consumed").await;
 				$name($pool, TxInConfiguration::Consumed).await
 			}
 		)*
@@ -407,8 +409,8 @@ fn leader_candidate_spo_a() -> CandidateRegistrations {
 						tx_index_within_block: McTxIndexInBlock(1),
 					},
 					tx_inputs: vec![
-						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 0),
+						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 					],
 				}
 			],
@@ -439,8 +441,8 @@ fn leader_candidate_spo_b() -> CandidateRegistrations {
 						tx_index_within_block: McTxIndexInBlock(1),
 					},
 					tx_inputs: vec![
-						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 0),
+						UtxoId::new(hex!("cdefe62b0a0016c2ccf8124d7dda71f6865283667850cc7b471f761d2bc1eb13"), 1),
 					],
 				}
 			],

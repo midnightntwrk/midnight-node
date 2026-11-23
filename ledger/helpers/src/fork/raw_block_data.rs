@@ -60,7 +60,7 @@ mod hex_or_bytes_32 {
 
 /// Which ledger version a block was produced under.
 ///
-/// The discriminants are wire format: they are what lands in the `raw_block_data_v2`
+/// The discriminants are wire format: they are what lands in the `raw_block_data_v3`
 /// block cache (redb and PostgreSQL both postcard-encode `RawBlockData` into it).
 /// Never renumber or reuse one - 0 stays burnt on the removed Ledger7 so a cache
 /// written before its removal decodes as itself, or fails, rather than silently
@@ -108,7 +108,7 @@ impl<'de> Deserialize<'de> for LedgerVersion {
 			D::Error::custom(format!(
 				"ledger version {found} is no longer supported: this block cache was written by a \
 				 toolkit that still had Ledger7; ledger 7 history is not replayable - delete the \
-				 cache (or drop the `raw_block_data_v2` rows) and re-fetch"
+				 cache (or drop the `raw_block_data_v3` rows) and re-fetch"
 			))
 		};
 
@@ -180,6 +180,9 @@ pub struct RawBlockData {
 	pub parent_block_hash: [u8; 32],
 	/// Previous block's timestamp in seconds (fixed up after fetch)
 	pub last_block_time_secs: u64,
+	/// Spec version of the runtime that was on-chain at this height. Zero for blocks built
+	/// locally rather than fetched from a chain.
+	pub spec_version: u32,
 	/// State root (for verification)
 	pub state_root: Option<Vec<u8>>,
 	/// Genesis state bytes (only present for block 0)
@@ -219,6 +222,7 @@ impl RawBlockData {
 			tblock_err: 30,
 			parent_block_hash: [0u8; 32],
 			last_block_time_secs: 0,
+			spec_version: 0,
 			state_root: None,
 			state: None,
 		}
@@ -282,7 +286,7 @@ mod tests {
 	use super::*;
 
 	/// Postcard encoding of `LedgerVersion` IS the on-disk cache format
-	/// (`raw_block_data_v2`, redb and PostgreSQL alike). These bytes are frozen: a
+	/// (`raw_block_data_v3`, redb and PostgreSQL alike). These bytes are frozen: a
 	/// renumbering silently reinterprets every cached block as a different ledger.
 	#[test]
 	fn postcard_discriminants_are_pinned() {

@@ -12,7 +12,9 @@ A node can verify, import and author blocks of both engines across the flip. Ope
   route each block to the AURA or BABE pipeline by the engine that authored it, read from the block
   header (`node/src/engine_digests.rs`). BABE pre-digests are only trusted when the block's
   `pallet-version` digest is ≥ `ACTIVATION_SPEC_VERSION` (3_000_000), so older blocks stay AURA
-  and warp/gap sync works. The BABE epoch tree is seeded on the verify path.
+  and warp/gap sync works. The BABE epoch tree is seeded on the verify path; seeding adds each
+  flip block's epoch pair to the tree instead of resetting it, so a node that seeded at the flip
+  block of a losing branch still verifies the winning branch across a fork at the flip.
 - **Single authoring task:** `run_authoring_supervisor` runs AURA until the flip, then BABE; one-way.
 - **Starts on runtimes without `BabeApi`** (placeholder BABE configuration), so binaries can be
   rolled out before the runtime upgrade.
@@ -25,5 +27,5 @@ A node can verify, import and author blocks of both engines across the flip. Ope
   `sc-partner-chains-consensus` (`PartnerChainsBlockImport`, `PartnerChainsVerifier`,
   `PartnerChainsProposerFactory`).
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/2113
+PR: https://github.com/midnightntwrk/midnight-node/pull/2113, https://github.com/midnightntwrk/midnight-node/pull/2312
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1757

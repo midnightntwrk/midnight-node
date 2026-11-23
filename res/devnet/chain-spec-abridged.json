@@ -71,38 +71,38 @@
             41,
             58,
             0,
-            179,
-            153,
-            76,
-            132,
-            154,
-            208,
-            88,
-            155,
-            197,
-            179,
-            194,
-            46,
-            25,
-            68,
-            2,
-            153,
-            216,
-            196,
-            1,
-            237,
-            233,
-            24,
-            153,
-            5,
-            61,
-            203,
-            124,
+            51,
+            29,
+            205,
+            113,
             235,
+            132,
+            72,
+            240,
+            212,
+            211,
+            142,
+            17,
+            83,
+            141,
+            27,
+            55,
+            113,
+            56,
+            196,
             238,
-            66,
-            206,
-            232
+            63,
+            198,
+            132,
+            38,
+            232,
+            197,
+            151,
+            179,
+            246,
+            82,
+            26,
+            42
           ]
         },
         "sessionCommitteeManagement": {
@@ -205,6 +205,9 @@
         "txPause": {
           "paused": []
         },
+        "safeMode": {
+          "enteredUntil": null
+        },
         "beefy": {
           "authorities": [
             "KWBJCFSE2SZUiEhhTbL6vTW71WpABUXsBkAN6SCFdcub8Yz4W",
@@ -284,6 +287,7 @@
           "subminimalTransfersConfig": {
             "subminimal_transfers_flush_threshold": 500000
           },
+          "approvedTxs": [],
           "marker": null
         },
         "council": {

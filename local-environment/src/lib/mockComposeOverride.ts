@@ -91,6 +91,7 @@ export function generateMockComposeOverride(opts: MockOverrideOptions): string {
         AURA_SEED_FILE: "/seeds/aura.seed",
         GRANDPA_SEED_FILE: "/seeds/grandpa.seed",
         CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed",
+        BEEFY_SEED_FILE: "/seeds/beefy.seed",
         // Blank these out so the base compose's SEED_PHRASE / DB_SYNC envs
         // don't sneak through; fork-mode reads keys from seed files and
         // disables Cardano db-sync entirely.
