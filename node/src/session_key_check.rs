@@ -21,155 +21,85 @@
 //! [`crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore`], which answers BABE
 //! queries with AURA keys.
 
-use log::Level;
-use sp_core::crypto::{
-	KeyTypeId,
-	key_types::{AURA, BABE, BEEFY, GRANDPA},
-};
+use crate::service::BeefyId;
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_consensus_babe::AuthorityId as BabeId;
+use sp_consensus_grandpa::AuthorityId as GrandpaId;
+use sp_core::crypto::CryptoTypeId;
 use sp_keystore::Keystore;
+use sp_runtime::app_crypto::AppPublic;
 use std::path::Path;
 
 const LOG_TARGET: &str = "session-key-check";
 
-/// Signature scheme of a session key type.
-#[derive(Clone, Copy)]
-pub enum Scheme {
-	Sr25519,
-	Ed25519,
-	Ecdsa,
-}
-
-impl Scheme {
-	fn name(self) -> &'static str {
-		match self {
-			Scheme::Sr25519 => "sr25519",
-			Scheme::Ed25519 => "ed25519",
-			Scheme::Ecdsa => "ecdsa",
-		}
-	}
-
-	/// The keystore's public keys of `key_type` that decode as this scheme's keys.
-	fn public_keys(self, keystore: &dyn Keystore, key_type: KeyTypeId) -> Vec<Vec<u8>> {
-		match self {
-			Scheme::Sr25519 => to_vecs(keystore.sr25519_public_keys(key_type)),
-			Scheme::Ed25519 => to_vecs(keystore.ed25519_public_keys(key_type)),
-			Scheme::Ecdsa => to_vecs(keystore.ecdsa_public_keys(key_type)),
+/// Logs, per session key type, its public keys at INFO, or an ERROR when the keystore holds no
+/// usable key of that type or cannot be listed.
+pub fn log_session_keys(keystore: &dyn Keystore, keystore_path: Option<&Path>) {
+	let lines = [
+		check::<AuraId>(keystore, keystore_path, "AURA", "AURA_SEED_FILE"),
+		check::<BabeId>(keystore, keystore_path, "BABE", "BABE_SEED_FILE"),
+		check::<GrandpaId>(keystore, keystore_path, "GRANDPA", "GRANDPA_SEED_FILE"),
+		check::<BeefyId>(keystore, keystore_path, "BEEFY", "BEEFY_SEED_FILE"),
+	];
+	for line in lines {
+		match line {
+			Ok(line) => log::info!(target: LOG_TARGET, "{line}"),
+			Err(line) => log::error!(target: LOG_TARGET, "{line}"),
 		}
 	}
 }
 
-fn to_vecs<P: AsRef<[u8]>>(keys: Vec<P>) -> Vec<Vec<u8>> {
-	keys.iter().map(|k| k.as_ref().to_vec()).collect()
-}
-
-/// A session key type a validator needs, and how an operator loads it.
-pub struct SessionKeyType {
-	pub name: &'static str,
-	pub key_type: KeyTypeId,
-	pub scheme: Scheme,
-	pub seed_file_var: &'static str,
-}
-
-pub const SESSION_KEY_TYPES: [SessionKeyType; 4] = [
-	SessionKeyType {
-		name: "AURA",
-		key_type: AURA,
-		scheme: Scheme::Sr25519,
-		seed_file_var: "AURA_SEED_FILE",
-	},
-	SessionKeyType {
-		name: "BABE",
-		key_type: BABE,
-		scheme: Scheme::Sr25519,
-		seed_file_var: "BABE_SEED_FILE",
-	},
-	SessionKeyType {
-		name: "GRANDPA",
-		key_type: GRANDPA,
-		scheme: Scheme::Ed25519,
-		seed_file_var: "GRANDPA_SEED_FILE",
-	},
-	SessionKeyType {
-		name: "BEEFY",
-		key_type: BEEFY,
-		scheme: Scheme::Ecdsa,
-		seed_file_var: "BEEFY_SEED_FILE",
-	},
-];
-
-fn hex_list(keys: &[Vec<u8>]) -> String {
-	keys.iter()
-		.map(|k| format!("0x{}", hex::encode(k)))
-		.collect::<Vec<_>>()
-		.join(", ")
-}
-
-/// One log line per session key type: its public keys at INFO, or an ERROR when the keystore
-/// holds no usable key of that type or cannot be listed.
+/// `Ok` with the keystore's keys of `A`'s key type, `Err` with why there is none to use.
 ///
-/// Only lists public keys, so no key file is opened. `keystore_path` goes into the
-/// `key insert` hint.
-pub fn report(keystore: &dyn Keystore, keystore_path: Option<&Path>) -> Vec<(Level, String)> {
+/// Only lists public keys, so no key file is opened. A key counts when it decodes as `A`, which
+/// checks only its length, as the keystore's own per-scheme listings do: a key inserted as ecdsa
+/// instead of sr25519 is rejected, one inserted as ed25519 instead of sr25519 is not.
+fn check<A: AppPublic>(
+	keystore: &dyn Keystore,
+	keystore_path: Option<&Path>,
+	name: &str,
+	seed_file_var: &str,
+) -> Result<String, String> {
+	let key_type = String::from_utf8_lossy(&A::ID.0);
 	let keystore_path =
 		keystore_path.map_or_else(|| "<keystore path>".into(), |p| p.display().to_string());
-	SESSION_KEY_TYPES
+	let keys = keystore.keys(A::ID).map_err(|err| {
+		format!(
+			"Cannot list {name} keys (key type `{key_type}`) in keystore {keystore_path}: {err}"
+		)
+	})?;
+	let usable: Vec<_> = keys
 		.iter()
-		.map(|t| {
-			let key_type = String::from_utf8_lossy(&t.key_type.0);
-			// The scheme-specific listings below swallow keystore errors; this one reports them.
-			let all = match keystore.keys(t.key_type) {
-				Ok(keys) => keys,
-				Err(err) => {
-					return (
-						Level::Error,
-						format!(
-							"Cannot list {name} keys (key type `{key_type}`) in keystore \
-							 {keystore_path}: {err}",
-							name = t.name,
-						),
-					);
-				},
-			};
-			let usable = t.scheme.public_keys(keystore, t.key_type);
-			if !usable.is_empty() {
-				return (
-					Level::Info,
-					format!(
-						"{name} key(s) (key type `{key_type}`) in keystore: {keys}",
-						name = t.name,
-						keys = hex_list(&usable),
-					),
-				);
-			}
-			let other_scheme = if all.is_empty() {
-				String::new()
-			} else {
-				format!(
-					" Found only key(s) of another scheme, which {name} cannot use: {keys}.",
-					name = t.name,
-					keys = hex_list(&all),
-				)
-			};
-			(
-				Level::Error,
-				format!(
-					"No {name} key (key type `{key_type}`, {scheme}) in keystore: this validator \
-					 cannot use it once in a committee.{other_scheme} Load one with {var} or \
-					 `midnight-node key insert --chain <chain spec> --keystore-path \
-					 {keystore_path} --key-type {key_type} --scheme {scheme} --suri <secret>`",
-					name = t.name,
-					scheme = t.scheme.name(),
-					var = t.seed_file_var,
-				),
+		.filter(|k| A::from_slice(k).is_ok())
+		.map(|k| format!("0x{}", hex::encode(k)))
+		.collect();
+	if !usable.is_empty() {
+		return Ok(format!(
+			"{name} key(s) (key type `{key_type}`) in keystore: {}",
+			usable.join(", ")
+		));
+	}
+	let key_insert = cli_scheme(A::CRYPTO_ID)
+		.map(|scheme| {
+			format!(
+				" or `midnight-node key insert --chain <chain spec> --keystore-path {keystore_path} \
+				 --key-type {key_type} --scheme {scheme} --suri <secret>`"
 			)
 		})
-		.collect()
+		.unwrap_or_default();
+	Err(format!(
+		"No {name} key (key type `{key_type}`) in keystore: this validator cannot use it once in a \
+		 committee. Load one with {seed_file_var}{key_insert}"
+	))
 }
 
-/// Logs the [`report`] lines.
-pub fn log_session_keys(keystore: &dyn Keystore, keystore_path: Option<&Path>) {
-	for (level, line) in report(keystore, keystore_path) {
-		log::log!(target: LOG_TARGET, level, "{line}");
+/// The `key insert --scheme` value for a crypto type; `None` for one the CLI cannot insert.
+fn cli_scheme(crypto_id: CryptoTypeId) -> Option<&'static str> {
+	match crypto_id {
+		sp_core::sr25519::CRYPTO_ID => Some("sr25519"),
+		sp_core::ed25519::CRYPTO_ID => Some("ed25519"),
+		sp_core::ecdsa::CRYPTO_ID => Some("ecdsa"),
+		_ => None,
 	}
 }
 
@@ -177,79 +107,79 @@ pub fn log_session_keys(keystore: &dyn Keystore, keystore_path: Option<&Path>) {
 mod tests {
 	use super::*;
 	use sc_keystore::LocalKeystore;
+	use sp_core::crypto::key_types::{AURA, BABE, BEEFY, GRANDPA};
 	use sp_keystore::testing::MemoryKeystore;
 
 	const PATH: &str = "/data/chains/x/keystore";
 
-	fn full_keystore() -> MemoryKeystore {
+	fn path() -> Option<&'static Path> {
+		Some(Path::new(PATH))
+	}
+
+	#[test]
+	fn present_key_is_listed() {
+		let keystore = MemoryKeystore::new();
+		let beefy = keystore.ecdsa_generate_new(BEEFY, Some("//Alice")).unwrap();
+
+		let line = check::<BeefyId>(&keystore, path(), "BEEFY", "BEEFY_SEED_FILE").unwrap();
+
+		assert_eq!(
+			line,
+			format!("BEEFY key(s) (key type `beef`) in keystore: 0x{}", hex::encode(beefy))
+		);
+	}
+
+	#[test]
+	fn every_type_is_checked_under_its_own_key_type() {
 		let keystore = MemoryKeystore::new();
 		keystore.sr25519_generate_new(AURA, Some("//Alice")).unwrap();
 		keystore.sr25519_generate_new(BABE, Some("//Alice//babe")).unwrap();
 		keystore.ed25519_generate_new(GRANDPA, Some("//Alice")).unwrap();
 		keystore.ecdsa_generate_new(BEEFY, Some("//Alice")).unwrap();
-		keystore
-	}
 
-	fn levels(lines: &[(Level, String)]) -> Vec<Level> {
-		lines.iter().map(|(level, _)| *level).collect()
-	}
-
-	#[test]
-	fn keystore_with_every_type_logs_its_keys_and_no_error() {
-		let keystore = full_keystore();
-		let beefy = keystore.ecdsa_public_keys(BEEFY)[0];
-
-		let lines = report(&keystore, Some(Path::new(PATH)));
-
-		assert_eq!(levels(&lines), [Level::Info; 4]);
-		assert!(lines[3].1.starts_with("BEEFY key(s) (key type `beef`) in keystore: 0x"));
-		assert!(lines[3].1.contains(&hex::encode(beefy)));
+		assert!(check::<AuraId>(&keystore, path(), "AURA", "AURA_SEED_FILE").is_ok());
+		assert!(check::<BabeId>(&keystore, path(), "BABE", "BABE_SEED_FILE").is_ok());
+		assert!(check::<GrandpaId>(&keystore, path(), "GRANDPA", "GRANDPA_SEED_FILE").is_ok());
+		assert!(check::<BeefyId>(&keystore, path(), "BEEFY", "BEEFY_SEED_FILE").is_ok());
 	}
 
 	#[test]
-	fn missing_types_log_an_error_with_how_to_load_them() {
+	fn missing_key_says_how_to_load_it() {
 		let keystore = MemoryKeystore::new();
+		// An AURA key does not count as a BABE key.
 		keystore.sr25519_generate_new(AURA, Some("//Alice")).unwrap();
-		keystore.ed25519_generate_new(GRANDPA, Some("//Alice")).unwrap();
 
-		let lines = report(&keystore, Some(Path::new(PATH)));
+		let line = check::<BabeId>(&keystore, path(), "BABE", "BABE_SEED_FILE").unwrap_err();
 
-		assert_eq!(levels(&lines), [Level::Info, Level::Error, Level::Info, Level::Error]);
-		let babe = &lines[1].1;
-		assert!(babe.starts_with("No BABE key (key type `babe`, sr25519) in keystore"));
-		assert!(babe.contains("BABE_SEED_FILE"));
-		assert!(babe.contains(&format!(
-			"--keystore-path {PATH} --key-type babe --scheme sr25519 --suri <secret>"
+		assert!(line.starts_with("No BABE key (key type `babe`) in keystore"), "{line}");
+		assert!(line.contains("Load one with BABE_SEED_FILE or `midnight-node key insert"));
+		assert!(line.contains(&format!(
+			"--keystore-path {PATH} --key-type babe --scheme sr25519 --suri <secret>`"
 		)));
 	}
 
 	#[test]
-	fn key_of_another_scheme_does_not_count() {
-		let keystore = MemoryKeystore::new();
-		keystore.sr25519_generate_new(AURA, Some("//Alice")).unwrap();
-		keystore.sr25519_generate_new(BABE, Some("//Alice//babe")).unwrap();
-		keystore.ed25519_generate_new(GRANDPA, Some("//Alice")).unwrap();
+	fn key_of_another_length_does_not_count() {
+		let dir = tempfile::TempDir::new().unwrap();
+		let keystore = LocalKeystore::open(dir.path(), None).unwrap();
 		// A BEEFY key inserted as sr25519 instead of ecdsa.
-		let sr25519 = keystore.sr25519_generate_new(BEEFY, Some("//Alice")).unwrap();
+		keystore.sr25519_generate_new(BEEFY, None).unwrap();
 
-		let lines = report(&keystore, None);
+		let line = check::<BeefyId>(&keystore, None, "BEEFY", "BEEFY_SEED_FILE").unwrap_err();
 
-		assert_eq!(lines[3].0, Level::Error);
-		assert!(lines[3].1.contains("another scheme"));
-		assert!(lines[3].1.contains(&hex::encode(sr25519)));
-		assert!(lines[3].1.contains("--keystore-path <keystore path>"));
+		assert!(line.starts_with("No BEEFY key"), "{line}");
+		assert!(line.contains("--keystore-path <keystore path>"));
 	}
 
 	#[test]
-	fn unreadable_keystore_logs_the_error_not_a_missing_key() {
+	fn unreadable_keystore_reports_the_error() {
 		let dir = tempfile::TempDir::new().unwrap();
 		let path = dir.path().join("keystore");
 		let keystore = LocalKeystore::open(&path, None).unwrap();
 		std::fs::remove_dir_all(&path).unwrap();
 
-		let lines = report(&keystore, Some(&path));
+		let line = check::<AuraId>(&keystore, Some(&path), "AURA", "AURA_SEED_FILE").unwrap_err();
 
-		assert_eq!(levels(&lines), [Level::Error; 4]);
-		assert!(lines.iter().all(|(_, line)| line.starts_with("Cannot list ")), "{lines:?}");
+		assert!(line.starts_with("Cannot list AURA keys"), "{line}");
 	}
 }
