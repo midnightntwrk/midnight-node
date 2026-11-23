@@ -1,4 +1,5 @@
 #runtime #node #registrations
+
 # Primitives for permissionless candidate registrations
 
 Adds `midnight-primitives-candidate-registrations`, the types the node and the runtime
@@ -15,4 +16,5 @@ inherent identifier and error; and the `CandidateRegistrationsApi` runtime API.
 
 Nothing depends on the crate yet: it is compiled into no binary and changes no behaviour.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2474
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2495
