@@ -827,6 +827,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	let is_offchain_indexing_enabled = config.offchain_worker.indexing_enabled;
 	let role = config.role;
+	let keystore_path = match &config.keystore {
+		sc_service::config::KeystoreConfig::Path { path, .. } => Some(path.clone()),
+		_ => None,
+	};
 	let force_authoring = config.force_authoring;
 	// Backoff with some additional time before stall. Around 1 day plus 1 session
 	let backoff_authoring_blocks: Option<BackoffAuthoringOnFinalizedHeadLagging<_>> =
@@ -952,6 +956,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	}
 
 	if role.is_authority() {
+		crate::session_key_check::log_session_keys(
+			&*keystore_container.keystore(),
+			keystore_path.as_deref(),
+		);
+
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);

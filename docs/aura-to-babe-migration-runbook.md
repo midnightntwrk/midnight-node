@@ -63,9 +63,16 @@ production validator must never expose unsafe RPC methods.
 
 - [ ] On every node startup (target `babe-key-readiness`): `BABE public
       key(s) in keystore: 0x…`. This lists whatever the keystore actually
-      resolves for BABE. A `WARN … No BABE public key found in keystore` means
-      the step above didn't take. Do **not** trust `author_hasKey` /
+      resolves for BABE. Do **not** trust `author_hasKey` /
       `author_hasSessionKeys` — they answer through an AURA fallback.
+- [ ] On every validator startup (target `session-key-check`): no
+      ``ERROR … No <TYPE> key (key type `<id>`) in keystore`` line. The node
+      logs one per session key type (`aura`, `babe`, `gran`, `beef`) it holds
+      no key of, and keeps running. ``No BABE key (key type `babe`)`` means
+      the step above didn't take; the line names the seed-file variable and
+      the `key insert` command that load the key. For each type it holds, the
+      node logs ``<TYPE> key(s) (key type `<id>`) in keystore: 0x…`` instead;
+      compare those with the keys submitted to the network operator.
 
 ### 0.2 Update permissioned-candidates list
 
@@ -324,4 +331,4 @@ and [fork-testing.md](https://github.com/midnightntwrk/midnight-node/blob/main/d
 | BABE key type              | `babe` (keystore file prefix `62616265`), sr25519; loaded via `BABE_SEED_FILE` or `midnight-node key insert` (never `author_insertKey`)                                                                                                                                     |
 | Cardano registration       | permissioned-candidates list `babe_pub_key` (all candidates are permissioned)                                                                                                                                                                                               |
 | Flip timing                | Last slot of an epoch while in `ScheduledFlip` and `babe.authorities()` non-empty; BABE genesis = first slot of next epoch                                                                                                                                                  |
-| Log targets                | `consensus-engine` (activation, flip, postponement), `babe-authoring` (flip, epoch-tree seed, handover), `babe-predigest` (digest attachment), `aura-to-babe-migration-keystore` (key fallbacks), `babe-key-readiness` (keystore's BABE public keys logged on every startup; periodic probe), `committee-membership` (session membership) |
+| Log targets                | `consensus-engine` (activation, flip, postponement), `babe-authoring` (flip, epoch-tree seed, handover), `babe-predigest` (digest attachment), `aura-to-babe-migration-keystore` (key fallbacks), `babe-key-readiness` (keystore's BABE public keys logged on every startup; periodic probe), `session-key-check` (validator startup: public keys per session key type, ERROR per missing type), `committee-membership` (session membership) |

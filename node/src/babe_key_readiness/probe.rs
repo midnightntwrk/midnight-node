@@ -122,12 +122,11 @@ impl BabeKeyProbe {
 		Self { candidates, keystore }
 	}
 
-	/// Logs every BABE public key this keystore would hand out.
+	/// Logs every BABE public key this keystore would hand out. A validator without one is
+	/// reported by [`crate::session_key_check`].
 	pub fn log_babe_public_keys(keystore: Arc<dyn Keystore>) {
 		let keys = keystore.sr25519_public_keys(BABE);
-		if keys.is_empty() {
-			log::warn!(target: LOG_TARGET, "No BABE public key found in keystore");
-		} else {
+		if !keys.is_empty() {
 			log::info!(
 				target: LOG_TARGET,
 				"BABE public key(s) in keystore: {}",
