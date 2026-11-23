@@ -177,6 +177,26 @@ pub enum IndexerClientError {
 
 pub type IndexerResult<T> = Result<T, IndexerClientError>;
 
+/// How many times DUST fast sync is tried on a transport error before the sync fails.
+pub const DUST_FAST_SYNC_ATTEMPTS: u32 = 4;
+/// The wait after the first transport failure; each later attempt waits this much longer.
+pub const DUST_FAST_SYNC_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
+impl IndexerClientError {
+	/// An HTTP or WebSocket failure, such as an indexer restart, as opposed to a bad response.
+	pub fn is_transport(&self) -> bool {
+		matches!(self, Self::Http(_) | Self::WebSocket(_))
+	}
+}
+
+/// Whether `error` is an [`IndexerClientError`] transport failure (see
+/// [`IndexerClientError::is_transport`]).
+pub fn is_transport_error(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+	error
+		.downcast_ref::<IndexerClientError>()
+		.is_some_and(IndexerClientError::is_transport)
+}
+
 /// Status of a transaction as reported by the indexer (`TransactionResultStatus`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionResultKind {
@@ -1615,5 +1635,17 @@ mod tests {
 		) {
 			panic!("{}", e.errors);
 		}
+	}
+
+	/// Only transport failures skip the DUST replay fallback; a bad response still replays.
+	#[test]
+	fn only_transport_errors_count_as_transport() {
+		let boxed =
+			|e: IndexerClientError| -> Box<dyn std::error::Error + Send + Sync> { e.into() };
+		assert!(is_transport_error(boxed(IndexerClientError::WebSocket("reset".into())).as_ref()));
+		assert!(!is_transport_error(boxed(IndexerClientError::GraphQl("bad".into())).as_ref()));
+		assert!(!is_transport_error(boxed(IndexerClientError::Decode("bad".into())).as_ref()));
+		let other: Box<dyn std::error::Error + Send + Sync> = "dustGenerations stalled".into();
+		assert!(!is_transport_error(other.as_ref()));
 	}
 }
