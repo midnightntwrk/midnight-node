@@ -130,10 +130,13 @@ buck2 keeps no local action cache, so every job goes through a bazel-remote
 action cache: the host's shared one via `--BUCK2_CACHE_ADDR`, else a per-job
 sidecar. Fork PRs run on GitHub-hosted runners with no shared cache.
 
-**Clippy** is `+check-rust`: `-D warnings` over every first-party target (libs,
-bins, unit and integration tests) under the lint platform. A test target with
-`test = false` in its manifest is left out, as `cargo clippy --all-targets` leaves
-it out. The workspace
+**Clippy** is `+check-rust`: any warning or error fails it, over what
+`cargo clippy --workspace --all-targets` compiles: every first-party lib, bin,
+build script, unit test and integration test, under the lint platform. A target
+with `test = false` in its manifest is left out, as cargo leaves it out, and so
+are the builds that exist only for a `required-features` test. One build script
+is not linted: the runtime's, which needs `substrate-wasm-builder`, and that
+does not build under buck2. The workspace
 `[lints]` table is translated to rustc flags for crates that opt in.
 
 **Tests buck2 does not run.** CI excludes the `ci-infra` label, set on tests that
@@ -143,16 +146,18 @@ need infrastructure the buck2 job does not provide:
 | ----------------------------------------------------------------- | ----------------------------- |
 | `partner-chains-db-sync-data-sources` unit tests                  | postgres (testcontainers)     |
 | `midnight-primitives-mainchain-follower` unit tests               | postgres (`#[sqlx::test]`)    |
-| `partner-chains-cardano-offchain:integration_tests`               | a Cardano node                |
 | `midnight-node-e2e:e2e_tests`                                     | a devnet                      |
 | toolkit `single_tx`, `hardfork_e2e`                               | docker-compose                |
 | toolkit `toolkit_e2e`                                             | a devnet                      |
-| toolkit `indexer_e2e`, `indexer_show_wallet_e2e`                  | a live indexer                |
+| toolkit `indexer_e2e`                                             | a live indexer                |
 | `sc-partner-chains-consensus:verifier_network`                    | `substrate-test-runtime` wasm |
 
-Two crates have no unit-test target at all, for the same `substrate-test-runtime`
-reason: `sc-partner-chains-consensus` and `sc-partner-chains-consensus-aura`.
-The cargo jobs still run every test listed here.
+Tests that execute `substrate-test-runtime`'s wasm are reported as ignored, with
+that reason, in `midnight-node` (2) and `sc-partner-chains-consensus` (9): the
+buck2 target sets `--cfg substrate_test_runtime_stubbed`, and the tests carry
+`#[cfg_attr(substrate_test_runtime_stubbed, ignore = "...")]`.
+
+The cargo jobs still run every test in this section.
 
 ## A local action cache
 

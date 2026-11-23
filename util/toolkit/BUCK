@@ -17,10 +17,7 @@ rust_library(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -36,7 +33,7 @@ rust_library(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
         "root//ledger/helpers:midnight-node-ledger-helpers",
@@ -97,10 +94,7 @@ rust_binary(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -116,7 +110,7 @@ rust_binary(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -178,10 +172,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -206,7 +197,7 @@ rust_test(
         "root//res:genesis-block-undeployed",
         "root//res:genesis-state-undeployed",
     ] + glob(["test-data/**"]),
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
         "root//ledger/helpers:midnight-node-ledger-helpers",
@@ -277,10 +268,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -298,7 +286,7 @@ rust_test(
         "MIDNIGHT_PP": ".zk-params",
     },
     resources = glob(["test-data/genesis/**"]),
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -370,10 +358,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -388,7 +373,7 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_BIN_EXE_midnight-node-toolkit": select({"root//platforms:lint": "midnight-node-toolkit", "DEFAULT": "$(location :toolkit-hyphen-bin)"}),
+        "CARGO_BIN_EXE_midnight-node-toolkit": select({"root//platforms:lint": "lint-platform-does-not-build-the-toolkit", "DEFAULT": "$(location :toolkit-hyphen-bin)"}),
         "MIDNIGHT_PP": ".zk-params",
     },
     resources = [
@@ -400,7 +385,7 @@ rust_test(
         "root//res:genesis-state-undeployed",
         "README.md",
     ] + glob(["tests/cmd/*.toml"]),
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -472,10 +457,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -491,7 +473,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -563,10 +545,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -582,7 +561,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -655,10 +634,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -673,9 +649,9 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
-        "CARGO_BIN_EXE_midnight-node-toolkit": select({"root//platforms:lint": "midnight-node-toolkit", "DEFAULT": "$(location :toolkit-hyphen-bin)"}),
+        "CARGO_BIN_EXE_midnight-node-toolkit": select({"root//platforms:lint": "lint-platform-does-not-build-the-toolkit", "DEFAULT": "$(location :toolkit-hyphen-bin)"}),
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -748,10 +724,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -767,7 +740,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -839,10 +812,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -858,7 +828,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",
@@ -931,10 +901,7 @@ rust_test(
         [(f, "util/toolkit/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "test-data/**", "README.md"])] + [
             ("root//:COMPACTC_VERSION", "COMPACTC_VERSION"),
             ("root//node:node-cargo-toml", "node/Cargo.toml"),
-            ("root//res:genesis-block-undeployed", "res/genesis/genesis_block_undeployed.mn"),
-            ("root//res:serialized-tx", "res/test-tx-deserialize/serialized_tx.mn"),
             ("root//res:test-contract-addr", "res/test-contract/contract_address_undeployed.mn"),
-            ("root//res:test-contract-tx1", "res/test-contract/contract_tx_1_deploy_undeployed.mn"),
             ("root//res:undeployed-genesis-seeds", "res/dev/undeployed-genesis-seeds.json"),
         ],
     ),
@@ -950,7 +917,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers/unsafe:midnight-ledger-unsafe-helpers",

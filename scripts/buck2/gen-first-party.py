@@ -6,7 +6,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
+#
+# 	http://www.apache.org/licenses/LICENSE-2.0
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -64,20 +66,11 @@ def _lint_flags():
 
 
 LINT_FLAGS = _lint_flags()
-_lint_optin = {}
 
 
 def opts_into_workspace_lints(pkg):
-    mp = pkg["manifest_path"]
-    if mp not in _lint_optin:
-        try:
-            with open(mp, "rb") as f:
-                _lint_optin[mp] = (
-                    tomllib.load(f).get("lints", {}).get("workspace") is True
-                )
-        except Exception:
-            _lint_optin[mp] = False
-    return _lint_optin[mp]
+    with open(pkg["manifest_path"], "rb") as f:
+        return tomllib.load(f).get("lints", {}).get("workspace") is True
 
 
 # (name, req, source) -> third-party manifest key, written by gen-third-party.py
@@ -182,8 +175,6 @@ ENV_HOOKS = {
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
     },
-    # runtime lib.rs include!s $OUT_DIR/wasm_binary.rs; point at the stub dir
-    # (WASM_BINARY=None) since substrate-wasm-builder can't run under buck.
     "midnight-node-runtime": lambda p, n: {
         # Real on-chain blob: OUT_DIR provides a wasm_binary.rs that
         # include_bytes!'s the wasm-opt'd + zstd-compressed runtime. The runtime
@@ -198,15 +189,6 @@ ENV_HOOKS = {
         "SUBSTRATE_CLI_COMMIT_HASH": "",
     },
 }
-
-# Crates whose sources include_str!/include_bytes! files ABOVE their own crate
-# dir (e.g. ../../../COMPACTC_VERSION). rustc resolves include! relative to the
-# source file, but buck sandboxes srcs rooted at the target's package, so those
-# paths escape. Fix (as reindeer does for git crates): use mapped_srcs to build
-# a srcs tree that MIRRORS the repo — the crate's own files at <rel>/… and the
-# external files at their repo-relative paths — with crate_root/CARGO_MANIFEST_DIR
-# prefixed by <rel>. The external files live in other buck packages, so they're
-# pulled via export_file labels (see EXPORTS). Value: {label: dest-in-tree}.
 
 # buck2 runs rust tests in place at the project root, so a test reads res/,
 # docs/, Cargo.toml etc. from the real tree (midnight_node_res::
@@ -258,8 +240,8 @@ TEST_TARGET_RESOURCES = {
     '        "root//res:fg-cfg",\n'
     '        "root//res:fg-mock-bridge-data",\n'
     "    ]",
-    # cached_context reads test-data/genesis/genesis_block_undeployed.mn at runtime
-    # (via CARGO_MANIFEST_DIR, resolved at runtime after the env!-> std::env::var fix).
+    # cached_context reads test-data/genesis/genesis_block_undeployed.mn
+    # (CARGO_MANIFEST_DIR, read at run time).
     "midnight-node-toolkit-cached_context": 'glob(["test-data/genesis/**"])',
     # toolkit unit tests read test-data/** (same-package, via manifest_dir()) and a broad
     # res/ set (via test_paths::res()'s walk to the real tree).
@@ -282,7 +264,17 @@ PREFIX_DATA_GLOBS = {
     "midnight-node-res": ["**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"],
 }
 
+# Crates whose sources include_str!/include_bytes! files above their own crate
+# dir (e.g. ../../../COMPACTC_VERSION). rustc resolves include! relative to the
+# source file, but buck2 roots srcs at the target's package, so those paths
+# escape. mapped_srcs builds a srcs tree that mirrors the repo: the crate's own
+# files at <rel>/... and the external ones (export_file labels, see EXPORTS) at
+# their repo-relative paths, with crate_root and CARGO_MANIFEST_DIR prefixed by
+# <rel>. Value: {label: dest-in-tree}.
 MAPPED_SRCS_EXTERNAL = {
+    # No external files: membership gives the test a CARGO_MANIFEST_DIR of
+    # `relay`, which is where it finds test-data/ at run time.
+    "midnight-beefy-relay": {},
     # res owns every file its tests read, so no cross-package labels — membership
     # here (even empty) just switches it to the project-relative `res/` prefix.
     "midnight-node-res": {},
@@ -305,11 +297,6 @@ MAPPED_SRCS_EXTERNAL = {
         "root//:COMPACTC_VERSION": "COMPACTC_VERSION",
         "root//node:node-cargo-toml": "node/Cargo.toml",
         "root//res:test-contract-addr": "res/test-contract/contract_address_undeployed.mn",
-        # cli_tests (trycmd) fixtures the README examples + tomls read via
-        # `../../res/…` (CWD = crate dir). Mapped so they land at __srcs/res/….
-        "root//res:test-contract-tx1": "res/test-contract/contract_tx_1_deploy_undeployed.mn",
-        "root//res:genesis-block-undeployed": "res/genesis/genesis_block_undeployed.mn",
-        "root//res:serialized-tx": "res/test-tx-deserialize/serialized_tx.mn",
         # toolkit_e2e include_str!s it.
         "root//res:undeployed-genesis-seeds": "res/dev/undeployed-genesis-seeds.json",
     },
@@ -348,17 +335,11 @@ EXPORTS = {
         'export_file(\n    name = "test-contract-addr",\n'
         '    src = "test-contract/contract_address_undeployed.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
-        'export_file(\n    name = "test-contract-tx1",\n'
-        '    src = "test-contract/contract_tx_1_deploy_undeployed.mn",\n'
-        '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "genesis-block-undeployed",\n'
         '    src = "genesis/genesis_block_undeployed.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "genesis-state-preview",\n'
         '    src = "genesis/genesis_state_preview.mn",\n'
-        '    visibility = ["PUBLIC"],\n)',
-        'export_file(\n    name = "serialized-tx",\n'
-        '    src = "test-tx-deserialize/serialized_tx.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
     ],
     # cli_tests (trycmd) runs `$ midnight-node-toolkit …` and diffs clap's usage
@@ -374,10 +355,6 @@ EXPORTS = {
     ],
 }
 
-# Per-(package, test-name) env overrides for integration tests. cli_tests (trycmd)
-# needs CARGO_BIN_EXE_<name> to locate the binary (cargo sets it; buck doesn't) —
-# point it at the hyphen-named copy so clap's usage strings match the README.
-
 
 class Starlark(str):
     """An env value emitted as a Starlark expression, not a string literal."""
@@ -386,10 +363,13 @@ class Starlark(str):
 # Where a test finds the toolkit binary. Clippy only needs the variable to
 # exist, so the lint platform gets a name, not a dependency on building it.
 TOOLKIT_BIN = Starlark(
-    f'select({{"{LINT}": "midnight-node-toolkit", '
+    f'select({{"{LINT}": "lint-platform-does-not-build-the-toolkit", '
     '"DEFAULT": "$(location :toolkit-hyphen-bin)"})'
 )
 
+# Per-(package, test-name) env for integration tests. cargo sets
+# CARGO_BIN_EXE_<name>; buck2 does not, so it points at the hyphen-named copy of
+# the binary, which keeps clap's usage strings matching the README.
 TEST_ENV_HOOKS = {
     # env!("CARGO_BIN_EXE_...") at compile time.
     ("midnight-node-toolkit", "indexer_e2e"): {
@@ -402,12 +382,11 @@ TEST_ENV_HOOKS = {
     },
     # cached_context builds a LedgerContext, whose MidnightDataProvider needs a
     # zk-params cache dir ($MIDNIGHT_PP / $XDG_CACHE_HOME / $HOME) or it panics
-    # "Could not determine ...". Point it at a per-sandbox relative dir; the
+    # "Could not determine ...". Point it at a relative dir; the
     # provider create_dir_all's it and fetches params on demand from S3.
     ("midnight-node-toolkit", "cached_context"): {
         "MIDNIGHT_PP": ".zk-params",
     },
-    # docs_tests reads the real repo tree in-place via root()'s upward walk; no env.
 }
 
 # Env for a package's LIB unit-test (the tests/*.rs integration targets use
@@ -417,11 +396,17 @@ UNIT_TEST_ENV = {
     "midnight-node-toolkit": {"MIDNIGHT_PP": ".zk-params"},
 }
 
-# Crates with no unit-test target. Their tests all need substrate-test-runtime's
-# wasm binary, a polkadot-sdk test fixture built by substrate-wasm-builder, which
-# buck2 cannot run: it would take a second wasm universe for a third-party test
-# runtime. cargo still runs them.
-NO_UNIT_TEST = {"sc-partner-chains-consensus-aura", "sc-partner-chains-consensus"}
+# Crates with tests that execute substrate-test-runtime's wasm, a polkadot-sdk
+# fixture substrate-wasm-builder builds, which buck2 cannot run. Their unit-test
+# target gets `--cfg substrate_test_runtime_stubbed`, and those tests are
+# `#[cfg_attr(substrate_test_runtime_stubbed, ignore = ...)]`: reported as
+# ignored under buck2, run under cargo.
+TEST_RUNTIME_STUBBED = {"midnight-node", "sc-partner-chains-consensus"}
+
+# Build scripts +check-rust cannot lint. The runtime's depends on
+# substrate-wasm-builder, whose wasm-opt C++ dependency does not build under
+# buck2; nothing else needs it, since buck2 builds the blob itself (root BUCK).
+UNLINTED_BUILD_SCRIPTS = {"midnight-node-runtime"}
 
 # Tests that need external infra (Docker/testcontainers, a live devnet, a Cardano
 # node) get a `ci-infra` label, and CI runs `buck2 test root//... --exclude
@@ -431,12 +416,10 @@ CI_INFRA_UNIT = {
     "midnight-primitives-mainchain-follower",  # #[sqlx::test] → postgres (DATABASE_URL)
 }
 CI_INFRA_INTEGRATION = {
-    ("partner-chains-cardano-offchain", "integration_tests"),  # Cardano node
     ("midnight-node-e2e", "e2e_tests"),  # devnet
     ("midnight-node-toolkit", "single_tx"),  # docker-compose
     ("midnight-node-toolkit", "toolkit_e2e"),  # devnet / ledger static dir
     ("midnight-node-toolkit", "hardfork_e2e"),  # docker-compose
-    ("midnight-node-toolkit", "indexer_show_wallet_e2e"),  # live indexer
     ("midnight-node-toolkit", "indexer_e2e"),  # live indexer
     ("sc-partner-chains-consensus", "verifier_network"),  # substrate-test-runtime wasm
 }
@@ -450,6 +433,7 @@ WASM_CDYLIB = {"midnight-node-runtime"}
 # #[cfg(test)] code, sqlx::migrate! dirs, ...): unit and integration tests, not
 # the lib or bins.
 TEST_SRCS_HOOKS = {
+    "midnight-beefy-relay": ["test-data/**"],
     "midnight-node-ledger": ["test-data/**"],
     "partner-chains-db-sync-data-sources": ["testdata/**"],
     # README.md is the trycmd corpus for cli_tests.
@@ -461,7 +445,6 @@ TEST_SRCS_HOOKS = {
 SRCS_HOOKS = {
     # include_str!("../examples/*.json") — data outside the src/ glob.
     "partner-chains-mock-data-sources": ['glob(["examples/**/*.json"])'],
-    # (res moved to the `res/` prefix + PREFIX_DATA_GLOBS — see MAPPED_SRCS_EXTERNAL.)
     # subxt::subxt(runtime_metadata_path="static/*.scale") reads the SCALE
     # metadata blobs at macro-expansion time.
     "midnight-node-metadata": ['glob(["static/**"])'],
@@ -484,20 +467,9 @@ def lib_target(pkg):
     return None
 
 
-# extern-name -> third-party key: build from the same rules gen-third-party used
-# (rename or name), so keys agree by construction.
-def dep_label(dep_pkg, extern_name):
-    """dep_pkg: the resolved package; extern_name: crate name rustc sees."""
-    if dep_pkg["id"] in members:
-        rel = member_rel(dep_pkg)
-        return f"root//{rel}:{dep_pkg['name']}", underscore(lib_target(dep_pkg)["name"])
-    # external: reindeer emits a top-level alias per manifest key; our manifest
-    # keys were rename-or-name, and extern_name == underscore(key) for renames.
-    return f"root//third-party:{extern_name.replace('_','-')}", None
-
-
-def compute_deps(pkg, node, include_dev):
-    """Return (deps, named, label_pkg) for a target. include_dev adds dev-deps."""
+def compute_deps(pkg, node, include_dev, build=False):
+    """Return (deps, named, label_pkg) for a target. include_dev adds dev-deps;
+    build gives a build script's deps instead."""
     deps, named, label_pkg = [], {}, {}
     # index declared deps by extern name (rename-or-libname) AND by package name.
     # The resolve node's dep name is the EXTERN name (the dep's lib name); for a
@@ -510,11 +482,11 @@ def compute_deps(pkg, node, include_dev):
         declared_by_pkg[d["name"]] = d
     for rd in node["deps"]:
         kinds = rd.get("dep_kinds") or [{}]
-        allowed = ("dev",) if include_dev else ()
-        # normal deps (kind == null) always; dev only for tests. build-only deps
-        # never (buck doesn't run build scripts, so build-deps like
-        # substrate-wasm-builder must not become link deps).
-        if all(k.get("kind") not in (None,) + allowed for k in kinds):
+        # Normal deps always, dev-deps for tests. A build script gets its
+        # build-deps only, and nothing else gets those: buck2 does not run
+        # first-party build scripts, so they must not become link deps.
+        wanted = ("build",) if build else (None,) + (("dev",) if include_dev else ())
+        if all(k.get("kind") not in wanted for k in kinds):
             continue
         dpkg = pkg_by_id[rd["pkg"]]
         extern = rd["name"]  # already rename-applied + underscored
@@ -619,6 +591,10 @@ def gen_buck(pkg, prefix=""):
         emit_select(field, std_vals, alts, "[]", block, same)
         # The lint feature set only ever adds, so append its extras rather than
         # repeating the whole list in a second select.
+        assert lint_vals is None or set(std_vals) <= set(lint_vals), (
+            pkg["name"],
+            field,
+        )
         extra = sorted(set(lint_vals or ()) - set(std_vals))
         if not extra:
             return
@@ -636,6 +612,10 @@ def gen_buck(pkg, prefix=""):
                 out.append(f'{indent}"{k}": "{v}",\n')
 
         alts = [("prelude//cpu:wasm32", wasm_map), (LINT, lint_map)]
+        # Both keys in one select would be ambiguous for a wasm32 lint platform.
+        assert not (
+            wasm_map not in (None, std_map) and lint_map not in (None, std_map)
+        ), (pkg["name"], field)
         emit_select(field, std_map, alts, "{}", block, lambda a, b: a == b)
 
     def emit_target(
@@ -653,6 +633,7 @@ def gen_buck(pkg, prefix=""):
         env_override=None,
         labels=None,
         rustc_flags=(),
+        hooks_env=True,
     ):
         out.append(f"{rule}(\n")
         out.append(f'    name = "{name}",\n')
@@ -716,7 +697,7 @@ def gen_buck(pkg, prefix=""):
         out.append(
             f'        "CARGO_PKG_HOMEPAGE": {json.dumps(pkg.get("homepage") or "")},\n'
         )
-        env = dict(extra_env)
+        env = dict(extra_env) if hooks_env else {}
         if env_override:
             env.update(env_override)
         for k, v in sorted(env.items()):
@@ -804,6 +785,9 @@ def gen_buck(pkg, prefix=""):
                 # OUT_DIR, not runtime-wasm-binary-rs (which embeds this
                 # cdylib), else a configured-target cycle.
                 env_override={"OUT_DIR": "$(location root//:runtime-wasm-stub)"},
+                # Only meaningful for wasm32, and cargo's clippy line skipped
+                # the wasm build.
+                labels=["no-clippy"],
             )
     for b in bins:
         name = b["name"] if not lt or b["name"] != pkg["name"] else b["name"] + "-bin"
@@ -819,52 +803,103 @@ def gen_buck(pkg, prefix=""):
             lint=lint_variant(include_dev=False, own_lib=True),
         )
 
+    # cargo clippy --all-targets lints build scripts. buck2 never runs a
+    # first-party one (see ENV_HOOKS), so this target exists to be linted: no
+    # hook env, which would pull in what the script is there to produce.
+    for bs in (t for t in pkg["targets"] if "custom-build" in t["kind"]):
+        if pkg["name"] in UNLINTED_BUILD_SCRIPTS:
+            continue
+        bs_deps, bs_named, _ = compute_deps(pkg, node, include_dev=False, build=True)
+        out.append("\n")
+        emit_target(
+            "rust_binary",
+            f"{pkg['name']}-build-script",
+            "build_script_build",
+            rel_root(bs),
+            bs_deps,
+            bs_named,
+            extra_globs=(
+                os.path.relpath(bs["src_path"], os.path.dirname(pkg["manifest_path"])),
+            ),
+            hooks_env=False,
+        )
+
     # ── tests ──────────────────────────────────────────────────────────────
     # Unit tests: recompile the lib crate with the test harness (runs #[test]
     # fns in src). Integration tests: each tests/*.rs is its own crate that
     # links the lib. Both get dev-deps.
     test_globs = tuple(TEST_SRCS_HOOKS.get(pkg["name"], []))
-    if lt and "proc-macro" not in lt["kind"] and pkg["name"] not in NO_UNIT_TEST:
+    # `test = false` on a target: cargo's --all-targets skips it, so +check-rust
+    # does too.
+    untested = lambda t: ["no-clippy"] if t.get("test") is False else []
+    # A crate without a lib keeps its unit tests in its bins.
+    for ut in [lt] if lt else bins:
+        if "proc-macro" in ut["kind"]:
+            continue
+        stubbed = pkg["name"] in TEST_RUNTIME_STUBBED
         out.append("\n")
         emit_target(
             "rust_test",
-            f"{pkg['name']}-unit-test",
-            underscore(lt["name"]),
-            rel_root(lt),
+            f"{pkg['name'] if lt else ut['name']}-unit-test",
+            underscore(ut["name"]),
+            rel_root(ut),
             dev_deps,
             dev_named,
             extra_globs=test_globs,
             lint=lint_variant(include_dev=True),
             env_override=UNIT_TEST_ENV.get(pkg["name"]),
-            labels=["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else None,
+            labels=(["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else [])
+            + untested(ut),
+            rustc_flags=["--cfg", "substrate_test_runtime_stubbed"] if stubbed else (),
         )
+    variant_libs = set()
     for t in tests:
         # cargo skips an integration test whose required-features are off. CI
         # turns them on for the run (regen.sh TEST_FEATURES), which under buck2
         # means a second build of the lib with those features for the test to link.
         req = t.get("required-features") or []
+        env = TEST_ENV_HOOKS.get((pkg["name"], t["name"]))
+        labels = (
+            ["ci-infra"] if (pkg["name"], t["name"]) in CI_INFRA_INTEGRATION else []
+        ) + untested(t)
         if any(f not in features for f in req):
             lib = f"{pkg['name']}-{'-'.join(req)}"
             vlib = variant(test_resolve_by_id, include_dev=False)
             if not lt or any(f not in vlib["features"] for f in req):
-                continue
+                sys.exit(
+                    f"gen-first-party.py: {pkg['name']}:{t['name']} has "
+                    f"required-features {req}, which nothing turns on\n"
+                    "  fix: add them to TEST_FEATURES in scripts/buck2/regen.sh"
+                )
             vtest = variant(test_resolve_by_id, include_dev=True, own_lib=lib)
-            for name, rule, v, globs in (
-                (lib, "rust_library", vlib, ()),
-                (f"{pkg['name']}-{t['name']}", "rust_test", vtest, ("tests/**",)),
-            ):
-                is_test = rule == "rust_test"
+            # cargo's clippy line never had these features on, so neither target
+            # is linted.
+            if lib not in variant_libs:
+                variant_libs.add(lib)
                 out.append("\n")
                 emit_target(
-                    rule,
-                    name,
-                    underscore((t if is_test else lt)["name"]),
-                    rel_root(t if is_test else lt),
-                    v["deps"],
-                    v["named"],
-                    extra_globs=globs + (test_globs if is_test else ()),
-                    feats=v["features"],
+                    "rust_library",
+                    lib,
+                    underscore(lt["name"]),
+                    rel_root(lt),
+                    vlib["deps"],
+                    vlib["named"],
+                    feats=vlib["features"],
+                    labels=["no-clippy"],
                 )
+            out.append("\n")
+            emit_target(
+                "rust_test",
+                f"{pkg['name']}-{t['name']}",
+                underscore(t["name"]),
+                rel_root(t),
+                vtest["deps"],
+                vtest["named"],
+                extra_globs=("tests/**",) + test_globs,
+                feats=vtest["features"],
+                env_override=env,
+                labels=sorted(set(labels + ["no-clippy"])),
+            )
             continue
         tdeps = sorted(set(dev_deps + ([f":{pkg['name']}"] if lt else [])))
         out.append("\n")
@@ -877,20 +912,28 @@ def gen_buck(pkg, prefix=""):
             dev_named,
             extra_globs=("tests/**",) + test_globs,
             lint=lint_variant(include_dev=True, own_lib=True),
-            env_override=TEST_ENV_HOOKS.get((pkg["name"], t["name"])),
-            labels=[
-                label
-                for label, on in (
-                    ("ci-infra", (pkg["name"], t["name"]) in CI_INFRA_INTEGRATION),
-                    # `test = false`: cargo's --all-targets skips it, so
-                    # +check-rust does too.
-                    ("no-clippy", t.get("test") is False),
-                )
-                if on
-            ],
+            env_override=env,
+            labels=labels,
         )
     return "".join(out)
 
+
+# An entry that names no target is a skip nobody can see: fail instead.
+_pkgs = [pkg_by_id[m] for m in members]
+_unit = {p["name"] for p in _pkgs}
+_integration = {
+    (p["name"], t["name"]) for p in _pkgs for t in p["targets"] if t["kind"] == ["test"]
+}
+for _table, _valid in (
+    (TEST_RUNTIME_STUBBED, _unit),
+    (UNLINTED_BUILD_SCRIPTS, _unit),
+    (CI_INFRA_UNIT, _unit),
+    (UNIT_TEST_ENV, _unit),
+    (CI_INFRA_INTEGRATION, _integration),
+    (TEST_ENV_HOOKS, _integration),
+):
+    if _stale := sorted(set(_table) - _valid, key=str):
+        sys.exit(f"gen-first-party.py: no such target for {_stale}: remove the entry")
 
 written = set()
 for mid in sorted(members):
@@ -905,7 +948,7 @@ for mid in sorted(members):
     exports = EXPORTS.get(pkg["name"])
     if exports:
         body = "\n\n".join(exports) + "\n\n" + body
-    path = os.path.join(ws_root, rel, "BUCK")
+    path = os.path.normpath(os.path.join(ws_root, rel, "BUCK"))
     with open(path, "w") as f:
         f.write(body)
     print(f"wrote {rel}/BUCK")
@@ -922,7 +965,10 @@ if not only:
         if "BUCK" not in files or path in written:
             continue
         with open(path) as f:
-            stale = "@generated by scripts/buck2/gen-first-party.py" in f.read()
+            stale = any(
+                line.startswith("# @generated by scripts/buck2/gen-first-party.py")
+                for line in f
+            )
         if stale:
             os.remove(path)
             print(f"removed {os.path.relpath(path, ws_root)}")

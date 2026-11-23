@@ -29,12 +29,6 @@ export_file(
 )
 
 export_file(
-    name = "test-contract-tx1",
-    src = "test-contract/contract_tx_1_deploy_undeployed.mn",
-    visibility = ["PUBLIC"],
-)
-
-export_file(
     name = "genesis-block-undeployed",
     src = "genesis/genesis_block_undeployed.mn",
     visibility = ["PUBLIC"],
@@ -43,12 +37,6 @@ export_file(
 export_file(
     name = "genesis-state-preview",
     src = "genesis/genesis_state_preview.mn",
-    visibility = ["PUBLIC"],
-)
-
-export_file(
-    name = "serialized-tx",
-    src = "test-tx-deserialize/serialized_tx.mn",
     visibility = ["PUBLIC"],
 )
 
@@ -96,7 +84,7 @@ rust_library(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         "root//pallets/cnight-observation:pallet-cnight-observation",
         "root//partner-chains/toolkit/committee-selection/primitives:sp-session-validator-management",
@@ -111,6 +99,50 @@ rust_library(
         "root//third-party:serde",
         "root//third-party:serde_json",
         "root//third-party:sp-core",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+rust_binary(
+    name = "midnight-node-res-build-script",
+    crate = "build_script_build",
+    crate_root = "res/build.rs",
+    edition = "2024",
+    mapped_srcs = dict(
+        [(f, "res/" + f) for f in glob(["src/**", "Cargo.toml", "build.rs", "**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"])] + [
+        ],
+    ),
+    features = [
+        "chain-spec",
+        "midnight-primitives-federated-authority-observation",
+        "midnight-primitives-ics-observation",
+        "midnight-primitives-reserve-observation",
+        "midnight-primitives-system-parameters",
+        "pallet-cnight-observation",
+        "sc-service",
+        "serde",
+        "serde_json",
+        "sidechain-domain",
+        "sp-core",
+        "sp-session-validator-management",
+        "std",
+        "test",
+    ],
+    env = {
+        "CARGO_MANIFEST_DIR": "res",
+        "CARGO_PKG_NAME": "midnight-node-res",
+        "CARGO_PKG_VERSION": "0.1.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "",
+        "CARGO_PKG_REPOSITORY": "",
+        "CARGO_PKG_HOMEPAGE": "",
+    },
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    deps = [
+        "root//third-party:walkdir",
     ],
     visibility = ["PUBLIC"],
 )
@@ -158,7 +190,7 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "",
     },
     resources = glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"]),
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         "root//pallets/cnight-observation:pallet-cnight-observation",
         "root//partner-chains/toolkit/committee-selection/primitives:sp-session-validator-management",
@@ -222,7 +254,7 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "",
     },
     resources = glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"]),
-    rustc_flags = ["-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
+    rustc_flags = ["-Wunexpected_cfgs", "-Aclippy::all", "-Wclippy::correctness", "-Wclippy::complexity", "-Wclippy::unwrap_in_result", "-Aclippy::zero_prefixed_literal", "-Aclippy::type_complexity", "-Aclippy::needless_lifetimes", "-Aclippy::unnecessary_cast", "-Aclippy::identity_op", "-Aclippy::useless_conversion", "-Aclippy::unit_arg", "-Aclippy::option_map_unit_fn", "-Aclippy::bind_instead_of_map", "-Aclippy::erasing_op", "-Aclippy::eq_op", "-Aclippy::while_immutable_condition", "-Aclippy::needless_option_as_deref", "-Aclippy::derivable_impls", "-Aclippy::stable_sort_primitive", "-Aclippy::extra_unused_type_parameters", "-Aclippy::default_constructed_unit_structs"],
     deps = [
         ":midnight-node-res",
         "root//pallets/cnight-observation:pallet-cnight-observation",

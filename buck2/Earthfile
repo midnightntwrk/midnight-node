@@ -50,7 +50,7 @@ INSTALL:
 
     # The on-chain runtime target. The base rust image ships rustup.
     RUN rustup target add "$RUST_WASM_TARGET"
-    # clippy-driver for the +buck2-clippy job: the prelude's [clippy.txt] action
+    # clippy-driver for +check-rust: the prelude's [clippy.txt] action
     # shells out to it through the rustc toolchain, and the base image omits it.
     RUN rustup component add clippy
 
@@ -104,7 +104,7 @@ INSTALL:
 CONFIG:
     FUNCTION
     # A bazel-remote shared by every job on the host (the fleet provisions one;
-    # locally see docs/buck2-notes.md "Locally": a RUN step sees neither the
+    # locally see docs/buck2-notes.md "A local action cache": a RUN step sees neither the
     # host's loopback nor the bridge's published ports, only buildkitd's netns).
     # Empty or unreachable: buck2-ci.sh runs a per-job sidecar.
     ARG BUCK2_CACHE_ADDR
@@ -126,17 +126,19 @@ CONFIG:
           'capabilities = false' \
           > .buckconfig.local
 
-# BUCK2 runs one buck2-ci.sh mode under the action cache. TARGETS is a
-# space-separated list; BUCK2_ARGS the global flags prepended to every buck2 call.
+# BUCK2 runs one buck2-ci.sh mode under the action cache, for one target
+# platform. targets is a space-separated list; buck2_args is extra global flags.
 BUCK2:
     FUNCTION
     ARG --required mode
     ARG --required targets
-    # midnight-node pins the host target + the wasm toolchain via global -c.
-    ARG buck2_args="--target-platforms root//platforms:linux-x86_64 -c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
+    ARG platform=linux-x86_64
+    ARG buck2_args
     ARG BUCK2_CACHE_ADDR
     CACHE --sharing locked --id buck2-action-cache /root/.cache/bazel-remote
-    RUN TARGETS="$targets" BUCK2_ARGS="$buck2_args" buck2-ci.sh "$mode"
+    # The wasm toolchain shims go in as global -c: the toolchains cell does not
+    # see a .buckconfig.local section.
+    RUN TARGETS="$targets" BUCK2_ARGS="--target-platforms root//platforms:$platform $buck2_args -c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh" buck2-ci.sh "$mode"
 
 script:
     FROM scratch

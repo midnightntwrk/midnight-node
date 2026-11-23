@@ -25,7 +25,7 @@ re_cache_execution_platform(
 
 # CI's target platform, passed as `--target-platforms`: it selects reindeer's
 # `platform = {"linux-x86_64": ...}` branches whatever buck2 detects the host as
-# (detection has resolved them to arm on an x86 runner).
+# (host detection is not reliable on the runners).
 platform(
     name = "linux-x86_64",
     constraint_values = [
@@ -46,7 +46,7 @@ platform(
 )
 
 # Lint configuration: clippy sees the code behind the features regen.sh names in
-# LINT_FEATURES, as `cargo clippy --features ...` did, while everything built
+# LINT_FEATURES, as `cargo clippy --features ...` would, while everything built
 # for a non-lint platform keeps its features. First-party targets select on
 # :lint; third-party/PACKAGE maps it to reindeer's -lint platforms.
 constraint_setting(

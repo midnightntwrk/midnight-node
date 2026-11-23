@@ -275,6 +275,7 @@ rust_library(
         "root//wasm-deps:sp-transaction-pool",
         "root//wasm-deps:sp-version",
     ],
+    labels = ["no-clippy"],
     visibility = ["PUBLIC"],
 )
 

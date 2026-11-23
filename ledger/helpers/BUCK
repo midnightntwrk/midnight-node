@@ -60,6 +60,33 @@ rust_library(
     visibility = ["PUBLIC"],
 )
 
+rust_binary(
+    name = "midnight-node-ledger-helpers-build-script",
+    crate = "build_script_build",
+    crate_root = "build.rs",
+    edition = "2024",
+    srcs = glob(["src/**", "build.rs"]) + ["Cargo.toml"],
+    features = [
+        "fixed-point-custom-serde",
+    ],
+    env = {
+        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_PKG_NAME": "midnight-node-ledger-helpers",
+        "CARGO_PKG_VERSION": "0.1.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "",
+        "CARGO_PKG_REPOSITORY": "",
+        "CARGO_PKG_HOMEPAGE": "",
+    },
+    deps = [
+        "root//third-party:cargo_metadata",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 rust_test(
     name = "midnight-node-ledger-helpers-unit-test",
     crate = "midnight_node_ledger_helpers",

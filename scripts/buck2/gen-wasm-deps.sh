@@ -6,7 +6,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -52,8 +54,8 @@ PY
 
 # Seed both resolves from the workspace lock so the wasm universe pins the
 # versions cargo ships, not the newest the index offers: cargo keeps every
-# locked version it still needs and prunes the rest. Without this the two
-# builds drifted on 42 crates (bytes, either, bitvec, generic-array, ...).
+# locked version it still needs and prunes the rest. Without this the wasm
+# universe resolves newer versions than cargo ships.
 cp "$ROOT/Cargo.lock" "$TMP/Cargo.lock"
 ( cd "$TMP" && cargo metadata --format-version 1 \
     --filter-platform wasm32v1-none -q ) > "$TMP/wasm-meta.json"

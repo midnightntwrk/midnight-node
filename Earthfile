@@ -1081,12 +1081,11 @@ check-rust:
     FROM +buck2-prep
     RUN rustup component add rustfmt && cargo fmt --all -- --check
     ARG PLATFORM=linux-x86_64
-    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
     # Third-party crates live under the root cell too; they are not ours to lint.
     # `no-clippy` marks what cargo's --all-targets skips (gen-first-party.py).
     DO --pass-args buck2+BUCK2 --mode=clippy \
         --targets="root//... - root//third-party/... - root//wasm-deps/... - attrfilter('labels', 'no-clippy', root//...)" \
-        --buck2_args="--target-platforms root//platforms:${PLATFORM}-lint $_wasm"
+        --platform="${PLATFORM}-lint"
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching missing dependencies masked by workspace feature unification.
@@ -2346,12 +2345,11 @@ buck2-ci:
     # toolchain install and source copy cached.
     ARG RUN_ID=0
     RUN echo "buck2-ci run ${RUN_ID}"
-    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
     DO --pass-args buck2+BUCK2 --mode=build \
         --targets="root//node:midnight-node-bin root//util/toolkit:midnight-node-toolkit-bin root//:runtime-wasm"
     DO --pass-args buck2+BUCK2 --mode=test \
         --targets="root//..." \
-        --buck2_args="--target-platforms root//platforms:linux-x86_64 --exclude ci-infra $_wasm"
+        --buck2_args="--exclude ci-infra"
 
 #buck2-test-one Build+test one target locally. PLATFORM defaults to linux-arm64,
 # an arm64 dev box's native arch (no emulation); CI pins linux-x86_64.
@@ -2361,10 +2359,9 @@ buck2-test-one:
     ARG --required TARGET
     ARG PLATFORM=linux-arm64
     RUN echo "buck2-test-one run ${RUN_ID}"
-    ARG _wasm="-c wasm.cc=/usr/local/bin/wasm-cc.sh -c wasm.cxx=/usr/local/bin/wasm-cc.sh -c wasm.ar=/usr/local/bin/wasm-ar.sh -c wasm.linker=/usr/local/bin/wasm-lld.sh"
     DO --pass-args buck2+BUCK2 --mode=test \
         --targets="$TARGET" \
-        --buck2_args="--target-platforms root//platforms:${PLATFORM} $_wasm"
+        --platform="$PLATFORM"
 
 #buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
 buck2-reindeer:
@@ -2412,7 +2409,9 @@ buck2-regen:
     COPY +buck2-regen-tar/regen.tar .buck2-regen.tar
     COPY +buck2-regen-tar/regen.deleted .buck2-regen.deleted
     RUN tar xf .buck2-regen.tar && \
-        while IFS= read -r f; do rm -f "$f"; done < .buck2-regen.deleted && \
+        while IFS= read -r f; do \
+            case "$f" in ./*) rm -f "$f" ;; *) echo "+buck2-regen: refusing to delete '$f'" >&2; exit 1 ;; esac; \
+        done < .buck2-regen.deleted && \
         rm .buck2-regen.tar .buck2-regen.deleted
 
 #buck2-check-regen Fail if any @generated buck2 file is stale against the cargo workspace

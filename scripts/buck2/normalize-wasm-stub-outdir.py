@@ -6,7 +6,9 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# http://www.apache.org/licenses/LICENSE-2.0
+#
+# 	http://www.apache.org/licenses/LICENSE-2.0
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -25,8 +27,8 @@ which changes on every polkadot-sdk bump. The hash lives in a static fixups.toml
 `[env]`, so a bump moves CARGO_MANIFEST_DIR (reindeer-computed) but leaves OUT_DIR
 pinned to the old hash -> include! points at a dir the overlay never populated
 -> "couldn't read .../wasm_binary.rs". Re-pinning by hand drifts again on the
-next bump (it has, twice). The invariant is simply OUT_DIR == CARGO_MANIFEST_DIR,
-so enforce it mechanically here as the last step of the regen, after buckify.
+next bump. The invariant is OUT_DIR == CARGO_MANIFEST_DIR, so enforce it after
+the third-party buckify.
 
 Idempotent: a run that changes nothing exits 0 and reports 0 rewrites.
 """

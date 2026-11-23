@@ -24,8 +24,7 @@
 # buck's shim. Point CC/CXX at plain clang so cmake's own try_compile checks use
 # the real driver+ld (not buck's clang++ ld_shim), sidestepping the same double.
 # Gated to Linux: macOS's ld64 tolerates the double, so cc_builder works there
-# and needs no cmake. Mirrors ../midnight-node (bazel), which builds aws-lc via
-# cmake and carries no aws-lc fixup because its cc toolchain links with a real ld.
+# and needs no cmake.
 cargo_env = true
 
 [buildscript.run.env]
