@@ -36,6 +36,7 @@ fn storage_init(base: &Path, separation: StorageSeparation) -> StorageInit {
 		db_path: base.join("ledger_storage"),
 		genesis_state: UndeployedNetwork.genesis_state().to_vec(),
 		cache_size: 10_000,
+		snapshot: None,
 	}
 }
 

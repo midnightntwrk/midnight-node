@@ -83,6 +83,8 @@ pub struct StorageInit {
 	pub db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
+	/// Snapshot ledger storage settings, when `ledger_storage_mode = "snapshot"`.
+	pub snapshot: Option<crate::ledger_snapshot::SnapshotSettings>,
 }
 
 /// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
@@ -325,6 +327,12 @@ pub fn new_partial(
 
 	let (parity_db_instance, ledger_storage_db, require_create) =
 		open_paritydb(&db_path, &storage_config)?;
+	let ledger_snapshot = storage_config
+		.snapshot
+		.as_ref()
+		.map(|settings| crate::ledger_snapshot::init(settings, config, &storage_config))
+		.transpose()
+		.map_err(ServiceError::Other)?;
 	db_config.source = create_database_source(parity_db_instance, require_create)?;
 	let backend = sc_service::new_db_backend(db_config)?;
 
@@ -398,6 +406,29 @@ pub fn new_partial(
 			Arc::new(Mutex::new(ledger_metrics)),
 			ledger_storage,
 		));
+
+	if let (Some(settings), Some((state_pruning, marker))) =
+		(&storage_config.snapshot, ledger_snapshot)
+	{
+		let chain = crate::ledger_snapshot::chain::ClientChain {
+			client: client.clone(),
+			backend: backend.clone(),
+		};
+		let driver = crate::ledger_snapshot::start(
+			settings,
+			state_pruning,
+			marker,
+			&storage_config.db_path,
+			chain,
+			config.prometheus_registry(),
+		)
+		.map_err(ServiceError::Other)?;
+		task_manager.spawn_essential_handle().spawn_blocking(
+			"ledger-snapshot",
+			Some("midnight-ledger"),
+			driver.run(),
+		);
+	}
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());

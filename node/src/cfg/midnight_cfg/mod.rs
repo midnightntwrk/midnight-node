@@ -29,6 +29,17 @@ pub enum StorageSeparation {
 	Unified,
 }
 
+/// How the node stores the Midnight ledger state.
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LedgerStorageMode {
+	/// Every block's ledger state is persisted (the archive layout).
+	#[default]
+	Persistent,
+	/// One ledger state on disk at a recent finalized block, newer states in memory.
+	Snapshot,
+}
+
 /// Which existing main-chain data sources to mock.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub enum MainChainFollowerMock {
@@ -72,6 +83,7 @@ impl Serialize for MainChainFollowerMock {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 #[validate(custom = mainchain_epoch_invariants)]
+#[validate(custom = ledger_storage_mode_vars)]
 /// Parameters specific to Midnight
 pub struct MidnightCfg {
 	/// On start-up, wipe the chain
@@ -157,6 +169,25 @@ pub struct MidnightCfg {
 	/// Whether substrate and midnight storage should be separate or unified
 	pub storage_separation: StorageSeparation,
 
+	/// How the ledger state is stored. "persistent" (default): every block's ledger state is
+	/// written to `<base>/ledger_storage` and kept (archive behaviour). "snapshot": one full
+	/// ledger state at a recent finalized block in `<base>/ledger_storage_snapshot`, newer states
+	/// in memory only. Needs `storage_separation = "separate"` and a numeric `--state-pruning` of
+	/// at least 2 * `ledger_snapshot_block_cap` + 4096.
+	pub ledger_storage_mode: LedgerStorageMode,
+
+	/// Snapshot mode: take a snapshot of the latest finalized block once this many seconds of
+	/// wall-clock time have passed since the last one, or since the node started.
+	pub ledger_snapshot_interval_secs: u64,
+
+	/// Snapshot mode: take a snapshot once this many blocks have been finalized since the last
+	/// one, whichever of the two limits comes first. Bounds the blocks replayed on restart.
+	pub ledger_snapshot_block_cap: u32,
+
+	/// Snapshot mode: number of most recent finalized blocks whose ledger states stay loadable
+	/// for RPC queries, in addition to every unfinalized block.
+	pub ledger_query_window: u32,
+
 	/// Deprecated: plaintext database connections are no longer permitted.
 	/// This flag is ignored — all connections use TLS. It will be removed in a future release.
 	pub allow_non_ssl: bool,
@@ -220,6 +251,25 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 		}
 	}
 	Ok(())
+}
+
+fn ledger_storage_mode_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
+	let needs = [
+		(
+			cfg.storage_separation != StorageSeparation::Separate,
+			"storage_separation = \"separate\"",
+		),
+		(cfg.storage_cache_size == 0, "a non-zero storage_cache_size"),
+		(cfg.ledger_snapshot_interval_secs == 0, "a non-zero ledger_snapshot_interval_secs"),
+		(cfg.ledger_snapshot_block_cap == 0, "a non-zero ledger_snapshot_block_cap"),
+		(cfg.ledger_query_window == 0, "a non-zero ledger_query_window"),
+	];
+	match needs.into_iter().find(|(unmet, _)| *unmet) {
+		Some((_, need)) if cfg.ledger_storage_mode == LedgerStorageMode::Snapshot => Err(
+			validation::Error::Custom(format!("ledger_storage_mode = \"snapshot\" needs {need}")),
+		),
+		_ => Ok(()),
+	}
 }
 
 /// Validates the self-contained mainchain timing invariants (I1–I4, I6) at config-parse time, so an
