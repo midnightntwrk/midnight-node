@@ -7,5 +7,5 @@ Landlock read sandbox the help can no longer read `/res/cfg/default.toml`, so it
 `error:` line was never printed. The node now prints only the error on this path. Set
 `SHOW_CONFIG=1` to see the config.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2510
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2506
