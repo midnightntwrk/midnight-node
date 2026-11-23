@@ -75,10 +75,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The prelude marks rustc actions allow_cache_upload=False, so rlibs are
-# never uploaded without this.
-export BUCK2_TEST_FORCE_CACHE_UPLOAD=1
-
 case "$mode" in
 build)
     buck2 build "${args[@]}" "${targets[@]}"

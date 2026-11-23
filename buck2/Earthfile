@@ -113,9 +113,12 @@ CONFIG:
     RUN install -m755 toolchains/wasm-cc.sh /usr/local/bin/wasm-cc.sh && \
         install -m755 toolchains/wasm-ar.sh /usr/local/bin/wasm-ar.sh && \
         install -m755 toolchains/wasm-lld.sh /usr/local/bin/wasm-lld.sh
+    # default_allow_cache_upload: the prelude leaves the upload of a library's
+    # rustc outputs to this setting, and without it every run recompiles them.
     RUN addr="${BUCK2_CACHE_ADDR:-grpc://127.0.0.1:9092}" && printf '%s\n' \
           '[buck2]' \
           'file_watcher = fs_hash_crawler' \
+          'default_allow_cache_upload = true' \
           '[build]' \
           'execution_platforms = root//platforms:re-cache' \
           '[buck2_re_client]' \
