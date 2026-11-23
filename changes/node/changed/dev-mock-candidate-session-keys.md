@@ -8,4 +8,4 @@ so every mock candidate was filtered out, committee selection failed on every ep
 kept its genesis committee forever. The mock now reads the optional `babe_pub_key` and
 `beefy_pub_key` fields, which the dev registrations file already sets.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2511
