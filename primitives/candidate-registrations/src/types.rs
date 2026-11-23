@@ -77,6 +77,14 @@ impl CrchHash {
 	}
 }
 
+/// The most bytes the datum of a registration node holds without its two list
+/// links: `night_registration`'s `NODE_DATUM_MAX` (MIP rule 9, Nodes). No field of
+/// a node the contract admits is longer.
+pub const NODE_DATUM_MAX: u32 = 4_500;
+
+/// A node's `attributes` field, as CBOR bytes exactly as they are on Cardano.
+pub type AttributesBytes = BoundedVec<u8, ConstU32<NODE_DATUM_MAX>>;
+
 /// Bytes of one public key, as they appeared in the datum.
 pub type KeyBytes = BoundedVec<u8, ConstU32<MAX_KEY_LENGTH>>;
 
@@ -195,9 +203,8 @@ pub enum RegistrationEventKind {
 /// What Midnight reads of an active `Registration` node of the NIGHT
 /// registration set (`lib/registration/types.ak` in midnight-reserve-contracts).
 ///
-/// The node's other fields — the list links, `owner`, `reward_address`,
-/// `fixed_cost` and `attributes` — are Cardano's bookkeeping and are not
-/// carried.
+/// The node's other fields, the list links and `owner`, are Cardano's
+/// bookkeeping and are not carried.
 #[derive(
 	Clone, Debug, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo, MaxEncodedLen,
 )]
@@ -218,6 +225,11 @@ pub struct RegistrationDatum {
 	/// STAR per Cardano epoch the pool takes before its margin. The meaning is
 	/// the NIGHT rewards MIP's; this one only carries it.
 	pub fixed_cost: u128,
+	/// The node's `attributes`, as on Cardano: carried, not read. No attribute
+	/// is defined yet (MIP rule 13), so admission ignores them and the record
+	/// does not keep them. The node does not interpret them either: a node
+	/// that did could read an old block differently from the one that made it.
+	pub attributes: AttributesBytes,
 }
 
 /// An active node, as a `Create` or an `Update` leaves it.

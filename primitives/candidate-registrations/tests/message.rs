@@ -37,6 +37,7 @@ fn datum() -> RegistrationDatum {
 		keys: CandidateKeys::default(),
 		reward_address: RewardAddressBytes([0x0f; 32]),
 		fixed_cost: 340_000_000,
+		attributes: Default::default(),
 	}
 }
 
