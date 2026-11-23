@@ -103,8 +103,8 @@ use {
 
 use crate::boundary::types::{
 	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerStats,
-	Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
-	WrappedHash,
+	Op, SegmentFailure, SystemTransactionAppliedStateRoot, TransactionAppliedStateRootV2,
+	TransactionDetails, Tx, WrappedHash,
 };
 
 #[cfg(feature = "std")]
@@ -390,7 +390,7 @@ where
 		net_intra_tx_utxos: bool,
 		runtime_version: u32,
 		skew_tblock: bool,
-	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
+	) -> Result<TransactionAppliedStateRootV2, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -449,8 +449,6 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let all_applied = matches!(applied_stage, TransactionAppliedStage::AllApplied);
-
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Building unshielded UTXOs (elapsed_ms={})",
@@ -458,10 +456,12 @@ where
 		);
 		let mut utxos = tx.unshielded_utxos();
 
-		let failed_segments =
+		let mut failed_segments = vec![];
+		let excluded_segments =
 			if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
 				// Remove from `utxos` the `segments` that failed
 				utxos.remove_failed_segments(&segments);
+				failed_segments = segment_failures(&segments);
 				Some(segments_to_exclude(&segments, filter_only_failed_segments))
 			} else {
 				None
@@ -469,11 +469,11 @@ where
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Unshielded UTXOs ready (failed_segments={}, elapsed_ms={})",
-			failed_segments.as_ref().map(|segments: &Vec<u16>| segments.len()).unwrap_or(0),
+			failed_segments.len(),
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let operations = tx.calls_and_deploys(failed_segments);
+		let operations = tx.calls_and_deploys(excluded_segments);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ops built (elapsed_ms={})",
@@ -505,10 +505,10 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let mut event = TransactionAppliedStateRoot {
+		let mut event = TransactionAppliedStateRootV2 {
 			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
 			tx_hash,
-			all_applied,
+			failed_segments,
 			call_addresses: vec![],
 			deploy_addresses: vec![],
 			maintain_addresses: vec![],
@@ -1756,6 +1756,50 @@ fn well_formed_tblock<D: DB>(
 	}
 }
 
+/// Consensus state: the result reaches `TxPartialSuccess` events, which land in the state root.
+/// Changing a mapping, including taking a variant out of `Other`, needs a new host-fn version.
+#[cfg(feature = "std")]
+fn segment_failures<D: DB>(
+	segments: &BTreeMap<u16, Result<(), api::TransactionInvalid<D>>>,
+) -> Vec<(u16, SegmentFailure)> {
+	use SegmentFailure as F;
+	use api::TransactionInvalid as E;
+	segments
+		.iter()
+		.filter_map(|(id, result)| {
+			let failure = match result.as_ref().err()? {
+				E::EffectsMismatch { .. } => F::EffectsMismatch,
+				E::ContractAlreadyDeployed(_) => F::ContractAlreadyDeployed,
+				E::ContractNotPresent(_) => F::ContractNotPresent,
+				E::Zswap(_) => F::Zswap,
+				E::Transcript(_) => F::Transcript,
+				E::InsufficientClaimable { .. } => F::InsufficientClaimable,
+				E::VerifierKeyNotFound(..) => F::VerifierKeyNotFound,
+				E::VerifierKeyAlreadyPresent(..) => F::VerifierKeyAlreadyPresent,
+				E::ReplayCounterMismatch(_) => F::ReplayCounterMismatch,
+				E::ReplayProtectionViolation(_) => F::ReplayProtectionViolation,
+				E::BalanceCheckOutOfBounds { .. } => F::BalanceCheckOutOfBounds,
+				E::InputNotInUtxos(_) => F::InputNotInUtxos,
+				E::DustDoubleSpend(_) => F::DustDoubleSpend,
+				E::DustDeregistrationNotRegistered(_) => F::DustDeregistrationNotRegistered,
+				E::InitialNonceAlreadyPresent(_) => F::InitialNonceAlreadyPresent,
+				E::InvariantViolation(_) => F::InvariantViolation,
+				E::RewardTooSmall { .. } => F::RewardTooSmall,
+				E::BridgeClaimTooSmall { .. } => F::BridgeClaimTooSmall,
+				E::DivideByZero => F::DivideByZero,
+				E::MerkleTreeError(_) => F::MerkleTreeError,
+				E::ContractMetadataTooLarge { .. } => F::ContractMetadataTooLarge,
+				E::ContractAuthorityMetadataTooLarge { .. } => F::ContractAuthorityMetadataTooLarge,
+				E::ContractTooManyOperations { .. } => F::ContractTooManyOperations,
+				E::IrNotFound(_) => F::IrNotFound,
+				E::IrAlreadyPresent(_) => F::IrAlreadyPresent,
+				_ => F::Other,
+			};
+			Some((*id, failure))
+		})
+		.collect()
+}
+
 /// Segments whose contract actions are withheld from the emitted event.
 ///
 /// `only_failed = false` is the v1 `apply_transaction` behaviour, kept for replaying old blocks:
@@ -2336,6 +2380,15 @@ mod tests {
 		assert_eq!(segments_to_exclude(&segments, false), vec![0, 1, 2]);
 	}
 
+	#[test]
+	fn segment_failures_reports_only_failed_segments() {
+		let segments: BTreeMap<u16, Result<(), api::TransactionInvalid<DefaultDB>>> =
+			[(0, Ok(())), (1, Err(api::TransactionInvalid::DivideByZero)), (2, Ok(()))]
+				.into_iter()
+				.collect();
+		assert_eq!(segment_failures(&segments), vec![(1, SegmentFailure::DivideByZero)]);
+	}
+
 	/// `validate_unsigned` and `pre_dispatch` reach these with caller bytes ahead of any fee,
 	/// and before `CheckWeight` can reject a bare extrinsic on length.
 	#[test]
@@ -2542,7 +2595,7 @@ mod tests {
 		validated.expect("mempool validation accepts it");
 		dispatched.expect("pre_dispatch accepts it");
 		let applied = applied.expect("apply accepts it");
-		assert!(applied.all_applied);
+		assert!(applied.failed_segments.is_empty());
 		assert!(applied.unshielded_utxos_created.is_empty(), "netted: not reported as created");
 		assert!(applied.unshielded_utxos_spent.is_empty(), "netted: not reported as spent");
 

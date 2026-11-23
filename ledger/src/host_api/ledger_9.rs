@@ -15,7 +15,8 @@
 use crate::ledger_9::Bridge;
 use crate::{
 	boundary::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
+		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
+		TransactionAppliedStateRootV2, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
 };
@@ -89,7 +90,7 @@ fn apply_transaction_inner(
 	runtime_version: u32,
 	filter_only_failed_segments: bool,
 	net_intra_tx_utxos: bool,
-) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
+) -> Result<TransactionAppliedStateRootV2, LedgerApiError> {
 	with_bridge!(
 		Bridge<Signature>,
 		ext,
@@ -274,6 +275,8 @@ pub trait Ledger9Bridge {
 	 * v3 also nets out a UTXO created and spent within the tx before the integrity check,
 	 * where v1 and v2 reject the tx. Runtimes bound to v2 keep that verdict on replay; a node
 	 * lacking v3 cannot import blocks from a runtime that needs it.
+	 *
+	 * v4 returns each failed segment's id and `SegmentFailure` in place of `all_applied`.
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -291,6 +294,7 @@ pub trait Ledger9Bridge {
 			/* filter_only_failed_segments */ false,
 			/* net_intra_tx_utxos */ false,
 		)
+		.map(Into::into)
 	}
 
 	#[version(2)]
@@ -310,6 +314,7 @@ pub trait Ledger9Bridge {
 			/* filter_only_failed_segments */ true,
 			/* net_intra_tx_utxos */ false,
 		)
+		.map(Into::into)
 	}
 
 	#[version(3)]
@@ -320,6 +325,26 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ true,
+			/* net_intra_tx_utxos */ true,
+		)
+		.map(Into::into)
+	}
+
+	#[version(4)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRootV2, LedgerApiError>> {
 		apply_transaction_inner(
 			*self,
 			state_key,
