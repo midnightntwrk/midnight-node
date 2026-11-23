@@ -20,22 +20,41 @@
 # BABE key: without this check such mistakes surface only at the v3 runtime upgrade.
 # See docs/aura-to-babe-migration-runbook.md, Phase 0. Needs bash, jq and curl. Exits 1 on any ERROR.
 #
-# Usage: verify-permissioned-candidates.sh <new.json> [--current <current.json>] [--rpc <url> [--epoch <n>]]
-#   <new.json>       res/<network>/permissioned-candidates-config.json format, or a bare array of candidates
-#   --current        the list active today: a key may not move to another candidate (DuplicatedKey)
+# Usage: verify-permissioned-candidates.sh <new> [--current <current>] [--rpc <url> [--epoch <n>]]
+#   <new>            the list for `change-federated-ops`: its PERMISSIONED_CANDIDATES text (an .env file works),
+#                    or JSON: res/<network>/permissioned-candidates-config.json format, or a bare array of candidates
+#   --current        the list active today, in either format: a key may not move to another candidate (DuplicatedKey)
 #   --rpc            Midnight node HTTP RPC (e.g. http://localhost:9944): compare with systemParameters_getAriadneParameters
 #   --epoch          Cardano epoch for --rpc (default: the node's current one)
 #
 # It cannot tell whether a well-formed key is the one the node loaded: check the node itself (runbook 0.1).
 set -euo pipefail
 
-usage() { sed -n '23,27p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '23,28p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -ge 1 ] || usage
-LIST=$1; shift
+
+# Prints the candidates as a JSON array. Non-JSON input is read the way the contracts CLI reads
+# PERMISSIONED_CANDIDATES: [ { key:value, … }, … ], hex without 0x.
+load() {
+  if jq -e . "$1" >/dev/null 2>&1; then
+    jq -c 'if type == "array" then . else .initial_permissioned_candidates end' "$1"
+  else
+    jq -R -s -c '
+      (if test("PERMISSIONED_CANDIDATES=") then sub("^[\\s\\S]*?PERMISSIONED_CANDIDATES="; "") else . end)
+      | ((capture("^[^\\[]*\\[(?<b>[^\\]]*)\\]") // error("no [ … ] list found")).b)
+      | [scan("\\{[^{}]*\\}") | .[1:-1]
+         | [splits("[,\n]") | gsub("^\\s+|\\s+$"; "") | select(test(":"))
+            | index(":") as $i | {key: (.[0:$i] | gsub("\\s"; "")), value: (.[$i + 1:] | gsub("^\\s+|\\s+$"; ""))}]
+         | from_entries]
+      | if length == 0 then error("no { … } candidates found") else . end' "$1"
+  fi
+}
+
+LIST=$(load "$1"); shift
 CURRENT=null RPC= EPOCH=
 while [ $# -gt 0 ]; do
   case $1 in
-    --current) CURRENT=$(cat "$2"); shift 2 ;;
+    --current) CURRENT=$(load "$2"); shift 2 ;;
     --rpc) RPC=$2; shift 2 ;;
     --epoch) EPOCH=$2; shift 2 ;;
     *) usage ;;
@@ -55,7 +74,7 @@ if [ -n "$RPC" ]; then
   echo "chain: $RPC, Cardano epoch $EPOCH, runtime spec $SPEC"
 fi
 
-jq -r -n --slurpfile list "$LIST" --argjson current "$CURRENT" --argjson observed "$OBSERVED" \
+jq -r -n --argjson list "$LIST" --argjson current "$CURRENT" --argjson observed "$OBSERVED" \
   --argjson spec "$SPEC" '
 def norm: if type == "string" then ascii_downcase | ltrimstr("0x") else null end;
 def short: if type == "string" and length > 0 then "0x" + .[0:8] + "…" else "?" end;
@@ -79,7 +98,7 @@ def hint($s; $v):
     elif $n == 32 then " (an sr25519/ed25519 key?)"
     elif $n == 65 then " (uncompressed: send the 33-byte compressed form)" else "" end;
 
-($list[0] | cands) as $new
+($list | cands) as $new
 | (if $current == null then [] else $current | cands end) as $old
 | " — the v3 runtime drops the candidate from the committee (no fallback to its AURA key)" as $dropped
 
@@ -126,6 +145,6 @@ def hint($s; $v):
        ($obs[] | select(.sc as $sc | $new | all(.sc != $sc)) | out("ERROR"; "chain"; "\(.sc | short) is on chain but not in the list" + $lost)),
        (if $spec < 3000000 then out("INFO"; "chain"; "runtime spec \($spec): isValid does not check BABE keys yet; rely on checks 1–3") else empty end)
    end)
-' | awk -F'\t' -v n="$(jq '(if type == "array" then . else .initial_permissioned_candidates end) | length' "$LIST")" '
+' | awk -F'\t' -v n="$(jq length <<<"$LIST")" '
   { printf "%-5s  %-22s  %s\n", $1, $2, $3; c[$1]++ }
   END { printf "%d candidates: %d error(s)\n", n, c["ERROR"]; exit c["ERROR"] > 0 }'
