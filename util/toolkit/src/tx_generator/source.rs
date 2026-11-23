@@ -185,6 +185,11 @@ pub struct Source {
 	/// wallet's DUST from an indexer snapshot where the indexer supports it.
 	#[arg(long, env = "MN_INDEXER_NO_FAST_SYNC", global = true)]
 	pub no_fast_sync: bool,
+	/// Indexer path only: skip the shielded sync and treat each wallet as holding no shielded
+	/// coins. For NIGHT and DUST commands against an indexer that scans every transaction for each
+	/// new wallet, which can take hours on a long chain.
+	#[arg(long, env = "MN_INDEXER_SKIP_SHIELDED", global = true)]
+	pub indexer_skip_shielded: bool,
 }
 
 #[derive(Error, Debug)]

@@ -73,6 +73,8 @@ pub struct IndexerContext<D: DB + Clone> {
 	/// Rebuild DUST from a per-wallet indexer snapshot where the indexer supports it, rather than
 	/// replaying the chain-wide dust event log.
 	fast_sync: bool,
+	/// Leave each wallet's shielded side empty instead of draining `shieldedTransactions`.
+	skip_shielded: bool,
 }
 
 impl<D: DB + Clone> IndexerContext<D> {
@@ -103,12 +105,20 @@ impl<D: DB + Clone> IndexerContext<D> {
 			resolver: Mutex::new(&DEFAULT_RESOLVER),
 			tip: Mutex::new(None),
 			fast_sync: true,
+			skip_shielded: false,
 		}
 	}
 
 	/// Turn DUST fast sync off (it is on by default) to always replay the dust event log.
 	pub fn with_fast_sync(mut self, enabled: bool) -> Self {
 		self.fast_sync = enabled;
+		self
+	}
+
+	/// Skip the shielded sync, so wallets hold no shielded coins. The indexer scans every
+	/// transaction for a wallet it has not seen, so on a long chain that sync can take hours.
+	pub fn with_skip_shielded(mut self, skip: bool) -> Self {
+		self.skip_shielded = skip;
 		self
 	}
 
@@ -211,6 +221,11 @@ impl IndexerContext<DefaultDB> {
 		let tip_time = Timestamp::from_secs(block.timestamp);
 		let fast_sync = self.dust_fast_sync_target(&block, event_cursor).await;
 
+		if self.skip_shielded {
+			log::warn!(
+				"indexer: skipping the shielded sync; wallets are treated as holding no shielded coins"
+			);
+		}
 		let progress = SyncProgress { wallets: seeds.len(), ..Default::default() };
 
 		// `log_until_done` loops forever; it is dropped the moment the work arm resolves, so the
@@ -317,7 +332,7 @@ impl IndexerContext<DefaultDB> {
 			(unshielded_utxos, unshielded_tx_id),
 			(dust_state, dust_event_id, dust_frontier),
 		) = tokio::try_join!(
-			self.sync_shielded(seed, shielded, resume, progress),
+			self.sync_or_skip_shielded(seed, shielded, resume, progress),
 			self.sync_unshielded(unshielded, resume, progress),
 			self.sync_dust(dust, resume, tip_time, fast_sync, progress),
 		)?;
@@ -341,6 +356,22 @@ impl IndexerContext<DefaultDB> {
 			dust_frontier,
 		};
 		Ok((seed.clone(), wallet, unshielded_utxos, next))
+	}
+
+	/// [`sync_shielded`](Self::sync_shielded), unless shielded sync is skipped. A skip passes any
+	/// cached zswap state through unchanged, so a later full sync still resumes from it.
+	async fn sync_or_skip_shielded(
+		&self,
+		seed: &WalletSeed,
+		shielded: &mut ShieldedWallet<DefaultDB>,
+		resume: Option<&WalletSyncState>,
+		progress: &SyncProgress,
+	) -> Result<Option<ZswapWalletStateRaw>, BoxError> {
+		if !self.skip_shielded {
+			return self.sync_shielded(seed, shielded, resume, progress).await;
+		}
+		progress.shielded.finish();
+		Ok(resume.and_then(|r| r.shielded_state.clone()))
 	}
 
 	/// Drain `shieldedTransactions`, fast-forwarding the wallet's zswap merkle tree with each
@@ -1557,5 +1588,39 @@ mod tests {
 			assert_eq!(ctx.ledger_parameters().await, INITIAL_PARAMETERS);
 			assert_eq!(ctx.latest_block_context().await.tblock, BlockContext::from(&block).tblock);
 		});
+	}
+
+	/// A skip makes no indexer call (the URL is unroutable) and passes the cached state through.
+	#[test]
+	fn skipped_shielded_sync_keeps_the_cached_state() {
+		let ctx = IndexerContext::<DefaultDB>::new(
+			"http://127.0.0.1:1/api/v4",
+			"undeployed",
+			NonZeroUsize::MIN,
+		)
+		.unwrap()
+		.with_skip_shielded(true);
+		let seed = WalletSeed::Short([1; 16]);
+		let mut shielded = ShieldedWallet::default(seed.clone());
+		let cached = ZswapWalletStateRaw(vec![1, 2, 3]);
+		let resume = WalletSyncState {
+			shielded_state: Some(cached.clone()),
+			unshielded_utxos: vec![],
+			unshielded_tx_id: 0,
+			dust_state: None,
+			dust_event_id: 0,
+			dust_frontier: None,
+		};
+
+		let state = futures::executor::block_on(ctx.sync_or_skip_shielded(
+			&seed,
+			&mut shielded,
+			Some(&resume),
+			&SyncProgress::default(),
+		))
+		.unwrap();
+
+		assert_eq!(state, Some(cached));
+		assert_eq!(shielded.state.first_free, 0, "a skipped wallet must hold no shielded state");
 	}
 }

@@ -114,7 +114,8 @@ pub async fn sync_indexer(
 	let (context, mut synced) = match ledger_version {
 		LedgerVersion::Ledger9 => {
 			let ctx = ledger_9::IndexerContext::with_client(client.clone(), network, concurrency)
-				.with_fast_sync(!source.no_fast_sync);
+				.with_fast_sync(!source.no_fast_sync)
+				.with_skip_shielded(source.indexer_skip_shielded);
 			let synced = ctx.init_wallets(seeds, &resume).await?;
 			(IndexerLedgerContext::Ledger9(Arc::new(ctx)), synced)
 		},
@@ -127,7 +128,8 @@ pub async fn sync_indexer(
 				.filter_map(|(seed, seed_v8)| Some((seed_v8.clone(), resume.get(seed)?.clone())))
 				.collect();
 			let ctx = ledger_8::IndexerContext::with_client(client.clone(), network, concurrency)
-				.with_fast_sync(!source.no_fast_sync);
+				.with_fast_sync(!source.no_fast_sync)
+				.with_skip_shielded(source.indexer_skip_shielded);
 			let synced_v8 = ctx.init_wallets(&seeds_v8, &resume_v8).await?;
 			let synced = seeds
 				.iter()
