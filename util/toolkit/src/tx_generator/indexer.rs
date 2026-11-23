@@ -205,7 +205,11 @@ mod tests {
 		ctx.insert_wallet(
 			alice.clone(),
 			alice_wallet,
-			vec![(coin.clone(), Timestamp::from_secs(1))],
+			vec![ledger_9::SyncedUtxo {
+				utxo: coin.clone(),
+				ctime: Timestamp::from_secs(1),
+				backs_dust_generation: false,
+			}],
 		);
 		ctx.insert_wallet(bob.clone(), bob_wallet, vec![]);
 
@@ -224,6 +228,7 @@ mod tests {
 				unshielded_utxos: vec![UnshieldedUtxoRaw {
 					utxo: serialize_untagged(&coin).unwrap(),
 					ctime_secs: 1,
+					backs_dust_generation: false,
 				}],
 				unshielded_tx_id: 9,
 				dust_state: None,
