@@ -257,7 +257,7 @@ jobs:
       # For repos that can't use actions/attest, e.g. private forks.
       - name: Configure AWS credentials for signing
         if: vars.SIGNING_KMS_KEY != ''
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.SIGNING_AWS_ROLE_ARN }}
           aws-region: ${{ vars.SIGNING_AWS_REGION }}
@@ -267,7 +267,7 @@ jobs:
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           # cosign v3 hard-rejects --tlog-upload=false; v2 supports keyed no-tlog signing.
-          cosign-release: "v2.6.4"
+          cosign-release: "v2.6.5"
 
       - name: Sign node release image
         if: vars.SIGNING_KMS_KEY != '' && inputs.skip-node != true
@@ -769,7 +769,7 @@ jobs:
 
       - name: Configure AWS credentials for signing
         if: vars.SIGNING_KMS_KEY != ''
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.SIGNING_AWS_ROLE_ARN }}
           aws-region: ${{ vars.SIGNING_AWS_REGION }}
@@ -778,7 +778,7 @@ jobs:
         if: vars.SIGNING_KMS_KEY != ''
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
-          cosign-release: "v2.6.4"
+          cosign-release: "v2.6.5"
 
       - name: Sign release tarballs
         if: vars.SIGNING_KMS_KEY != ''
@@ -885,7 +885,7 @@ jobs:
       # The combined SHA256SUMS only exists in this job, so it is signed here.
       - name: Configure AWS credentials for signing
         if: vars.SIGNING_KMS_KEY != ''
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.SIGNING_AWS_ROLE_ARN }}
           aws-region: ${{ vars.SIGNING_AWS_REGION }}
@@ -894,7 +894,7 @@ jobs:
         if: vars.SIGNING_KMS_KEY != ''
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
-          cosign-release: "v2.6.4"
+          cosign-release: "v2.6.5"
 
       - name: Sign combined checksums
         if: vars.SIGNING_KMS_KEY != ''

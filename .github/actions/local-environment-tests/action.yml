@@ -75,7 +75,7 @@ runs:
     # into the nested DinD daemon (writes to the per-slot DOCKER_CONFIG the caller set).
     - name: Docker Login
       if: inputs.ghcr-password != ''
-      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
       with:
         registry: ghcr.io
         username: MidnightCI
@@ -87,7 +87,7 @@ runs:
     - name: Docker Hub Login
       if: inputs.dockerhub-password != ''
       continue-on-error: true
-      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
       with:
         username: ${{ inputs.dockerhub-username }}
         password: ${{ inputs.dockerhub-password }}
