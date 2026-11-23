@@ -77,10 +77,11 @@ becomes active.
 **Gate — before running `change-federated-ops`:** check the list it will
 submit with
 [`scripts/verify-permissioned-candidates.sh`](../scripts/verify-permissioned-candidates.sh).
-Stop and fix the list on any `ERROR`.
+Stop and fix the list on any `ERROR`. It reads the same `PERMISSIONED_CANDIDATES`
+file the CLI uses, so check the exact file you will submit.
 
 ```bash
-scripts/verify-permissioned-candidates.sh new.json --current current.json
+scripts/verify-permissioned-candidates.sh new.env --current current.env
 ```
 
 ### 0.3 Gate: permissioned-candidates with BABE keys observed by the Midnight nodes
@@ -90,8 +91,12 @@ the Midnight nodes observed (any RPC node; a 2.1 node works). Do not continue
 to Phase 1 until every `ERROR` is fixed or explained.
 
 ```bash
-scripts/verify-permissioned-candidates.sh new.json --rpc http://<rpc-node>:9944
+scripts/verify-permissioned-candidates.sh new.env --rpc http://<rpc-node>:9944
 ```
+
+To see the result early, run it right after `change-federated-ops` confirms in Cardano epoch N with
+`--epoch <N+2>`: the node already returns the list it will use from that epoch. A later list update
+before epoch N ends replaces it, so run the check above again once N+2 starts.
 
 ## Phase 1 — Binary rollout
 

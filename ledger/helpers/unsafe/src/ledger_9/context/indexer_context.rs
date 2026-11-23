@@ -30,10 +30,11 @@ use tokio::time::{Instant, sleep_until, timeout};
 
 use super::{BuilderContext, DEFAULT_RESOLVER};
 use crate::indexer_client::{
-	BlockInfo, DUST_EVENT_PASS_LIMIT, DUST_IDLE_TIMEOUT, DustGenerationsEventData,
-	DustGenerationsForm, DustSnapshot, IndexerClient, IndexerClientError, PROGRESS_IDLE_TIMEOUT,
-	SHIELDED_PROGRESS_PROBE_INTERVAL, ShieldedCatchUp, ShieldedEvent, SyncProgress,
-	TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData, WalletSyncState,
+	BlockInfo, DUST_EVENT_PASS_LIMIT, DUST_FAST_SYNC_ATTEMPTS, DUST_FAST_SYNC_RETRY_DELAY,
+	DUST_IDLE_TIMEOUT, DustGenerationsEventData, DustGenerationsForm, DustSnapshot, IndexerClient,
+	IndexerClientError, PROGRESS_IDLE_TIMEOUT, SHIELDED_PROGRESS_PROBE_INTERVAL, ShieldedCatchUp,
+	ShieldedEvent, SyncProgress, TransactionResultKind, UnshieldedEvent, UnshieldedUtxoData,
+	WalletSyncState,
 };
 use crate::ledger_9::mn_ledger::events::EventDetails;
 use crate::ledger_9::{
@@ -220,7 +221,7 @@ impl IndexerContext<DefaultDB> {
 			(*LedgerState::<DefaultDB>::new(self.network_id.clone()).parameters).clone()
 		});
 		let tip_time = Timestamp::from_secs(block.timestamp);
-		let fast_sync = self.dust_fast_sync_target(&block, event_cursor).await;
+		let fast_sync = self.dust_fast_sync_target(&block, event_cursor).await?;
 
 		if self.skip_shielded {
 			log::warn!(
@@ -275,33 +276,48 @@ impl IndexerContext<DefaultDB> {
 
 	/// The indexer's `dustGenerations` form and the snapshot block (the tip) for DUST fast sync, or
 	/// `None` to replay dust events.
+	///
+	/// A transport error is retried, and returned once the retries run out, instead of falling back:
+	/// the replay reads every dust event on the chain, millions on a long one.
 	async fn dust_fast_sync_target(
 		&self,
 		tip: &BlockInfo,
 		event_cursor: Option<u64>,
-	) -> Option<(DustGenerationsForm, DustSnapshot)> {
+	) -> Result<Option<(DustGenerationsForm, DustSnapshot)>, IndexerClientError> {
 		if !self.fast_sync {
-			return None;
+			return Ok(None);
 		}
-		let target = async {
+		let target = || async {
 			let Some(form) = self.client.dust_generations_form().await? else {
 				return Ok(None);
 			};
 			let snapshot = self.client.dust_snapshot(tip.height).await?;
 			Ok::<_, IndexerClientError>(Some((form, DustSnapshot { event_cursor, ..snapshot })))
 		};
-		match target.await {
+		let mut attempt = 1;
+		let result = loop {
+			match target().await {
+				Err(e) if e.is_transport() && attempt < DUST_FAST_SYNC_ATTEMPTS => {
+					log::warn!("indexer: DUST fast-sync probe failed ({e}); retrying");
+					tokio::time::sleep(DUST_FAST_SYNC_RETRY_DELAY * attempt).await;
+					attempt += 1;
+				},
+				result => break result,
+			}
+		};
+		match result {
 			Ok(None) => {
 				log::warn!(
 					"indexer: no DUST fast-sync support; replaying every dust event for each wallet \
 					 (slow)"
 				);
-				None
+				Ok(None)
 			},
-			Ok(target) => target,
+			Ok(target) => Ok(target),
+			Err(e) if e.is_transport() => Err(e),
 			Err(e) => {
 				log::warn!("indexer: DUST fast-sync probe failed ({e}); replaying dust events");
-				None
+				Ok(None)
 			},
 		}
 	}
@@ -703,7 +719,22 @@ impl IndexerContext<DefaultDB> {
 			}
 			let synced = match synced {
 				Some(state) => Ok(state),
-				None => self.fast_sync_dust(dust, *form, snapshot, None, tip_time).await,
+				None => {
+					let mut attempt = 1;
+					loop {
+						match self.fast_sync_dust(dust, *form, snapshot, None, tip_time).await {
+							Err(e)
+								if crate::indexer_client::is_transport_error(e.as_ref())
+									&& attempt < DUST_FAST_SYNC_ATTEMPTS =>
+							{
+								log::warn!("indexer: DUST fast sync failed ({e}); retrying");
+								tokio::time::sleep(DUST_FAST_SYNC_RETRY_DELAY * attempt).await;
+								attempt += 1;
+							},
+							result => break result,
+						}
+					}
+				},
 			};
 			match synced {
 				Ok((state, frontier)) => {
@@ -712,6 +743,8 @@ impl IndexerContext<DefaultDB> {
 					progress.dust.finish();
 					return Ok((None, 0, resumable.then_some(frontier)));
 				},
+				// Retries ran out; replaying would cost far more. See `dust_fast_sync_target`.
+				Err(e) if crate::indexer_client::is_transport_error(e.as_ref()) => return Err(e),
 				Err(e) => log::warn!("indexer: DUST fast sync failed ({e}); replaying dust events"),
 			}
 		}
