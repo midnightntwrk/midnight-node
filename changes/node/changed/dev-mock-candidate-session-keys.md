@@ -10,4 +10,8 @@ fields, which the dev and qanet registrations files already set. `testnet-02-moc
 by the convention those files follow: the BABE key is the AURA key, the BEEFY key is the sidechain
 key.
 
+The mock's data epoch now uses `offset_data_epoch`, as the db-sync source does: for a Cardano epoch
+below 2 it returns an error instead of wrapping around, so the node reports why it cannot provide
+committee selection data.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/2511

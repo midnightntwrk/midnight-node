@@ -317,7 +317,13 @@ impl AuthoritySelectionDataSource for AuthoritySelectionDataSourceMock {
 	}
 
 	async fn data_epoch(&self, for_epoch: McEpochNumber) -> Result<McEpochNumber> {
-		Ok(McEpochNumber(for_epoch.0 - 2))
+		offset_data_epoch(&for_epoch).map_err(|offset| {
+			format!(
+				"Minimum supported epoch of data usage is {offset}, but {} was provided",
+				for_epoch.0
+			)
+			.into()
+		})
 	}
 }
 
@@ -354,6 +360,15 @@ mod tests {
 		};
 		assert_eq!(bytes(b"babe"), Some(vec![3]));
 		assert_eq!(bytes(b"beef"), Some(vec![4]));
+	}
+
+	#[tokio::test]
+	async fn the_data_epoch_is_two_cardano_epochs_back_and_never_underflows() {
+		let source = AuthoritySelectionDataSourceMock {
+			registrations_data: MockRegistrationsConfig { epoch_rotation: Vec::new() },
+		};
+		assert_eq!(source.data_epoch(McEpochNumber(5)).await.unwrap(), McEpochNumber(3));
+		assert!(source.data_epoch(McEpochNumber(1)).await.is_err());
 	}
 
 	#[test]
