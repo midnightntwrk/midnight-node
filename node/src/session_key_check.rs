@@ -13,6 +13,8 @@
 
 //! Start-up check that a validator's keystore holds a key of every session key type.
 //!
+//! Exists for the AURA-to-BABE migration (#2509); remove it once the chain runs BABE.
+//!
 //! A validator missing one of these keys starts normally and only skips its slots or votes once
 //! it is in a committee, so the check logs an ERROR per missing type at start-up instead. The
 //! node keeps running: it cannot know which keys a future session will need.
@@ -21,9 +23,9 @@
 //! [`crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore`], which answers BABE
 //! queries with AURA keys.
 
-use crate::service::BeefyId;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_babe::AuthorityId as BabeId;
+use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::crypto::CryptoTypeId;
 use sp_keystore::Keystore;
