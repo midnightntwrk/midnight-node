@@ -32,6 +32,9 @@ RUN apt-get update && \
         unzip && \
     rm -rf /var/lib/apt/lists/*
 
+# The contracts CLI pins its pnpm in package.json devEngines; corepack fetches that version.
+RUN corepack enable pnpm
+
 # Tool versions (shared across stages)
 # renovate: datasource=github-releases depName=aiken-lang/aiken
 ENV AIKEN_VERSION=1.1.21

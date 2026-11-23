@@ -32,7 +32,7 @@ OUTPUT_DIR="/runtime-values"
 AIKEN_TOML="${CONTRACTS_DIR}/aiken.toml"
 PLUTUS_JSON="${CONTRACTS_DIR}/plutus-local.json"
 
-# Transform JSON to a format that cli-yargs and parsers like
+# Transform JSON to the PERMISSIONED_CANDIDATES format the contracts CLI reads
 export PERMISSIONED_CANDIDATES=$(jq .initial_permissioned_candidates /permissioned-candidates-config.json | sed 's/"//g' | sed -E 's/:[[:space:]]*0x/:/g')
 
 # Copy contracts to writable location.
@@ -62,14 +62,17 @@ fi
 cd "${CONTRACTS_DIR}"
 
 echo "Installing node dependencies"
-bun install
+pnpm install --frozen-lockfile
+# `just build` calls vpx from the project's node_modules.
+export PATH="${CONTRACTS_DIR}/node_modules/.bin:${PATH}"
+cli() { vpx cli/main.ts "$@"; }
 
 
 # Prepare one shot hash
 echo "=== One Shot Hash Preparation ==="
 
-bun cli simple-tx -p kupmios
-bun cli sign-and-submit -p kupmios deployments/local/simple-tx.json
+cli simple-tx -p kupmios
+cli sign-and-submit -p kupmios deployments/local/simple-tx.json
 one_shot_hash=$(jq -r '.txHash' deployments/local/simple-tx.json)
 
 echo "✓ One shot hash: $one_shot_hash generated successfully"
@@ -126,11 +129,11 @@ echo ""
 
 # Deploy contracts
 echo "=== Contracts Deployment ==="
-bun cli deploy -p kupmios
-bun cli sign-and-submit -p kupmios deployments/local/deployment-transactions.json
+cli deploy -p kupmios
+cli sign-and-submit -p kupmios deployments/local/deployment-transactions.json
 
-bun cli register-gov-auth -p kupmios --use-build
-bun cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
+cli register-gov-auth -p kupmios
+cli sign-and-submit -p kupmios deployments/local/register-gov-auth-tx.json
 
 echo "✓ Contracts deployed successfully"
 echo "=== Contracts Deployment Complete ==="
@@ -151,7 +154,7 @@ echo ""
 # Export all contract data for midnight-setup
 echo "=== Contracts Data Exporter ==="
 echo "Saving contracts data for chain initialization (midnight-setup) and manual testing"
-bun cli info --use-build --format json > $CONTRACTS_DIR/contracts-info.json
+cli info --use-build --format json > $CONTRACTS_DIR/contracts-info.json
 cp $PLUTUS_JSON $AIKEN_TOML ${CONTRACTS_DIR}/contract_blueprint.ts ${CONTRACTS_DIR}/contract_blueprint_local.ts $CONTRACTS_DIR/contracts-info.json $OUTPUT_DIR
 echo "Contract files in ${OUTPUT_DIR}:"
 ls $OUTPUT_DIR
