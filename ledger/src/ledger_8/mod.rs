@@ -193,7 +193,7 @@ lazy_static! {
 	/// - A single static cache must store VerifiedTransaction for all type combinations
 	///
 	/// When retrieving, we downcast to the concrete VerifiedTransaction type.
-	static ref STRICT_TX_VALIDATION_CACHE: Cache<StrictTxValidationKey, Arc<dyn Any + Send + Sync>> =
+	pub(crate) static ref STRICT_TX_VALIDATION_CACHE: Cache<StrictTxValidationKey, Arc<dyn Any + Send + Sync>> =
 		Cache::builder()
 			.max_capacity(STRICT_TX_VALIDATION_CACHE_CAPACITY)
 			.time_to_idle(TX_VALIDATION_CACHE_TTI)
@@ -252,6 +252,8 @@ where
 						);
 					}
 				},
+				// Snapshot mode: the node opens the store before the first runtime call.
+				LedgerStorageDb::SnapshotDb => {},
 			};
 		} else {
 			log::error!(
@@ -262,7 +264,8 @@ where
 	}
 
 	pub fn flush_storage(mut externalities: &mut dyn Externalities) {
-		if !crate::ephemeral::is_onchain(externalities) {
+		// Snapshot mode writes the ledger only when a snapshot switches stores.
+		if !crate::ephemeral::is_onchain(externalities) || crate::snapshot::is_active() {
 			return;
 		}
 		let now = std::time::Instant::now();
@@ -1108,8 +1111,12 @@ where
 			return Err(SnapshotImportError::RootMismatch);
 		}
 
-		sp.persist();
-		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		if crate::snapshot::is_active() {
+			crate::snapshot::hold(expected_state_key.to_vec(), &sp);
+		} else {
+			sp.persist();
+			default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		}
 		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
 		Ok(())
 	}
@@ -1257,8 +1264,11 @@ where
 	/// intermediate tip (`pre_dispatch`, the weight macro). For a retained state the first
 	/// deref resolves via the arena's `sp_cache` to the live `Arc`, skipping
 	/// deserialization. The handle is refcount-balanced, so dropping it can't uncache a
-	/// retained state.
+	/// retained state. In snapshot mode a window state stays pinned until the runtime call ends.
 	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
+		if !crate::snapshot::admits::<D>(state_key) {
+			return Err(LedgerApiError::NoLedgerState);
+		}
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
 		let arena = &default_storage().arena;
 		// `get_lazy` reads nothing, so an absent root would only surface as a host panic on

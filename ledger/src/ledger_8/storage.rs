@@ -118,7 +118,7 @@ pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRo
 }
 
 #[cfg(feature = "std")]
-fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
+pub(crate) fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) -> Vec<u8>
 where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
 {
