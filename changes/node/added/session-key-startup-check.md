@@ -14,5 +14,5 @@ both seen, and an AURA key does not count as a BABE key. The previous
 `No BABE public key found in keystore` WARN is removed; the
 `BABE public key(s) in keystore: …` INFO line stays.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2513
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2509
