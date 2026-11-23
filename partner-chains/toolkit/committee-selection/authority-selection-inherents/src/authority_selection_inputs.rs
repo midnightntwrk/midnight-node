@@ -47,6 +47,9 @@ pub enum AuthoritySelectionInputsCreationError {
 	#[cfg_attr(feature = "std", error("Failed to get epoch nonce for epoch: {0}: {1}."))]
 	/// Failed to get epoch nonce for epoch
 	GetEpochNonceQuery(McEpochNumber, Box<dyn std::error::Error + Send + Sync>),
+	#[cfg_attr(feature = "std", error("Cardano epoch nonce for epoch {0} not found."))]
+	/// Epoch nonce for epoch is not available in the data source
+	EpochNonceNotFound(McEpochNumber),
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -148,11 +151,13 @@ impl AuthoritySelectionInputs {
 			);
 		}
 		let registered_candidates: Vec<CandidateRegistrations> = Vec::new();
-		let epoch_nonce_response =
-			candidate_data_source.get_epoch_nonce(for_epoch).await.map_err(|err| {
+		let epoch_nonce = candidate_data_source
+			.get_epoch_nonce(for_epoch)
+			.await
+			.map_err(|err| {
 				AuthoritySelectionInputsCreationError::GetEpochNonceQuery(for_epoch, err)
-			})?;
-		let epoch_nonce = epoch_nonce_response.unwrap_or(EpochNonce(vec![]));
+			})?
+			.ok_or(AuthoritySelectionInputsCreationError::EpochNonceNotFound(for_epoch))?;
 
 		Ok(Self { d_parameter, permissioned_candidates, registered_candidates, epoch_nonce })
 	}

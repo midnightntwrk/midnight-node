@@ -14,6 +14,8 @@ pub struct MockAuthoritySelectionDataSource {
 	pub permissioned_candidates: Vec<Option<Vec<PermissionedCandidateData>>>,
 	/// Number of permissioned candidates.
 	pub num_permissioned_candidates: u16,
+	/// Epoch nonce returned for every epoch. `None` simulates a nonce not yet known.
+	pub epoch_nonce: Option<EpochNonce>,
 }
 
 impl Default for MockAuthoritySelectionDataSource {
@@ -22,6 +24,7 @@ impl Default for MockAuthoritySelectionDataSource {
 			candidates: vec![vec![], vec![]],
 			permissioned_candidates: vec![Some(vec![]), Some(vec![])],
 			num_permissioned_candidates: 3,
+			epoch_nonce: Some(EpochNonce(vec![42u8])),
 		}
 	}
 }
@@ -43,6 +46,11 @@ impl MockAuthoritySelectionDataSource {
 	/// Sets number of permissioned candidates
 	pub fn with_num_permissioned_candidates(self, num_permissioned_candidates: u16) -> Self {
 		Self { num_permissioned_candidates, ..self }
+	}
+
+	/// Sets the epoch nonce returned for every epoch
+	pub fn with_epoch_nonce(self, epoch_nonce: Option<EpochNonce>) -> Self {
+		Self { epoch_nonce, ..self }
 	}
 }
 
@@ -78,7 +86,7 @@ impl AuthoritySelectionDataSource for MockAuthoritySelectionDataSource {
 		&self,
 		_epoch: McEpochNumber,
 	) -> Result<Option<EpochNonce>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(Some(EpochNonce(vec![42u8])))
+		Ok(self.epoch_nonce.clone())
 	}
 
 	async fn data_epoch(

@@ -461,7 +461,7 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 		let Some(pallet_version) =
 			api.api_version::<dyn TokenBridgeIDPRuntimeApi<Block>>(parent_hash)?
 		else {
-			log::info!(
+			log::debug!(
 				"💤 Skipping token bridge transfer observation. Pallet not detected in the runtime."
 			);
 			return Ok(Self::Inert);
@@ -488,13 +488,13 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 	{
 		let max_transfers = api.get_max_transfers_per_block(parent_hash)?;
 		let Some(last_checkpoint) = api.get_last_data_checkpoint(parent_hash)? else {
-			log::info!(
+			log::debug!(
 				"💤 Skipping token bridge transfer observation. Pallet last data checkpoint not configured."
 			);
 			return Ok(Self::Inert);
 		};
 		let Some(main_chain_scripts) = api.get_main_chain_scripts(parent_hash)? else {
-			log::info!(
+			log::debug!(
 				"💤 Skipping token bridge transfer observation. Pallet main chain addresses are not configured."
 			);
 			return Ok(Self::Inert);
