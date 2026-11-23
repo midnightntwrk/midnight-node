@@ -109,11 +109,47 @@ pub struct EngineDispatchVerifier<Block: BlockT, Aura, Babe> {
 	aura: Aura,
 	babe: Babe,
 	seeder: Arc<dyn EpochSeeder<Block>>,
+	parent_header: ParentHeader<Block>,
 }
 
+/// Looks up an imported header by hash.
+pub type ParentHeader<Block> = Arc<
+	dyn Fn(<Block as BlockT>::Hash) -> Result<Option<<Block as BlockT>::Header>, String>
+		+ Send
+		+ Sync,
+>;
+
 impl<Block: BlockT, Aura, Babe> EngineDispatchVerifier<Block, Aura, Babe> {
-	pub fn new(seeder: Arc<dyn EpochSeeder<Block>>, aura: Aura, babe: Babe) -> Self {
-		Self { aura, babe, seeder }
+	pub fn new(
+		seeder: Arc<dyn EpochSeeder<Block>>,
+		parent_header: ParentHeader<Block>,
+		aura: Aura,
+		babe: Babe,
+	) -> Self {
+		Self { aura, babe, seeder, parent_header }
+	}
+
+	/// BABE picks the epoch from a block's claimed number and its block import `expect`s a BABE
+	/// pre-digest on the parent, which AURA blocks from before `pallet-consensus-engine` lack. An
+	/// unknown parent is left to BABE.
+	fn check_babe_parent(&self, header: &Block::Header) -> Result<(), String> {
+		use sp_runtime::traits::One;
+		let Some(parent) = (self.parent_header)(*header.parent_hash())? else {
+			return Ok(());
+		};
+		if *header.number() != *parent.number() + One::one() {
+			return Err(format!(
+				"BABE block #{:?} does not follow its parent #{:?}",
+				header.number(),
+				parent.number()
+			));
+		}
+		sc_consensus_babe::find_pre_digest::<Block>(&parent).map(drop).map_err(|e| {
+			format!(
+				"BABE block #{:?}: parent has no readable BABE pre-digest: {e}",
+				header.number()
+			)
+		})
 	}
 }
 
@@ -131,6 +167,7 @@ where
 		match route::<Block>(&block.header) {
 			ActiveEngine::Aura => self.aura.verify(block).await,
 			ActiveEngine::Babe => {
+				self.check_babe_parent(&block.header)?;
 				self.seeder.ensure_seeded_for_child_of(*block.header.parent_hash());
 				self.babe.verify(block).await
 			},
@@ -327,11 +364,20 @@ mod tests {
 
 	impl Harness {
 		fn new() -> Self {
+			// No parents are known: routing only, the parent check defers to BABE.
+			Self::with_parents(Vec::new())
+		}
+
+		/// A harness whose parent lookup knows `parents`.
+		fn with_parents(parents: Vec<Header>) -> Self {
 			let (aura, babe, seeder) =
 				(Recorder::default(), Recorder::default(), SeedRecorder::default());
+			let parents: std::collections::HashMap<H256, Header> =
+				parents.into_iter().map(|header| (header.hash(), header)).collect();
 			Self {
 				verifier: EngineDispatchVerifier::new(
 					Arc::new(seeder.clone()),
+					Arc::new(move |hash| Ok(parents.get(&hash).cloned())),
 					aura.clone(),
 					babe.clone(),
 				),
@@ -516,6 +562,7 @@ mod tests {
 		}
 		let verifier = EngineDispatchVerifier::<Block, _, _>::new(
 			Arc::new(SeedRecorder::default()),
+			Arc::new(|_| Ok(None)),
 			Recorder::default(),
 			Failing,
 		);
@@ -523,6 +570,85 @@ mod tests {
 			block_on(verifier.verify(params(babe_block(5)))).err(),
 			Some("bad seal".to_string())
 		);
+	}
+
+	/// Block `number` on `parent` with a readable BABE pre-digest, after `aura_digest` if set.
+	fn babe_child(parent: &Header, number: u32, aura_digest: bool) -> Header {
+		use sc_consensus_babe::CompatibleDigestItem;
+		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
+		let babe =
+			DigestItem::babe_pre_digest(PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+				authority_index: 0,
+				slot: u64::from(number).into(),
+			}));
+		let logs = if aura_digest { vec![pre_runtime(AURA_ENGINE_ID), babe] } else { vec![babe] };
+		let mut header = header_with(number, logs);
+		header.set_parent_hash(parent.hash());
+		header
+	}
+
+	#[test]
+	fn verifier_checks_the_babe_parent_before_seeding_and_verifying() {
+		let genesis = Header::new(
+			0,
+			Default::default(),
+			Default::default(),
+			H256::zero(),
+			Default::default(),
+		);
+		let aura = aura_block(40);
+		let undecodable = header_with(44, vec![pre_runtime(BABE_ENGINE_ID)]);
+		let mut duplicated = babe_child(&genesis, 45, false);
+		let babe_digest = duplicated.digest().logs().last().cloned().unwrap();
+		duplicated.digest_mut().push(babe_digest);
+		let babe = babe_child(&genesis, 50, false);
+		let flip = babe_child(&babe, 51, true);
+		let h = Harness::with_parents(vec![
+			genesis.clone(),
+			aura.clone(),
+			undecodable.clone(),
+			duplicated.clone(),
+			babe.clone(),
+			flip.clone(),
+		]);
+
+		let mut claims_zero = babe_child(&babe, 1, false);
+		claims_zero.set_number(0);
+		for rejected in [
+			babe_child(&babe, 1, false),
+			babe_child(&babe, 52, false),
+			claims_zero,
+			babe_child(&genesis, 2, false),
+			babe_child(&aura, 41, false),
+			babe_child(&undecodable, 45, false),
+			babe_child(&duplicated, 46, false),
+		] {
+			assert!(block_on(h.verifier.verify(params(rejected))).is_err());
+		}
+		assert!(h.seeder.parents().is_empty());
+		assert!(h.babe.seen().is_empty());
+
+		h.verify(babe_child(&genesis, 1, false));
+		h.verify(babe_child(&babe, 51, false));
+		h.verify(babe_child(&flip, 52, false));
+		assert_eq!(h.babe.seen(), vec![1, 51, 52]);
+	}
+
+	#[test]
+	fn verifier_fails_closed_on_a_parent_lookup_error() {
+		let (seeder, babe) = (SeedRecorder::default(), Recorder::default());
+		let verifier = EngineDispatchVerifier::<Block, _, _>::new(
+			Arc::new(seeder.clone()),
+			Arc::new(|_| Err("db read failed".to_string())),
+			Recorder::default(),
+			babe.clone(),
+		);
+		assert_eq!(
+			block_on(verifier.verify(params(babe_block(5)))).err(),
+			Some("db read failed".to_string())
+		);
+		assert!(seeder.parents().is_empty());
+		assert!(babe.seen().is_empty());
 	}
 
 	/// Block import that records the auxiliary entries of the blocks handed to it.
