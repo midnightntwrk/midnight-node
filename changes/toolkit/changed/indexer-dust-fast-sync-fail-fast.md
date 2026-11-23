@@ -8,3 +8,5 @@ and adds heavy load to an indexer that is already struggling. The toolkit now re
 sync up to four times, waiting 10, 20 and 30 seconds in between, and then fails with the transport
 error rather than replaying. Responses the toolkit cannot use, and indexers without fast-sync
 support, still fall back to the replay.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2514
