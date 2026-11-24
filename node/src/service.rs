@@ -629,6 +629,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	max_finality_subscriptions: u32,
 	serve_warp_ledger_sync: bool,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
+	if matches!(config.network.sync_mode, sc_network::config::SyncMode::LightState { .. }) {
+		return Err(ServiceError::Other(
+			"--sync fast/fast-unsafe import blocks without executing them; use another sync mode"
+				.into(),
+		));
+	}
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
 	// warp ledger-sync server/importer dispatch to.
