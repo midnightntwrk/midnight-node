@@ -1,8 +1,10 @@
 #node #sync
 
-# Refuse to start with `--sync fast` or `--sync fast-unsafe`
+# Support only full sync
 
-These modes import blocks without executing them, which leaves the ledger and consensus state
-incomplete. The node now exits at start-up with an error asking for another sync mode.
+The node now exits at start-up unless it runs with `--sync full`, the default. `--sync fast`
+and `--sync fast-unsafe` import blocks without executing them, which leaves the ledger and
+consensus state incomplete. `--sync warp` is disabled until warp sync is stable together with
+GRANDPA.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2517
