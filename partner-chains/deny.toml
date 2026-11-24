@@ -144,19 +144,6 @@ license-files = [
     { path = "LICENSE", hash = 0x00000000 }, # placeholder - UPDATE THIS
 ]
 
-# Regarding "raw-scripts": This was in your Python CLARIFICATIONS.
-# If "raw-scripts" is a crate from crates.io, ensure the name is correct.
-# If it's a local path dependency that is part of your workspace, its license should be
-# specified in its own Cargo.toml and it won't need clarification here.
-# If it's a git dependency, its license should also be in its Cargo.toml.
-# If it genuinely needs clarification:
-# [[licenses.clarify]]
-# crate = "raw-scripts" # Verify name and if it's from a public registry
-# expression = "Apache-2.0"
-# license-files = [
-#    { path = "LICENSE", hash = 0x00000000 }, # placeholder - UPDATE THIS
-# ]
-
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.

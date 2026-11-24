@@ -78,6 +78,8 @@ pub const DEFAULT_OBSERVATION_BUDGET_PERCENT: u32 = 50;
 const ZERO_DUST_PUBLIC_KEY: [u8; 32] = [0; 32];
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use frame_support::{sp_runtime::traits::Hash, storage::with_storage_layer};
 	use midnight_primitives::{
@@ -93,7 +95,7 @@ pub mod pallet {
 		RegistrationData, SpendData,
 	};
 	use scale_info::prelude::vec::Vec;
-	use sidechain_domain::UtxoId;
+	use sidechain_domain::{UtxoId, cardano_address::validate_enterprise_script_address};
 	use sp_core::H256;
 
 	use midnight_node_ledger::types::{
@@ -258,6 +260,8 @@ pub mod pallet {
 		GetTransactionContextError,
 		ContractNotPresent,
 		BeneficiaryNotFound,
+		/// The mapping validator address is not a Cardano enterprise script address
+		InvalidMappingValidatorAddress,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -384,21 +388,28 @@ pub mod pallet {
 			// panic names the chain-spec field path (matching the camelCase JSON keys the
 			// operator edits) and reads the cap from the destination BoundedVec type, so a
 			// startup-failure log points directly at the offending field.
+			// An empty address means unset, so that the default config still builds.
+			let mapping_validator_address = &self.config.addresses.mapping_validator_address;
+			if let (false, Err(e)) = (
+				mapping_validator_address.is_empty(),
+				validate_enterprise_script_address(mapping_validator_address.as_bytes()),
+			) {
+				panic!(
+					"genesis: cNightObservation.config.addresses.mapping_validator_address \
+					 is invalid: {e:?}"
+				);
+			}
 			MainChainMappingValidatorAddress::<T>::set(
-				self.config
-					.addresses
-					.mapping_validator_address
-					.as_bytes()
-					.to_vec()
-					.try_into()
-					.unwrap_or_else(|v: Vec<u8>| {
+				mapping_validator_address.as_bytes().to_vec().try_into().unwrap_or_else(
+					|v: Vec<u8>| {
 						panic!(
 							"genesis: cNightObservation.config.addresses.mapping_validator_address \
 							 length {} bytes exceeds maximum {}",
 							v.len(),
 							BoundedCardanoAddress::bound(),
 						)
-					}),
+					},
+				),
 			);
 
 			CNightIdentifier::<T>::set((
@@ -991,6 +1002,8 @@ pub mod pallet {
 			address: Vec<u8>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
+			validate_enterprise_script_address(&address)
+				.map_err(|_| Error::<T>::InvalidMappingValidatorAddress)?;
 			MainChainMappingValidatorAddress::<T>::set(
 				address
 					.clone()

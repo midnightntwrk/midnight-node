@@ -413,7 +413,7 @@ mod tests {
 	use std::str::FromStr;
 	use testcontainers::{
 		ContainerAsync, GenericImage, ImageExt,
-		core::{IntoContainerPort, WaitFor},
+		core::{IntoContainerPort, Mount, WaitFor},
 		runners::AsyncRunner,
 	};
 
@@ -429,13 +429,18 @@ mod tests {
 			.with_wait_for(WaitFor::message_on_stderr(READY_MSG))
 			.with_wait_for(WaitFor::message_on_stdout(READY_MSG))
 			.with_env_var("POSTGRES_HOST_AUTH_METHOD", "trust")
+			// Many of these start at once in CI. Skipping initdb's fsyncs and keeping the
+			// data on tmpfs cuts startup time and disk contention.
+			.with_env_var("POSTGRES_INITDB_ARGS", "--no-sync")
+			.with_mount(Mount::tmpfs_mount("/var/lib/postgresql/data"))
 			.with_cmd(["postgres", "-c", "fsync=off"])
 			.start()
 			.await
 			.expect("failed to start postgres container");
+		// `get_host` returns "localhost", which can resolve to ::1, where Docker may publish
+		// 5432 on a different port than the IPv4 one read here.
 		let url = format!(
-			"postgres://postgres@{}:{}/postgres",
-			container.get_host().await.unwrap(),
+			"postgres://postgres@127.0.0.1:{}/postgres",
 			container.get_host_port_ipv4(5432).await.unwrap()
 		);
 		let pool = PgPool::connect(&url).await.unwrap();
