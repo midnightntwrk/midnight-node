@@ -351,6 +351,11 @@ where
 			log::debug!(target: LOG_TARGET, "parent {parent:?} of a BABE block is not imported; not seeding");
 			return Ok(());
 		};
+		// A child of a block below the finalized one is either a gap block, which BABE does not
+		// verify, or refused at import (`NotInFinalizedChain`), so seeding for it is useless.
+		if *parent_header.number() < self.client.info().finalized_number {
+			return Ok(());
+		}
 		// A BABE-authored parent is already covered by the tree (see the type docs); only the flip
 		// block — an AURA-authored parent of a BABE block — can need seeding.
 		if authoring_engine::<Block>(&parent_header) == Some(ActiveEngine::Babe) {
