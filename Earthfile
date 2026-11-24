@@ -831,6 +831,11 @@ node-ci-image-single-platform:
     # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
         ${GHCR_REGISTRY}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
+    # Public mirror, as for the node and toolkit images: anonymous pulls with no Docker Hub
+    # rate limit. A no-op outside the canonical upstream repo.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push ${GHCR_REGISTRY_PUBLIC}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
+    END
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
