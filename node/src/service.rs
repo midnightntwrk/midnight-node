@@ -570,6 +570,10 @@ pub fn new_partial(
 				client.clone(),
 				babe_link.clone(),
 			)),
+			{
+				let client = client.clone();
+				Arc::new(move |hash| client.header(hash).map_err(|e| e.to_string()))
+			},
 			aura_verifier,
 			babe_verifier,
 		),
