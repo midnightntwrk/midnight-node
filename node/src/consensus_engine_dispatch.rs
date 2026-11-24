@@ -144,12 +144,13 @@ impl<Block: BlockT, Aura, Babe> EngineDispatchVerifier<Block, Aura, Babe> {
 				parent.number()
 			));
 		}
-		sc_consensus_babe::find_pre_digest::<Block>(&parent).map(drop).map_err(|e| {
+		sc_consensus_babe::find_pre_digest::<Block>(&parent).map_err(|e| {
 			format!(
 				"BABE block #{:?}: parent has no readable BABE pre-digest: {e}",
 				header.number()
 			)
-		})
+		})?;
+		Ok(())
 	}
 }
 
