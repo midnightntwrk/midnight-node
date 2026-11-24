@@ -69,11 +69,11 @@ fallback only. The count bound is deleted.
 | storage `ObservationBudgetPercent: u32` | new, `ValueQuery`, default 50. `budget_gas = max_block.ref_time × percent / 100`. |
 | call `set_observation_budget_percent` | new root call, `call_index` 5, `≤ 100`. |
 | `TooManyUtxos` check + error | **deleted**. `#[pallet::weight]` is `T::WeightInfo::process_tokens(utxos.len())`. The count parameters leave the pallet: the never-written `CardanoTxCapacityPerBlock` storage item is removed and `get_utxo_capacity_per_block` is removed from API version 2. Nodes still call it on version 1 runtimes by its exported name, through `CallApiAt`. Under a cost model the node applies no count bound; the fetch row cap is derived from the model. |
-| `process_tokens` | position checks, loop, cursor write, apply and events run inside one `with_storage_layer`. `Err(e)` with `is_block_limit_exceeded(&e)` → everything rolled back, `NextCardanoCursor` unchanged, `ObservationsDeferred` emitted, `Ok` returned. Any other error propagates as before. `InherentExecutedThisBlock` is set outside the layer. |
+| `process_tokens` | position checks, loop, cursor write, apply and events run inside one `with_storage_layer`. `Err(e)` with `is_block_limit_exceeded(&e)` → everything rolled back, `NextCardanoCursor` unchanged, `ObservationsDeferred` emitted, `Ok` returned. The same happens when a spend's dust event or the batch's system transaction cannot be constructed. Any other error propagates as before. `InherentExecutedThisBlock` is set outside the layer. |
 | storage `NextCardanoCursor: CardanoCursor` | replaces `NextCardanoPosition`. `CardanoCursor { position, utxo_offset }`: `utxo_offset` is how many UTXOs of the transaction at `position`, in the observation order (§3.5), are processed, and so the index of the next one. `apply_observations` sets it to the number of trailing batch UTXOs at `next_cardano_position`, plus the previous offset when the position did not move. Inside the storage layer, so a deferred batch leaves it. The single-block `migrations::cursor::MigrateToNextCardanoCursor` moves the old position in with offset 0; it is keyed on the old value, not the storage version, which the multi-block migrations raise after it runs. |
 | `CNightObservationApi::get_next_cardano_cursor() -> CardanoCursor` | new, `#[api_version(2)]`. Replaces `get_next_cardano_position`, which nodes still call on version 1 runtimes by its exported name, through `CallApiAt`. |
 | `CmstHeader` | gains `utxo_offset: u32`, the offset after the batch, so the header is the whole cursor and unique per batch. Changes the `SystemTransactionApplied` event encoding (indexer, midnight-architecture `cmst-header` spec). |
-| event `ObservationsDeferred` | new. Means the native price disagrees with the ledger — a bug, fixable by runtime upgrade — and the chain stalls visibly instead of halting. |
+| event `ObservationsDeferred` | new. Means the native price disagrees with the ledger, or the update could not be constructed — a bug, fixable by runtime upgrade — and the chain stalls visibly instead of halting. |
 
 No `STORAGE_VERSION` bump (new items have defaults). No change to `CardanoPosition`,
 the `ObservedUtxo*` encodings, the inherent payload, `check_inherent`, genesis or
@@ -93,7 +93,7 @@ construction, `Cost(model)` otherwise. It
 3. drops the first `start_offset` UTXOs at `start_position` (already observed);
 4. admits a prefix (`admit_prefix`).
 
-```
+```text
 Count(cap): per Cardano transaction: num_txs += 1; if num_txs == cap → TxCapacity
                                      (today's cap−1, byte-identical)
 Cost(m):    per UTXO u:
