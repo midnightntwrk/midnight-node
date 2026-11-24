@@ -5,4 +5,4 @@
 These modes import blocks without executing them, which leaves the ledger and consensus state
 incomplete. The node now exits at start-up with an error asking for another sync mode.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2517
