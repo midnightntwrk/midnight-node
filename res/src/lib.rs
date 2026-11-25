@@ -23,6 +23,26 @@ pub mod networks;
 
 pub static CFG_ROOT: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 pub const CFG_PATH: &str = "res/cfg/";
+
+/// Test helper: the workspace root, found by walking up from the current dir
+/// until `res/cfg/default.toml` appears. `cargo` runs a crate's tests from the
+/// crate dir and `buck2` from the workspace root, so tests anchor repo paths to
+/// this instead of a fixed `"../"`.
+///
+/// # Panics
+/// If no `res/cfg/default.toml` exists in the current dir or any ancestor.
+#[doc(hidden)]
+pub fn locate_workspace_root() -> PathBuf {
+	let mut dir = std::env::current_dir().expect("cwd");
+	loop {
+		if dir.join(CFG_PATH).join("default.toml").exists() {
+			return dir;
+		}
+		if !dir.pop() {
+			panic!("could not locate workspace root ({CFG_PATH}default.toml not found above cwd)");
+		}
+	}
+}
 fn config_path() -> PathBuf {
 	let root = CFG_ROOT.lock().unwrap();
 	if let Some(ref root) = *root {

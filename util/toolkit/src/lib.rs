@@ -25,6 +25,25 @@ pub mod toolkit_js;
 pub mod tx_generator;
 pub mod utils;
 
+/// Test-only path helpers: cargo runs tests from the crate dir, buck2 from the
+/// workspace root, so neither `../../res` nor a compile-time `env!` path holds
+/// under both.
+#[cfg(test)]
+pub(crate) mod test_paths {
+	/// The crate dir, read at run time: `env!("CARGO_MANIFEST_DIR")` would bake
+	/// in buck2's build-sandbox path.
+	pub fn manifest_dir() -> String {
+		std::env::var("CARGO_MANIFEST_DIR")
+			.unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string())
+	}
+
+	/// Absolute path to a `res/`-relative fixture, e.g. `res("dev/ics-config.json")`.
+	pub fn res(rel: &str) -> String {
+		let root = midnight_node_res::locate_workspace_root();
+		root.join("res").join(rel).to_string_lossy().into_owned()
+	}
+}
+
 use progress::{Progress, Spin};
 use rand::{SeedableRng, rngs::StdRng};
 use subxt::utils::H256;

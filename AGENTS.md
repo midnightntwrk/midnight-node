@@ -26,6 +26,27 @@ earthly doc                               # List all available targets
 earthly -P +local-env-ci-prepare            # Prepare local e2e test binaries
 ```
 
+**Buck2:** cargo is the daily driver; CI also builds and tests with buck2
+(`.github/workflows/buck2.yml`) and lints with it (`+check-rust`). See [Buck2 notes](docs/buck2-notes.md) for depth.
+```bash
+# Build the deliverables
+buck2 build root//node:midnight-node-bin root//util/toolkit:midnight-node-toolkit-bin root//:runtime-wasm
+# Test everything (drop the environmental ones CI skips)
+buck2 test root//... --exclude ci-infra
+buck2 test root//docs:docs-docs_tests            # a single target
+earth +buck2-test-one --TARGET=root//node:midnight-node-unit-test --PLATFORM=linux-arm64  # one target in a container (arm64 dev box)
+earth +check-rust --PLATFORM=linux-arm64         # cargo fmt + clippy over the first-party graph (arm64 dev box)
+```
+**Altering dependencies:** edit `Cargo.toml`/`Cargo.lock` as usual, then regenerate the vendored
+buck2 graph and commit it — CI's `+buck2-check-regen` fails if you skip this:
+```bash
+earth +buck2-regen    # reruns gen-third-party.py -> reindeer -> third-party/BUCK, and gen-first-party.py -> per-crate BUCKs
+```
+Don't hand-edit a generated `BUCK` (they carry an `@generated` header); change the generator in
+`scripts/buck2/` and regenerate. Tests read fixtures from the real repo tree (no copied
+fixtures); a test that reads `res/`, `docs/` etc. must list them as `resources` in
+`gen-first-party.py` so buck2 re-runs it when they change.
+
 **GitHub PR bots:** Comment on a PR to trigger rebuilds:
 - `/bot rebuild-metadata` - Rebuild runtime metadata
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks

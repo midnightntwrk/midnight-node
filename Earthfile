@@ -1,5 +1,7 @@
 VERSION 0.8
 
+IMPORT ./buck2 AS buck2
+
 # Scopes the cargo build directory (`/target`) so PRs running on the same
 # self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
 # stable auto-generated cache id. Without scoping, an in-flight branch
@@ -1057,7 +1059,6 @@ check-deps:
     # shear
     RUN --secret NODE_GIT_TOKEN with-git-creds cargo shear
 
-# check-rust runs cargo fmt and clippy.
 planner:
     FROM +prep
     ARG TARGETARCH
@@ -1082,26 +1083,17 @@ check-rust-prepare:
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
+# check-rust runs cargo fmt, then clippy -D warnings over every first-party
+# target under the lint platform (scripts/buck2/regen.sh LINT_FEATURES).
 check-rust:
-    FROM +check-rust-prepare
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    END
-    COPY --keep-ts --dir \
-        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-
-    RUN cargo fmt --all -- --check
-
-    ENV CARGO_INCREMENTAL=0
-
-    # ensure runtime benchmark and try runtime features enable to check they compile.
-    # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
-    RUN --secret NODE_GIT_TOKEN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1 with-git-creds cargo clippy --workspace --all-targets --features runtime-benchmarks,try-runtime -- -D warnings
-
-    ENV SKIP_WASM_BUILD=1
+    FROM +buck2-prep
+    RUN rustup component add rustfmt && cargo fmt --all -- --check
+    ARG PLATFORM=linux-x86_64
+    # Third-party crates live under the root cell too; they are not ours to lint.
+    # `no-clippy` marks what cargo's --all-targets skips (gen-first-party.py).
+    DO --pass-args buck2+BUCK2 --mode=clippy \
+        --targets="root//... - root//third-party/... - root//wasm-deps/... - attrfilter('labels', 'no-clippy', root//...)" \
+        --platform="${PLATFORM}-lint"
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching missing dependencies masked by workspace feature unification.
@@ -2329,3 +2321,110 @@ images:
     FROM scratch
     BUILD +node-image
     BUILD +toolkit-image
+
+# buck2 build + test under a bazel-remote action cache (see buck2/Earthfile).
+#buck2-src The buck2 source set, staged once for +buck2-prep and +buck2-reindeer
+buck2-src:
+    FROM scratch
+    # The cargo tree (as +prep) plus every buck2 input - the root BUCK +
+    # .buckconfig, platforms/toolchains, the generated third-party and wasm-deps
+    # graphs, the generators, and tools/wasm-compress. The `prelude` cell is
+    # `bundled` (buck2 ships it), so it is NOT copied.
+    COPY --keep-ts --dir \
+        .buckconfig BUCK Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml \
+        docs ledger LICENSE node pallets primitives README.md res runtime \
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION \
+        platforms toolchains third-party wasm-deps scripts tools /work/
+    SAVE ARTIFACT /work
+
+#buck2-prep Install the buck2 toolchain + stage sources + write .buckconfig.local
+buck2-prep:
+    FROM rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
+    DO buck2+INSTALL
+    WORKDIR /work
+    COPY --keep-ts --dir +buck2-src/work /
+    DO --pass-args buck2+CONFIG
+
+#buck2-ci Build the deliverables then run the tests, both under the action cache
+buck2-ci:
+    FROM +buck2-prep
+    # --RUN_ID=$GITHUB_RUN_ID re-runs the buck2 steps on an unchanged tree, which
+    # the layer cache would skip. Busting here, not in +buck2-prep, keeps the
+    # toolchain install and source copy cached.
+    ARG RUN_ID=0
+    RUN echo "buck2-ci run ${RUN_ID}"
+    DO --pass-args buck2+BUCK2 --mode=build \
+        --targets="root//node:midnight-node-bin root//util/toolkit:midnight-node-toolkit-bin root//:runtime-wasm"
+    DO --pass-args buck2+BUCK2 --mode=test \
+        --targets="root//..." \
+        --buck2_args="--exclude ci-infra"
+
+#buck2-test-one Build+test one target locally. PLATFORM defaults to linux-arm64,
+# an arm64 dev box's native arch (no emulation); CI pins linux-x86_64.
+buck2-test-one:
+    FROM +buck2-prep
+    ARG RUN_ID=0
+    ARG --required TARGET
+    ARG PLATFORM=linux-arm64
+    RUN echo "buck2-test-one run ${RUN_ID}"
+    DO --pass-args buck2+BUCK2 --mode=test \
+        --targets="$TARGET" \
+        --platform="$PLATFORM"
+
+#buck2-reindeer The pinned reindeer and the generators, with the sources staged and regenerated
+buck2-reindeer:
+    FROM rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
+    # Not on crates.io (that name is an unrelated crate), so pin a rev. Regenerate
+    # with this rev only: another reindeer diffs the graph.
+    ARG REINDEER_GIT=https://github.com/facebookincubator/reindeer
+    # v2026.11.16.00
+    ARG REINDEER_REV=741192de2c944c7ea478b382675f3f4b45c6d007
+    # python3 >= 3.11 (tomllib) for the generators; trixie ships 3.13.
+    RUN apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 && \
+        rm -rf /var/lib/apt/lists/*
+    RUN cargo install --git "$REINDEER_GIT" --rev "$REINDEER_REV" --locked reindeer
+    WORKDIR /work
+    COPY --keep-ts --dir +buck2-src/work /
+    # cargo's registry + git for `cargo metadata`, reindeer's own cargo homes for
+    # buckify: cold, that clones polkadot-sdk and fetches 1600 crates.
+    CACHE --sharing locked --id buck2-regen-cargo-registry /usr/local/cargo/registry
+    CACHE --sharing locked --id buck2-regen-cargo-git /usr/local/cargo/git
+    CACHE --sharing locked --id buck2-regen-third-party /work/third-party/.cargo
+    CACHE --sharing locked --id buck2-regen-wasm-deps /work/wasm-deps/.cargo
+    # Snapshot the staged tree (minus the caches) so the regen can be diffed.
+    RUN mkdir /tmp/before && \
+        tar -C /work --exclude=./third-party/.cargo --exclude=./wasm-deps/.cargo -cf - . | \
+        tar -C /tmp/before -xf - && \
+        touch /tmp/regen-stamp
+    RUN scripts/buck2/regen.sh
+
+#buck2-regen-tar The regenerated files, as a tar for +buck2-regen to unpack
+buck2-regen-tar:
+    FROM +buck2-reindeer
+    RUN find . -type f -newer /tmp/regen-stamp \
+            -not -path './third-party/.cargo/*' -not -path './wasm-deps/.cargo/*' \
+        | tar cf /regen.tar -T - && \
+        (cd /tmp/before && find . -type f) | while IFS= read -r f; do [ -e "$f" ] || echo "$f"; done > /regen.deleted
+    SAVE ARTIFACT /regen.tar
+    SAVE ARTIFACT /regen.deleted
+
+#buck2-regen Regenerate the buck2 graph from the cargo workspace and write it back into the tree
+buck2-regen:
+    # Not `SAVE ARTIFACT /out/* AS LOCAL ./`: AS LOCAL of a directory replaces
+    # the host directory, deleting every file beside the regenerated ones. A tar
+    # unpacks only its members; files the regen removed are listed separately.
+    LOCALLY
+    COPY +buck2-regen-tar/regen.tar .buck2-regen.tar
+    COPY +buck2-regen-tar/regen.deleted .buck2-regen.deleted
+    RUN tar xf .buck2-regen.tar && \
+        while IFS= read -r f; do \
+            case "$f" in ./*) rm -f "$f" ;; *) echo "+buck2-regen: refusing to delete '$f'" >&2; exit 1 ;; esac; \
+        done < .buck2-regen.deleted && \
+        rm .buck2-regen.tar .buck2-regen.deleted
+
+#buck2-check-regen Fail if any @generated buck2 file is stale against the cargo workspace
+buck2-check-regen:
+    FROM +buck2-reindeer
+    # .cargo also skips the root cargo config dir, which nothing generates.
+    RUN diff -r --exclude=.cargo /tmp/before /work || { \
+        echo "buck2 graph is stale against the cargo workspace: run \`earth +buck2-regen\` and commit" >&2; exit 1; }

@@ -1,0 +1,81 @@
+load("@prelude//platforms:defs.bzl", "host_configuration")
+load(":defs.bzl", "re_cache_execution_platform")
+
+# Target platform for the on-chain WASM runtime. Building a target with
+# `--target-platforms=root//platforms:wasm32v1-none` makes the rust toolchain
+# (toolchains/BUCK) target wasm32v1-none and pass --cfg substrate_runtime.
+platform(
+    name = "wasm32v1-none",
+    constraint_values = [
+        "prelude//os/constraints:os[none]",
+        "prelude//cpu/constraints:cpu[wasm32]",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# CI execution platform: local execution + a remote action cache (bazel-remote).
+# `.buckconfig`'s prelude platform is the default; `.buckconfig.local` (written by
+# buck2/Earthfile +CONFIG) selects this one.
+re_cache_execution_platform(
+    name = "re-cache",
+    cpu_configuration = host_configuration.cpu,
+    os_configuration = host_configuration.os,
+    visibility = ["PUBLIC"],
+)
+
+# CI's target platform, passed as `--target-platforms`: it selects reindeer's
+# `platform = {"linux-x86_64": ...}` branches whatever buck2 detects the host as
+# (host detection is not reliable on the runners).
+platform(
+    name = "linux-x86_64",
+    constraint_values = [
+        "prelude//os/constraints:os[linux]",
+        "prelude//cpu/constraints:cpu[x86_64]",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# The arm64 twin, for running buck2 on an arm64 dev box without x86 emulation.
+platform(
+    name = "linux-arm64",
+    constraint_values = [
+        "prelude//os/constraints:os[linux]",
+        "prelude//cpu/constraints:cpu[arm64]",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Lint configuration: clippy sees the code behind the features regen.sh names in
+# LINT_FEATURES, as `cargo clippy --features ...` would, while everything built
+# for a non-lint platform keeps its features. First-party targets select on
+# :lint; third-party/PACKAGE maps it to reindeer's -lint platforms.
+constraint_setting(
+    name = "lint-features",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "lint",
+    constraint_setting = ":lint-features",
+    visibility = ["PUBLIC"],
+)
+
+platform(
+    name = "linux-x86_64-lint",
+    constraint_values = [
+        "prelude//os/constraints:os[linux]",
+        "prelude//cpu/constraints:cpu[x86_64]",
+        ":lint",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+platform(
+    name = "linux-arm64-lint",
+    constraint_values = [
+        "prelude//os/constraints:os[linux]",
+        "prelude//cpu/constraints:cpu[arm64]",
+        ":lint",
+    ],
+    visibility = ["PUBLIC"],
+)

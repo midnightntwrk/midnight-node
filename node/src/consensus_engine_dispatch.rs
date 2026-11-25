@@ -850,6 +850,10 @@ mod babe_fork_choice_tests {
 	}
 
 	#[test]
+	#[cfg_attr(
+		substrate_test_runtime_stubbed,
+		ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+	)]
 	fn babe_block_outweighs_a_longer_aura_best_block() {
 		let chain = chain();
 		let genesis = chain.client.info().genesis_hash;
@@ -868,6 +872,10 @@ mod babe_fork_choice_tests {
 	}
 
 	#[test]
+	#[cfg_attr(
+		substrate_test_runtime_stubbed,
+		ignore = "needs substrate-test-runtime's wasm, which this build stubs"
+	)]
 	fn babe_import_fails_against_an_aura_best_block_without_a_weight() {
 		let chain = chain();
 		let genesis = chain.client.info().genesis_hash;

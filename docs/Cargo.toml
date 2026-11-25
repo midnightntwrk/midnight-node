@@ -7,5 +7,6 @@ license-file.workspace = true
 [dependencies]
 
 [dev-dependencies]
+midnight-node-res.workspace = true
 serde = { workspace = true, features = ["derive"] }
 toml.workspace = true

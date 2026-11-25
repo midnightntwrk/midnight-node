@@ -544,15 +544,11 @@ mod tests {
 	use super::*;
 
 	fn mock_authorities_cfg() -> MidnightCfg {
+		let registrations = midnight_node_res::locate_workspace_root()
+			.join("res/mock-bridge-data/default-registrations.json");
 		MidnightCfg {
 			use_main_chain_follower_mock: MainChainFollowerMock::Authorities,
-			mock_registrations_file: Some(
-				concat!(
-					env!("CARGO_MANIFEST_DIR"),
-					"/../res/mock-bridge-data/default-registrations.json"
-				)
-				.into(),
-			),
+			mock_registrations_file: Some(registrations.to_string_lossy().into_owned()),
 			mc_epoch_duration_millis: 86_400_000,
 			..Default::default()
 		}

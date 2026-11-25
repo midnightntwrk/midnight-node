@@ -53,6 +53,10 @@ repository = "https://github.com/midnightntwrk/mn4"
 unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
 
+[workspace.lints.rust]
+# Set by the buck2 graph on test targets that cannot have substrate-test-runtime's wasm.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_test_runtime_stubbed)'] }
+
 [workspace.lints.clippy]
 all = { level = "allow", priority = 0 }
 correctness = { level = "warn", priority = 1 }

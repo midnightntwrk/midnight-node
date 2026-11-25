@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# This file is part of midnight-node.
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#	http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Regenerate wasm-deps/Cargo.toml — the no_std crate universe for the WASM
+# runtime. Resolves midnight-node-runtime standalone with default-features=false
+# filtered to wasm32v1-none (the exact no_std tree), then emits the manifest.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/src"; echo '// empty' > "$TMP/src/lib.rs"
+{
+  cat <<EOF
+[package]
+name = "wasm-resolve"
+version = "0.0.0"
+edition = "2024"
+# resolver = "2" decouples host (proc-macro/build) feature unification from
+# normal deps so the wasm/target feature set stays no_std (a bare [workspace]
+# defaults to resolver "1" regardless of edition).
+[workspace]
+resolver = "2"
+[lib]
+path = "src/lib.rs"
+[dependencies]
+midnight-node-runtime = { path = "$ROOT/runtime", default-features = false }
+EOF
+  # append the workspace [patch] sections verbatim
+  python3 - "$ROOT/Cargo.toml" <<'PY'
+import tomllib, sys
+root = tomllib.load(open(sys.argv[1], "rb"))
+for reg, crates in root.get("patch", {}).items():
+    print(f'\n[patch."{reg}"]')
+    for n, s in crates.items():
+        parts = [f'{k} = "{v}"' if isinstance(v, str) else f'{k} = {v!r}'
+                 for k, v in s.items()]
+        print(f'{n} = {{ {", ".join(parts)} }}')
+PY
+} > "$TMP/Cargo.toml"
+
+# Seed both resolves from the workspace lock so the wasm universe pins the
+# versions cargo ships, not the newest the index offers: cargo keeps every
+# locked version it still needs and prunes the rest. Without this the wasm
+# universe resolves newer versions than cargo ships.
+cp "$ROOT/Cargo.lock" "$TMP/Cargo.lock"
+( cd "$TMP" && cargo metadata --format-version 1 \
+    --filter-platform wasm32v1-none -q ) > "$TMP/wasm-meta.json"
+cp "$ROOT/Cargo.lock" "$ROOT/wasm-deps/Cargo.lock"
+
+python3 "$ROOT/scripts/buck2/gen-wasm-deps.py" \
+    "$TMP/wasm-meta.json" "$ROOT/wasm-deps/Cargo.toml" "$ROOT"

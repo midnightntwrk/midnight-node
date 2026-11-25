@@ -66,6 +66,7 @@ anyhow.workspace = true
 assert_matches.workspace = true
 test-case = "3.3.1"
 hex-literal.workspace = true
+midnight-node-res.workspace = true
 trycmd = "1.2.0"
 testcontainers.workspace = true
 serde_yaml = "0.9"
