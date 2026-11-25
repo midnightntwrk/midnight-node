@@ -19,7 +19,6 @@ frame-support.workspace = true
 frame-system.workspace = true
 sp-runtime.workspace = true
 frame-benchmarking = { workspace = true, optional = true}
-pallet-collective = { workspace = true, optional = true}
 impl-trait-for-tuples.workspace = true
 
 [dev-dependencies]
@@ -43,8 +42,13 @@ runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
     "frame-system/runtime-benchmarks",
     "frame-support/runtime-benchmarks",
-    "pallet-collective",
     ]
 
 [package.metadata.cargo-shear]
 ignored = ["log", "parity-scale-codec", "scale-info"]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

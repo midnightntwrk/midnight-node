@@ -53,3 +53,9 @@ fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9
 
 [dev-dependencies]
 apollo-compiler.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

@@ -19,3 +19,10 @@ std = [
 	"pallet-membership/std",
 	"sp-runtime/std",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

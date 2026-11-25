@@ -105,3 +105,6 @@ test-utils = []
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_runtime)'] }
+
+[lib]
+doctest = false
