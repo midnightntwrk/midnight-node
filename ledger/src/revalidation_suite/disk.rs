@@ -189,6 +189,8 @@ where
 			},
 		};
 		assert_eq!(state_key, node.state_key, "a replayed state is the tree's");
+		// As `build_tree` does.
+		B::<D>::load_ledger(&api, &state_key).unwrap().persist();
 	}
 }
 

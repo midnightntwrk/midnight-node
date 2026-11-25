@@ -302,8 +302,11 @@ fn build_branch(
 			},
 		};
 		// Adopt `Bridge`'s state: ctx never runs `post_block_update`, so its fees would drift.
-		let ledger = TreeBridge::get_ledger(&api::new(), &state_key).unwrap();
+		let mut ledger = TreeBridge::get_ledger(&api::new(), &state_key).unwrap();
 		ctx.with_ledger_state(|s| *s = Sp::new(ledger.state.clone()));
+		// Intra-block states are released when their block ends; sibling branches and steps
+		// still start from them.
+		ledger.persist();
 		tree.nodes.push(Node {
 			state_key,
 			block_context,
