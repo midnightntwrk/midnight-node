@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::fetcher::{CachedBlocks, FetchError};
 use midnight_ledger_unsafe_helpers::*;
 use midnight_node_ledger_helpers::fork::raw_block_data::{
 	LedgerVersion, RawBlockData, RawTransaction, SerializedTx, SerializedTxBatches,
@@ -20,20 +21,72 @@ use std::{
 	time::{SystemTime, UNIX_EPOCH},
 };
 
+/// The timestamp-only block `--dust-warp` appends after the real chain (`number = 0`), so
+/// DUST is spent at wall-clock time rather than the last block's time.
+fn dust_warp_block(ledger_version: LedgerVersion) -> RawBlockData {
+	let now_secs = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.expect("time has run backwards")
+		.as_secs();
+	RawBlockData::new_from_timestamp(now_secs, ledger_version, Default::default())
+}
+
 /// Source transactions loaded from either the network or files.
 ///
 /// Stores blocks as version-agnostic [`RawBlockData`] with raw serialized transaction bytes.
 /// Deserialization of transactions happens lazily when building the ledger context.
+///
+/// A chain source keeps its blocks in the fetch cache (`cached`) and leaves `blocks`
+/// empty: the replay loads only the window it needs, see
+/// [`crate::tx_generator::builder::build_fork_aware_context_cached_with_schemes`], and
+/// consumers that want every block call [`Self::load_all`].
 #[derive(Clone, Debug)]
 pub struct SourceTransactions {
 	pub blocks: Vec<RawBlockData>,
 	pub network_id: String,
+	pub cached: Option<CachedBlocks>,
+	/// Chain sources only: append a synthetic wall-clock block after the loaded window
+	/// (see [`Self::from_blocks`]).
+	pub dust_warp: bool,
 }
 
 impl SourceTransactions {
 	/// Create a new SourceTransactions with pre-computed network_id.
 	pub fn new(blocks: Vec<RawBlockData>, network_id: &str) -> Self {
-		Self { blocks, network_id: network_id.to_string() }
+		Self { blocks, network_id: network_id.to_string(), cached: None, dust_warp: false }
+	}
+
+	/// A chain source whose blocks stay in the fetch cache until needed.
+	pub fn from_cache(cached: CachedBlocks, dust_warp: bool, network_id: String) -> Self {
+		Self { blocks: Vec::new(), network_id, cached: Some(cached), dust_warp }
+	}
+
+	/// The dust-warp block a chain source appends after its loaded window, if `--dust-warp`
+	/// is on (a file source already carries it in `blocks`, see [`Self::from_blocks`]).
+	pub fn synthetic_dust_warp_block(&self) -> Option<RawBlockData> {
+		let cached = self.cached.as_ref()?;
+		self.dust_warp.then(|| dust_warp_block(cached.tip_version))
+	}
+
+	/// Materialise every block of a chain source into `blocks` (plus the dust-warp block, as
+	/// [`Self::from_blocks`] would append it). No-op for file sources.
+	pub async fn load_all(&mut self) -> Result<(), FetchError> {
+		let Some(cached) = self.cached.take() else {
+			return Ok(());
+		};
+		self.blocks = cached.load_all().await?;
+		if self.dust_warp {
+			self.blocks.push(dust_warp_block(cached.tip_version));
+		}
+		Ok(())
+	}
+
+	/// Number of real chain blocks this source stands for.
+	pub fn block_count(&self) -> u64 {
+		match &self.cached {
+			Some(cached) => cached.tip_height + 1,
+			None => self.blocks.len() as u64,
+		}
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -44,15 +97,8 @@ impl SourceTransactions {
 	) -> Self {
 		let mut blocks: Vec<_> = blocks.into_iter().collect();
 		if dust_warp {
-			let now_secs = SystemTime::now()
-				.duration_since(UNIX_EPOCH)
-				.expect("time has run backwards")
-				.as_secs();
-			blocks.push(RawBlockData::new_from_timestamp(
-				now_secs,
-				blocks.last().map(|b| b.ledger_version).unwrap_or_default(),
-				Default::default(),
-			));
+			blocks
+				.push(dust_warp_block(blocks.last().map(|b| b.ledger_version).unwrap_or_default()));
 		}
 
 		let Some(_) = blocks.first() else {
@@ -76,7 +122,7 @@ impl SourceTransactions {
 			panic!("Could not find transaction with 'network id' in given blocks");
 		});
 
-		Self { blocks, network_id }
+		Self { blocks, network_id, cached: None, dust_warp: false }
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -152,7 +198,7 @@ impl SourceTransactions {
 		let block = RawBlockData::new_from_timestamp(now_secs, ledger_version, transactions);
 		let network_id = network_id
 			.unwrap_or_else(|| panic!("Network id has not been given nor found in transactions"));
-		Self { blocks: vec![block], network_id }
+		Self { blocks: vec![block], network_id, cached: None, dust_warp: false }
 	}
 
 	/// Derive a deterministic chain identity for wallet state cache keying.
@@ -160,6 +206,9 @@ impl SourceTransactions {
 	/// Returns `None` when no block #1 is available (e.g. file-loaded datasets),
 	/// which signals the caller to skip caching and avoid cross-dataset collisions.
 	pub fn chain_id(&self) -> Option<subxt::utils::H256> {
+		if let Some(cached) = &self.cached {
+			return Some(cached.chain_id);
+		}
 		self.blocks
 			.iter()
 			.find(|b| b.number == 1)
@@ -168,12 +217,18 @@ impl SourceTransactions {
 
 	/// Ledger version of the first block, which the replay context is built at.
 	pub fn ledger_version(&self) -> LedgerVersion {
-		Self::version_of(self.blocks.first())
+		match &self.cached {
+			Some(cached) => cached.first_version,
+			None => Self::version_of(self.blocks.first()),
+		}
 	}
 
 	/// Ledger version of the last block, which the chain runs now.
 	pub fn tip_ledger_version(&self) -> LedgerVersion {
-		Self::version_of(self.blocks.last())
+		match &self.cached {
+			Some(cached) => cached.tip_version,
+			None => Self::version_of(self.blocks.last()),
+		}
 	}
 
 	fn version_of(block: Option<&RawBlockData>) -> LedgerVersion {

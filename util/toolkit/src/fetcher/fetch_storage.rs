@@ -19,7 +19,7 @@ use subxt::utils::H256;
 use tokio::sync::Mutex;
 
 use super::MidnightClientAtBlock;
-use super::wallet_state_cache::{CachedWalletState, LedgerSnapshot};
+use super::wallet_state_cache::{CachedWalletState, LedgerSnapshot, SnapshotStorage};
 
 pub mod file_backend;
 pub mod postgres_backend;
@@ -61,11 +61,55 @@ pub trait WalletStateCaching: Send + Sync {
 	async fn delete_wallet_states(&self, chain_id: H256, seed_hashes: &[H256]);
 
 	/// Remove ledger snapshots not referenced by any wallet cache entry.
-	/// Keeps only snapshots at the specified heights.
-	async fn gc_ledger_snapshots(&self, chain_id: H256, keep_heights: &[u64]);
+	/// Keeps only snapshots at the specified heights. Returns the removed snapshots
+	/// that held a ledger arena root, so the caller can release those roots.
+	async fn gc_ledger_snapshots(
+		&self,
+		chain_id: H256,
+		keep_heights: &[u64],
+	) -> Vec<LedgerSnapshot>;
+
+	/// The snapshot at `block_height` if it holds a ledger arena root. Cheaper than
+	/// [`Self::get_ledger_snapshot`] when an inline snapshot may be large.
+	async fn get_root_snapshot(&self, chain_id: H256, block_height: u64) -> Option<LedgerSnapshot> {
+		self.get_ledger_snapshot(chain_id, block_height)
+			.await
+			.filter(|s| s.storage == SnapshotStorage::ArenaRoot)
+	}
 
 	/// Return all distinct block heights referenced by cached wallets for a chain.
 	async fn get_all_cached_wallet_heights(&self, chain_id: H256) -> Vec<u64>;
+}
+
+/// Object-safe, read-only view of a [`FetchStorage`], so the blocks a replay needs can be
+/// loaded on demand through an `Arc<dyn BlockReader>` once it knows which window that is.
+#[async_trait]
+pub trait BlockReader: Send + Sync {
+	async fn read_block(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData>;
+
+	/// Blocks `from..to` in order, `None` where the cache has no entry.
+	async fn read_block_range(
+		&self,
+		chain_id: H256,
+		from: u64,
+		to: u64,
+	) -> Vec<Option<RawBlockData>>;
+}
+
+#[async_trait]
+impl<T: FetchStorage + 'static> BlockReader for T {
+	async fn read_block(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
+		self.get_block_data(chain_id, block_number).await
+	}
+
+	async fn read_block_range(
+		&self,
+		chain_id: H256,
+		from: u64,
+		to: u64,
+	) -> Vec<Option<RawBlockData>> {
+		self.get_block_data_range(chain_id, from..to).await
+	}
 }
 
 #[derive(Clone)]

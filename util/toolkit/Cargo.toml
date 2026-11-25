@@ -61,6 +61,12 @@ stacker.workspace = true
 semver.workspace = true
 rustls.workspace = true
 
+# Linux binaries use jemalloc as the global allocator, as the node does: the replay churns
+# through many short-lived allocations on several threads, which glibc's per-thread arenas
+# retain as fragmented heap.
+[target.'cfg(target_os = "linux")'.dependencies]
+tikv-jemallocator.workspace = true
+
 [dev-dependencies]
 anyhow.workspace = true
 assert_matches.workspace = true

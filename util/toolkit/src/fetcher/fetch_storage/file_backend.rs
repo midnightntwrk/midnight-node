@@ -23,7 +23,9 @@
 //! used from multiple processes.
 
 use super::WalletStateCaching;
-use crate::fetcher::wallet_state_cache::{CachedWalletState, LedgerSnapshot};
+use crate::fetcher::wallet_state_cache::{
+	CachedWalletState, LedgerSnapshot, ROOT_SNAPSHOT_FORMAT_VERSION,
+};
 use async_trait::async_trait;
 use std::{
 	fs, io,
@@ -126,6 +128,43 @@ fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Resul
 	// persist() uses rename(2) on POSIX — atomic directory-entry swap
 	tmp.persist(path).map_err(|e| e.error)?;
 	Ok(None)
+}
+
+/// The snapshot in `path` if it holds a ledger arena root; `Ok(None)` if it does not, or
+/// is too short to tell. Reads only the version byte of an inline snapshot, which can be large.
+fn read_root_snapshot(path: &Path, block_height: u64) -> io::Result<Option<LedgerSnapshot>> {
+	use std::io::Read;
+	let mut file = fs::File::open(path)?;
+	let mut version = [0u8; 1];
+	if file.read_exact(&mut version).is_err() || version[0] != ROOT_SNAPSHOT_FORMAT_VERSION {
+		return Ok(None);
+	}
+	let mut data = version.to_vec();
+	file.read_to_end(&mut data)?;
+	LedgerSnapshot::from_value_bytes(&data, block_height).map(Some).map_err(|e| {
+		log::warn!("Failed to decode ledger snapshot {}: {e}", path.display());
+		io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+	})
+}
+
+/// Root keys of every arena-root snapshot under `root`, across all chains, one entry per
+/// snapshot file. `None` if a snapshot that looks like one cannot be read, so a caller
+/// reconciling arena roots never drops a root it could not account for.
+pub fn arena_root_keys(root: &Path) -> Option<Vec<Vec<u8>>> {
+	let mut keys = Vec::new();
+	for chain in list_dir(root) {
+		if hex::decode(&chain).map_or(true, |b| b.len() != 32) {
+			continue;
+		}
+		let dir = root.join(&chain).join("ledger");
+		for name in list_dir(&dir) {
+			let Some(height) = parse_ledger_height(&name) else { continue };
+			if let Some(snapshot) = read_root_snapshot(&dir.join(&name), height).ok()? {
+				keys.push(snapshot.ledger_state_bytes);
+			}
+		}
+	}
+	Some(keys)
 }
 
 /// List filenames in a directory, returning empty vec if the directory doesn't exist.
@@ -304,11 +343,23 @@ impl WalletStateCaching for FileBackend {
 		.ok();
 	}
 
-	async fn gc_ledger_snapshots(&self, chain_id: H256, keep_heights: &[u64]) {
+	async fn get_root_snapshot(&self, chain_id: H256, block_height: u64) -> Option<LedgerSnapshot> {
+		let path = self.ledger_path(chain_id, block_height);
+		tokio::task::spawn_blocking(move || read_root_snapshot(&path, block_height).ok().flatten())
+			.await
+			.ok()
+			.flatten()
+	}
+
+	async fn gc_ledger_snapshots(
+		&self,
+		chain_id: H256,
+		keep_heights: &[u64],
+	) -> Vec<LedgerSnapshot> {
 		let dir = self.ledger_dir(chain_id);
 		let mut keep: std::collections::HashSet<u64> = keep_heights.iter().copied().collect();
 
-		let removed = tokio::task::spawn_blocking(move || {
+		let (removed, roots) = tokio::task::spawn_blocking(move || {
 			// Always spare the newest MIN_SNAPSHOTS_RETAINED snapshots, referenced or not.
 			let mut heights: Vec<u64> =
 				list_dir(&dir).iter().filter_map(|n| parse_ledger_height(n)).collect();
@@ -316,6 +367,7 @@ impl WalletStateCaching for FileBackend {
 			keep.extend(heights.iter().take(MIN_SNAPSHOTS_RETAINED));
 
 			let mut removed = 0u64;
+			let mut roots = Vec::new();
 			for name in list_dir(&dir) {
 				if let Some(height) = parse_ledger_height(&name) {
 					if !keep.contains(&height) {
@@ -326,22 +378,27 @@ impl WalletStateCaching for FileBackend {
 						if dominated_by_grace_period {
 							continue;
 						}
+						let root = read_root_snapshot(&path, height).ok().flatten();
 						match fs::remove_file(&path) {
-							Ok(()) => removed += 1,
+							Ok(()) => {
+								removed += 1;
+								roots.extend(root);
+							},
 							Err(e) if e.kind() == io::ErrorKind::NotFound => {},
 							Err(e) => log::warn!("Failed to GC ledger snapshot file {name}: {e}"),
 						}
 					}
 				}
 			}
-			removed
+			(removed, roots)
 		})
 		.await
-		.unwrap_or(0);
+		.unwrap_or_default();
 
 		if removed > 0 {
-			log::info!("GC: removed {} stale ledger snapshots", removed);
+			log::info!("GC: removed {removed} stale ledger snapshots");
 		}
+		roots
 	}
 
 	async fn get_all_cached_wallet_heights(&self, chain_id: H256) -> Vec<u64> {
@@ -384,6 +441,7 @@ mod tests {
 		use crate::fetcher::wallet_state_cache::SerializableBlockContext;
 		LedgerSnapshot {
 			block_height,
+			storage: Default::default(),
 			ledger_version:
 				midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion::Ledger9,
 			ledger_state_bytes: vec![0xAA; 1024],

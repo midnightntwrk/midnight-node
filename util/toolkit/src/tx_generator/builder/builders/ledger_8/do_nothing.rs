@@ -37,8 +37,13 @@ impl BuildTxs for DoNothingBuilder {
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions,
+		mut received_tx: SourceTransactions,
 	) -> Result<SerializedTxBatches, Self::Error> {
+		// Pass-through needs every block, so a chain source is loaded in full here.
+		received_tx
+			.load_all()
+			.await
+			.unwrap_or_else(|e| panic!("failed to load blocks from the fetch cache: {e}"));
 		// Deserialize all raw blocks into typed transactions
 		let mut all_txs: Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>> =
 			Vec::new();

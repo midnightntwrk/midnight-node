@@ -21,6 +21,10 @@
 
 pub use midnight_node_ledger_helpers::ledger_9::*;
 
+/// Shadows the storage crate's in-memory `DefaultDB`: every ledger object the toolkit
+/// builds lives in the arena installed by [`crate::arena_db`].
+pub type DefaultDB = crate::arena_db::ToolkitDB;
+
 pub use crate::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
 
 pub use crate::CoinSelectionStrategy;

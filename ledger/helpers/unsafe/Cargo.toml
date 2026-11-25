@@ -16,6 +16,13 @@ midnight-serialize = { workspace = true }
 transient-crypto = { workspace = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"] }
+ledger-storage-ledger-8 = { workspace = true }
+# The toolkit's ledger arena (`arena_db`) can live in a ParityDB. Pulled in directly so the
+# toolkit runs the storage layout and incremental GC the node runs (`layout-v2`, `gc-v1`)
+# whether it is built alone or as part of the workspace.
+midnight-storage-core = { workspace = true }
+parity-db.workspace = true
+ctor = "0.5.0"
 
 mn-ledger-9 = { workspace = true, features = ["proving"] }
 zkir-v3 = { workspace = true }
@@ -53,3 +60,8 @@ fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9
 
 [dev-dependencies]
 apollo-compiler.workspace = true
+tempfile.workspace = true
+
+[package.metadata.cargo-shear]
+# Not imported; depended on only to enable its `layout-v2` and `gc-v1` features.
+ignored = ["midnight-storage-core"]
