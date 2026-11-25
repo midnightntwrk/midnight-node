@@ -419,6 +419,11 @@ inherits = "release"
 lto = true
 codegen-units = 1
 
+# With full debug info its test binary's `.debug_str` passes the 4 GiB DWARF32 limit and fails
+# to link.
+[profile.test.package.midnight-node-ledger]
+debug = "limited"
+
 # The list of dependencies below (which can be both direct and indirect dependencies) are crates
 # that are suspected to be CPU-intensive, and that are unlikely to require debugging (as some of
 # their debug info might be missing) or to require to be frequently recompiled. We compile these

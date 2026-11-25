@@ -161,6 +161,7 @@ struct ProofReceipt {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 enum TxValidationCacheOutcome {
 	/// The receipt matches the current state and tblock.
 	StrictCacheHit,

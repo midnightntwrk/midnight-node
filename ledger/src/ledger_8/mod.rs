@@ -161,6 +161,7 @@ struct ProofReceipt {
 }
 
 #[cfg(feature = "std")]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 enum TxValidationCacheOutcome {
 	/// The receipt matches the current state and tblock.
 	StrictCacheHit,
@@ -1740,6 +1741,9 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
 }
+
+#[cfg(test)]
+mod revalidation_tests;
 
 #[cfg(test)]
 mod tests {
