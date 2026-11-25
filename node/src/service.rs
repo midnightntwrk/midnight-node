@@ -54,7 +54,9 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-use crate::consensus_engine_dispatch::{EngineDispatchBlockImport, EngineDispatchVerifier};
+use crate::consensus_engine_dispatch::{
+	AuraWeightBlockImport, EngineDispatchBlockImport, EngineDispatchVerifier, in_block_gap,
+};
 use crate::engine_digests::EngineSlotExtractor;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
@@ -369,8 +371,6 @@ pub fn new_partial(
 		)?;
 	let client = Arc::new(client);
 
-	BabeKeyProbe::log_babe_public_keys(keystore_container.keystore());
-
 	// Register Prometheus Ledger Metrics
 	let ledger_metrics =
 		config
@@ -570,11 +570,21 @@ pub fn new_partial(
 				client.clone(),
 				babe_link.clone(),
 			)),
+			{
+				let client = client.clone();
+				Arc::new(move |hash| client.header(hash).map_err(|e| e.to_string()))
+			},
 			aura_verifier,
 			babe_verifier,
 		),
 		Box::new(crate::warp_ledger_sync::block_import::GatedBlockImport::new(
-			EngineDispatchBlockImport::new(grandpa_block_import.clone(), babe_block_import),
+			EngineDispatchBlockImport::new(
+				AuraWeightBlockImport::new(
+					grandpa_block_import.clone(),
+					in_block_gap(client.clone()),
+				),
+				babe_block_import,
+			),
 			recovery_gate.clone(),
 			backend.clone(),
 		)),
@@ -623,6 +633,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	max_finality_subscriptions: u32,
 	serve_warp_ledger_sync: bool,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
+	if !matches!(config.network.sync_mode, sc_network::config::SyncMode::Full) {
+		return Err(ServiceError::Other("only --sync full is supported".into()));
+	}
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
 	// warp ledger-sync server/importer dispatch to.
@@ -681,7 +694,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		sc_consensus_beefy::communication::request_response::BeefyJustifsRequestHandler::new::<
 			_,
 			Network,
-		>(&genesis_hash, config.chain_spec.fork_id(), client.clone(), prometheus_registry.clone());
+		>(
+			&genesis_hash, config.chain_spec.fork_id(), client.clone(), prometheus_registry.clone()
+		);
 
 	// enable beefy
 	let (beefy_notification_config, beefy_notification_service) =
@@ -698,12 +713,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Midnight ledger arena after warp+state-sync. The server handler is spawned after the network
 	// is built; `ledger_sync_protocol_name` is reused by the client driver in the monitor.
 	//
-	// Non-validators serve by default. Validators don't — arena serialization is the protocol's
-	// most CPU-expensive operation and must not compete with authoring/finality (a remote DoS
-	// vector) — unless the operator opts in via `--serve-warp-ledger-sync` (for small or local
-	// networks with no non-validator nodes to serve). Every node still registers the protocol as
-	// a client, so it can warp-sync and recover its own arena regardless.
-	let serve_ledger_sync = !config.role.is_authority() || serve_warp_ledger_sync;
+	// Nodes serve only when the operator opts in via `--serve-warp-ledger-sync`: arena
+	// serialization is the protocol's most CPU-expensive operation. Every node still registers
+	// the protocol as a client, so it can recover its own arena.
+	let serve_ledger_sync = serve_warp_ledger_sync;
 	if serve_warp_ledger_sync && config.role.is_authority() {
 		log::warn!(
 			"--serve-warp-ledger-sync is enabled on an authority: serializing ledger snapshots \
@@ -759,9 +772,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// also gates the import queue) is shared with the monitor (which flips its flags) and the
 	// authoring SyncOracle (which reads them).
 
-	// Serve ledger snapshots to warp-syncing peers (non-validators, plus validators that opted in
-	// via `--serve-warp-ledger-sync`; see above). When not serving, `ledger_sync_handler` is
-	// `None` and no server task is spawned.
+	// Serve ledger snapshots to warp-syncing peers when opted in via `--serve-warp-ledger-sync`.
+	// When not serving, `ledger_sync_handler` is `None` and no server task is spawned.
 	if let Some(ledger_sync_handler) = ledger_sync_handler {
 		// `spawn_blocking`: on a cache miss the handler serializes + compresses the multi-million
 		// node arena synchronously — seconds of CPU work that must not stall the shared async
@@ -817,6 +829,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	let is_offchain_indexing_enabled = config.offchain_worker.indexing_enabled;
 	let role = config.role;
+	let keystore_path = match &config.keystore {
+		sc_service::config::KeystoreConfig::Path { path, .. } => Some(path.clone()),
+		_ => None,
+	};
 	let force_authoring = config.force_authoring;
 	// Backoff with some additional time before stall. Around 1 day plus 1 session
 	let backoff_authoring_blocks: Option<BackoffAuthoringOnFinalizedHeadLagging<_>> =
@@ -942,6 +958,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	}
 
 	if role.is_authority() {
+		crate::session_key_check::log_session_keys(
+			&*keystore_container.keystore(),
+			keystore_path.as_deref(),
+		);
+
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
@@ -988,17 +1009,24 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				slot_duration: sc_slot_config.slot_duration,
 				client: client.clone(),
 				select_chain: select_chain.clone(),
-				block_import,
+				// Own AURA blocks get the same zero BABE weight as imported ones.
+				block_import: AuraWeightBlockImport::new(
+					block_import,
+					in_block_gap(client.clone()),
+				),
 				proposer_factory: aura_proposer_factory,
 				create_inherent_data_providers: make_proposal_cidp(),
 				force_authoring,
 				backoff_authoring_blocks: backoff_authoring_blocks.clone(),
 				keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
-				// Wrapping oracle: keeps AURA from authoring until the warp-recovered ledger is
-				// verified; a no-op passthrough on full sync.
-				sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
-					sync_service.clone(),
-					warp_ledger_recovery_gate.clone(),
+				// Wrapping oracles: no AURA authoring until the warp-recovered ledger is verified
+				// (a no-op on full sync), nor while the best block's state selects BABE.
+				sync_oracle: crate::babe_authoring::EngineGatedSyncOracle::new(
+					crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+						sync_service.clone(),
+						warp_ledger_recovery_gate.clone(),
+					),
+					crate::babe_authoring::aura_authoring_gate(client.clone()),
 				),
 				justification_sync_link: sync_service.clone(),
 				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
@@ -1025,11 +1053,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			select_chain,
 			env: babe_proposer_factory,
 			block_import: babe_authoring_block_import,
-			// Same wrapping oracle as AURA: no BABE authoring until the warp-recovered ledger is
-			// verified; a no-op passthrough on full sync.
-			sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
-				sync_service.clone(),
-				warp_ledger_recovery_gate.clone(),
+			// Same wrapping oracles as AURA, gated on the best block's state selecting BABE.
+			sync_oracle: crate::babe_authoring::EngineGatedSyncOracle::new(
+				crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+					sync_service.clone(),
+					warp_ledger_recovery_gate.clone(),
+				),
+				crate::babe_authoring::babe_authoring_gate(client.clone(), babe_link.clone()),
 			),
 			justification_sync_link: sync_service.clone(),
 			create_inherent_data_providers: make_proposal_cidp(),
@@ -1041,20 +1071,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
 		})?;
 
-		// A single supervisor is the authoring gate: it drives AURA until the flip, seeds the
-		// BABE epoch tree, then drives BABE. Only one engine is polled at a time.
-		let authoring_supervisor = crate::babe_authoring::run_authoring_supervisor(
-			client.clone(),
-			babe_link,
-			aura_worker,
-			babe_worker,
-		);
+		let authoring = crate::babe_authoring::run_authoring_workers(aura_worker, babe_worker);
 
 		// Authoring is essential: if it stops, the service goes down with it.
 		task_manager.spawn_essential_handle().spawn_blocking(
-			"authoring-supervisor",
+			"block-authoring",
 			Some("block-authoring"),
-			authoring_supervisor,
+			authoring,
 		);
 
 		task_manager.spawn_handle().spawn(
@@ -1096,7 +1119,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			),
 		}
 	}
-	// Non-authorities need no flip watcher: the epoch tree they need to *import* the first BABE
+	// Non-authorities need no authoring gate: the epoch tree they need to *import* the first BABE
 	// block is seeded on the import path by `BabeEpochSeeder` (see `EngineDispatchVerifier`).
 
 	if enable_grandpa {

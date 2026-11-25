@@ -59,15 +59,29 @@
 //! handing the block to the BABE verifier. The seeder must be idempotent and cheap once the tree
 //! covers the parent, since this runs for every BABE block.
 //!
+//! # BABE chain weight of AURA blocks
+//!
+//! BABE's fork choice compares cumulative chain weights. [`AuraWeightBlockImport`] records weight
+//! 0 for the AURA blocks of the pallet's era, on the import queue and on the AURA authoring path,
+//! so a BABE block can be weighed against an AURA parent or best block. AURA blocks themselves
+//! keep AURA's longest-chain rule, so between a flipped and an unflipped branch the best block
+//! depends on import order until one branch extends. A BABE block wins over a longer AURA best
+//! block only once its branch holds a primary block (weight above 0); until then, and whenever an
+//! AURA block is imported, the higher number wins. Blocks in the block gap are skipped, as in
+//! BABE's own import, and so are warp-proof headers.
+//!
 //! Justifications are finality (GRANDPA) and engine-agnostic; the GRANDPA justification import is
 //! registered on the queue directly and is not part of this dispatch.
 
-use crate::engine_digests::authoring_engine;
+use crate::engine_digests::{authoring_engine, has_authoritative_babe_pre_digest};
 use async_trait::async_trait;
 use midnight_primitives_consensus_engine::ActiveEngine;
+use parity_scale_codec::Encode;
 use sc_consensus::{BlockCheckParams, BlockImport, BlockImportParams, ImportResult, Verifier};
-use sp_consensus::Error as ConsensusError;
-use sp_runtime::traits::{Block as BlockT, Header as _};
+use sc_consensus_babe::{BabeBlockWeight, aux_schema::block_weight_key};
+use sp_blockchain::HeaderBackend;
+use sp_consensus::{BlockOrigin, Error as ConsensusError};
+use sp_runtime::traits::{Block as BlockT, Header as _, NumberFor};
 use std::{marker::PhantomData, sync::Arc};
 
 /// The pipeline a block is routed to: the engine that authored it. A header without an AURA/BABE
@@ -82,8 +96,7 @@ fn route<Block: BlockT>(header: &Block::Header) -> ActiveEngine {
 /// Called by [`EngineDispatchVerifier`] right before a block is handed to the BABE verifier (see the
 /// module docs). Implementations must be idempotent, cheap when the tree already covers `parent`,
 /// and must refuse to seed at a block whose state has not flipped to BABE — the parent is taken from
-/// a peer-supplied header, so this is what stops a peer from resetting the tree at an arbitrary
-/// block.
+/// a peer-supplied header, so this is what stops a peer from adding epochs at an arbitrary block.
 pub trait EpochSeeder<Block: BlockT>: Send + Sync {
 	/// Best-effort: `parent` may not be imported (the BABE block import then rejects the child with
 	/// `UnknownParent` and sync re-offers it later).
@@ -96,11 +109,48 @@ pub struct EngineDispatchVerifier<Block: BlockT, Aura, Babe> {
 	aura: Aura,
 	babe: Babe,
 	seeder: Arc<dyn EpochSeeder<Block>>,
+	parent_header: ParentHeader<Block>,
 }
 
+/// Looks up an imported header by hash.
+pub type ParentHeader<Block> = Arc<
+	dyn Fn(<Block as BlockT>::Hash) -> Result<Option<<Block as BlockT>::Header>, String>
+		+ Send
+		+ Sync,
+>;
+
 impl<Block: BlockT, Aura, Babe> EngineDispatchVerifier<Block, Aura, Babe> {
-	pub fn new(seeder: Arc<dyn EpochSeeder<Block>>, aura: Aura, babe: Babe) -> Self {
-		Self { aura, babe, seeder }
+	pub fn new(
+		seeder: Arc<dyn EpochSeeder<Block>>,
+		parent_header: ParentHeader<Block>,
+		aura: Aura,
+		babe: Babe,
+	) -> Self {
+		Self { aura, babe, seeder, parent_header }
+	}
+
+	/// BABE picks the epoch from a block's claimed number and its block import `expect`s a BABE
+	/// pre-digest on the parent, which AURA blocks from before `pallet-consensus-engine` lack. An
+	/// unknown parent is left to BABE.
+	fn check_babe_parent(&self, header: &Block::Header) -> Result<(), String> {
+		use sp_runtime::traits::One;
+		let Some(parent) = (self.parent_header)(*header.parent_hash())? else {
+			return Ok(());
+		};
+		if *header.number() != *parent.number() + One::one() {
+			return Err(format!(
+				"BABE block #{:?} does not follow its parent #{:?}",
+				header.number(),
+				parent.number()
+			));
+		}
+		sc_consensus_babe::find_pre_digest::<Block>(&parent).map_err(|e| {
+			format!(
+				"BABE block #{:?}: parent has no readable BABE pre-digest: {e}",
+				header.number()
+			)
+		})?;
+		Ok(())
 	}
 }
 
@@ -118,10 +168,78 @@ where
 		match route::<Block>(&block.header) {
 			ActiveEngine::Aura => self.aura.verify(block).await,
 			ActiveEngine::Babe => {
+				self.check_babe_parent(&block.header)?;
 				self.seeder.ensure_seeded_for_child_of(*block.header.parent_hash());
 				self.babe.verify(block).await
 			},
 		}
+	}
+}
+
+/// Whether a block number lies in the node's block gap, the history still being fetched after a
+/// warp sync.
+pub type InBlockGap<Block> = Arc<dyn Fn(NumberFor<Block>) -> bool + Send + Sync>;
+
+/// [`InBlockGap`] answered from the client's chain info.
+pub fn in_block_gap<Block, C>(client: Arc<C>) -> InBlockGap<Block>
+where
+	Block: BlockT,
+	C: HeaderBackend<Block> + Send + Sync + 'static,
+{
+	Arc::new(move |number| {
+		client
+			.info()
+			.block_gap
+			.is_some_and(|gap| gap.start <= number && number <= gap.end)
+	})
+}
+
+/// [`BlockImport`] for AURA-authored blocks that records a zero BABE chain weight for the blocks of
+/// the pallet's era, the value the epoch seeder gives the flip block.
+///
+/// Only matters while AURA and BABE blocks can compete, until the flip block is finalized; it can
+/// be removed once that holds on every network.
+pub struct AuraWeightBlockImport<Block: BlockT, Inner> {
+	inner: Inner,
+	in_block_gap: InBlockGap<Block>,
+}
+
+impl<Block: BlockT, Inner> AuraWeightBlockImport<Block, Inner> {
+	pub fn new(inner: Inner, in_block_gap: InBlockGap<Block>) -> Self {
+		Self { inner, in_block_gap }
+	}
+}
+
+#[async_trait]
+impl<Block, Inner> BlockImport<Block> for AuraWeightBlockImport<Block, Inner>
+where
+	Block: BlockT,
+	Inner: BlockImport<Block, Error = ConsensusError> + Send + Sync,
+{
+	type Error = ConsensusError;
+
+	async fn check_block(
+		&self,
+		block: BlockCheckParams<Block>,
+	) -> Result<ImportResult, Self::Error> {
+		self.inner.check_block(block).await
+	}
+
+	async fn import_block(
+		&self,
+		mut block: BlockImportParams<Block>,
+	) -> Result<ImportResult, Self::Error> {
+		// Gap blocks and warp-proof headers are finalized history: fork choice never weighs them,
+		// and no finality notification would prune their entry.
+		if has_authoritative_babe_pre_digest::<Block>(&block.header)
+			&& block.origin != BlockOrigin::WarpSync
+			&& !(self.in_block_gap)(*block.header.number())
+		{
+			block
+				.auxiliary
+				.push((block_weight_key(block.post_hash()), Some((0 as BabeBlockWeight).encode())));
+		}
+		self.inner.import_block(block).await
 	}
 }
 
@@ -177,7 +295,6 @@ mod tests {
 	use midnight_node_runtime::opaque::{Block, Header};
 	use midnight_primitives_consensus_engine::ACTIVATION_SPEC_VERSION;
 	use parity_scale_codec::Encode;
-	use sp_consensus::BlockOrigin;
 	use sp_consensus_aura::AURA_ENGINE_ID;
 	use sp_consensus_babe::BABE_ENGINE_ID;
 	use sp_core::H256;
@@ -248,11 +365,20 @@ mod tests {
 
 	impl Harness {
 		fn new() -> Self {
+			// No parents are known: routing only, the parent check defers to BABE.
+			Self::with_parents(Vec::new())
+		}
+
+		/// A harness whose parent lookup knows `parents`.
+		fn with_parents(parents: Vec<Header>) -> Self {
 			let (aura, babe, seeder) =
 				(Recorder::default(), Recorder::default(), SeedRecorder::default());
+			let parents: std::collections::HashMap<H256, Header> =
+				parents.into_iter().map(|header| (header.hash(), header)).collect();
 			Self {
 				verifier: EngineDispatchVerifier::new(
 					Arc::new(seeder.clone()),
+					Arc::new(move |hash| Ok(parents.get(&hash).cloned())),
 					aura.clone(),
 					babe.clone(),
 				),
@@ -437,6 +563,7 @@ mod tests {
 		}
 		let verifier = EngineDispatchVerifier::<Block, _, _>::new(
 			Arc::new(SeedRecorder::default()),
+			Arc::new(|_| Ok(None)),
 			Recorder::default(),
 			Failing,
 		);
@@ -444,6 +571,132 @@ mod tests {
 			block_on(verifier.verify(params(babe_block(5)))).err(),
 			Some("bad seal".to_string())
 		);
+	}
+
+	/// Block `number` on `parent` with a readable BABE pre-digest, after `aura_digest` if set.
+	fn babe_child(parent: &Header, number: u32, aura_digest: bool) -> Header {
+		use sc_consensus_babe::CompatibleDigestItem;
+		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
+		let babe =
+			DigestItem::babe_pre_digest(PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+				authority_index: 0,
+				slot: u64::from(number).into(),
+			}));
+		let logs = if aura_digest { vec![pre_runtime(AURA_ENGINE_ID), babe] } else { vec![babe] };
+		let mut header = header_with(number, logs);
+		header.set_parent_hash(parent.hash());
+		header
+	}
+
+	#[test]
+	fn verifier_checks_the_babe_parent_before_seeding_and_verifying() {
+		let genesis = Header::new(
+			0,
+			Default::default(),
+			Default::default(),
+			H256::zero(),
+			Default::default(),
+		);
+		let aura = aura_block(40);
+		let undecodable = header_with(44, vec![pre_runtime(BABE_ENGINE_ID)]);
+		let mut duplicated = babe_child(&genesis, 45, false);
+		let babe_digest = duplicated.digest().logs().last().cloned().unwrap();
+		duplicated.digest_mut().push(babe_digest);
+		let babe = babe_child(&genesis, 50, false);
+		let flip = babe_child(&babe, 51, true);
+		let h = Harness::with_parents(vec![
+			genesis.clone(),
+			aura.clone(),
+			undecodable.clone(),
+			duplicated.clone(),
+			babe.clone(),
+			flip.clone(),
+		]);
+
+		let mut claims_zero = babe_child(&babe, 1, false);
+		claims_zero.set_number(0);
+		for rejected in [
+			babe_child(&babe, 1, false),
+			babe_child(&babe, 52, false),
+			claims_zero,
+			babe_child(&genesis, 2, false),
+			babe_child(&aura, 41, false),
+			babe_child(&undecodable, 45, false),
+			babe_child(&duplicated, 46, false),
+		] {
+			assert!(block_on(h.verifier.verify(params(rejected))).is_err());
+		}
+		assert!(h.seeder.parents().is_empty());
+		assert!(h.babe.seen().is_empty());
+
+		h.verify(babe_child(&genesis, 1, false));
+		h.verify(babe_child(&babe, 51, false));
+		h.verify(babe_child(&flip, 52, false));
+		assert_eq!(h.babe.seen(), vec![1, 51, 52]);
+	}
+
+	#[test]
+	fn verifier_fails_closed_on_a_parent_lookup_error() {
+		let (seeder, babe) = (SeedRecorder::default(), Recorder::default());
+		let verifier = EngineDispatchVerifier::<Block, _, _>::new(
+			Arc::new(seeder.clone()),
+			Arc::new(|_| Err("db read failed".to_string())),
+			Recorder::default(),
+			babe.clone(),
+		);
+		assert_eq!(
+			block_on(verifier.verify(params(babe_block(5)))).err(),
+			Some("db read failed".to_string())
+		);
+		assert!(seeder.parents().is_empty());
+		assert!(babe.seen().is_empty());
+	}
+
+	/// Block import that records the auxiliary entries of the blocks handed to it.
+	#[derive(Clone, Default)]
+	struct AuxRecorder(Arc<Mutex<AuxEntries>>);
+	type AuxEntries = Vec<(Vec<u8>, Option<Vec<u8>>)>;
+
+	#[async_trait]
+	impl BlockImport<Block> for AuxRecorder {
+		type Error = ConsensusError;
+		async fn check_block(
+			&self,
+			_: BlockCheckParams<Block>,
+		) -> Result<ImportResult, Self::Error> {
+			Ok(ImportResult::imported(false))
+		}
+		async fn import_block(
+			&self,
+			block: BlockImportParams<Block>,
+		) -> Result<ImportResult, Self::Error> {
+			self.0.lock().unwrap().extend(block.auxiliary);
+			Ok(ImportResult::imported(false))
+		}
+	}
+
+	#[test]
+	fn aura_weight_import_records_zero_weight_only_for_pallet_era_blocks_outside_the_gap() {
+		let pallet_era = dual_digest_aura_block(11);
+		let weight =
+			vec![(block_weight_key(pallet_era.hash()), Some((0 as BabeBlockWeight).encode()))];
+		let warp_header = BlockImportParams::new(BlockOrigin::WarpSync, dual_digest_aura_block(11));
+		let pre_activation = pre_activation_header_with(
+			11,
+			vec![pre_runtime(AURA_ENGINE_ID), pre_runtime(BABE_ENGINE_ID)],
+		);
+		for (block, gap_end, expected) in [
+			(params(pallet_era), 10, weight),
+			(params(dual_digest_aura_block(10)), 10, vec![]),
+			(warp_header, 0, vec![]),
+			(params(aura_block(11)), 0, vec![]),
+			(params(pre_activation), 0, vec![]),
+		] {
+			let inner = AuxRecorder::default();
+			let import = AuraWeightBlockImport::new(inner.clone(), Arc::new(move |n| n <= gap_end));
+			block_on(import.import_block(block)).unwrap();
+			assert_eq!(*inner.0.lock().unwrap(), expected);
+		}
 	}
 
 	#[test]
@@ -472,5 +725,160 @@ mod tests {
 		block_on(h.block_import.check_block(check)).unwrap();
 		assert_eq!(h.aura.seen(), vec![7]);
 		assert!(h.babe.seen().is_empty());
+	}
+}
+
+/// [`AuraWeightBlockImport`] against the real BABE block import, on the substrate test runtime.
+#[cfg(test)]
+mod babe_fork_choice_tests {
+	use super::*;
+	use sc_block_builder::BlockBuilderBuilder;
+	use sc_consensus::{BoxBlockImport, ForkChoiceStrategy};
+	use sc_consensus_babe::{BabeIntermediate, INTERMEDIATE_KEY};
+	use sc_consensus_epochs::descendent_query;
+	use sc_transaction_pool_api::{OffchainTransactionPoolFactory, RejectAllTxPool};
+	use sp_consensus_babe::{
+		digests::{PreDigest, PrimaryPreDigest, SecondaryPlainPreDigest},
+		inherents::InherentDataProvider,
+		make_vrf_sign_data,
+	};
+	use sp_consensus_slots::Slot;
+	use sp_core::{H256, crypto::VrfSecret};
+	use sp_keyring::Sr25519Keyring;
+	use sp_runtime::{Digest, DigestItem};
+	use substrate_test_runtime_client::{
+		DefaultTestClientBuilderExt, TestClient, TestClientBuilder, TestClientBuilderExt,
+		runtime::Block as TestBlock,
+	};
+
+	struct Chain {
+		client: Arc<TestClient>,
+		babe: BoxBlockImport<TestBlock>,
+		link: sc_consensus_babe::BabeLink<TestBlock>,
+	}
+
+	fn chain() -> Chain {
+		let (client, longest_chain) = TestClientBuilder::new().build_with_longest_chain();
+		let client = Arc::new(client);
+		let config = sc_consensus_babe::configuration(&*client).unwrap();
+		let (babe, link) = sc_consensus_babe::block_import(
+			config,
+			client.clone(),
+			client.clone(),
+			|_, _| async { Ok((InherentDataProvider::new(Slot::from(100)),)) },
+			longest_chain,
+			OffchainTransactionPoolFactory::new(RejectAllTxPool::default()),
+		)
+		.unwrap();
+		Chain { client, babe: Box::new(babe), link }
+	}
+
+	fn pre_digest(pre_digest: PreDigest) -> Digest {
+		Digest {
+			logs: vec![<DigestItem as sc_consensus_babe::CompatibleDigestItem>::babe_pre_digest(
+				pre_digest,
+			)],
+		}
+	}
+
+	fn build(chain: &Chain, parent: H256, digest: Digest) -> BlockImportParams<TestBlock> {
+		let parent_number = chain.client.number(parent).unwrap().unwrap();
+		let block = BlockBuilderBuilder::new(&*chain.client)
+			.on_parent_block(parent)
+			.with_parent_block_number(parent_number)
+			.with_inherent_digests(digest)
+			.build()
+			.unwrap()
+			.build()
+			.unwrap()
+			.block;
+		let mut params = BlockImportParams::new(BlockOrigin::NetworkBroadcast, block.header);
+		params.body = Some(block.extrinsics);
+		params
+	}
+
+	/// An AURA block of the pallet's era: carries a BABE pre-runtime digest, imported with AURA's
+	/// longest-chain rule.
+	fn aura_block(chain: &Chain, parent: H256, slot: u64) -> BlockImportParams<TestBlock> {
+		let digest = pre_digest(PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+			authority_index: 0,
+			slot: slot.into(),
+		}));
+		let mut params = build(chain, parent, digest);
+		params.fork_choice = Some(ForkChoiceStrategy::LongestChain);
+		params
+	}
+
+	/// A primary BABE block (chain weight 1) on genesis, prepared as the BABE verifier would.
+	fn babe_block_on_genesis(chain: &Chain, slot: u64) -> BlockImportParams<TestBlock> {
+		let genesis = chain.client.info().genesis_hash;
+		let randomness = chain.link.config().randomness;
+		let vrf_signature =
+			Sr25519Keyring::Alice
+				.pair()
+				.vrf_sign(&make_vrf_sign_data(&randomness, slot.into(), 0));
+		let digest = pre_digest(PreDigest::Primary(PrimaryPreDigest {
+			authority_index: 0,
+			slot: slot.into(),
+			vrf_signature,
+		}));
+		let mut params = build(chain, genesis, digest);
+		let epoch_descriptor = chain
+			.link
+			.epoch_changes()
+			.shared_data()
+			.epoch_descriptor_for_child_of(
+				descendent_query(&*chain.client),
+				&genesis,
+				0,
+				slot.into(),
+			)
+			.unwrap()
+			.unwrap();
+		params.insert_intermediate(
+			INTERMEDIATE_KEY,
+			BabeIntermediate::<TestBlock> { epoch_descriptor },
+		);
+		params
+	}
+
+	fn import_aura(chain: &Chain, params: BlockImportParams<TestBlock>) -> H256 {
+		let hash = params.post_hash();
+		let aura = AuraWeightBlockImport::new(chain.client.clone(), Arc::new(|_| false));
+		futures::executor::block_on(aura.import_block(params)).unwrap();
+		hash
+	}
+
+	#[test]
+	fn babe_block_outweighs_a_longer_aura_best_block() {
+		let chain = chain();
+		let genesis = chain.client.info().genesis_hash;
+		let a1 = import_aura(&chain, aura_block(&chain, genesis, 1));
+		let a2 = import_aura(&chain, aura_block(&chain, a1, 2));
+		assert_eq!(chain.client.info().best_hash, a2);
+
+		let b1 = babe_block_on_genesis(&chain, 3);
+		let b1_hash = b1.post_hash();
+		futures::executor::block_on(chain.babe.import_block(b1)).unwrap();
+		assert_eq!(chain.client.info().best_hash, b1_hash, "weight 1 beats weight 0 at #2");
+
+		// AURA blocks keep the longest-chain rule: a longer AURA branch takes the best block back.
+		let a3 = import_aura(&chain, aura_block(&chain, a2, 4));
+		assert_eq!(chain.client.info().best_hash, a3);
+	}
+
+	#[test]
+	fn babe_import_fails_against_an_aura_best_block_without_a_weight() {
+		let chain = chain();
+		let genesis = chain.client.info().genesis_hash;
+		let a1 = aura_block(&chain, genesis, 1);
+		let a1_hash = a1.post_hash();
+		futures::executor::block_on(chain.client.clone().import_block(a1)).unwrap();
+		assert_eq!(chain.client.info().best_hash, a1_hash);
+
+		let error =
+			futures::executor::block_on(chain.babe.import_block(babe_block_on_genesis(&chain, 3)))
+				.unwrap_err();
+		assert!(error.to_string().contains("No block weight"), "{error}");
 	}
 }

@@ -15,18 +15,9 @@ use std::str::FromStr;
 
 use clap::Parser;
 
-use crate::cfg::Cfg;
-use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
-use partner_chains_cli::{AURA, BABE, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
-use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
-use sc_cli::SubstrateCli;
+use partner_chains_node_commands::PartnerChainsSubcommand;
 use sidechain_domain::McBlockHash;
-
-/// Definition of the BEEFY key, matching `sp_runtime::key_types::BEEFY` and the runtime's
-/// `SessionKeys::beefy` (ECDSA).
-const BEEFY: KeyDefinition<'static> =
-	KeyDefinition { name: "BEEFY", scheme: "ecdsa", key_type: "beef" };
 
 /// The `run` command used to run a node
 #[derive(Debug, Clone, clap::Parser)]
@@ -53,12 +44,10 @@ pub struct RunMidnight {
 	#[arg(long, default_value_t = 512)]
 	pub rpc_max_finality_subscriptions: u32,
 
-	/// Serve Midnight ledger snapshots to warp-syncing peers even when running as a validator.
+	/// Serve Midnight ledger snapshots to warp-syncing peers (off by default).
 	///
-	/// Non-validator nodes always serve. Validators don't by default — serializing the ledger
-	/// arena is the warp ledger-sync protocol's most CPU-expensive operation and competes with
-	/// authoring/finality duties — but can opt in with this flag, e.g. on small or local networks
-	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
+	/// Serializing the ledger arena is CPU-expensive; on a validator it competes with authoring
+	/// and finality duties.
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
 }
@@ -385,9 +374,9 @@ pub enum Subcommand {
 	#[command(subcommand)]
 	Key(sc_cli::KeySubcommand),
 
-	/// Partner chain subcommands (smart contract registration etc.)
+	/// Partner chain subcommands (committee and registration queries)
 	#[clap(flatten)]
-	PartnerChains(PartnerChainsSubcommand<MidnightRuntime>),
+	PartnerChains(PartnerChainsSubcommand),
 
 	/// Build a chain specification.
 	BuildSpec(sc_cli::BuildSpecCmd),
@@ -491,35 +480,10 @@ pub enum Subcommand {
 
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
-}
 
-#[derive(Clone, Debug)]
-pub struct MidnightRuntime;
-impl PartnerChainRuntime for MidnightRuntime {
-	type Keys = SessionKeys;
-
-	fn create_chain_spec(_config: &CreateChainSpecConfig<Self::Keys>) -> serde_json::Value {
-		let cfg = Cfg::new_no_validation()
-			.expect("chainspec configuration must load without validation errors");
-
-		// Use the configured chain from CFG_PRESET or environment, defaulting to "dev" if not set
-		let chain_id = cfg.substrate_cfg.chain.as_deref().unwrap_or("dev");
-
-		let chain_spec = cfg
-			.load_spec(chain_id)
-			.expect("chain spec generation must succeed when using default configuration");
-
-		let chain_spec_json =
-			chain_spec.as_json(false).expect("Chain spec serialization cannot fail");
-		let chain_spec_value: serde_json::Value =
-			serde_json::from_str(&chain_spec_json).expect("Generated chain spec JSON is valid");
-
-		chain_spec_value
-	}
-
-	fn key_definitions() -> Vec<KeyDefinition<'static>> {
-		vec![AURA, BABE, GRANDPA, BEEFY, CROSS_CHAIN]
-	}
+	/// Dry-run a runtime upgrade against a state snapshot.
+	#[cfg(feature = "try-runtime")]
+	TryRuntime(crate::try_runtime::TryRuntimeCmd),
 }
 
 // TODO: this is used for signing address associations. Which kind of midnight address do we want to associate with Cardano?

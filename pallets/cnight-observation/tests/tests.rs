@@ -1723,48 +1723,93 @@ fn is_inherent_required_with_malformed_data_returns_error() {
 	});
 }
 
-// One representative regression guard for the operator-facing panic shape in
-// `BuildGenesisConfig::build`. The four call sites use a byte-identical format
-// string differing only in the dotted field path and the destination bound;
-// `cnight_policy_id` is not exercised because its source type `[u8; 28]` makes
-// the panic at that site unreachable from chain-spec deserialization.
+// The bech32 check runs before the length check, so an over-length value is reported as
+// invalid too and the length panic is unreachable for chain-spec input.
 #[test]
-fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
-	let over_length = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
-	let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
-		config: pallet_cnight_observation::config::CNightGenesis {
-			addresses: CNightAddresses {
-				mapping_validator_address: over_length,
-				auth_token_asset_name: String::new(),
-				cnight_policy_id: [0u8; 28],
-				cnight_asset_name: String::new(),
+fn build_panics_with_field_path_when_mapping_validator_address_invalid() {
+	for address in
+		["nonsense".to_string(), "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1)]
+	{
+		let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
+			config: pallet_cnight_observation::config::CNightGenesis {
+				addresses: CNightAddresses {
+					mapping_validator_address: address,
+					auth_token_asset_name: String::new(),
+					cnight_policy_id: [0u8; 28],
+					cnight_asset_name: String::new(),
+				},
+				..Default::default()
 			},
-			..Default::default()
-		},
-		_marker: Default::default(),
-	};
+			_marker: Default::default(),
+		};
 
-	let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-		sp_io::TestExternalities::default().execute_with(|| {
-			genesis.build();
-		});
-	}))
-	.expect_err("genesis build must panic on over-length mapping_validator_address");
+		let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+			sp_io::TestExternalities::default().execute_with(|| {
+				genesis.build();
+			});
+		}))
+		.expect_err("genesis build must panic on an invalid mapping_validator_address");
 
-	let msg = payload
-		.downcast_ref::<String>()
-		.cloned()
-		.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
-		.expect("panic payload should be String or &'static str");
+		let msg = payload
+			.downcast_ref::<String>()
+			.cloned()
+			.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
+			.expect("panic payload should be String or &'static str");
 
-	assert!(
-		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
-		"panic must name the chain-spec field path; got: {msg}"
-	);
-	assert!(
-		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
-		"panic must name the destination bound; got: {msg}"
-	);
+		assert!(
+			msg.contains("cNightObservation.config.addresses.mapping_validator_address is invalid"),
+			"panic must name the chain-spec field path; got: {msg}"
+		);
+	}
+}
+
+#[test]
+fn set_mapping_validator_contract_address_works() {
+	new_test_ext().execute_with(|| {
+		let address = b"addr_test1wpztklvv6scgyzne56ky0va0x5dmje56lf39eshxdha68rclu8fje".to_vec();
+		assert_ok!(CNightObservation::set_mapping_validator_contract_address(
+			RawOrigin::Root.into(),
+			address.clone(),
+		));
+		assert_eq!(MainChainMappingValidatorAddress::<Test>::get().to_vec(), address);
+	});
+}
+
+// Mapping validator addresses stored on mainnet block #3281949 and preview block #1565068.
+#[test]
+fn set_mapping_validator_contract_address_accepts_live_network_values() {
+	new_test_ext().execute_with(|| {
+		for address in [
+			b"addr1w9e7ft4rrdd4rkdseguxr9hudfxyytm5ckh2qy0yhz7lfeg9lvhq7".to_vec(),
+			b"addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng".to_vec(),
+		] {
+			assert_ok!(CNightObservation::set_mapping_validator_contract_address(
+				RawOrigin::Root.into(),
+				address.clone(),
+			));
+			assert_eq!(MainChainMappingValidatorAddress::<Test>::get().to_vec(), address);
+		}
+	});
+}
+
+#[test]
+fn set_mapping_validator_contract_address_rejects_invalid_address() {
+	new_test_ext().execute_with(|| {
+		for address in [
+			vec![0xff],
+			b"x".to_vec(),
+			// Enterprise address with a key payment credential
+			b"addr_test1vqqqzqsrqszsvpcgpy9qkrqdpc83qygjzv2p29shrqv35xcftcpvd".to_vec(),
+		] {
+			assert_noop!(
+				CNightObservation::set_mapping_validator_contract_address(
+					RawOrigin::Root.into(),
+					address,
+				),
+				Error::<Test>::InvalidMappingValidatorAddress
+			);
+		}
+	});
 }
 
 type BoundedAssetName = BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>;
@@ -2110,6 +2155,40 @@ fn batch_at_the_block_limit_applies() {
 		assert_eq!(applied_dust_event_count(), fits as usize);
 		assert_eq!(NextCardanoCursor::<Test>::get().position, test_position(3, 0));
 		assert!(CNightObservation::is_registered(&owner));
+	});
+}
+
+/// A spend whose Destroy event cannot be built must not consume the owner and
+/// move the cursor on: the ledger would never hear of the spend. The batch
+/// rolls back whole instead.
+#[test]
+fn spend_whose_dust_event_cannot_be_built_is_deferred_not_dropped() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (hash, index) = (tx_hash(2, 0), 0u16);
+		let nonce = BlakeTwo256::hash(
+			&[b"asset_create".as_slice(), &hash.0[..], &index.to_be_bytes()[..]].concat(),
+		);
+		// `handle_create` stores only keys that built an event, so plant one that does not.
+		let undecodable = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+		UtxoOwners::<Test>::insert(nonce, undecodable.clone());
+		let cursor_before = NextCardanoCursor::<Test>::get().position;
+
+		let spend = ObservedUtxo {
+			header: test_header(3, 0, 0, None),
+			data: ObservedUtxoData::AssetSpend(SpendData {
+				value: 100,
+				owner: cardano_reward_address(b"cardano1"),
+				utxo_tx_hash: hash,
+				utxo_tx_index: index,
+				spending_tx_hash: tx_hash(3, 0),
+			}),
+		};
+		dispatch_observations(vec![spend], test_position(4, 0));
+
+		assert!(observations_deferred());
+		assert_eq!(UtxoOwners::<Test>::get(nonce), Some(undecodable));
+		assert_eq!(NextCardanoCursor::<Test>::get().position, cursor_before);
 	});
 }
 

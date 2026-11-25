@@ -46,7 +46,10 @@ pub mod peer_info_rpc;
 pub mod reference_hardware;
 pub mod rpc;
 pub mod service;
+pub mod session_key_check;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
+#[cfg(feature = "try-runtime")]
+pub mod try_runtime;
 mod util;
 pub mod warp_ledger_sync;

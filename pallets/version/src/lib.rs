@@ -32,6 +32,8 @@ pub use pallet::*;
 pub const VERSION_ID: ConsensusEngineId = *b"MNSV";
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod pallet {
 	use super::*;
 	use frame_support::pallet_prelude::*;
