@@ -26,9 +26,9 @@ use async_trait::async_trait;
 
 /// Proves each circuit with the zkir crate matching its IR tag: compactc <0.36 emits
 /// v2 IR, 0.36+ emits only v3.
-struct VersionedProvingProvider {
-	rng: StdRng,
-	resolver: &'static Resolver,
+pub struct VersionedProvingProvider {
+	pub rng: StdRng,
+	pub resolver: &'static Resolver,
 }
 
 impl VersionedProvingProvider {

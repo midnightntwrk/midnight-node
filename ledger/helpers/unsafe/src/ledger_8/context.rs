@@ -235,6 +235,19 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
+	/// An independent copy to build a fork on: ledger state, wallets and block context are
+	/// cloned, the resolver is shared.
+	pub fn snapshot(&self) -> Self {
+		Self {
+			ledger_state: Mutex::new(self.ledger_state.lock().expect("ledger_state lock").clone()),
+			latest_block_context: Mutex::new(
+				self.latest_block_context.lock().expect("latest_block_context lock").clone(),
+			),
+			wallets: Mutex::new(self.wallets.lock().expect("wallets lock").clone()),
+			resolver: MutexTokio::new(*self.resolver.try_lock().expect("resolver is not in use")),
+		}
+	}
+
 	/// Apply all transactions in a block to the ledger, returning events without
 	/// processing wallets. Also applies `post_block_update` (fee adjustments).
 	/// `root_verified` must only be true when the caller checks the resulting
