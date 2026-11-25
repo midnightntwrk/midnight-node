@@ -1394,7 +1394,36 @@ where
 		let tblock = well_formed_tblock(ledger, block_context, skew_tblock);
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		let prev = cache.0.get(key).and_then(|receipt| {
+		let (verified_tx, outcome) =
+			match Self::lookup_receipt(ledger, state_key, tblock, key, cache) {
+				Some((previously_validated_state, outcome)) => {
+					let reference = mn_ledger_local::verify::RevalidationReference {
+						previously_validated_state,
+						new_state: ctx.ref_state,
+					};
+					(Self::is_well_formed(tx, &reference, tblock)?, outcome)
+				},
+				None => (
+					Self::is_well_formed(tx, &ctx.ref_state, tblock)?,
+					TxValidationCacheOutcome::CacheMiss,
+				),
+			};
+		cache
+			.0
+			.insert(key.clone(), ProofReceipt { state_key: state_key.to_vec(), tblock });
+		Ok((verified_tx, outcome))
+	}
+
+	/// The state a receipt for `key` was validated against, and the outcome it gives a call at
+	/// `state_key` and `tblock`. `None` is a miss. Evicts a receipt whose state is gone.
+	fn lookup_receipt(
+		ledger: &Ledger<D>,
+		state_key: &[u8],
+		tblock: Timestamp,
+		key: &TxValidationKey,
+		cache: &TxValidationCache,
+	) -> Option<(LedgerState<D>, TxValidationCacheOutcome)> {
+		cache.0.get(key).and_then(|receipt| {
 			if receipt.state_key == state_key {
 				let outcome = if receipt.tblock == tblock {
 					TxValidationCacheOutcome::StrictCacheHit
@@ -1415,25 +1444,7 @@ where
 					None
 				},
 			}
-		});
-
-		let (verified_tx, outcome) = match prev {
-			Some((previously_validated_state, outcome)) => {
-				let reference = mn_ledger_local::verify::RevalidationReference {
-					previously_validated_state,
-					new_state: ctx.ref_state,
-				};
-				(Self::is_well_formed(tx, &reference, tblock)?, outcome)
-			},
-			None => (
-				Self::is_well_formed(tx, &ctx.ref_state, tblock)?,
-				TxValidationCacheOutcome::CacheMiss,
-			),
-		};
-		cache
-			.0
-			.insert(key.clone(), ProofReceipt { state_key: state_key.to_vec(), tblock });
-		Ok((verified_tx, outcome))
+		})
 	}
 
 	fn is_well_formed(
