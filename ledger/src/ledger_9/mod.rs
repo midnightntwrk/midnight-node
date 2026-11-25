@@ -79,7 +79,7 @@ use {
 	coin_structure_local::coin::Nonce,
 	ledger_storage_local::{
 		Storage,
-		arena::{ArenaKey, Sp, TypedArenaKey},
+		arena::{Sp, TypedArenaKey},
 		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
@@ -2088,7 +2088,7 @@ mod tests {
 		let root_count = |state_key: &[u8]| {
 			let typed: TypedArenaKey<Ledger<DefaultDB>, _> =
 				midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).unwrap();
-			let key: ArenaKey<_> = typed.into();
+			let key: ledger_storage_local::arena::ArenaKey<_> = typed.into();
 			default_storage::<DefaultDB>()
 				.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
 		};
