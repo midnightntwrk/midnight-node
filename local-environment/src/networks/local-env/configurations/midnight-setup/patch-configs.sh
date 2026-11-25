@@ -118,6 +118,7 @@ CNIGHT_POLICY_ID=$(jq -r '.addresses.cnight_policy_id' /res/local/cnight-config.
 CNIGHT_ASSET_NAME=$(jq -r '.addresses.cnight_asset_name' /res/local/cnight-config.json)
 # Ogmios keys native assets by hex-encoded asset name.
 CNIGHT_ASSET_NAME_HEX=$(jq -r '
+  # Keep in sync with the copy in mint-cnight-supply/mint-cnight-supply.sh.
   def hexdigit: "0123456789abcdef"[.:.+1];
   .addresses.cnight_asset_name | explode
   | if any(. > 127) then error("cnight_asset_name must be ASCII") else . end

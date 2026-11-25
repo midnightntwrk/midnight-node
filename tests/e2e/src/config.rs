@@ -395,8 +395,10 @@ pub fn cnight_token_policy_id() -> String {
 }
 
 /// Hex-encoded cNIGHT asset name the network's bridge observes.
+/// `CNIGHT_CONFIG` overrides the config path when the chain came from another
+/// checkout's config.
 pub fn cnight_token_asset_name_hex() -> String {
-    let path = res_path("cnight-config.json");
+    let path = std::env::var("CNIGHT_CONFIG").unwrap_or_else(|_| res_path("cnight-config.json"));
     let content =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
     let config: serde_json::Value =

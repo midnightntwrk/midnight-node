@@ -85,6 +85,7 @@ echo "cNIGHT policy id: $POLICY_ID"
 # cardano-cli names a native asset as <policy-id>.<asset-name-hex>; the asset name is
 # whatever res/local/cnight-config.json says the node observes.
 CNIGHT_ASSET_NAME_HEX=$(jq -r '
+  # Keep in sync with the copy in midnight-setup/patch-configs.sh.
   def hexdigit: "0123456789abcdef"[.:.+1];
   .addresses.cnight_asset_name | explode
   | if any(. > 127) then error("cnight_asset_name must be ASCII") else . end
