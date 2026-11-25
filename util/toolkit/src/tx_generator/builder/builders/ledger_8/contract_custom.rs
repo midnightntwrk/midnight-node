@@ -476,14 +476,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 		tx_info.set_funding_seeds(vec![self.funding_seed()]);
 		tx_info.use_mock_proofs_for_fees(false);
 
-		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await.map_err(CustomContractBuilderError::FailedProvingTx)?;
-
-		#[cfg(feature = "erase-proof")]
-		let tx = tx_info
-			.erase_proof()
-			.await
-			.map_err(CustomContractBuilderError::FailedProvingTx)?;
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
