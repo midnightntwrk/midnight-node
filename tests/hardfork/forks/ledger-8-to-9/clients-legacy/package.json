@@ -1,0 +1,14 @@
+{
+  "name": "hardfork-8-to-9-clients-legacy",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "description": "An un-upgraded wallet (wallet SDK 1.x, ledger 8 only) across the ledger 8 -> 9 hard fork",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@midnightntwrk/wallet-sdk": "1.2.0"
+  }
+}

@@ -1,0 +1,130 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Rock-paper-scissors for a NIGHT stake each. The contract holds the stakes until the game
+// is settled or cancelled. Moves are committed with a salt and the player's key, both
+// private, and revealed later: a commitment made before a hard fork must open after it.
+
+pragma language_version >= 0.16.0;
+
+import CompactStandardLibrary;
+
+export enum Phase { open, hosted, joined, settled }
+
+export ledger phase: Phase;
+export ledger stake: Uint<128>;
+export ledger host: Bytes<32>;
+export ledger guest: Bytes<32>;
+export ledger host_commit: Bytes<32>;
+export ledger guest_commit: Bytes<32>;
+export ledger host_payout: Bytes<32>;
+export ledger guest_payout: Bytes<32>;
+export ledger host_move: Maybe<Uint<8>>;
+export ledger guest_move: Maybe<Uint<8>>;
+// 0 undecided, 1 host won, 2 guest won, 3 draw, 4 cancelled
+export ledger outcome: Uint<8>;
+
+constructor(stake_param: Uint<128>) {
+    phase = Phase.open;
+    stake = disclose(stake_param);
+    host_move = none<Uint<8>>();
+    guest_move = none<Uint<8>>();
+}
+
+witness secret_key(): Bytes<32>;
+witness my_move(): Uint<8>;  // 0 rock, 1 paper, 2 scissors
+witness salt(): Bytes<32>;
+
+circuit player_key(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "hf:rps:pk:"), sk]);
+}
+
+circuit commitment(m: Uint<8>, s: Bytes<32>, sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<3, Bytes<32>>>([m as Field as Bytes<32>, s, sk]);
+}
+
+circuit pay(to: Bytes<32>, amount: Uint<128>): [] {
+    sendUnshielded(nativeToken(), amount, right<ContractAddress, UserAddress>(UserAddress { bytes: to }));
+}
+
+// The caller's NIGHT UTxO of exactly the stake pays it in.
+export circuit host_game(payout: Bytes<32>): [] {
+    assert(phase == Phase.open, "the game is not open");
+    const sk = secret_key();
+    const m = my_move();
+    assert(m < 3, "a move is 0, 1 or 2");
+    receiveUnshielded(nativeToken(), stake);
+    host = disclose(player_key(sk));
+    host_commit = disclose(commitment(m, salt(), sk));
+    host_payout = disclose(payout);
+    phase = Phase.hosted;
+}
+
+export circuit join_game(payout: Bytes<32>): [] {
+    assert(phase == Phase.hosted, "no game is waiting for a guest");
+    const sk = secret_key();
+    const m = my_move();
+    assert(m < 3, "a move is 0, 1 or 2");
+    assert(player_key(sk) != host, "the host cannot join its own game");
+    receiveUnshielded(nativeToken(), stake);
+    guest = disclose(player_key(sk));
+    guest_commit = disclose(commitment(m, salt(), sk));
+    guest_payout = disclose(payout);
+    phase = Phase.joined;
+}
+
+export circuit reveal(): [] {
+    assert(phase == Phase.joined, "both players must have joined");
+    const sk = secret_key();
+    const m = my_move();
+    const c = commitment(m, salt(), sk);
+    if (disclose(player_key(sk) == host)) {
+        assert(!host_move.is_some, "the host has revealed already");
+        assert(c == host_commit, "the move does not match the commitment");
+        host_move = some<Uint<8>>(disclose(m));
+    } else {
+        assert(player_key(sk) == guest, "not a player of this game");
+        assert(!guest_move.is_some, "the guest has revealed already");
+        assert(c == guest_commit, "the move does not match the commitment");
+        guest_move = some<Uint<8>>(disclose(m));
+    }
+}
+
+// Anyone may settle once both moves are revealed.
+export circuit settle(): [] {
+    assert(phase == Phase.joined && host_move.is_some && guest_move.is_some, "both moves must be revealed");
+    const h = host_move.value;
+    const g = guest_move.value;
+    if (h == g) {
+        pay(host_payout, stake);
+        pay(guest_payout, stake);
+        outcome = 3;
+    } else if ((h == 0 && g == 1) || (h == 1 && g == 2) || (h == 2 && g == 0)) {
+        pay(guest_payout, (stake + stake) as Uint<128>);
+        outcome = 2;
+    } else {
+        pay(host_payout, (stake + stake) as Uint<128>);
+        outcome = 1;
+    }
+    phase = Phase.settled;
+}
+
+export circuit cancel(): [] {
+    assert(phase == Phase.hosted, "only a game nobody joined can be cancelled");
+    assert(player_key(secret_key()) == host, "only the host can cancel");
+    pay(host_payout, stake);
+    outcome = 4;
+    phase = Phase.settled;
+}
