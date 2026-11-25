@@ -126,7 +126,6 @@ pub fn run() -> sc_cli::Result<()> {
 				match run_node(cfg) {
 					res @ Ok(_) => res,
 					Err(e) => {
-						Cfg::help();
 						eprintln!("error: {e:?}");
 						safe_exit(1)
 					},
