@@ -66,6 +66,11 @@ pub fn system_parameters_config_path() -> String {
     if let Ok(path) = std::env::var("SYSTEM_PARAMETERS_CONFIG") {
         return path;
     }
+    res_path("system-parameters-config.json")
+}
+
+/// Path of `file` under `res/<network>/` for the network under test.
+fn res_path(file: &str) -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     let network = "local";
@@ -79,7 +84,7 @@ pub fn system_parameters_config_path() -> String {
         not(any(feature = "local", feature = "local-dev", feature = "local-ci"))
     ))]
     let network = "devnet";
-    format!("{manifest_dir}/../../res/{network}/system-parameters-config.json")
+    format!("{manifest_dir}/../../res/{network}/{file}")
 }
 
 #[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
@@ -387,4 +392,26 @@ pub fn cnight_token_policy_id() -> String {
     let cbor_double_encoded = cnight_token_cbor_double_encoding();
     let script_hash = whisky::get_script_hash(&cbor_double_encoded, LanguageVersion::V3);
     script_hash.expect("Error calculating `cnight_token_policy_id`")
+}
+
+/// Hex-encoded cNIGHT asset name the network's bridge observes.
+pub fn cnight_token_asset_name_hex() -> String {
+    let path = res_path("cnight-config.json");
+    let content =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    let config: serde_json::Value =
+        serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"));
+    let name = config["addresses"]["cnight_asset_name"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{path}: addresses.cnight_asset_name should be a string"));
+    hex::encode(name)
+}
+
+/// Cardano asset unit of cNIGHT: policy id followed by the hex asset name.
+pub fn cnight_token_unit() -> String {
+    format!(
+        "{}{}",
+        cnight_token_policy_id(),
+        cnight_token_asset_name_hex()
+    )
 }
