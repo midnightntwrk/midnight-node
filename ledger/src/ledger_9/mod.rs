@@ -1283,12 +1283,11 @@ where
 	fn load_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
 		let arena = &default_storage().arena;
-		// `get_lazy` reads nothing, so an absent root would only surface as a host panic on
-		// first deref. Read the root node here instead: one level, children stay unread, and
-		// the backend caches it for that deref. A missing descendant can still panic later.
-		if let ArenaKey::Ref(root) = &key.key
-			&& arena.with_backend(|backend| backend.get(root).is_none())
-		{
+		// `get_lazy` reads nothing, so an absent node would only surface as a host panic on
+		// first deref. Read every node the key references here instead: the root, or the
+		// children of a root small enough to be inlined in the key. The backend caches them for
+		// that deref. A missing deeper descendant can still panic later.
+		if arena.with_backend(|backend| key.refs().into_iter().any(|r| backend.get(r).is_none())) {
 			return Err(LedgerApiError::NoLedgerState);
 		}
 		arena.get_lazy(&key).map_err(|_| LedgerApiError::NoLedgerState)
