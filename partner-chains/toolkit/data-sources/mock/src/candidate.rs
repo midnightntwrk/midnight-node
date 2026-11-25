@@ -18,6 +18,8 @@ pub struct MockRegistration {
 	pub status: MockRegistrationStatus,
 	pub aura_pub_key: ByteString,
 	pub grandpa_pub_key: ByteString,
+	pub babe_pub_key: ByteString,
+	pub beefy_pub_key: ByteString,
 }
 
 impl MockRegistration {
@@ -66,10 +68,12 @@ impl From<MockRegistration> for CandidateRegistrations {
 				tx_index_within_block: McTxIndexInBlock(12),
 			},
 			tx_inputs: vec![mock.registration_utxo],
-			keys: CandidateKeys(vec![
-				AuraPublicKey(mock.aura_pub_key.0).into(),
-				GrandpaPublicKey(mock.grandpa_pub_key.0).into(),
-			]),
+			keys: candidate_keys(
+				mock.aura_pub_key,
+				mock.grandpa_pub_key,
+				mock.babe_pub_key,
+				mock.beefy_pub_key,
+			),
 		}];
 		let stake_delegation = Some(StakeDelegation(333));
 		CandidateRegistrations { stake_pool_public_key, registrations, stake_delegation }
@@ -89,6 +93,8 @@ pub struct MockPermissionedCandidate {
 	sidechain_pub_key: ByteString,
 	aura_pub_key: ByteString,
 	grandpa_pub_key: ByteString,
+	babe_pub_key: ByteString,
+	beefy_pub_key: ByteString,
 }
 
 impl MockPermissionedCandidate {
@@ -108,16 +114,30 @@ impl From<MockPermissionedCandidate> for PermissionedCandidateData {
 			sidechain_pub_key,
 			aura_pub_key,
 			grandpa_pub_key,
+			babe_pub_key,
+			beefy_pub_key,
 		}: MockPermissionedCandidate,
 	) -> Self {
 		Self {
 			sidechain_public_key: SidechainPublicKey(sidechain_pub_key.0),
-			keys: CandidateKeys(vec![
-				AuraPublicKey(aura_pub_key.0).into(),
-				GrandpaPublicKey(grandpa_pub_key.0).into(),
-			]),
+			keys: candidate_keys(aura_pub_key, grandpa_pub_key, babe_pub_key, beefy_pub_key),
 		}
 	}
+}
+
+/// Every session key the runtime requires; it filters out a candidate that lacks one.
+fn candidate_keys(
+	aura: ByteString,
+	grandpa: ByteString,
+	babe: ByteString,
+	beefy: ByteString,
+) -> CandidateKeys {
+	CandidateKeys(vec![
+		AuraPublicKey(aura.0).into(),
+		GrandpaPublicKey(grandpa.0).into(),
+		CandidateKey { id: *b"babe", bytes: babe.0 },
+		CandidateKey { id: *b"beef", bytes: beefy.0 },
+	])
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -297,6 +317,88 @@ impl AuthoritySelectionDataSource for AuthoritySelectionDataSourceMock {
 	}
 
 	async fn data_epoch(&self, for_epoch: McEpochNumber) -> Result<McEpochNumber> {
-		Ok(McEpochNumber(for_epoch.0 - 2))
+		offset_data_epoch(&for_epoch).map_err(|offset| {
+			format!(
+				"Minimum supported epoch of data usage is {offset}, but {} was provided",
+				for_epoch.0
+			)
+			.into()
+		})
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn candidate(json: &str) -> PermissionedCandidateData {
+		serde_json::from_str::<MockPermissionedCandidate>(json).unwrap().into()
+	}
+
+	fn key_ids(data: &PermissionedCandidateData) -> Vec<[u8; 4]> {
+		key_ids_of(&data.keys)
+	}
+
+	fn key_ids_of(keys: &CandidateKeys) -> Vec<[u8; 4]> {
+		keys.0.iter().map(|key| key.id).collect()
+	}
+
+	#[test]
+	fn a_permissioned_candidate_carries_its_babe_and_beefy_keys() {
+		let data = candidate(
+			r#"{
+				"sidechain_pub_key": "0x02",
+				"aura_pub_key": "0x01",
+				"grandpa_pub_key": "0x02",
+				"babe_pub_key": "0x03",
+				"beefy_pub_key": "0x04"
+			}"#,
+		);
+		assert_eq!(key_ids(&data), vec![*b"aura", *b"gran", *b"babe", *b"beef"]);
+		let bytes = |id: &[u8; 4]| {
+			data.keys.0.iter().find(|key| &key.id == id).map(|key| key.bytes.clone())
+		};
+		assert_eq!(bytes(b"babe"), Some(vec![3]));
+		assert_eq!(bytes(b"beef"), Some(vec![4]));
+	}
+
+	#[tokio::test]
+	async fn the_data_epoch_is_two_cardano_epochs_back_and_never_underflows() {
+		let source = AuthoritySelectionDataSourceMock {
+			registrations_data: MockRegistrationsConfig { epoch_rotation: Vec::new() },
+		};
+		assert_eq!(source.data_epoch(McEpochNumber(5)).await.unwrap(), McEpochNumber(3));
+		assert!(source.data_epoch(McEpochNumber(1)).await.is_err());
+	}
+
+	#[test]
+	fn a_permissioned_candidate_without_babe_and_beefy_keys_is_rejected() {
+		let json =
+			r#"{ "sidechain_pub_key": "0x02", "aura_pub_key": "0x01", "grandpa_pub_key": "0x02" }"#;
+		assert!(serde_json::from_str::<MockPermissionedCandidate>(json).is_err());
+	}
+
+	#[test]
+	fn every_mock_registrations_file_gives_its_candidates_all_four_keys() {
+		for file in [
+			include_str!("../../../../../res/mock-bridge-data/default-registrations.json"),
+			include_str!("../../../../../res/mock-bridge-data/qanet-mock.json"),
+			include_str!("../../../../../res/mock-bridge-data/testnet-02-mock.json"),
+		] {
+			let epochs: Vec<MockEpochCandidates> = serde_json::from_str(file).unwrap();
+			for epoch in epochs {
+				for candidate in epoch.permissioned {
+					let data: PermissionedCandidateData = candidate.into();
+					assert_eq!(key_ids(&data), vec![*b"aura", *b"gran", *b"babe", *b"beef"]);
+				}
+				for registration in epoch.registrations {
+					let data: CandidateRegistrations = registration.into();
+					assert_eq!(
+						key_ids_of(&data.registrations[0].keys),
+						vec![*b"aura", *b"gran", *b"babe", *b"beef"]
+					);
+				}
+			}
+		}
 	}
 }
