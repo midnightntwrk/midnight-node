@@ -280,7 +280,13 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
-		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		keystore
+			.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec())
+			.map_err(|_| {
+				sc_cli::Error::Application(
+					format!("failed to insert AURA key from {seed_file} into the keystore").into(),
+				)
+			})?;
 		log::info!("AURA pubkey: {}", keypair.public())
 	}
 
@@ -293,7 +299,13 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid BABE seed: {e}")))?;
-		keystore.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		keystore
+			.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec())
+			.map_err(|_| {
+				sc_cli::Error::Application(
+					format!("failed to insert BABE key from {seed_file} into the keystore").into(),
+				)
+			})?;
 		log::info!("BABE pubkey: {}", keypair.public())
 	}
 
@@ -306,7 +318,14 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
-		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		keystore
+			.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec())
+			.map_err(|_| {
+				sc_cli::Error::Application(
+					format!("failed to insert GRANDPA key from {seed_file} into the keystore")
+						.into(),
+				)
+			})?;
 		log::info!("GRANDPA pubkey: {}", keypair.public())
 	}
 
@@ -321,7 +340,12 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid CROSS_CHAIN seed: {e}")))?;
 		keystore
 			.insert(KeyTypeId(*b"crch"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+			.map_err(|_| {
+				sc_cli::Error::Application(
+					format!("failed to insert CROSS_CHAIN key from {seed_file} into the keystore")
+						.into(),
+				)
+			})?;
 		log::info!("CROSS_CHAIN pubkey: {}", keypair.public())
 	}
 
@@ -334,7 +358,13 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ecdsa::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid BEEFY seed: {e}")))?;
-		keystore.insert(BEEFY_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		keystore
+			.insert(BEEFY_KEY_TYPE, seed, &keypair.public().to_raw_vec())
+			.map_err(|_| {
+				sc_cli::Error::Application(
+					format!("failed to insert BEEFY key from {seed_file} into the keystore").into(),
+				)
+			})?;
 		log::info!("BEEFY pubkey: {}", keypair.public())
 	}
 
@@ -420,7 +450,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	// Explicitly flush and release the chain-state database.
 	// This ensures parity-db's Drop impl runs (joining its background I/O
 	// threads and draining the WAL) even if async tasks leaked Arc clones.
-	drop(backend_handle.lock().expect("backend mutex poisoned").take());
+	drop(backend_handle.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take());
 
 	// Explicitly release global ledger storage on shutdown.
 	midnight_node_ledger::drop_all_default_storage();

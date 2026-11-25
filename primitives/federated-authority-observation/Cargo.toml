@@ -31,3 +31,10 @@ std = [
     "serde/std",
     "serde_valid",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

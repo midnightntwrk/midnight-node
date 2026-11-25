@@ -20,3 +20,4 @@ sp-runtime = { workspace = true, features = ["std"] }
 
 [lib]
 doctest = false
+test = false

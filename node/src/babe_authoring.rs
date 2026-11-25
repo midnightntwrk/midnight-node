@@ -779,7 +779,7 @@ mod tests {
 			insert: I,
 			delete: D,
 		) -> sp_blockchain::Result<()> {
-			let mut map = self.0.lock().unwrap();
+			let mut map = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 			for (key, value) in insert {
 				map.insert(key.to_vec(), value.to_vec());
 			}
@@ -790,7 +790,12 @@ mod tests {
 		}
 
 		fn get_aux(&self, key: &[u8]) -> sp_blockchain::Result<Option<Vec<u8>>> {
-			Ok(self.0.lock().unwrap().get(key).cloned())
+			Ok(self
+				.0
+				.lock()
+				.unwrap_or_else(std::sync::PoisonError::into_inner)
+				.get(key)
+				.cloned())
 		}
 	}
 
