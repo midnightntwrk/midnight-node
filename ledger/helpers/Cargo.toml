@@ -56,3 +56,6 @@ serde_json.workspace = true
 [features]
 default = []
 fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
+
+[lints]
+workspace = true

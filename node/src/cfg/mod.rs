@@ -332,7 +332,7 @@ impl Cfg {
 	pub fn safe_read_opts() -> Result<SafeReadOpts, ConfigError> {
 		static OPTS: Mutex<Option<SafeReadOpts>> = Mutex::new(None);
 
-		if let Some(ref opts) = *OPTS.lock().expect("failed to lock mutex") {
+		if let Some(ref opts) = *OPTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) {
 			return Ok(opts.clone());
 		}
 
@@ -343,7 +343,7 @@ impl Cfg {
 			.try_deserialize()?;
 		let opts = SafeReadOpts::from(&meta_cfg);
 
-		*OPTS.lock().expect("failed to lock mutex") = Some(opts.clone());
+		*OPTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(opts.clone());
 
 		Ok(opts)
 	}

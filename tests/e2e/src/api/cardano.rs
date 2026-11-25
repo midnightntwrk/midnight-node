@@ -1081,6 +1081,8 @@ impl CardanoClient {
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policy_id = config::cnight_token_policy_id();
+        let asset_name_hex = config::cnight_token_asset_name_hex();
+        let cnight_unit = config::cnight_token_unit();
         let minting_script = config::cnight_token_cbor_double_encoding();
         let payment_addr = self.address_as_bech32();
 
@@ -1110,7 +1112,7 @@ impl CardanoClient {
 
         let assets = vec![
             Asset::new_from_str("lovelace", "1500000"),
-            Asset::new_from_str(&policy_id, amount.to_string().as_str()),
+            Asset::new_from_str(&cnight_unit, amount.to_string().as_str()),
         ];
 
         let mut tx_builder = self.new_tx_builder();
@@ -1131,7 +1133,7 @@ impl CardanoClient {
             )
             .tx_out(&payment_addr, &assets)
             .mint_plutus_script_v3()
-            .mint(amount.into(), &policy_id, "")
+            .mint(amount.into(), &policy_id, &asset_name_hex)
             .minting_script(&minting_script)
             .mint_redeemer_value(&WRedeemer {
                 data: WData::JSON(constr0(serde_json::json!([])).to_string()),
@@ -1197,6 +1199,8 @@ impl CardanoClient {
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policy_id = config::cnight_token_policy_id();
+        let asset_name_hex = config::cnight_token_asset_name_hex();
+        let cnight_unit = config::cnight_token_unit();
         let minting_script = config::cnight_token_cbor_double_encoding();
         let payment_addr = self.address_as_bech32();
         let total = per_output * n_outputs as u64;
@@ -1219,14 +1223,14 @@ impl CardanoClient {
             );
         let output_assets = vec![
             Asset::new_from_str("lovelace", "1500000"),
-            Asset::new_from_str(&policy_id, &per_output.to_string()),
+            Asset::new_from_str(&cnight_unit, &per_output.to_string()),
         ];
         for _ in 0..n_outputs {
             tx_builder.tx_out(&payment_addr, &output_assets);
         }
         tx_builder
             .mint_plutus_script_v3()
-            .mint(total as i128, &policy_id, "")
+            .mint(total as i128, &policy_id, &asset_name_hex)
             .minting_script(&minting_script)
             .mint_redeemer_value(&WRedeemer {
                 data: WData::JSON(constr0(serde_json::json!([])).to_string()),
@@ -2087,7 +2091,7 @@ impl CardanoClient {
         recipient: BridgeTransferRecipient,
     ) -> Result<SignedBridgeTransaction, OgmiosClientError> {
         const BRIDGE_METADATUM_LABEL: u64 = 6_500_973;
-        let policy_id = config::cnight_token_policy_id();
+        let cnight_unit = config::cnight_token_unit();
         let network = Network::Custom(self.constants.cost_model.clone());
         let payment_addr = self.address_as_bech32();
 
@@ -2099,7 +2103,7 @@ impl CardanoClient {
                     - estimated_fee_and_required_change)
                     .to_string(),
             ),
-            Asset::new_from_str(&policy_id, &amount.to_string()),
+            Asset::new_from_str(&cnight_unit, &amount.to_string()),
         ];
 
         let mut unsigned_tx_hex = TxBuilder::new_core()

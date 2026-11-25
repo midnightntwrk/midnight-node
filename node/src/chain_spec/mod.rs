@@ -278,8 +278,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		// `SessionInterface::set_keys`, not duplicated here.
 		session: Default::default(),
 		sidechain: SidechainConfig {
-			genesis_utxo: std::str::FromStr::from_str(genesis.genesis_utxo())
-				.expect("failed to convert genesis_utxo"),
+			genesis_utxo: std::str::FromStr::from_str(genesis.genesis_utxo()).map_err(|_| {
+				ChainSpecInitError::ParseError("failed to convert genesis_utxo".to_string())
+			})?,
 			slots_per_epoch: sidechain_slots::SlotsPerEpoch(300),
 			..Default::default()
 		},
@@ -308,7 +309,11 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.map(|key| key.into())
 				.collect::<Vec<AccountId>>()
 				.try_into()
-				.expect("Too many members to initialize 'council_membership'"),
+				.map_err(|_| {
+					ChainSpecInitError::ParseError(
+						"too many members to initialize 'council_membership'".to_string(),
+					)
+				})?,
 			..Default::default()
 		},
 		technical_committee: TechnicalCommitteeConfig { ..Default::default() },
@@ -322,19 +327,30 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.map(|key| key.into())
 				.collect::<Vec<AccountId>>()
 				.try_into()
-				.expect("Too many members to initialize 'technical_committee_membership'"),
+				.map_err(|_| {
+					ChainSpecInitError::ParseError(
+						"too many members to initialize 'technical_committee_membership'"
+							.to_string(),
+					)
+				})?,
 			..Default::default()
 		},
 		federated_authority_observation: FederatedAuthorityObservationConfig {
 			council_address: MainchainAddress::from_str(
 				&genesis.federated_authority_config().council.address,
 			)
-			.expect("Failed to decode `council_address`"),
+			.map_err(|_| {
+				ChainSpecInitError::ParseError("failed to decode `council_address`".to_string())
+			})?,
 			council_policy_id: genesis.federated_authority_config().council.policy_id,
 			technical_committee_address: MainchainAddress::from_str(
 				&genesis.federated_authority_config().technical_committee.address,
 			)
-			.expect("Failed to decode `technical_committee_address`"),
+			.map_err(|_| {
+				ChainSpecInitError::ParseError(
+					"failed to decode `technical_committee_address`".to_string(),
+				)
+			})?,
 			technical_committee_policy_id: genesis
 				.federated_authority_config()
 				.technical_committee
@@ -368,17 +384,31 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
 							&ics_config.illiquid_circulation_supply_validator_address,
 						)
-						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+						.map_err(|_| {
+							ChainSpecInitError::ParseError(
+								"failed to decode illiquid_circulation_supply_validator_address"
+									.to_string(),
+							)
+						})?,
 						reserve_validator_address: MainchainAddress::from_str(
 							&reserve_config.reserve_validator_address,
 						)
-						.expect("Failed to decode reserve_validator_address"),
+						.map_err(|_| {
+							ChainSpecInitError::ParseError(
+								"failed to decode reserve_validator_address".to_string(),
+							)
+						})?,
 					})
 				},
-				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {
-					McTxHash::decode_hex(&s)
-						.expect("Failed to decode Bridge initial_data_checkpoint")
-				}),
+				initial_checkpoint: bridge_config
+					.initial_data_checkpoint
+					.map(|s| McTxHash::decode_hex(&s))
+					.transpose()
+					.map_err(|_| {
+						ChainSpecInitError::ParseError(
+							"failed to decode Bridge initial_data_checkpoint".to_string(),
+						)
+					})?,
 				_marker: Default::default(),
 			}
 		},
@@ -392,18 +422,23 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				approved_txs: bridge_config
 					.approved_txs
 					.iter()
-					.map(|s| {
-						McTxHash::decode_hex(s).expect("Failed to decode c2m approved_txs entry")
-					})
-					.collect(),
+					.map(|s| McTxHash::decode_hex(s))
+					.collect::<Result<_, _>>()
+					.map_err(|_| {
+						ChainSpecInitError::ParseError(
+							"failed to decode c2m approved_txs entry".to_string(),
+						)
+					})?,
 				_marker: Default::default(),
 			}
 		},
 		system_parameters: {
 			let system_params = genesis.system_parameters_config();
-			let hash_bytes = system_params
-				.terms_and_conditions_hash_bytes()
-				.expect("Failed to parse terms_and_conditions hash");
+			let hash_bytes = system_params.terms_and_conditions_hash_bytes().map_err(|_| {
+				ChainSpecInitError::ParseError(
+					"failed to parse terms_and_conditions hash".to_string(),
+				)
+			})?;
 			let d_param: sidechain_domain::DParameter = system_params.d_parameter.clone().into();
 			SystemParametersConfig {
 				terms_and_conditions: pallet_system_parameters::TermsAndConditionsGenesisConfig {
@@ -419,5 +454,5 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 	};
 
-	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))
+	serde_json::to_value(config).map_err(|e| ChainSpecInitError::Serialization(e.to_string()))
 }

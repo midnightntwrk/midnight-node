@@ -67,3 +67,9 @@ try-runtime = [
 
 [package.metadata.cargo-shear]
 ignored = ["parity-scale-codec"]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
