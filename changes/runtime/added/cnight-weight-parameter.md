@@ -24,4 +24,5 @@ update's weight until it has a benchmark of its own.
 
 Without the feature, the runtime and its metadata are unchanged.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2526
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2525
