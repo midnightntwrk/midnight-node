@@ -22,10 +22,8 @@ cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 db-sync-sqlx = { workspace = true, optional = true }
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
-scale-info.workspace = true
 log.workspace = true
 prometheus-endpoint = { workspace = true, optional = true }
-rand.workspace = true
 itertools = { workspace = true, optional = true }
 authority-selection-inherents = { workspace = true, features = ["std"], optional = true }
 partner-chains-plutus-data = { workspace = true, optional = true }
@@ -49,7 +47,6 @@ std = [
     "midnight-primitives-cnight-observation/std",
     "async-trait",
     "sp-inherents/std",
-    "scale-info/std",
     "sp-api/std",
     "sp-blockchain",
     "sp-core/std",
@@ -61,8 +58,6 @@ std = [
     "log/std",
     "partner-chains-db-sync-data-sources",
     "prometheus-endpoint",
-    "rand/std",
-    "rand/thread_rng",
     "itertools",
     "authority-selection-inherents",
     "partner-chains-plutus-data",
@@ -71,3 +66,9 @@ std = [
     "serde",
     "tokio",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

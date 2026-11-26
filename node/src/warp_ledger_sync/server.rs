@@ -76,7 +76,7 @@ where
 	/// Build the protocol config to register on `net_config` before `build_network`, plus — when
 	/// `serve` is true — the handler to spawn via [`run`](Self::run).
 	///
-	/// `serve` gates the **server** side only. Validators pass `serve = false` unless they opt in
+	/// `serve` gates the **server** side only. Nodes pass `serve = false` unless they opt in
 	/// via `--serve-warp-ledger-sync`: serializing the multi-million-node arena is this
 	/// protocol's most CPU-expensive operation, and it must never compete with a validator's
 	/// authoring/finality duties (an easy remote DoS vector). A non-serving node advertises no

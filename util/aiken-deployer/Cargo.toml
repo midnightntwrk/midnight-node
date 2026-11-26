@@ -32,3 +32,6 @@ hex.workspace = true
 thiserror.workspace = true
 whisky.workspace = true
 ogmios-client = { path = "../../partner-chains/toolkit/utils/ogmios-client" }
+
+[lints]
+workspace = true

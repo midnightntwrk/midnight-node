@@ -15,41 +15,41 @@ workspace = true
 sqlx = { workspace = true }
 db-sync-sqlx = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-futures = { workspace = true }
+futures = { workspace = true, optional = true }
 chrono = "0.4.31"
 hex = { workspace = true }
-hex-literal = { workspace = true }
-itertools = { workspace = true, features = ["use_std"] }
+itertools = { workspace = true, features = ["use_std"], optional = true }
 sidechain-domain = { workspace = true, features = ["std", "serde"] }
 serde = { workspace = true }
 bigdecimal = { workspace = true }
-async-trait = { workspace = true }
+async-trait = { workspace = true, optional = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 figment = { workspace = true }
 substrate-prometheus-endpoint = { workspace = true }
-derive-new = { workspace = true }
-lru = { workspace = true }
-sp-timestamp = { workspace = true, features = ["std"] }
-time-source = { workspace = true, features = ["mock"] }
+derive-new = { workspace = true, optional = true }
+lru = { workspace = true, optional = true }
+sp-timestamp = { workspace = true, features = ["std"], optional = true }
+time-source = { workspace = true, features = ["mock"], optional = true }
 sidechain-mc-hash = { workspace = true, optional = true }
 pallet-sidechain-rpc = { workspace = true, optional = true }
 authority-selection-inherents = { workspace = true, features = [
     "std",
 ], optional = true }
 cardano-serialization-lib = { workspace = true }
-partner-chains-plutus-data = { workspace = true }
+partner-chains-plutus-data = { workspace = true, optional = true }
 sp-partner-chains-bridge = { workspace = true, optional = true, features = ["std"] }
 
 [dev-dependencies]
 tokio-test = "0.4.3"
 testcontainers = { workspace = true, features = ["watchdog"] }
 pretty_assertions = { workspace = true }
+hex-literal = { workspace = true }
 
 [features]
 default = []
-block-source = ["sidechain-mc-hash"]
-candidate-source = ["authority-selection-inherents"]
+block-source = ["sidechain-mc-hash", "async-trait", "derive-new", "sp-timestamp", "time-source"]
+candidate-source = ["authority-selection-inherents", "async-trait", "itertools", "lru", "partner-chains-plutus-data"]
 mc-hash = ["sidechain-mc-hash", "block-source"]
 sidechain-rpc = ["pallet-sidechain-rpc", "block-source"]
-bridge = ["sp-partner-chains-bridge"]
+bridge = ["sp-partner-chains-bridge", "partner-chains-plutus-data", "async-trait", "futures"]

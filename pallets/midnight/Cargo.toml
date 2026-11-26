@@ -86,3 +86,9 @@ ignored = ["parity-scale-codec"]
 [[test]]
 name = "persist_refcount"
 required-features = ["test-utils"]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

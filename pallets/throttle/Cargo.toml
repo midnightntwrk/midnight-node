@@ -34,5 +34,8 @@ try-runtime = [
     "frame-system/try-runtime",
 ]
 
-[package.metadata.cargo-shear]
-ignored = ["scale-info"]
+[lints]
+workspace = true
+
+[lib]
+doctest = false

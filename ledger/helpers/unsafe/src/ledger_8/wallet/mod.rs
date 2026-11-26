@@ -98,7 +98,7 @@ impl<D: DB + Clone> Wallet<D> {
 	}
 
 	pub fn increment_seed(s: &str) -> Result<String, &'static str> {
-		let num = u128::from_str_radix(s, 2).expect("Invalid wallet seed");
+		let num = u128::from_str_radix(s, 2).map_err(|_| "invalid wallet seed")?;
 		let result = num.checked_add(1).ok_or("wallet seed overflow")?;
 		let width = s.len();
 		Ok(format!("{result:0width$b}"))

@@ -17,3 +17,9 @@ std = [
     "sidechain-domain/std",
     "thiserror",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

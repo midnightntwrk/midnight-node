@@ -52,3 +52,9 @@ runtime-benchmarks = [
 
 [package.metadata.cargo-shear]
 ignored = ["parity-scale-codec", "scale-info"]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

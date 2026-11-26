@@ -23,3 +23,10 @@ std = [
     "sp-consensus-beefy/std",
     "sp-runtime/std",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

@@ -46,3 +46,9 @@ name = "e2e_tests"
 path = "tests/lib.rs"
 test = false
 harness = true
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
