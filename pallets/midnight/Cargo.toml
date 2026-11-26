@@ -23,6 +23,8 @@ frame-system.workspace = true
 log.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
+prometheus-endpoint = { workspace = true, optional = true }
+sp-version = { workspace = true, optional = true }
 # Only for `test-utils`: the exported `mock` registers its block-execution marker.
 midnight-primitives-ledger = { workspace = true, optional = true }
 sp-api.workspace = true
@@ -77,6 +79,8 @@ runtime-benchmarks = [
 try-runtime = ["frame-support/try-runtime"]
 test-utils = [
     "midnight-primitives-ledger",
+    "prometheus-endpoint",
+    "sp-version",
     "sp-core",
     "sp-io",
     "midnight-node-ledger/test-utils",
