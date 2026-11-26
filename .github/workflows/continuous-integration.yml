@@ -58,7 +58,7 @@ jobs:
 
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -112,7 +112,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           # Keep `use-cache: false` — that flag controls whether EarthBuild
           # caches state into GitHub Actions cache (which sets up TLS-secured
@@ -375,7 +375,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -557,7 +557,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -596,7 +596,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -668,7 +668,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -726,7 +726,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -789,7 +789,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -1032,7 +1032,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.20-rc-4
+          version: v0.8.20
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR

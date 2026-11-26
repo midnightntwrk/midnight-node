@@ -24,6 +24,4 @@ global:
     # The registry earth publishes for image export. "earth" and "earthly"
     # installs both default to 127.0.0.1:8371, so earth-buildkitd cannot start
     # beside a v0.8.16 earthly-buildkitd ("port is already allocated").
-    # RC TEST ONLY: 8861 (8371+490 offset for EARTH_INSTALLATION_NAME=earth-rc2)
-    # keeps the rc's registry clear of the shared v0.8.18 earth-buildkitd's 8381.
-    local_registry_host: "tcp://127.0.0.1:8861"
+    local_registry_host: "tcp://127.0.0.1:8381"
