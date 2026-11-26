@@ -82,6 +82,9 @@ jobs:
           ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          # The commit below goes through the API, not git push, and the next
+          # steps run the PR's code: keep the token out of .git/config.
+          persist-credentials: false
 
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
@@ -107,6 +110,9 @@ jobs:
       - name: Commit and push changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: commit
+        env:
+          # A branch name is data: passed in, never spliced into the script.
+          PR_REF: ${{ steps.pr.outputs.ref }}
         with:
           script: |
             const fs = require('fs');
@@ -158,8 +164,8 @@ jobs:
             `, {
               input: {
                 branch: {
-                  repositoryNameWithOwner: '${{ github.repository }}',
-                  branchName: '${{ steps.pr.outputs.ref }}'
+                  repositoryNameWithOwner: `${context.repo.owner}/${context.repo.repo}`,
+                  branchName: process.env.PR_REF
                 },
                 message: {
                   headline: 'chore: rebuild metadata'
