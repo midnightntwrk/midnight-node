@@ -1,6 +1,25 @@
 # osv-scanner config for the root Cargo.lock, read by the scan workflow
 # (midnightntwrk/upload-sarif-github-action).
-#
+
+# Advisory excuses: a copy of deny.toml's [advisories] ignore list (cargo-deny,
+# run by the Earthfile's +audit-rust). Keep the two in sync: one waiver per
+# advisory, in both files, so cargo-deny and osv-scanner agree.
+[[IgnoredVulns]]
+id = "RUSTSEC-2023-0091"
+reason = "vuln in old wasmtime version used by polkadot-sdk"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0438"
+reason = "vuln in old wasmtime version used by polkadot-sdk"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0442"
+reason = "vuln in old wasmtime version used by polkadot-sdk"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0012"
+reason = "backoff is unmaintained but no replacement is available"
+
 # Licence excuses: GPL-3.0-only polkadot-sdk crates that reach the lockfile
 # only through frame-benchmarking-cli (-> cumulus), an optional dependency of
 # node behind the `runtime-benchmarks` feature. The released node and runtime
