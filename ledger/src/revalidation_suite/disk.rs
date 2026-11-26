@@ -11,7 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! P9a: a warm node's block flush writes what a cold node's does.
+//! Two worlds, each with its own database, that run the same calls with a warm and a cold cache
+//! and flush after each block, for P9a.
 
 use super::ledger::{
 	Bridge, LedgerState, TransactionSignature, api,
@@ -31,11 +32,11 @@ use super::{
 	Call, Exts, Step, Storage as CallStorage, TX_VALIDATION_CACHE_CAPACITY, TxValidationCache,
 	TxValidationCacheOutcome, cache_key, model, peek,
 	proofs::UnverifiedProofs,
-	run, shim, smoke_trees, step, storage, target,
+	properties, run, shim, smoke_trees, step, storage, target,
 	tree::{EdgeRecord, RUNTIME_VERSION, Tree, TreeBridge},
 };
 use crate::ephemeral::EphemeralDb;
-use proptest::{prelude::*, sample::Index, strategy::ValueTree};
+use proptest::prelude::*;
 use sp_externalities::Externalities;
 use std::{
 	collections::{BTreeMap, BTreeSet, HashMap},
@@ -46,13 +47,16 @@ type Hash = ArenaHash<<DefaultDB as DB>::Hasher>;
 type Object = OnDiskObject<<DefaultDB as DB>::Hasher>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Write {
+pub enum Write {
 	Node(Hash),
 	RootCount(Hash, u32),
 	Delete(Hash),
 }
 
-static WRITES: [Mutex<BTreeSet<Write>>; 2] = [const { Mutex::new(BTreeSet::new()) }; 2];
+/// What reached a world's database.
+pub type Writes = BTreeSet<Write>;
+
+static WRITES: [Mutex<Writes>; 2] = [const { Mutex::new(BTreeSet::new()) }; 2];
 
 /// An in-memory database that records every write reaching it. Each `WARM` value is its own
 /// `DB` type, so it gets its own process-wide storage.
@@ -74,7 +78,7 @@ impl<const WARM: bool> RecordingDb<WARM> {
 	}
 
 	/// What reached the database since the last call.
-	fn take() -> BTreeSet<Write> {
+	fn take() -> Writes {
 		std::mem::take(&mut WRITES[WARM as usize].lock().unwrap())
 	}
 }
@@ -195,13 +199,13 @@ where
 }
 
 /// Flushes `D`'s storage the way a block does, and returns what reached its database.
-fn flushed<const WARM: bool>(exts: &mut Exts) -> BTreeSet<Write> {
+fn flushed<const WARM: bool>(exts: &mut Exts) -> Writes {
 	B::<RecordingDb<WARM>>::flush_storage(&mut exts.onchain.ext());
 	RecordingDb::<WARM>::take()
 }
 
 /// The smoke trees' states as a database holds them once replayed and flushed.
-struct Disk {
+pub struct Disk {
 	nodes: Vec<(Hash, Object)>,
 	roots: HashMap<Hash, u32>,
 }
@@ -242,7 +246,7 @@ impl Disk {
 ///
 /// Reset per case, not carried over, so a case's verdict depends on its own history only and a
 /// failure shrinks cleanly.
-fn worlds() -> MutexGuard<'static, Disk> {
+pub fn worlds() -> MutexGuard<'static, Disk> {
 	static DISK: OnceLock<Mutex<Disk>> = OnceLock::new();
 	let disk = DISK.get_or_init(|| Mutex::new(Disk::replayed())).lock();
 	let disk = disk.unwrap_or_else(PoisonError::into_inner);
@@ -253,7 +257,7 @@ fn worlds() -> MutexGuard<'static, Disk> {
 
 /// What a warm call met that makes P9a non-trivial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Seen {
+pub enum Seen {
 	/// An on-chain call that hit a receipt for another state, so the warm world loaded it.
 	OnChainHitFromOtherState,
 	OnChainRejectedOnHit,
@@ -264,13 +268,13 @@ enum Seen {
 type BlockStep = (Step, bool);
 
 /// Runs each step in both worlds: the warm one keeps its cache, the cold one starts each call
-/// with an empty one. At each block end, and after the last step, flushes both and compares
-/// what reached their databases.
+/// with an empty one. Checks [`properties::same_result`] per call, and at each block end and
+/// after the last step, flushes both and checks [`properties::flushes_match`].
 ///
 /// Flushing after every call would hide a receipt that holds an allocation: the flush after the
 /// call that made it writes it in both worlds. Across several calls, the cold node holds only
 /// the last call's receipt.
-fn check_disk_parity(
+pub fn check_disk_parity(
 	tree: &Tree,
 	steps: &[BlockStep],
 	mut seen: Option<&mut BTreeMap<Seen, usize>>,
@@ -291,7 +295,7 @@ fn check_disk_parity(
 		let warm_result = run::<WarmDb>(tree, step, &mut exts, &warm);
 		cold = TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY);
 		let cold_result = run::<ColdDb>(tree, step, &mut exts, &cold);
-		prop_assert_eq!(&warm_result, &cold_result, "P1: {:?}", step);
+		properties::same_result(step, &warm_result, &cold_result)?;
 
 		if let (Some(seen), Some((hit, other_state))) = (seen.as_deref_mut(), hit) {
 			let on_chain = storage(&step.call) == CallStorage::OnChain;
@@ -310,53 +314,12 @@ fn check_disk_parity(
 		if *block_end || i + 1 == steps.len() {
 			let (warm_writes, cold_writes) =
 				(flushed::<true>(&mut exts), flushed::<false>(&mut exts));
-			prop_assert!(
-				warm_writes == cold_writes,
-				"P9a after {:?}\nwarm only: {:?}\ncold only: {:?}",
-				step,
-				warm_writes.difference(&cold_writes).collect::<Vec<_>>(),
-				cold_writes.difference(&warm_writes).collect::<Vec<_>>(),
-			);
+			properties::flushes_match(step, &warm_writes, &cold_writes)?;
 		}
 	}
 	Ok(())
 }
 
-fn steps() -> impl Strategy<Value = Vec<BlockStep>> {
+pub fn steps() -> impl Strategy<Value = Vec<BlockStep>> {
 	prop::collection::vec((step(), prop::bool::weighted(0.25)), 1..40)
 }
-
-/// P9a is only non-trivial if the warm world loads states the cold one doesn't, and is rejected
-/// or applies on a hit.
-fn disk_parity_reaches_hits() {
-	let mut runner = proptest::test_runner::TestRunner::deterministic();
-	let strategy = (any::<Index>(), steps());
-	let trees = smoke_trees();
-	let mut seen = BTreeMap::new();
-	for _ in 0..16 {
-		let _worlds = worlds();
-		let (tree, steps) = strategy.new_tree(&mut runner).unwrap().current();
-		check_disk_parity(&trees[tree.index(trees.len())], &steps, Some(&mut seen)).unwrap();
-	}
-	println!("{seen:#?}");
-	let missing: Vec<_> =
-		[Seen::OnChainHitFromOtherState, Seen::OnChainRejectedOnHit, Seen::AppliedOnHit]
-			.into_iter()
-			.filter(|s| !seen.contains_key(s))
-			.collect();
-	assert!(missing.is_empty(), "never reached {missing:?}");
-}
-
-proptest! {
-	#![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
-
-	/// P9a over the fixed smoke trees: a warm node's block flush writes exactly the nodes and
-	/// root counts a cold node's does.
-	fn warm_node_flushes_what_a_cold_one_does(tree in any::<Index>(), steps in steps()) {
-		let _worlds = worlds();
-		let trees = smoke_trees();
-		check_disk_parity(&trees[tree.index(trees.len())], &steps, None)?;
-	}
-}
-
-suite_tests!(disk_parity_reaches_hits, warm_node_flushes_what_a_cold_one_does);

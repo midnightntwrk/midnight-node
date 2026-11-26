@@ -13,7 +13,8 @@
 
 //! Ledger 9's side of the [`TxValidationCache`](ledger::TxValidationCache) property tests: the
 //! proofs and the parts of the ledger's interface that differ between versions. The tests
-//! themselves are shared, in `src/revalidation_suite/`.
+//! themselves are shared: the properties and every test of them are in
+//! `src/revalidation_suite/properties.rs`.
 
 mod proofs;
 

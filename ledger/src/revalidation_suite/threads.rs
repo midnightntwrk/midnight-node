@@ -11,15 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! P10 across threads: pool validation and block import share one process-wide cache.
+//! Several histories on their own threads against one cache, as pool validation and block import
+//! share one, for P10 and P1.
 
 use super::ledger::ledger_storage_local::DefaultDB;
 use super::{
 	Action, Exts, ProofReceipt, TX_VALIDATION_CACHE_CAPACITY, TxValidationCache, action, cache_key,
-	capacity, check_receipt_is_true, missing_state, model, peek, run, smoke_trees, target,
-	tree::Tree,
+	capacity, missing_state, model, peek, properties, run, target, tree::Tree,
 };
-use proptest::{prelude::*, sample::Index, strategy::ValueTree};
+use proptest::{prelude::*, sample::Index};
 use std::{
 	collections::{HashMap, HashSet},
 	sync::{
@@ -34,21 +34,21 @@ const STEPS: usize = 16;
 
 /// How often the threads met on a key.
 #[derive(Debug, Default, Clone, Copy)]
-struct Collisions {
-	calls: usize,
+pub struct Collisions {
+	pub calls: usize,
 	/// Calls that found a receipt only another thread could have written.
-	foreign: usize,
+	pub foreign: usize,
 	/// Calls that started while another thread was inside a call for the same key.
-	overlap: usize,
+	pub overlap: usize,
 	/// Full passes the checker thread made over the cache.
-	passes: usize,
+	pub passes: usize,
 }
 
 /// A case: a few of the tree's txs, every action on them, and at most two runtime versions.
 #[derive(Debug, Clone)]
-struct Case {
-	tree: Index,
-	capacity: u64,
+pub struct Case {
+	pub tree: Index,
+	pub capacity: u64,
 	txs: Vec<Index>,
 	/// `None` for both versions.
 	version: Option<u32>,
@@ -56,7 +56,7 @@ struct Case {
 }
 
 /// Few keys, so threads race on the same receipts.
-fn case() -> impl Strategy<Value = Case> {
+pub fn case() -> impl Strategy<Value = Case> {
 	(
 		any::<Index>(),
 		capacity(),
@@ -75,7 +75,7 @@ fn case() -> impl Strategy<Value = Case> {
 
 /// The tree with only the case's txs, and its histories held to the case's version. Its nodes'
 /// edges still index the full tree's txs, so it can't be replayed.
-fn restrict(tree: &Tree, case: &Case) -> (Tree, Vec<Vec<Action>>) {
+pub fn restrict(tree: &Tree, case: &Case) -> (Tree, Vec<Vec<Action>>) {
 	let mut picked: Vec<_> = case.txs.iter().map(|i| i.index(tree.txs.len())).collect();
 	picked.sort();
 	picked.dedup();
@@ -99,13 +99,14 @@ fn restrict(tree: &Tree, case: &Case) -> (Tree, Vec<Vec<Action>>) {
 }
 
 /// Runs each history on its own thread against one shared cache, and checks:
-/// - P1 per call: the result is the one the same call gets from an empty cache;
-/// - P10: the receipt each action touched is true, and so is every receipt in the cache, on a
-///   checker thread that keeps passing over it until the last history ends, then once more.
+/// - every call: [`properties::same_result`];
+/// - every action: [`properties::receipt_is_true`] for the receipt it touched, and the same for
+///   every receipt in the cache, on a checker thread that keeps passing over it until the last
+///   history ends, then once more.
 ///
 /// Receipts `Orphan` plants are false by construction. Their states are `missing_state` of a
 /// tree node, so they are told apart without the threads sharing anything.
-fn check_threads(
+pub fn check_threads(
 	tree: &Tree,
 	capacity: u64,
 	histories: &[Vec<Action>],
@@ -172,7 +173,7 @@ fn check_threads(
 				},
 				Action::Again { .. } => unreachable!("only `history` repeats calls"),
 			};
-			check_receipt_is_true(tree, tx, peek(&warm, &key), &synthetic)?;
+			properties::receipt_is_true(tree, tx, peek(&warm, &key), &synthetic)?;
 		}
 		Ok(seen)
 	};
@@ -184,7 +185,7 @@ fn check_threads(
 			let last = done.load(SeqCst);
 			for (key, receipt) in warm.0.iter() {
 				let receipt = Some((receipt.state_key, receipt.tblock));
-				check_receipt_is_true(tree, tx_of[&key.tx_hash], receipt, &synthetic)?;
+				properties::receipt_is_true(tree, tx_of[&key.tx_hash], receipt, &synthetic)?;
 			}
 			passes += 1;
 			if last {
@@ -209,39 +210,3 @@ fn check_threads(
 		Ok(total)
 	})
 }
-
-/// The threads do race: calls find receipts other threads wrote, and run alongside calls for the
-/// same key. Interleavings vary between runs; the inputs don't.
-fn threads_collide() {
-	let mut runner = proptest::test_runner::TestRunner::deterministic();
-	let trees = smoke_trees();
-	let mut total = Collisions::default();
-	for _ in 0..8 {
-		let case = case().new_tree(&mut runner).unwrap().current();
-		let (tree, histories) = restrict(&trees[case.tree.index(trees.len())], &case);
-		let seen = check_threads(&tree, case.capacity, &histories).unwrap();
-		println!("{seen:?}");
-		total.calls += seen.calls;
-		total.foreign += seen.foreign;
-		total.overlap += seen.overlap;
-		total.passes += seen.passes;
-	}
-	println!("total {total:?}");
-	assert!(total.foreign > 0, "no call found another thread's receipt");
-	assert!(total.overlap > 0, "no two calls for one key ran at once");
-}
-
-proptest! {
-	#![proptest_config(ProptestConfig { cases: 16, ..ProptestConfig::default() })]
-
-	/// P1 and P10 with threads sharing one cache, over the smoke trees.
-	///
-	/// Interleavings don't replay from the seed: rerun a failing case several times.
-	fn receipts_stay_true_across_threads(case in case()) {
-		let trees = smoke_trees();
-		let (tree, histories) = restrict(&trees[case.tree.index(trees.len())], &case);
-		check_threads(&tree, case.capacity, &histories)?;
-	}
-}
-
-suite_tests!(threads_collide, receipts_stay_true_across_threads);

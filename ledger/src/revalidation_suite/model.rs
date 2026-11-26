@@ -11,14 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! P8a's two tables as plain functions of the receipt and the call, with their inputs computed
-//! from the tree and the ledger, never from the cache.
+//! The models the properties compare against: P8a's two tables as plain functions of the receipt
+//! and the call, and the proofs a miss verifies. Their inputs are computed from the tree and the
+//! ledger, never from the cache.
 
+use super::helpers::{PureGeneratorPedersen, Transaction, deserialize};
 use super::ledger::{
-	BlockContext, TBLOCK_CORRECTION_OFFSET_SECS, Timestamp, TxValidationCacheOutcome, api,
-	ensure_within_tx_byte_limit, ledger_storage_local::DefaultDB, types::LedgerApiError,
+	BlockContext, TBLOCK_CORRECTION_OFFSET_SECS, Timestamp, TransactionSignature,
+	TxValidationCacheOutcome, api, ensure_within_tx_byte_limit, ledger_storage_local::DefaultDB,
+	mn_ledger_local::structure::ContractAction, types::LedgerApiError,
 };
-use super::{Call, Step, shim, target, tree::Tree, tree::TreeBridge};
+use super::{
+	Call, Step,
+	proofs::{Counts, UnverifiedProofs},
+	shim, target,
+	tree::{Tree, TreeBridge},
+};
 
 /// A receipt as `peek` reads it: the state key and tblock.
 pub type Receipt = (Vec<u8>, Timestamp);
@@ -182,4 +190,22 @@ pub fn receipt_after(
 		Some(_) => (FailedNotLoadable, None),
 		None => (FailedNoReceipt, None),
 	}
+}
+
+/// Every proof in tree tx `tx`, as [`UnverifiedProofs`] counts them: what a miss verifies.
+pub fn proofs_in(tree: &Tree, tx: usize) -> Counts {
+	let tx: Transaction<TransactionSignature, UnverifiedProofs, PureGeneratorPedersen, DefaultDB> =
+		deserialize(&tree.txs[tx].bytes[..]).unwrap();
+	let Transaction::Standard(stx) = tx else { panic!("tree txs are standard") };
+	let mut counts = Counts::default();
+	for (_, intent) in stx.intents.iter().map(|e| (*e).clone()) {
+		counts.contract += intent
+			.actions
+			.iter()
+			.filter(|a| matches!(&**a, ContractAction::Call(_)))
+			.count();
+		counts.dust += intent.dust_actions.as_ref().map_or(0, |dust| dust.spends.len());
+	}
+	counts.zswap = stx.guaranteed_coins.iter().count() + stx.fallible_coins.iter().count();
+	counts
 }

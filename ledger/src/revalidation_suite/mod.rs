@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Property tests for [`TxValidationCache`]: replay a fixed tree's transactions in random orders
-//! and places, and check the cache never changes a verdict.
+//! Property tests for [`TxValidationCache`]. The properties, and every test of them, are in
+//! [`properties`]. The rest is harness: a tree of ledger states, and calls that send its
+//! transactions to random places in it.
 //!
 //! Compiled once per ledger version, as a child of that version's `revalidation_tests`, which
 //! holds everything that differs between them.
 
 mod disk;
+mod history;
 mod model;
-mod outcomes;
-mod proof_counts;
+mod properties;
 mod threads;
 mod tree;
 
@@ -31,18 +32,17 @@ use ledger::{
 	BlockContext, Bridge, ProofReceipt, TX_VALIDATION_CACHE_CAPACITY, Timestamp,
 	TransactionSignature, TxValidationCache, TxValidationCacheOutcome, TxValidationKey, api,
 	ledger_storage_local::{DefaultDB, arena::TypedArenaKey, db::DB},
-	mn_ledger_local::structure::ProofMarker,
-	types::{InvalidError, LedgerApiError, TransactionError, ZswapInvalidErrorCode},
+	types::LedgerApiError,
 };
 use midnight_primitives_ledger::{LedgerMetrics, LedgerMetricsExt, LedgerOnchainExt};
 use parity_scale_codec::Encode;
 use proptest::{prelude::*, sample::Index, strategy::ValueTree};
 use sp_externalities::Externalities;
 use std::{
-	collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+	collections::BTreeSet,
 	sync::{Arc, Mutex, OnceLock},
 };
-use tree::{Branch, Edge, Maintenance, RUNTIME_VERSION, Tree, TreeBridge, TxKind, build_tree};
+use tree::{Branch, Edge, Maintenance, Tree, build_tree};
 
 /// Generated trees in the smoke set, besides the hand-written one.
 const SMOKE_GENERATED_TREES: usize = 3;
@@ -282,13 +282,6 @@ enum Action {
 		other_version: bool,
 		lose: Option<Lost>,
 	},
-}
-
-/// An action with its targets resolved against the tree and the calls made so far.
-enum Op {
-	Call(Step),
-	/// The tx and runtime version of the receipt lost.
-	Lose(Lost, usize, u32),
 }
 
 fn call() -> impl Strategy<Value = Call> {
@@ -592,107 +585,10 @@ where
 	}
 }
 
-/// The dummy proofs are the only thing letting tree transactions through, and their bytes
-/// deserialize under both proof kinds.
-fn dummy_proofs_pass_only_unverified() {
-	let tree = &smoke_trees()[0];
-	let tx = &tree.txs[0];
-	let node = &tree.nodes[tx.parent];
-	let mut ext = sp_io::TestExternalities::default();
-	let mut ext = ext.ext();
-	let validate = |ext: &mut dyn Externalities, real: bool| {
-		let cache = TxValidationCache::new(1);
-		let bc = node.block_context.clone();
-		if real {
-			shim::validate_transaction::<DefaultDB, ProofMarker>(
-				ext,
-				&node.state_key,
-				&tx.bytes,
-				bc,
-				RUNTIME_VERSION,
-				u64::MAX,
-				false,
-				true,
-				&cache,
-			)
-		} else {
-			shim::validate_transaction::<DefaultDB, proofs::UnverifiedProofs>(
-				ext,
-				&node.state_key,
-				&tx.bytes,
-				bc,
-				RUNTIME_VERSION,
-				u64::MAX,
-				false,
-				true,
-				&cache,
-			)
-		}
-	};
-
-	validate(&mut ext, false).expect("UnverifiedProofs accepts the dummy proofs");
-	let real = validate(&mut ext, true).unwrap_err();
-	assert!(
-		matches!(real, LedgerApiError::Transaction(TransactionError::Malformed(_))),
-		"ProofMarker must reject the dummy proofs as malformed, got {real:?}"
-	);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Relation {
-	Absent,
-	Own,
-	Ancestor,
-	Descendant,
-	Sibling,
-	/// Orphaned: its state is in no storage.
-	Gone,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Stage {
-	Accepted,
-	WellFormed,
-	DryRun,
-	Apply,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Storage {
 	OnChain,
 	OffChain,
-}
-
-/// What a warm call met, judged by the receipt it found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Class {
-	/// Where the receipt's state sits relative to the call's.
-	Receipt(Relation),
-	/// Whether `call.tblock` is earlier than the receipt's.
-	EarlierTblock(bool),
-	Result(Stage),
-	/// The result of a call sending a shielded tx.
-	ShieldedResult(Stage),
-	/// A shielded tx rejected because its coin was spent on the way to the call's state.
-	SpentNullifier,
-	/// A shielded tx rejected at a state that never recorded its Merkle root.
-	UnknownMerkleRoot,
-	/// The result of a call sending a `store` call.
-	CallResult(Stage),
-	/// The wrong-key call sent, and rejected.
-	WrongKeyRejected,
-	/// The call's storage, then that of the call that wrote the receipt.
-	Storage(Storage, Storage),
-	Outcome(model::OutcomeRow),
-	ReceiptAfter(model::ReceiptRow),
-	/// P6: the call's runtime version has no receipt, the other one has. Holds the call's.
-	OtherVersionOnly(u32),
-	/// P8d: a call that passed `well_formed` straight after its receipt was lost.
-	PassedAfter(Lost),
-	/// A P8e case reached.
-	ProofCount(proof_counts::Case),
-	/// A call retried at the block's tblock, and whether the retry passed `well_formed`.
-	Retried(bool),
 }
 
 /// How a receipt was lost.
@@ -701,8 +597,6 @@ enum Lost {
 	Evicted,
 	Orphaned,
 }
-
-type Classes = BTreeMap<Class, usize>;
 
 fn cache_key(tree: &Tree, tx: usize, runtime_version: u32) -> TxValidationKey {
 	TxValidationKey { runtime_version, tx_hash: tree.txs[tx].hash }
@@ -723,32 +617,10 @@ fn is_ancestor(tree: &Tree, ancestor: usize, node: usize) -> bool {
 	std::iter::successors(tree.nodes[node].parent, |&n| tree.nodes[n].parent).any(|n| n == ancestor)
 }
 
-fn relation(tree: &Tree, node: usize, receipt_state: Option<&[u8]>) -> Relation {
-	let Some(state) = receipt_state else { return Relation::Absent };
-	if tree.nodes[node].state_key == state {
-		return Relation::Own;
-	}
-	match tree.nodes.iter().position(|n| n.state_key == state) {
-		None => Relation::Gone,
-		Some(r) if is_ancestor(tree, r, node) => Relation::Ancestor,
-		Some(r) if is_ancestor(tree, node, r) => Relation::Descendant,
-		Some(_) => Relation::Sibling,
-	}
-}
-
 fn storage(call: &Call) -> Storage {
 	match call {
 		Call::Validate { ephemeral: true, .. } => Storage::OffChain,
 		_ => Storage::OnChain,
-	}
-}
-
-fn stage(call: &Call, result: &Result<Vec<u8>, LedgerApiError>) -> Stage {
-	match (result, call) {
-		(Ok(_), _) => Stage::Accepted,
-		(Err(LedgerApiError::Transaction(TransactionError::Malformed(_))), _) => Stage::WellFormed,
-		(Err(_), Call::Validate { .. }) => Stage::DryRun,
-		(Err(_), Call::Apply { .. }) => Stage::Apply,
 	}
 }
 
@@ -766,361 +638,3 @@ fn missing_state(state_key: &[u8]) -> Vec<u8> {
 	bytes[at] ^= 1;
 	bytes
 }
-
-/// P10 for one receipt: the full `well_formed` it records passes.
-fn check_receipt_is_true(
-	tree: &Tree,
-	tx: usize,
-	receipt: Option<(Vec<u8>, Timestamp)>,
-	orphans: &HashSet<Vec<u8>>,
-) -> Result<(), TestCaseError> {
-	let Some((state_key, tblock)) = receipt.filter(|(state, _)| !orphans.contains(state)) else {
-		return Ok(());
-	};
-	prop_assert_ne!(tree.txs[tx].kind, TxKind::WrongKey, "a receipt for the wrong-key call");
-	let ledger = TreeBridge::load_ledger(&api::new(), &state_key).expect("tree states stay stored");
-	let verdict = model::well_formed(tree, tx, &ledger.state, tblock);
-	prop_assert!(
-		verdict.is_ok(),
-		"false receipt for tx {} at node {:?}, {:?}: {:?}",
-		tx,
-		tree.nodes.iter().position(|n| n.state_key == state_key),
-		tblock,
-		verdict.err()
-	);
-	Ok(())
-}
-
-/// Runs a history against one warm cache, and after each action checks:
-/// - P1: a call returns what it would against an empty cache, exact error included. With
-///   `Evict` and `Orphan` in the history, this covers P4.
-/// - P10: the receipt the action touched is true.
-/// - P8a, at production capacity only: before a call that reaches the cache, `lookup_receipt`
-///   gives the outcome table's answer, and a successful call moves that outcome's metric; after
-///   the call, its receipt is the receipts table's. At a full cache moka may refuse a new
-///   receipt, so "success writes a receipt" holds only below capacity. P6's version half, P8c
-///   and P8d are rows of these tables.
-fn check_history(
-	tree: &Tree,
-	capacity: u64,
-	actions: &[Action],
-	classes: &mut Classes,
-) -> Result<(), TestCaseError> {
-	let tables = capacity == TX_VALIDATION_CACHE_CAPACITY;
-	let mut exts = Exts::new();
-	let warm = TxValidationCache::new(capacity);
-	let mut writers = HashMap::new();
-	let mut orphans = HashSet::new();
-	let mut lost = HashMap::new();
-	let mut receipted: BTreeMap<TxKind, Vec<Step>> = BTreeMap::new();
-	for action in actions {
-		let ops = match action {
-			Action::Call(step) => vec![Op::Call(step.clone())],
-			Action::Evict { tx, runtime_version } => {
-				vec![Op::Lose(Lost::Evicted, tx.index(tree.txs.len()), *runtime_version)]
-			},
-			Action::Orphan { tx, runtime_version } => {
-				vec![Op::Lose(Lost::Orphaned, tx.index(tree.txs.len()), *runtime_version)]
-			},
-			Action::Again { .. } if receipted.is_empty() => vec![],
-			Action::Again { kind, earlier, node, call, other_version, lose } => {
-				let steps = receipted.values().nth(kind.index(receipted.len())).unwrap();
-				let mut step = steps[earlier.index(steps.len())].clone();
-				step.call = call.clone();
-				if *other_version {
-					step.runtime_version = 3 - step.runtime_version;
-				}
-				step.node = node.clone().unwrap_or(step.node);
-				let tx = target(tree, &step).0;
-				let lose = lose.map(|lost| Op::Lose(lost, tx, step.runtime_version));
-				lose.into_iter().chain([Op::Call(step)]).collect()
-			},
-		};
-		for op in ops {
-			let (tx, key) = match op {
-				Op::Call(step) => {
-					let step = &step;
-					let (tx, node, block_context) = target(tree, step);
-					let key = cache_key(tree, tx, step.runtime_version);
-					let before = peek(&warm, &key);
-					let rel = relation(tree, node, before.as_ref().map(|(s, _)| &s[..]));
-					let mut count = |class| *classes.entry(class).or_default() += 1;
-
-					let model = tables.then(|| model::ModelCall::new(tree, step));
-					let model = model.as_ref().map(|call| (call, rel != Relation::Gone));
-					let mut attempts = None;
-					if let Some((call, loadable)) = model.filter(|(call, _)| call.reaches_cache) {
-						let (row, outcome) = model::outcome(before.as_ref(), loadable, call);
-						let got = predict(
-							&mut exts,
-							storage(&step.call),
-							&call.state_key,
-							call.tblock,
-							&key,
-							before.as_ref(),
-						);
-						prop_assert_eq!(&got, &outcome, "P8a outcome, row {:?}: {:?}", row, step);
-						count(Class::Outcome(row));
-						let other = cache_key(tree, tx, 3 - step.runtime_version);
-						if before.is_none() && peek(&warm, &other).is_some() {
-							count(Class::OtherVersionOnly(step.runtime_version));
-						}
-						attempts = Some(model::attempts(before.as_ref(), loadable, call));
-					}
-
-					let ((warm_result, moved), warm_counts) = proofs::counting(|| {
-						exts.outcome_moved(|exts| run::<DefaultDB>(tree, step, exts, &warm))
-					});
-					let cold = TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY);
-					let (cold_result, cold_counts) =
-						proofs::counting(|| run::<DefaultDB>(tree, step, &mut exts, &cold));
-					prop_assert_eq!(&warm_result, &cold_result, "{:?}", step);
-
-					let after = peek(&warm, &key);
-					if let Some((call, loadable)) = model {
-						// The entry points record the outcome only on success.
-						let expected_moved = match &attempts {
-							Some(attempts) if warm_result.is_ok() => {
-								one_hot(attempts.last().unwrap())
-							},
-							_ => [0; 3],
-						};
-						prop_assert_eq!(moved, expected_moved, "P8a outcome metric: {:?}", step);
-						let (row, expected) = model::receipt_after(before.as_ref(), loadable, call);
-						prop_assert_eq!(
-							&after,
-							&expected,
-							"P8a receipt, row {:?}: {:?}",
-							row,
-							step
-						);
-						count(Class::ReceiptAfter(row));
-						if call.reaches_cache && call.attempts.len() > 1 {
-							count(Class::Retried(call.passes_well_formed));
-						}
-						if call.reaches_cache
-							&& let Some(lost) = lost.remove(&key)
-							&& row == model::ReceiptRow::Passed
-						{
-							count(Class::PassedAfter(lost));
-						}
-						proof_counts::check(
-							tree,
-							tx,
-							call,
-							attempts.as_deref(),
-							warm_counts,
-							cold_counts,
-							&mut count,
-						)?;
-					}
-
-					count(Class::Receipt(rel));
-					let stage = stage(&step.call, &warm_result);
-					count(Class::Result(stage));
-					match tree.txs[tx].kind {
-						TxKind::Shielded => count(Class::ShieldedResult(stage)),
-						TxKind::Store => count(Class::CallResult(stage)),
-						TxKind::WrongKey => {
-							prop_assert!(
-								warm_result.is_err(),
-								"the wrong-key call passed: {:?}",
-								step
-							);
-							count(Class::WrongKeyRejected);
-						},
-						_ => {},
-					}
-					if let Err(LedgerApiError::Transaction(TransactionError::Invalid(
-						InvalidError::Zswap(code),
-					))) = &warm_result
-					{
-						match code {
-							ZswapInvalidErrorCode::NullifierAlreadyPresent => {
-								count(Class::SpentNullifier)
-							},
-							ZswapInvalidErrorCode::UnknownMerkleRoot => {
-								count(Class::UnknownMerkleRoot)
-							},
-							_ => {},
-						}
-					}
-					if let Some((_, tblock)) = &before {
-						let block_start = tree.nodes[node].block_start;
-						let effective =
-							model::effective_tblock(&step.call, block_start, &block_context);
-						count(Class::EarlierTblock(effective < *tblock));
-						if let Some(&writer) = writers.get(&key) {
-							count(Class::Storage(storage(&step.call), writer));
-						}
-					}
-					if after.is_some() && after != before {
-						writers.insert(key.clone(), storage(&step.call));
-						receipted.entry(tree.txs[tx].kind).or_default().push(step.clone());
-					}
-					(tx, key)
-				},
-				Op::Lose(Lost::Evicted, tx, runtime_version) => {
-					let key = cache_key(tree, tx, runtime_version);
-					if peek(&warm, &key).is_some() {
-						lost.insert(key.clone(), Lost::Evicted);
-					}
-					warm.0.invalidate(&key);
-					(tx, key)
-				},
-				Op::Lose(Lost::Orphaned, tx, runtime_version) => {
-					let key = cache_key(tree, tx, runtime_version);
-					if let Some((state_key, tblock)) =
-						peek(&warm, &key).filter(|(state, _)| !orphans.contains(state))
-					{
-						let state_key = missing_state(&state_key);
-						orphans.insert(state_key.clone());
-						warm.0.insert(key.clone(), ProofReceipt { state_key, tblock });
-						lost.insert(key.clone(), Lost::Orphaned);
-					}
-					(tx, key)
-				},
-			};
-			check_receipt_is_true(tree, tx, peek(&warm, &key), &orphans)?;
-		}
-	}
-	Ok(())
-}
-
-fn again() -> impl Strategy<Value = Action> {
-	let lose = prop::option::weighted(0.25, prop_oneof![Just(Lost::Evicted), Just(Lost::Orphaned)]);
-	let node = prop_oneof![
-		1 => Just(None),
-		1 => any::<Index>().prop_map(|n| Some(At::Below(n))),
-		2 => any::<Index>().prop_map(|n| Some(At::Across(n))),
-	];
-	(any::<[Index; 2]>(), node, call(), prop::bool::weighted(0.2), lose).prop_map(
-		|([kind, earlier], node, call, other_version, lose)| Action::Again {
-			kind,
-			earlier,
-			node,
-			call,
-			other_version,
-			lose,
-		},
-	)
-}
-
-fn history(max_len: usize) -> impl Strategy<Value = Vec<Action>> {
-	prop::collection::vec(prop_oneof![1 => action(), 2 => again()], 1..max_len)
-}
-
-/// P3 and P5 follow from P1 only if the histories reach these classes, and P6's version half,
-/// P8c and P8d are only tested if they reach these table rows.
-///
-/// At production capacity only: at capacity 2 moka evicts on its own schedule, which would make
-/// the counts vary between runs.
-fn generator_reaches_every_class() {
-	let mut runner = proptest::test_runner::TestRunner::deterministic();
-	let strategy = (smoke_tree(), history(40));
-	let trees = smoke_trees();
-	let mut classes = Classes::new();
-	for _ in 0..64 {
-		let (tree, actions) = strategy.new_tree(&mut runner).unwrap().current();
-		let tree = &trees[tree];
-		check_history(tree, TX_VALIDATION_CACHE_CAPACITY, &actions, &mut classes).unwrap();
-	}
-	println!("{classes:#?}");
-
-	use Relation::*;
-	use Storage::*;
-	use model::{OutcomeRow, ReceiptRow};
-	let every = [Absent, Own, Ancestor, Descendant, Sibling, Gone]
-		.map(Class::Receipt)
-		.into_iter()
-		.chain([true, false].map(Class::EarlierTblock))
-		.chain(
-			[Stage::Accepted, Stage::WellFormed, Stage::DryRun, Stage::Apply]
-				.into_iter()
-				.flat_map(|stage| {
-					[Class::Result(stage), Class::ShieldedResult(stage), Class::CallResult(stage)]
-				}),
-		)
-		.chain(
-			[(OnChain, OnChain), (OnChain, OffChain), (OffChain, OnChain), (OffChain, OffChain)]
-				.map(|(call, receipt)| Class::Storage(call, receipt)),
-		)
-		.chain(
-			[
-				OutcomeRow::NoReceipt,
-				OutcomeRow::SameStateSameTblock,
-				OutcomeRow::SameStateOtherTblock,
-				OutcomeRow::OtherStateLoadable,
-				OutcomeRow::NotLoadable,
-			]
-			.map(Class::Outcome),
-		)
-		.chain(
-			[
-				ReceiptRow::Passed,
-				ReceiptRow::FailedLoadable,
-				ReceiptRow::FailedNotLoadable,
-				ReceiptRow::FailedNoReceipt,
-				ReceiptRow::NeverReached,
-			]
-			.map(Class::ReceiptAfter),
-		)
-		.chain([Class::SpentNullifier, Class::UnknownMerkleRoot, Class::WrongKeyRejected])
-		.chain([1, 2].map(Class::OtherVersionOnly))
-		.chain([Lost::Evicted, Lost::Orphaned].map(Class::PassedAfter))
-		.chain(
-			{
-				use proof_counts::Case::*;
-				[StrictHit, Miss, Skipped, ContractReverified, DustReverified]
-			}
-			.map(Class::ProofCount),
-		)
-		// `outcomes::retry_at_the_block_tblock` reaches the passing retries.
-		.chain(shim::RETRY_AT_BLOCK_TBLOCK.then_some(Class::Retried(false)));
-	let missing: Vec<_> = every.filter(|class| !classes.contains_key(class)).collect();
-	assert!(missing.is_empty(), "never reached {missing:?}; reached {classes:#?}");
-}
-
-proptest! {
-	#![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
-
-	/// P1, P4 and P10 over the fixed smoke trees, for CI, and P8a at production capacity.
-	///
-	/// A failure at capacity 2 may not replay exactly: moka's admission isn't driven by the seed.
-	/// `Evict` is the reproducible form.
-	fn warm_cache_gives_the_cold_verdict(
-		tree in smoke_tree(),
-		capacity in capacity(),
-		actions in history(40),
-	) {
-		let trees = smoke_trees();
-		check_history(&trees[tree], capacity, &actions, &mut Classes::new())?;
-	}
-}
-
-proptest! {
-	/// P1, P4 and P10 with a fresh tree per case, so a failure shrinks the tree as well as the
-	/// history.
-	///
-	/// Every tree's states stay in the process-wide storage, about 0.6 MB per case. Scale by
-	/// running repeatedly rather than raising `PROPTEST_CASES` without limit: each run draws a new
-	/// seed.
-	///
-	/// `PROPTEST_CASES=1000 cargo test --release -p midnight-node-ledger --lib -- --ignored \
-	///     warm_cache_gives_the_cold_verdict_on_generated_trees`
-	#[test]
-	#[ignore = "slow: run nightly, scaled with PROPTEST_CASES"]
-	fn warm_cache_gives_the_cold_verdict_on_generated_trees(
-		spec in tree_spec(),
-		capacity in capacity(),
-		actions in history(60),
-	) {
-		check_history(&build_tree(&spec), capacity, &actions, &mut Classes::new())?;
-	}
-}
-
-suite_tests!(
-	dummy_proofs_pass_only_unverified,
-	generator_reaches_every_class,
-	warm_cache_gives_the_cold_verdict,
-);
