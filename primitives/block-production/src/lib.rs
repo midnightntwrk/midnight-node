@@ -24,8 +24,9 @@ use scale_info::TypeInfo;
 /// Cardano stake pool id: the blake2b-224 hash of the pool's public key.
 pub type PoolId = sidechain_domain::MainchainKeyHash;
 
-/// Epoch label stored with the committee that produced a block. After epochs without blocks it
-/// runs ahead of the wall-clock epoch; a distinct type keeps the two apart.
+/// Epoch label stored with the committee that produced a block. It lags behind the wall-clock
+/// epoch while the committee is not rotated, e.g. when no next committee was selected; a distinct
+/// type keeps the two apart.
 #[derive(
 	Clone,
 	Copy,
