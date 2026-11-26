@@ -20,6 +20,13 @@ reason = "vuln in old wasmtime version used by polkadot-sdk"
 id = "RUSTSEC-2025-0012"
 reason = "backoff is unmaintained but no replacement is available"
 
+# Not in deny.toml: cargo-deny only checks crates.io packages, and this one is
+# the [patch.crates-io] git fork. osv-scanner matches on name and version, so
+# it reads yamux 0.12.2 as upstream's vulnerable release.
+[[IgnoredVulns]]
+id = "GHSA-vxx9-2994-q338"
+reason = "yamux 0.12.2 is patched to midnightntwrk/rust-yamux (branch yamux-v0.12.2, 8ed778c backports the fix); node/tests/yamux_vulnerability.rs covers it. The 0.13.10 also in the lockfile is a fixed release."
+
 # Licence excuses: GPL-3.0-only polkadot-sdk crates that reach the lockfile
 # only through frame-benchmarking-cli (-> cumulus), an optional dependency of
 # node behind the `runtime-benchmarks` feature. The released node and runtime
