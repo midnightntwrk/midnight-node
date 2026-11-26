@@ -1,0 +1,115 @@
+# osv-scanner config for the root Cargo.lock, read by the scan workflow
+# (midnightntwrk/upload-sarif-github-action).
+#
+# Licence excuses: GPL-3.0-only polkadot-sdk crates that reach the lockfile
+# only through frame-benchmarking-cli (-> cumulus), an optional dependency of
+# node behind the `runtime-benchmarks` feature. The released node and runtime
+# are built without it; only +build-benchmarks, an internal artifact, links
+# them. Matched by name, not version, so a polkadot-sdk bump does not re-raise
+# them. Re-check before relying on this:
+#
+#   cargo tree --workspace --target all -e normal,build -i polkadot-primitives
+#
+# must find nothing; once it does, these crates ship and the excuses are wrong.
+
+[[PackageOverrides]]
+name = "polkadot-core-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-metrics"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-network-protocol"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-subsystem-types"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-overseer"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-parachain-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-runtime-metrics"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-runtime-parachains"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-statement-table"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "staging-xcm"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "staging-xcm-builder"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "staging-xcm-executor"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "tracing-gum"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "tracing-gum-proc-macro"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "xcm-procedural"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
