@@ -113,3 +113,14 @@ name = "xcm-procedural"
 ecosystem = "crates.io"
 license.ignore = true
 reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+# Wrongly labelled: pallet-migrations inherits polkadot-sdk's workspace
+# `license = "GPL-3.0-only"` in its Cargo.toml, so crates.io and deps.dev say
+# GPL, but every source file is `SPDX-License-Identifier: Apache-2.0`
+# (substrate/frame/migrations), like the rest of FRAME. Record what the
+# source says rather than excuse it, so the allowlist still judges it.
+[[PackageOverrides]]
+name = "pallet-migrations"
+ecosystem = "crates.io"
+license.override = ["Apache-2.0"]
+reason = "source is SPDX Apache-2.0; the Cargo metadata inherits polkadot-sdk's GPL-3.0-only by mistake"
