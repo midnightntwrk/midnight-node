@@ -1,0 +1,28 @@
+# osv-scanner config for util/toolkit-js/package-lock.json, read by the scan
+# workflow (midnightntwrk/upload-sarif-github-action).
+#
+# Licence excuses: @subsquid/* is GPL-3.0-or-later. toolkit-js does not import
+# it; it arrives as a production dependency through
+#   compact-* -> @midnight-ntwrk/compact-js-command
+#     -> @midnight-ntwrk/wallet-sdk-address-format -> @subsquid/scale-codec
+# The wallet SDK (midnightntwrk/midnight-wallet, packages/address-format) is
+# replacing it with a more permissively licensed SCALE codec (Ian,
+# iangregsondev). Drop these entries once a release without it is picked up.
+
+[[PackageOverrides]]
+name = "@subsquid/scale-codec"
+ecosystem = "npm"
+license.ignore = true
+reason = "transitive via wallet-sdk-address-format, which is replacing it with a permissively licensed codec"
+
+[[PackageOverrides]]
+name = "@subsquid/util-internal-hex"
+ecosystem = "npm"
+license.ignore = true
+reason = "transitive via wallet-sdk-address-format, which is replacing it with a permissively licensed codec"
+
+[[PackageOverrides]]
+name = "@subsquid/util-internal-json"
+ecosystem = "npm"
+license.ignore = true
+reason = "transitive via wallet-sdk-address-format, which is replacing it with a permissively licensed codec"
