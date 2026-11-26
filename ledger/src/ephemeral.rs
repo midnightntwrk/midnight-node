@@ -42,6 +42,12 @@ const LOG_TARGET: &str = "midnight::ledger::ephemeral";
 
 /// A [`DB`] that serves reads from the shared storage for `D` (its caches, then its database)
 /// and discards every write.
+///
+/// In snapshot mode the off-chain arena's caches can keep, as read, a node that window eviction
+/// has since freed in the shared storage. Such an entry is not looked up again: the arena looks a
+/// node up only by following a reference from a state it read through here, a window state, which
+/// the call reading it pins and every state an off-chain call produces from it pins too. A node
+/// such a state reaches is not freed.
 #[derive(Debug, Default)]
 pub struct EphemeralDb<D>(PhantomData<D>);
 
@@ -123,8 +129,9 @@ pub fn ensure_storage<D: DB>(mut ext: &mut dyn Externalities) -> Arc<Storage<Eph
 }
 
 /// Keep a newly produced post-block ledger state (the block's tip): persist it during block
-/// execution and drop every intermediate state held in [`LedgerStatesExt`], otherwise hold it for
-/// the rest of the execution. `state_root` must be its serialized key, taken before this call.
+/// execution (in snapshot mode, hold it in the [window](crate::snapshot::window) instead) and drop
+/// every intermediate state held in [`LedgerStatesExt`], otherwise hold it for the rest of the
+/// execution. `state_root` must be its serialized key, taken before this call.
 ///
 /// The released intermediates include this block's input state, so the following storage flush
 /// `uncache`s them instead of writing them to disk.
@@ -135,7 +142,11 @@ where
 	Sp<T, D>: Send,
 {
 	if is_onchain(ext) {
-		state.persist();
+		if crate::snapshot::is_active() {
+			crate::snapshot::hold(state_root.to_vec(), &state);
+		} else {
+			state.persist();
+		}
 		LedgerStatesExt::release_all(ext);
 		return;
 	}
@@ -160,7 +171,12 @@ where
 	Sp<T, D>: Send,
 {
 	if is_onchain(ext) {
-		return LedgerStatesExt::hold(ext, Box::new(state)).inspect_err(|e| {
+		let state: Box<dyn std::any::Any + Send> = if crate::snapshot::is_active() {
+			Box::new((state, crate::snapshot::BlockInProgress::start()))
+		} else {
+			Box::new(state)
+		};
+		return LedgerStatesExt::hold(ext, state).inspect_err(|e| {
 			log::error!(target: LOG_TARGET, "Failed to hold intermediate ledger state: {e:?}");
 		});
 	}
@@ -181,6 +197,12 @@ where
 		return;
 	}
 	if let Some(held) = ext.extension::<LedgerEphemeralExt>() {
+		if crate::snapshot::is_active() {
+			crate::snapshot::produced_offchain(state_root);
+			let reads = crate::snapshot::pin_call_reads();
+			held.hold(state_root.to_vec(), Box::new((state, reads)));
+			return;
+		}
 		held.hold(state_root.to_vec(), Box::new(state));
 	}
 }

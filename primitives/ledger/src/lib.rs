@@ -282,6 +282,8 @@ impl LedgerMetricsExt {
 pub enum LedgerStorageDb {
 	UnifiedDb(Arc<parity_db::Db>),
 	SeparateDb(PathBuf),
+	/// Snapshot mode: the node keeps the ledger state itself (`midnight_node_ledger::snapshot`).
+	SnapshotDb,
 }
 /// Ledger Storage info to be sent to host functions
 #[derive(Clone)]
@@ -297,6 +299,10 @@ impl LedgerStorage {
 
 	pub fn new_separate(db_path: PathBuf, cache_size: usize) -> Self {
 		Self { db: LedgerStorageDb::SeparateDb(db_path), cache_size }
+	}
+
+	pub fn new_snapshot(cache_size: usize) -> Self {
+		Self { db: LedgerStorageDb::SnapshotDb, cache_size }
 	}
 }
 

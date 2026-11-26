@@ -107,6 +107,10 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
 
+	if storage_config.snapshot.is_some() {
+		return Ok((OwnedDb(db), LedgerStorageDb::SnapshotDb));
+	}
+
 	match storage_config.separation {
 		StorageSeparation::Separate => {
 			// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during

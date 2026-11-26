@@ -52,6 +52,9 @@ type DbUnified = crate::ledger_9::ledger_storage_local::db::ParityDb<
 >;
 
 #[cfg(feature = "std")]
+type DbSnapshot = crate::snapshot::DbSnapshot;
+
+#[cfg(feature = "std")]
 fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	matches!(
 		ext.extension::<LedgerStorageExt>().map(|e| &e.0.db),
@@ -65,6 +68,8 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 macro_rules! with_bridge {
 	($bridge:ident<$sig:ty>, $ext:expr, $ephemeral:expr, $call:ident($($arg:expr),* $(,)?)) => {
 		match (is_unified($ext), $ephemeral) {
+			(_, false) if crate::snapshot::is_active() => $bridge::<$sig, DbSnapshot>::$call($($arg),*),
+			(_, true) if crate::snapshot::is_active() => $bridge::<$sig, EphemeralDb<DbSnapshot>>::$call($($arg),*),
 			(true, false) => $bridge::<$sig, DbUnified>::$call($($arg),*),
 			(false, false) => $bridge::<$sig, DbSeparate>::$call($($arg),*),
 			(true, true) => {
@@ -819,6 +824,10 @@ pub trait Ledger9Bridge {
 	fn ensure_storage_initialized(&mut self) -> bool {
 		use ledger_storage_ledger_8::storage::try_get_default_storage;
 
+		// Snapshot mode's storage is set up by the node and never replaced.
+		if crate::snapshot::is_active() {
+			return false;
+		}
 		let unified = is_unified(*self);
 
 		// If normal storage already exists, we're good
@@ -861,7 +870,13 @@ pub trait Ledger9Bridge {
 		use crate::host_api::migration_8_to_9::migrate_state_v8_to_v9;
 
 		let ephemeral = !is_onchain(*self);
-		if is_unified(*self) {
+		if crate::snapshot::is_active() {
+			if ephemeral {
+				migrate_state_v8_to_v9::<EphemeralDb<DbSnapshot>>(*self, state_key)
+			} else {
+				migrate_state_v8_to_v9::<DbSnapshot>(*self, state_key)
+			}
+		} else if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
 			if ephemeral {
 				ensure_storage::<DbUnified>(*self);

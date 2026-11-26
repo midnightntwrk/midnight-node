@@ -32,6 +32,9 @@ mod utils;
 #[cfg(feature = "std")]
 pub mod ephemeral;
 
+#[cfg(feature = "std")]
+pub mod snapshot;
+
 pub mod host_api;
 
 pub mod ledger_8;
@@ -66,7 +69,8 @@ pub fn ledger_state_tag_version(tagged: &[u8]) -> Option<u32> {
 }
 
 /// Expand to the `(DbSeparate, DbUnified)`-parameterized call of a `Bridge` arena method on the given
-/// ledger version module (`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
+/// ledger version module (`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`, or the
+/// snapshot-mode DB when snapshot mode is running.
 #[cfg(feature = "std")]
 macro_rules! bridge_arena_call {
 	($ver:ident, $unified:expr, $method:ident ( $($arg:expr),* )) => {{
@@ -76,7 +80,9 @@ macro_rules! bridge_arena_call {
 			$ver::ledger_storage_local::db::paritydb::OwnedDb,
 			{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
 		>;
-		if $unified {
+		if crate::snapshot::is_active() {
+			$ver::Bridge::<$ver::TransactionSignature, crate::snapshot::DbSnapshot>::$method( $($arg),* )
+		} else if $unified {
 			$ver::Bridge::<$ver::TransactionSignature, DbUnified>::$method( $($arg),* )
 		} else {
 			$ver::Bridge::<$ver::TransactionSignature, DbSeparate>::$method( $($arg),* )
@@ -95,6 +101,7 @@ macro_rules! bridge_arena_call {
 /// version-specific).
 #[cfg(feature = "std")]
 pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
+	let _call = snapshot::read_guard(state_key)?;
 	match ledger_state_tag_version(state_key) {
 		Some(16..=18) => {
 			bridge_arena_call!(ledger_9, unified, serialize_ledger_snapshot(state_key))
@@ -116,6 +123,7 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 /// Error rendered to `String` (the underlying `LedgerApiError` is version-specific).
 #[cfg(feature = "std")]
 pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStats, String> {
+	let _call = snapshot::read_guard(state_key)?;
 	match ledger_state_tag_version(state_key) {
 		Some(16..=18) => bridge_arena_call!(ledger_9, unified, ledger_stats(state_key))
 			.map_err(|e| format!("{e:?}")),
@@ -135,6 +143,7 @@ pub fn ledger_stats(unified: bool, state_key: &[u8]) -> Result<types::LedgerStat
 /// and fail loudly rather than silently skipping).
 #[cfg(feature = "std")]
 pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
+	let Ok(_call) = snapshot::read_guard(state_key) else { return false };
 	match ledger_state_tag_version(state_key) {
 		Some(16..=18) => {
 			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
@@ -219,6 +228,7 @@ pub fn import_verified_ledger_snapshot(
 	blob: &[u8],
 	expected_state_key: &[u8],
 ) -> Result<(), SnapshotImportError> {
+	let _call = snapshot::call_guard();
 	// Dispatch on the `StateKey`'s ledger-state version (the underlying method returns the shared
 	// `SnapshotImportError` for every version, so no error mapping is needed).
 	match ledger_state_tag_version(expected_state_key) {

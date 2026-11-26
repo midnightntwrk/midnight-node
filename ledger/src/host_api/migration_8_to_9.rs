@@ -169,7 +169,9 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 	// path persists too (into the ephemeral storage only) and drops the root again below.
 	sp9.persist();
 	let onchain = crate::ephemeral::is_onchain(ext);
-	if onchain {
+	// Snapshot mode holds the translated state in memory and asks for a snapshot, which writes it.
+	let snapshot = onchain && crate::snapshot::is_active();
+	if onchain && !snapshot {
 		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	}
 	log::debug!(
@@ -184,7 +186,11 @@ pub fn migrate_state_v8_to_v9<D: DB>(
 		log::error!(target: LOG_TARGET, "failed to serialize v9 state key: {e:?}");
 		LedgerApiError::Serialization(SerializationError::TypedArenaKey)
 	})?;
-	if !onchain {
+	if snapshot {
+		sp9.unpersist();
+		crate::snapshot::hold(bytes.clone(), &sp9);
+		crate::snapshot::request_snapshot();
+	} else if !onchain {
 		sp9.unpersist();
 		crate::ephemeral::retain(ext, &bytes, sp9);
 	}

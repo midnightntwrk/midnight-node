@@ -14,7 +14,10 @@
 #![allow(clippy::result_large_err)]
 
 use crate::{
-	cfg::{Cfg, midnight_cfg::StorageSeparation},
+	cfg::{
+		Cfg,
+		midnight_cfg::{LedgerStorageMode, StorageSeparation},
+	},
 	cli::{Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
 	genesis::{
@@ -260,6 +263,10 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		db_path: ledger_db_path,
 		genesis_state,
 		cache_size: cfg.midnight_cfg.storage_cache_size,
+		snapshot: crate::ledger_snapshot::SnapshotSettings::from_cfg(
+			&cfg.midnight_cfg,
+			base_path.path(),
+		),
 	};
 
 	let keystore: KeystorePtr = {
@@ -500,7 +507,23 @@ fn storage_init_from_chain_spec(
 		cache_size,
 		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
 		db_path,
+		snapshot: None,
 	})
+}
+
+/// Whether a subcommand opens the chain database, which it does with the persistent ledger layout.
+fn opens_chain_database(subcommand: &Subcommand) -> bool {
+	match subcommand {
+		Subcommand::PartnerChains(_)
+		| Subcommand::CheckBlock(_)
+		| Subcommand::ExportBlocks(_)
+		| Subcommand::ExportState(_)
+		| Subcommand::ImportBlocks(_)
+		| Subcommand::Revert(_) => true,
+		#[cfg(feature = "runtime-benchmarks")]
+		Subcommand::Benchmark(_) => true,
+		_ => false,
+	}
 }
 
 fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
@@ -508,6 +531,14 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	let cache_size = cfg.midnight_cfg.storage_cache_size;
 	let separation = cfg.midnight_cfg.storage_separation;
 	let tx_filter_config = TxFilterConfig::disabled();
+
+	if cfg.midnight_cfg.ledger_storage_mode == LedgerStorageMode::Snapshot
+		&& opens_chain_database(&subcommand)
+	{
+		return Err(sc_cli::Error::Input(
+			"this subcommand does not support ledger_storage_mode = \"snapshot\"".into(),
+		));
+	}
 
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),

@@ -83,6 +83,8 @@ where
 		data: &[u8],
 		context: CallContext,
 	) -> (Result<Vec<u8>, Self::Error>, bool) {
+		// Snapshot mode switches ledger stores only between runtime calls.
+		let _call = midnight_node_ledger::snapshot::call_guard();
 		let marker = LedgerOnchainExt::type_id();
 		let registered = match context {
 			CallContext::Onchain { .. } => {

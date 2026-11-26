@@ -198,6 +198,9 @@ async fn recover_and_release<B, Client, BE, Network>(
 		}
 	}
 
+	// Snapshot ledger storage holds the imported state in memory only: write it out soon.
+	midnight_node_ledger::snapshot::request_snapshot();
+
 	// Release the gate: opens both the authoring oracle and the block-import gate. Any block
 	// batches deferred (errored) by the gate during recovery are re-requested by the sync
 	// restart-retry loop and import cleanly from here on (see `block_import.rs` module docs).
