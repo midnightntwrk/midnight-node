@@ -27,6 +27,50 @@ reason = "backoff is unmaintained but no replacement is available"
 id = "GHSA-vxx9-2994-q338"
 reason = "yamux 0.12.2 is patched to midnightntwrk/rust-yamux (branch yamux-v0.12.2, 8ed778c backports the fix); node/tests/yamux_vulnerability.rs covers it. The 0.13.10 also in the lockfile is a fixed release."
 
+# Advisories that do not reach the node: crates only in the lockfile, or code
+# behind a feature the build does not enable. Not mirrored in deny.toml yet:
+# add them there too if cargo-deny reports them. Re-check each on its review
+# date; a polkadot-sdk bump can change either answer.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0505"
+ignoreUntil = 2027-02-26
+reason = "hickory-proto: DNSSEC validation flaw; hickory 0.24 is built (libp2p-dns, libp2p-mdns) with features mdns, socket2, tokio only, so no DNSSEC validation is compiled. Fixed only in 0.26, which needs libp2p >= 0.56 (not in polkadot-sdk stable2611)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0509"
+ignoreUntil = 2027-02-26
+reason = "hickory-proto/hickory-net: DNSSEC validation flaw; hickory 0.24 is built (libp2p-dns, libp2p-mdns) with features mdns, socket2, tokio only, so no DNSSEC validation is compiled. Fixed only in 0.26, which needs libp2p >= 0.56 (not in polkadot-sdk stable2611)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0514"
+ignoreUntil = 2027-02-26
+reason = "hickory-resolver: DNSSEC validation flaw; hickory 0.24 is built (libp2p-dns, libp2p-mdns) with features mdns, socket2, tokio only, so no DNSSEC validation is compiled. Fixed only in 0.26, which needs libp2p >= 0.56 (not in polkadot-sdk stable2611)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0525"
+ignoreUntil = 2027-02-26
+reason = "libp2p-quic 0.11.1: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0340"
+ignoreUntil = 2027-02-26
+reason = "quinn-proto 0.11.15: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0341"
+ignoreUntil = 2027-02-26
+reason = "quinn-proto 0.11.15: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0104"
+ignoreUntil = 2027-02-26
+reason = "rustls-webpki 0.101.7: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0344"
+ignoreUntil = 2027-02-26
+reason = "ruzstd 0.8.2: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
 # Licence excuses: GPL-3.0-only polkadot-sdk crates that reach the lockfile
 # only through frame-benchmarking-cli (-> cumulus), an optional dependency of
 # node behind the `runtime-benchmarks` feature. The released node and runtime
