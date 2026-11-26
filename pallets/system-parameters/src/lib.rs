@@ -16,6 +16,8 @@
 //! This pallet stores and manages system-wide parameters such as:
 //! - Terms and Conditions (hash and URL)
 //! - D-Parameter (controlling authority selection)
+//! - `cnight_weight` (with the `decentralization` feature): the lovelace of virtual stake
+//!   per STAR of staked cNIGHT, NIGHT Staking on Cardano MIP rule 25
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -37,6 +39,9 @@ mod benchmarking;
 
 pub mod weights;
 pub use weights::WeightInfo;
+
+#[cfg(feature = "decentralization")]
+pub mod migrations;
 
 #[frame_support::pallet]
 // clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
@@ -90,6 +95,21 @@ pub mod pallet {
 	/// Uses ValueQuery with default values of (0, 0)
 	#[pallet::storage]
 	pub type DParameterStorage<T: Config> = StorageValue<_, (u16, u16), ValueQuery>;
+
+	/// `cnight_weight` at activation: 1, the MIP's value, itself a placeholder (Open
+	/// Question 6). Genesis and [`crate::migrations::InitializeCnightWeight`] set it.
+	#[cfg(feature = "decentralization")]
+	pub const INITIAL_CNIGHT_WEIGHT: (u64, u64) = (1, 1);
+
+	/// `cnight_weight` as (numerator, denominator): the lovelace of virtual stake per STAR of
+	/// staked cNIGHT (NIGHT Staking on Cardano MIP, rule 25). Always set, by genesis or by
+	/// [`crate::migrations::InitializeCnightWeight`], and its denominator is never 0.
+	///
+	/// A change counts from the next snapshot: each snapshot records the value it takes,
+	/// and this storage holds only the current one.
+	#[cfg(feature = "decentralization")]
+	#[pallet::storage]
+	pub type CnightWeightStorage<T: Config> = StorageValue<_, (u64, u64), ValueQuery>;
 
 	// Genesis configuration
 
@@ -179,13 +199,16 @@ pub mod pallet {
 					.expect("Genesis D-Parameter is invalid");
 				DParameterStorage::<T>::put((num_permissioned, num_registered));
 			}
+
+			#[cfg(feature = "decentralization")]
+			CnightWeightStorage::<T>::put(INITIAL_CNIGHT_WEIGHT);
 		}
 	}
 
 	// Events
 
 	#[pallet::event]
-	#[pallet::generate_deposit(pub(super) fn deposit_event)]
+	#[pallet::generate_deposit(pub(crate) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// Terms and Conditions have been updated
 		TermsAndConditionsUpdated {
@@ -201,6 +224,14 @@ pub mod pallet {
 			/// Number of registered candidates
 			num_registered_candidates: u16,
 		},
+		/// `cnight_weight` has been updated
+		#[cfg(feature = "decentralization")]
+		CnightWeightUpdated {
+			/// Lovelace of virtual stake per `denominator` STAR of staked cNIGHT
+			numerator: u64,
+			/// The STAR `numerator` is per; never 0
+			denominator: u64,
+		},
 	}
 
 	// Errors
@@ -213,6 +244,9 @@ pub mod pallet {
 		DParameterEmpty,
 		/// The D-Parameter's total seat count exceeds `MaxCommitteeSize`
 		DParameterTooLarge,
+		/// `cnight_weight`'s denominator is 0
+		#[cfg(feature = "decentralization")]
+		CnightWeightZeroDenominator,
 	}
 
 	// Dispatchable functions (extrinsics)
@@ -276,6 +310,32 @@ pub mod pallet {
 
 			Ok(())
 		}
+
+		/// Update `cnight_weight`, the lovelace of virtual stake per STAR of staked cNIGHT,
+		/// as `numerator / denominator` (NIGHT Staking on Cardano MIP, rule 25).
+		///
+		/// Can only be called by the configured SystemOrigin, as the D-Parameter is set.
+		/// The denominator must be above 0. A change counts from the next snapshot.
+		// The same one small write as `update_d_parameter`. A benchmark of its own would
+		// exist only with the `decentralization` feature, and the generated runtime weights
+		// are built without it.
+		#[cfg(feature = "decentralization")]
+		#[pallet::call_index(2)]
+		#[pallet::weight(T::WeightInfo::update_d_parameter())]
+		pub fn update_cnight_weight(
+			origin: OriginFor<T>,
+			numerator: u64,
+			denominator: u64,
+		) -> DispatchResult {
+			T::SystemOrigin::ensure_origin(origin)?;
+			ensure!(denominator > 0, Error::<T>::CnightWeightZeroDenominator);
+
+			CnightWeightStorage::<T>::put((numerator, denominator));
+
+			Self::deposit_event(Event::CnightWeightUpdated { numerator, denominator });
+
+			Ok(())
+		}
 	}
 
 	// Helper functions
@@ -283,6 +343,12 @@ pub mod pallet {
 		/// Get the current Terms and Conditions
 		pub fn get_terms_and_conditions() -> Option<TermsAndConditions<T::Hash>> {
 			TermsAndConditionsStorage::<T>::get()
+		}
+
+		/// Get the current `cnight_weight` as (numerator, denominator)
+		#[cfg(feature = "decentralization")]
+		pub fn get_cnight_weight() -> (u64, u64) {
+			CnightWeightStorage::<T>::get()
 		}
 
 		/// Get the current D-Parameter

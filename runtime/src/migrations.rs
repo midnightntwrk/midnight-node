@@ -23,6 +23,15 @@ use frame_support::{
 	traits::SafeMode as SafeModeTrait,
 };
 
+/// The migrations of the `decentralization` feature, nothing without it. An alias because
+/// a migration tuple cannot hold a `#[cfg]` element.
+#[cfg(feature = "decentralization")]
+pub type DecentralizationMigrations =
+	(pallet_system_parameters::migrations::InitializeCnightWeight<crate::Runtime>,);
+/// The migrations of the `decentralization` feature, nothing without it.
+#[cfg(not(feature = "decentralization"))]
+pub type DecentralizationMigrations = ();
+
 /// On a failed multi-block migration: enter safe mode indefinitely and force-unstuck the
 /// migration cursor, so the chain keeps producing blocks (with user calls filtered) and
 /// governance can ship a fixed runtime and `force_exit` safe mode.

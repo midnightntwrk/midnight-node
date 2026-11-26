@@ -205,6 +205,8 @@ try-runtime = [
     "tempfile",
 ]
 experimental = []
+# Permissionless candidates and NIGHT staking.
+decentralization = ["midnight-node-runtime/decentralization"]
 # Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled
 # at run time through `MALLOC_CONF`; see docs/operations/heap-profiling.md.
 jemalloc-profiling = ["tikv-jemallocator/profiling"]

@@ -245,6 +245,8 @@ try-runtime = [
     "pallet-cnight-observation/try-runtime",
 ]
 experimental = []
+# Permissionless candidates and NIGHT staking (NIGHT Staking on Cardano MIP).
+decentralization = ["pallet-system-parameters/decentralization"]
 
 [package.metadata.cargo-shear]
 ignored = ["serde"]

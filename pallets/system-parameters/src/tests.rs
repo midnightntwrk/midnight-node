@@ -328,3 +328,96 @@ fn genesis_succeeds_with_terms_and_conditions_without_d_parameter() {
 		assert_eq!(stored.url.to_vec(), url.as_bytes().to_vec());
 	});
 }
+
+#[cfg(feature = "decentralization")]
+mod cnight_weight {
+	use super::*;
+	use crate::{
+		CnightWeightStorage, Error, Event, INITIAL_CNIGHT_WEIGHT,
+		migrations::InitializeCnightWeight,
+	};
+	use frame_support::traits::OnRuntimeUpgrade;
+
+	/// A chain built from this pallet's genesis.
+	fn genesis_ext() -> sp_io::TestExternalities {
+		new_test_ext_with_genesis(
+			Some(DEFAULT_TERMS_AND_CONDITIONS_HASH),
+			Some(DEFAULT_TERMS_AND_CONDITIONS_URL.into()),
+			None,
+		)
+	}
+
+	#[test]
+	fn genesis_sets_it_to_one() {
+		genesis_ext().execute_with(|| {
+			assert_eq!(SystemParameters::get_cnight_weight(), (1, 1));
+		});
+	}
+
+	#[test]
+	fn the_migration_sets_it_to_one_once_and_says_so() {
+		// A chain from before the feature: no cnight_weight.
+		new_test_ext().execute_with(|| {
+			System::set_block_number(1);
+			assert!(!CnightWeightStorage::<Test>::exists());
+
+			InitializeCnightWeight::<Test>::on_runtime_upgrade();
+			assert_eq!(CnightWeightStorage::<Test>::get(), INITIAL_CNIGHT_WEIGHT);
+			System::assert_last_event(
+				Event::CnightWeightUpdated { numerator: 1, denominator: 1 }.into(),
+			);
+
+			// A value governance set later survives a second run, which does nothing.
+			assert_ok!(SystemParameters::update_cnight_weight(RuntimeOrigin::root(), 3, 1_000));
+			let events = System::events().len();
+			InitializeCnightWeight::<Test>::on_runtime_upgrade();
+			assert_eq!(CnightWeightStorage::<Test>::get(), (3, 1_000));
+			assert_eq!(System::events().len(), events);
+		});
+	}
+
+	#[test]
+	fn the_migration_leaves_a_genesis_value_alone() {
+		genesis_ext().execute_with(|| {
+			System::set_block_number(1);
+			InitializeCnightWeight::<Test>::on_runtime_upgrade();
+			assert_eq!(CnightWeightStorage::<Test>::get(), INITIAL_CNIGHT_WEIGHT);
+			assert!(System::events().is_empty());
+		});
+	}
+
+	#[test]
+	fn the_system_origin_sets_it() {
+		genesis_ext().execute_with(|| {
+			System::set_block_number(1);
+			assert_ok!(SystemParameters::update_cnight_weight(RuntimeOrigin::root(), 3, 1_000));
+			assert_eq!(CnightWeightStorage::<Test>::get(), (3, 1_000));
+			System::assert_last_event(
+				Event::CnightWeightUpdated { numerator: 3, denominator: 1_000 }.into(),
+			);
+		});
+	}
+
+	#[test]
+	fn a_zero_numerator_is_allowed_and_a_zero_denominator_is_not() {
+		genesis_ext().execute_with(|| {
+			assert_ok!(SystemParameters::update_cnight_weight(RuntimeOrigin::root(), 0, 1));
+			assert_noop!(
+				SystemParameters::update_cnight_weight(RuntimeOrigin::root(), 1, 0),
+				Error::<Test>::CnightWeightZeroDenominator
+			);
+			assert_eq!(SystemParameters::get_cnight_weight(), (0, 1));
+		});
+	}
+
+	#[test]
+	fn other_origins_cannot_set_it() {
+		genesis_ext().execute_with(|| {
+			assert_noop!(
+				SystemParameters::update_cnight_weight(RuntimeOrigin::signed(1), 2, 1),
+				sp_runtime::DispatchError::BadOrigin
+			);
+			assert_eq!(SystemParameters::get_cnight_weight(), (1, 1));
+		});
+	}
+}
