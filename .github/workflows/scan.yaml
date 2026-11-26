@@ -43,6 +43,12 @@ jobs:
         uses: midnightntwrk/upload-sarif-github-action@0483b6038e454b6bab7938e3b2d888b6a1fd5fe6 # giles-osv-licenses
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The action's default checks less Vulnerabilities. That check is one
+          # count of every advisory in the tree, and this repo always trails
+          # polkadot-sdk releases a little, so it would stay red. osv-scanner
+          # already gates each advisory on its own, with per-advisory waivers in
+          # osv-scanner.toml.
+          scorecard_checks: "Binary-Artifacts,Dangerous-Workflow,Dependency-Update-Tool,License,Pinned-Dependencies,Security-Policy,Token-Permissions"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

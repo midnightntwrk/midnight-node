@@ -152,6 +152,10 @@ RUN rustup self uninstall -y && \
 # =============================================================================
 # The following FROM uses a variable to select between tools-amd64 and tools-arm64
 # stages defined above. This is valid BuildKit syntax for multi-arch builds.
+# Not an image: tools-${TARGETARCH} names one of the two stages above, whose
+# base is the digest-pinned node image. checkov reads the untagged name as
+# :latest.
+# checkov:skip=CKV_DOCKER_7:stage reference, not an image; the base image is pinned by digest
 ARG TARGETARCH
 # kics-scan ignore-line
 FROM tools-${TARGETARCH} AS final
