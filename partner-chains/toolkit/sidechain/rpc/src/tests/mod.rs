@@ -65,7 +65,7 @@ mod get_status_tests {
 					slot: mainchain_block.slot.0,
 					next_epoch_timestamp: Timestamp::from_unix_millis(
 						mc_epoch_config.first_epoch_timestamp_millis.unix_millis()
-							+ mc_epoch_config.epoch_duration_millis.millis() * 100
+							+ mc_epoch_config.epoch_duration_millis.millis() * (100 - 50)
 					)
 				}
 			}
