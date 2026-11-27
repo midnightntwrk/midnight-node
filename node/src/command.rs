@@ -529,9 +529,9 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 
 			partner_chains_node_commands::run::<_, _, _, _>(&cfg, make_dependencies, cmd.clone())
 		},
-		Subcommand::BuildSpec(ref cmd) => {
-			let runner = cfg.create_runner(cmd)?;
-			runner.sync_run(|config| cmd.run(config.chain_spec, config.network))
+		Subcommand::ExportChainSpec(ref cmd) => {
+			let chain_spec = cfg.load_spec(&cmd.chain)?;
+			cmd.run(chain_spec)
 		},
 		Subcommand::CheckBlock(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;

@@ -15,7 +15,7 @@
 
 # Step 1 of chain preparation: patch res/local/* with the addresses, policy ids and
 # UTxOs that this bring-up actually deployed on Cardano. The patched configs are the
-# inputs to both later steps — genesis generation (generate-genesis.sh) and build-spec
+# inputs to both later steps — genesis generation (generate-genesis.sh) and the chain spec export
 # (entrypoint.sh) — so this has to run to completion before either.
 
 # Fail if a command fails. (No -x: the script narrates every patch + prints the
@@ -207,4 +207,4 @@ cat /res/local/c2m-bridge-config.json
 
 phase "Configs patched"
 
-echo "res/local is ready for genesis generation and build-spec."
+echo "res/local is ready for genesis generation and the chain spec export."

@@ -21,6 +21,17 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Use mirror.gcr.io for Docker Hub pulls (best effort)
+      if: runner.environment == 'github-hosted'
+      continue-on-error: true
+      shell: bash
+      run: |
+        f=/etc/docker/daemon.json
+        sudo test -f "$f" || echo '{}' | sudo tee "$f" >/dev/null
+        sudo jq '."registry-mirrors" = ["https://mirror.gcr.io"]' "$f" | sudo tee "$f.new" >/dev/null
+        sudo mv "$f.new" "$f"
+        sudo systemctl reload docker
+
     - name: Install just
       uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
       with:

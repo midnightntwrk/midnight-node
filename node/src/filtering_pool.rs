@@ -16,7 +16,7 @@ use midnight_node_ledger::types::{Op, Tx};
 use pallet_midnight::MidnightRuntimeApi;
 use parity_scale_codec::{Decode, Encode};
 use prometheus_endpoint::{Counter, CounterVec, Opts, Registry, U64, register};
-use sc_transaction_pool::{ChainApi, FullChainApi, TransactionPoolWrapper};
+use sc_transaction_pool::{ChainApi, FullChainApi, TransactionPoolHandle};
 use sc_transaction_pool_api::error::Error as TxPoolError;
 use sc_transaction_pool_api::{
 	ChainEvent, ImportNotificationStream, LocalTransactionFor, LocalTransactionPool,
@@ -59,7 +59,7 @@ where
 {
 	/// Is filtering behavior enabled. If false it behaves like 'inner' pool.
 	enabled: bool,
-	inner: TransactionPoolWrapper<Block, Client>,
+	inner: Arc<TransactionPoolHandle<Block>>,
 	client: Arc<Client>,
 	metrics: FilteringMetrics,
 	deny_deploy: bool,
@@ -80,7 +80,7 @@ where
 {
 	pub(crate) fn new(
 		config: TxFilterConfig,
-		inner: TransactionPoolWrapper<Block, Client>,
+		inner: Arc<TransactionPoolHandle<Block>>,
 		client: Arc<Client>,
 		metrics: FilteringMetrics,
 	) -> Self {
@@ -194,7 +194,7 @@ where
 	type Block = Block;
 	type Hash = <<FullChainApi<Client, Block> as ChainApi>::Block as BlockT>::Hash;
 	type InPoolTransaction =
-		<TransactionPoolWrapper<Block, Client> as sc_service::TransactionPool>::InPoolTransaction;
+		<TransactionPoolHandle<Block> as sc_service::TransactionPool>::InPoolTransaction;
 	type Error = <FullChainApi<Client, Block> as ChainApi>::Error;
 
 	async fn submit_at(

@@ -44,10 +44,8 @@ use midnight_node_runtime::VERSION_ID;
 use midnight_node_runtime::opaque::Block as RuntimeBlock;
 use midnight_primitives_consensus_engine::{ACTIVATION_SPEC_VERSION, ActiveEngine};
 use sp_consensus_aura::AURA_ENGINE_ID;
-use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_babe::BABE_ENGINE_ID;
 use sp_consensus_slots::Slot;
-use sp_core::Pair;
 use sp_runtime::generic::OpaqueDigestItemId;
 use sp_runtime::traits::{Block as BlockT, Header as _};
 
@@ -112,11 +110,11 @@ pub fn has_authoritative_babe_pre_digest<Block: BlockT>(header: &Block::Header) 
 /// check the number first.
 pub fn slot_of<Block: BlockT>(header: &Block::Header) -> Result<Slot, String> {
 	match authoring_engine::<Block>(header) {
-		Some(ActiveEngine::Aura) => sc_consensus_aura::find_pre_digest::<
-			Block,
-			<AuraPair as Pair>::Signature,
-		>(header)
-		.map_err(|e| format!("AURA block #{:?} has no readable AURA slot: {e}", header.number())),
+		Some(ActiveEngine::Aura) => {
+			sc_consensus_aura::find_pre_digest::<Block>(header).map_err(|e| {
+				format!("AURA block #{:?} has no readable AURA slot: {e}", header.number())
+			})
+		},
 		Some(ActiveEngine::Babe) => sc_consensus_babe::find_pre_digest::<Block>(header)
 			.map(|pre_digest| pre_digest.slot())
 			.map_err(|e| {

@@ -48,7 +48,7 @@ if [ -f /shared/chain-spec.json ]; then
 else
   # Most chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
   # chainspec_* paths there are relative (res/local/...) and the image workdir is /, so
-  # they resolve through the /res repo mount — build-spec reads the configs patched by
+  # they resolve through the /res repo mount — the chain spec export reads the configs patched by
   # patch-configs.sh without a node-image rebuild.
   #
   # The genesis blobs are the exception: res/cfg/local.toml points at the committed
@@ -71,7 +71,12 @@ else
   export CHAINSPEC_GENESIS_STATE="$GENESIS_STATE"
   export CHAINSPEC_GENESIS_BLOCK="$GENESIS_BLOCK"
 
-  ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
+  # Node images built before the move to export-chain-spec only have build-spec.
+  if ./midnight-node export-chain-spec --help > /dev/null 2>&1; then
+    ./midnight-node export-chain-spec > chain-spec.json
+  else
+    ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
+  fi
   echo "chain-spec.json file generated."
 
   echo "Amending the chain spec..."

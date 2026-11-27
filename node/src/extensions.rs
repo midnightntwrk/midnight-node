@@ -24,6 +24,7 @@ use sp_version::RuntimeVersion;
 use std::{
 	marker::PhantomData,
 	sync::{Arc, Mutex},
+	time::Duration,
 };
 
 /// Extensions factory
@@ -69,6 +70,48 @@ where
 #[derive(Clone)]
 pub struct LedgerContextExecutor<E>(pub E);
 
+impl<E: CodeExecutor> LedgerContextExecutor<E>
+where
+	E::Error: From<String>,
+{
+	/// Registers [`LedgerOnchainExt`] for an on-chain call and removes it for an off-chain one.
+	/// Returns whether this call registered the marker, i.e. must deregister it afterwards.
+	fn mark_context(
+		ext: &mut dyn Externalities,
+		method: &str,
+		context: CallContext,
+	) -> Result<bool, E::Error> {
+		let marker = LedgerOnchainExt::type_id();
+		match context {
+			CallContext::Onchain { .. } => {
+				match ext
+					.register_extension_with_type_id(marker, Box::new(LedgerOnchainExt::default()))
+				{
+					Ok(()) => Ok(true),
+					Err(sp_externalities::Error::ExtensionAlreadyRegistered) => Ok(false),
+					// Without the marker the block's ledger state would not be persisted, so
+					// refuse to execute it rather than continue.
+					Err(e) => {
+						let error = format!("Failed to mark `{method}` as block execution: {e:?}");
+						log::error!(target: "ledger::executor", "{error}");
+						Err(error.into())
+					},
+				}
+			},
+			CallContext::Offchain => {
+				let _ = ext.deregister_extension_by_type_id(marker);
+				Ok(false)
+			},
+		}
+	}
+
+	fn unmark_context(ext: &mut dyn Externalities, registered: bool) {
+		if registered {
+			let _ = ext.deregister_extension_by_type_id(LedgerOnchainExt::type_id());
+		}
+	}
+}
+
 impl<E: CodeExecutor> CodeExecutor for LedgerContextExecutor<E>
 where
 	E::Error: From<String>,
@@ -83,34 +126,29 @@ where
 		data: &[u8],
 		context: CallContext,
 	) -> (Result<Vec<u8>, Self::Error>, bool) {
-		let marker = LedgerOnchainExt::type_id();
-		let registered = match context {
-			CallContext::Onchain { .. } => {
-				match ext
-					.register_extension_with_type_id(marker, Box::new(LedgerOnchainExt::default()))
-				{
-					Ok(()) => true,
-					Err(sp_externalities::Error::ExtensionAlreadyRegistered) => false,
-					// Without the marker the block's ledger state would not be persisted, so
-					// refuse to execute it rather than continue.
-					Err(e) => {
-						let error = format!("Failed to mark `{method}` as block execution: {e:?}");
-						log::error!(target: "ledger::executor", "{error}");
-						return (Err(error.into()), false);
-					},
-				}
-			},
-			CallContext::Offchain => {
-				let _ = ext.deregister_extension_by_type_id(marker);
-				false
-			},
+		let registered = match Self::mark_context(ext, method, context) {
+			Ok(registered) => registered,
+			Err(e) => return (Err(e), false),
 		};
-
 		let result = self.0.call(ext, runtime_code, method, data, context);
+		Self::unmark_context(ext, registered);
+		result
+	}
 
-		if registered {
-			let _ = ext.deregister_extension_by_type_id(marker);
-		}
+	fn call_with_execution_timeout(
+		&self,
+		ext: &mut dyn Externalities,
+		runtime_code: &RuntimeCode,
+		method: &str,
+		data: &[u8],
+		context: CallContext,
+		timeout: Duration,
+	) -> Result<Vec<u8>, Self::Error> {
+		let registered = Self::mark_context(ext, method, context)?;
+		let result =
+			self.0
+				.call_with_execution_timeout(ext, runtime_code, method, data, context, timeout);
+		Self::unmark_context(ext, registered);
 		result
 	}
 }
@@ -168,6 +206,18 @@ mod tests {
 		) -> (Result<Vec<u8>, Self::Error>, bool) {
 			(Ok(vec![ext.extension::<LedgerOnchainExt>().is_some() as u8]), false)
 		}
+
+		fn call_with_execution_timeout(
+			&self,
+			ext: &mut dyn Externalities,
+			runtime_code: &RuntimeCode,
+			method: &str,
+			data: &[u8],
+			context: CallContext,
+			_timeout: Duration,
+		) -> Result<Vec<u8>, Self::Error> {
+			self.call(ext, runtime_code, method, data, context).0
+		}
 	}
 
 	fn has_marker(ext: &mut BasicExternalities) -> bool {
@@ -181,6 +231,28 @@ mod tests {
 		let (result, _) =
 			LedgerContextExecutor(Probe).call(ext, &runtime_code, "Core_version", &[], context);
 		result.unwrap() == vec![1]
+	}
+
+	fn call_with_timeout(ext: &mut BasicExternalities, context: CallContext) -> bool {
+		let code = sp_core::traits::WrappedRuntimeCode(Default::default());
+		let runtime_code = RuntimeCode { code_fetcher: &code, heap_pages: None, hash: vec![] };
+		let result = LedgerContextExecutor(Probe).call_with_execution_timeout(
+			ext,
+			&runtime_code,
+			"Core_version",
+			&[],
+			context,
+			Duration::from_secs(1),
+		);
+		result.unwrap() == vec![1]
+	}
+
+	#[test]
+	fn timeout_calls_are_marked_like_calls() {
+		let mut ext = BasicExternalities::default();
+		assert!(call_with_timeout(&mut ext, CallContext::Onchain { import: true }));
+		assert!(!has_marker(&mut ext));
+		assert!(!call_with_timeout(&mut ext, CallContext::Offchain));
 	}
 
 	#[test]

@@ -600,7 +600,7 @@ rebuild-chainspec:
         RUN echo "Using srtool-built runtime:" && cat /srtool-digest.json | jq -r '.runtimes.compressed'
     END
 
-    RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+    RUN CFG_PRESET=$NETWORK /midnight-node export-chain-spec > res/$NETWORK/chain-spec.json
 
     # If deterministic, replace the runtime code with srtool-built WASM
     IF [ "$DETERMINISTIC" = "true" ]
@@ -614,7 +614,7 @@ rebuild-chainspec:
     RUN cat res/$NETWORK/chain-spec.json | \
       jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.system_tx = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
-    RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
+    RUN /midnight-node export-chain-spec --chain=res/$NETWORK/chain-spec.json --raw > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
     # Save srtool digest alongside chain-spec if deterministic build
