@@ -35,7 +35,7 @@ pub mod builder_context;
 pub mod indexer_context;
 pub use crate::indexer_client::{IndexerClient, IndexerClientError};
 pub use builder_context::BuilderContext;
-pub use indexer_context::IndexerContext;
+pub use indexer_context::{IndexerContext, SyncedUtxo};
 
 /// `slot_duration_secs * (1 + MaxSkippedSlots)` = 6 * 2. Fixed for every chain this
 /// correction can apply to: those blocks were produced under `SLOT_DURATION = 6s` and
