@@ -600,7 +600,7 @@ rebuild-chainspec:
         RUN echo "Using srtool-built runtime:" && cat /srtool-digest.json | jq -r '.runtimes.compressed'
     END
 
-    RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+    RUN CFG_PRESET=$NETWORK /midnight-node export-chain-spec > res/$NETWORK/chain-spec.json
 
     # If deterministic, replace the runtime code with srtool-built WASM
     IF [ "$DETERMINISTIC" = "true" ]
@@ -614,7 +614,7 @@ rebuild-chainspec:
     RUN cat res/$NETWORK/chain-spec.json | \
       jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.system_tx = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
-    RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
+    RUN /midnight-node export-chain-spec --chain=res/$NETWORK/chain-spec.json --raw > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
     # Save srtool digest alongside chain-spec if deterministic build
@@ -831,6 +831,11 @@ node-ci-image-single-platform:
     # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
         ${GHCR_REGISTRY}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
+    # Public mirror, as for the node and toolkit images: anonymous pulls with no Docker Hub
+    # rate limit. A no-op outside the canonical upstream repo.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push ${GHCR_REGISTRY_PUBLIC}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
+    END
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
@@ -843,7 +848,10 @@ prep-no-copy:
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}-$NATIVEARCH
+    # Public GHCR, not Docker Hub: anonymous pulls with no rate limit, so forks need no
+    # credentials either. Hard-coded rather than ${GHCR_REGISTRY_PUBLIC}, which in a fork
+    # points at a namespace that holds no CI image.
+    FROM ghcr.io/midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}-$NATIVEARCH
     # The pulled image's tag tracks Rust, compactc and npm only; cargo tools baked into it
     # (cargo-hack, cargo-shear, ...) are not in the tag, so republish after bumping one.
 

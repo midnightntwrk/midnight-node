@@ -52,7 +52,7 @@ jobs:
         uses: ./.github/actions/tree-cache-guard
 
       # No GHCR login: the build chain only pulls the public
-      # midnightntwrk/midnight-node-ci image from docker.io.
+      # ghcr.io/midnightntwrk/midnight-node-ci image.
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:

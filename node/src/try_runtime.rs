@@ -102,6 +102,7 @@ impl TryRuntimeCmd {
 			self.set_runtime(&executor, &mut ext, new_runtime)?;
 		}
 
+		let state_version = runtime_version(&executor, &mut ext)?.state_version();
 		let code_in_snapshot = BackendRuntimeCode::new(&ext.backend, TryPendingCode::No);
 		let runtime_code = code_in_snapshot.runtime_code()?;
 		let mut changes = OverlayedChanges::default();
@@ -118,6 +119,7 @@ impl TryRuntimeCmd {
 			&mut extensions,
 			&runtime_code,
 			CallContext::Offchain,
+			state_version,
 		)
 		.execute()
 		.map_err(|e| {

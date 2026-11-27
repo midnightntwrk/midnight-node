@@ -10,12 +10,12 @@ Chain specs can be provided to a node either through a hard-coded means(see chai
 ## Examples
 Build "local" chain specification:
 ```shell
-./target/release/midnight-node build-spec --disable-default-bootnode > chain-spec.json
+./target/release/midnight-node export-chain-spec > chain-spec.json
 ```
 
 Get "raw" version of "local chain specification:
 ```shell
-./target/release/midnight-node build-spec --chain chain-spec.json --disable-default-bootnode > chain-spec-raw.json
+./target/release/midnight-node export-chain-spec --chain chain-spec.json --raw > chain-spec-raw.json
 ```
 
 Start a node based on a chain spec file

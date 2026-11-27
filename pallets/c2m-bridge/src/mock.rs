@@ -56,7 +56,10 @@ pub mod mock_pallet {
 			if ExecutorFails::<Test>::get() {
 				return Err(DispatchError::Other("ledger rejected the system transaction"));
 			}
-			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx.clone().try_into().unwrap();
+			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx
+				.clone()
+				.try_into()
+				.map_err(|_| DispatchError::Other("system transaction too long"))?;
 			Transfers::<Test>::append(bounded_vec);
 			let count = TransfersCount::<Test>::get();
 			TransfersCount::<Test>::put(count + 1);

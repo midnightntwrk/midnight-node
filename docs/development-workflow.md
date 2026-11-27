@@ -206,10 +206,10 @@ The LedgerState implementation contains most of the critical logic. Understandin
 
 ```bash
 # Build chain spec for local development
-./target/release/midnight-node build-spec --disable-default-bootnode > chain-spec.json
+./target/release/midnight-node export-chain-spec > chain-spec.json
 
 # Convert to raw format
-./target/release/midnight-node build-spec --chain chain-spec.json --raw > chain-spec-raw.json
+./target/release/midnight-node export-chain-spec --chain chain-spec.json --raw > chain-spec-raw.json
 
 # Start node with custom chain spec
 ./target/release/midnight-node --chain chain-spec-raw.json

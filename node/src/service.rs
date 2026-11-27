@@ -352,8 +352,7 @@ pub fn new_partial(
 		backend.clone(),
 		executor.clone(),
 		genesis_extrinsics?,
-	)
-	.unwrap();
+	)?;
 
 	let (client, backend, keystore_container, task_manager) =
 		sc_service::new_full_parts_with_genesis_builder::<

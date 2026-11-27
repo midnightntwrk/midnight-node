@@ -6,8 +6,13 @@ publish = false
 
 [lib]
 proc-macro = true
+test = false
+doctest = false
 
 [dependencies]
 proc-macro2 = "1"
 quote = { workspace = true }
 syn = { workspace = true }
+
+[lints]
+workspace = true

@@ -31,7 +31,7 @@ use sp_block_builder::BlockBuilder as BlockBuilderApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
 use sp_consensus::BlockOrigin;
 use sp_consensus_aura::AuraApi;
-use sp_consensus_aura::sr25519::{AuthorityId, AuthorityPair, AuthoritySignature};
+use sp_consensus_aura::sr25519::{AuthorityId, AuthorityPair};
 use sp_consensus_slots::Slot;
 use sp_inherents::{CheckInherentsResult, CreateInherentDataProviders, InherentData};
 use sp_keystore::{Keystore, KeystorePtr};
@@ -344,8 +344,7 @@ struct AuraSlotExtractor;
 
 impl SlotExtractor<Block> for AuraSlotExtractor {
 	fn extract_slot(header: &<Block as BlockT>::Header) -> Result<Slot, String> {
-		sc_consensus_aura::find_pre_digest::<Block, AuthoritySignature>(header)
-			.map_err(|e| e.to_string())
+		sc_consensus_aura::find_pre_digest::<Block>(header).map_err(|e| e.to_string())
 	}
 }
 

@@ -542,7 +542,7 @@ inject_bootnodes() {
     print_info "Regenerating chain-spec-raw.json..."
     local node_binary
     node_binary=$(ensure_node_binary) || return 1
-    "$node_binary" build-spec --chain="$spec_file" --raw --disable-default-bootnode > "$raw_file"
+    "$node_binary" export-chain-spec --chain="$spec_file" --raw > "$raw_file"
 
     # Recompute hash of the updated chain-spec-raw.json
     local hash_file="$REPO_ROOT/res/$network/chain-spec-hash.json"

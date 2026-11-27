@@ -17,3 +17,10 @@ std = [
     "sp-api/std",
     "sp-core/std",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false
