@@ -85,7 +85,10 @@ pub fn block_context_8_to_9(ctx8: &crate::ledger_8::BlockContext) -> BlockContex
 pub fn fork_context_8_to_9(
 	context8: LedgerContext8<Db8>,
 ) -> Result<LedgerContext9<Db9>, std::io::Error> {
-	let ledger_state_8 = context8.ledger_state.lock().expect("failed to lock ledger state");
+	let ledger_state_8 = context8
+		.ledger_state
+		.lock()
+		.map_err(|_| std::io::Error::other("failed to lock ledger state"))?;
 	// Real v8->v9 state translation (NOT `old_to_new_sp`): the LedgerState tag
 	// changed v13->v18 and its shape changed, so a bare arena-key reuse would
 	// produce a v9 root the ledger-9 machinery can't read. Walk the v8 state
@@ -120,7 +123,12 @@ pub fn fork_context_8_to_9(
 	};
 
 	let mut wallets = HashMap::new();
-	for (k, v) in context8.wallets.lock().expect("failed to lock wallets").iter() {
+	for (k, v) in context8
+		.wallets
+		.lock()
+		.map_err(|_| std::io::Error::other("failed to lock wallets"))?
+		.iter()
+	{
 		let new_secret_keys: Result<Option<SecretKeys>, _> = v
 			.shielded
 			.secret_keys

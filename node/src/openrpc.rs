@@ -326,7 +326,12 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				result("result", "Null on success", json!({"type": "null"})),
 				&[],
 			);
-			entry.as_object_mut().unwrap().insert("x-unsafe".to_string(), json!(true));
+			// `method_entry` always builds a JSON object; a non-object is a bug, so fail loudly.
+			#[allow(clippy::unwrap_in_result)]
+			entry
+				.as_object_mut()
+				.expect("method_entry returns a JSON object")
+				.insert("x-unsafe".to_string(), json!(true));
 			entry
 		},
 
@@ -412,7 +417,12 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				),
 				&[],
 			);
-			entry.as_object_mut().unwrap().insert("deprecated".to_string(), json!(true));
+			// `method_entry` always builds a JSON object; a non-object is a bug, so fail loudly.
+			#[allow(clippy::unwrap_in_result)]
+			entry
+				.as_object_mut()
+				.expect("method_entry returns a JSON object")
+				.insert("deprecated".to_string(), json!(true));
 			entry
 		},
 

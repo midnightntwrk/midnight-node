@@ -1018,7 +1018,8 @@ mod failed_mbm_recovery {
 				});
 			let len = proposal.encoded_size() as u32;
 			let weight = proposal.get_dispatch_info().call_weight;
-			let hash = <Runtime as frame_system::Config>::Hashing::hash_of(&proposal);
+			// Both collectives hash `(proposal, threshold)` the same way.
+			let hash = crate::Council::proposal_hash(&proposal, 2);
 
 			dispatch_signed(
 				RuntimeCall::Council(pallet_collective::Call::propose {

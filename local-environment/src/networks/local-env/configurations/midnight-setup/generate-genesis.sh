@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Step 2 of chain preparation: build the genesis ledger state for this bring-up with
-# the toolkit image, and hand it to build-spec through the shared volume.
+# the toolkit image, and hand it to the chain spec export through the shared volume.
 #
 # Why not just use the committed res/genesis/genesis_*_local.mn? Those blobs carry a
 # version-bound serialization tag (`midnight:ledger-state[v18]:...`) and are rebuilt
@@ -47,7 +47,7 @@ phase "Generating genesis"
 
 # The chain spec pins the genesis it was built with, so once one exists the chain's
 # genesis is already decided; regenerating would only risk a different genesis hash
-# for the node data already in the volume. Same reasoning as the build-spec reuse in
+# for the node data already in the volume. Same reasoning as the chain spec reuse in
 # entrypoint.sh. To force a fresh chain, drop the volume: `docker compose down -v`.
 if [ -f /shared/chain-spec.json ]; then
   echo "/shared/chain-spec.json already exists — genesis is already fixed; skipping generation."
