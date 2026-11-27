@@ -417,6 +417,7 @@ impl frame_system::Config for Runtime {
 			pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
 		>,
 		migrations::bridge_reserve_validator::MigrateMainChainScripts,
+		migrations::DecentralizationMigrations,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
