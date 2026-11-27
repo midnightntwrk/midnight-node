@@ -40,7 +40,7 @@ jobs:
         # Trial of upload-sarif-github-action PR 157: dependency licences are
         # checked against the default allowlist (HIGH violation, LOW unknown).
         # Re-pin to the release once it ships.
-        uses: midnightntwrk/upload-sarif-github-action@0483b6038e454b6bab7938e3b2d888b6a1fd5fe6 # giles-osv-licenses
+        uses: midnightntwrk/upload-sarif-github-action@23584c64d487b7686644f7005a39bae6a7c905b4 # giles-osv-licenses
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # The action's default checks less Vulnerabilities. That check is one
