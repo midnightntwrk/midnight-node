@@ -1854,19 +1854,18 @@ pub mod suite {
 		storage::alloc_with_initial_state::<TransactionSignature, SuiteDb<W>>(genesis_state)
 	}
 
-	/// Holds the state at `state_key` in world `W`, persisted, for as long as the box lives:
-	/// on-chain in its storage, off-chain in its ephemeral storage.
-	pub fn pin<const W: u8>(state_key: &[u8], onchain: bool) -> Box<dyn Any> {
-		fn pin<D: DB<Hasher = Hasher>>(state_key: &[u8]) -> Box<dyn Any> {
-			let mut state = Bridge::<TransactionSignature, D>::get_ledger(&api::new(), state_key)
-				.expect("the model keeps every state");
-			state.persist();
-			Box::new(state)
+	/// Persists the state at `state_key` in world `W`: on-chain in its storage, off-chain in its
+	/// ephemeral storage.
+	pub fn persist<const W: u8>(state_key: &[u8], onchain: bool) {
+		fn persist<D: DB<Hasher = Hasher>>(state_key: &[u8]) {
+			Bridge::<TransactionSignature, D>::get_ledger(&api::new(), state_key)
+				.expect("the model keeps every state")
+				.persist();
 		}
 		if onchain {
-			pin::<SuiteDb<W>>(state_key)
+			persist::<SuiteDb<W>>(state_key)
 		} else {
-			pin::<crate::ephemeral::EphemeralDb<SuiteDb<W>>>(state_key)
+			persist::<crate::ephemeral::EphemeralDb<SuiteDb<W>>>(state_key)
 		}
 	}
 }

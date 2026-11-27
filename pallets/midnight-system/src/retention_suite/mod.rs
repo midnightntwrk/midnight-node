@@ -40,7 +40,6 @@ use sp_runtime::{
 	transaction_validity::TransactionSource,
 };
 use std::{
-	any::Any,
 	collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
 	sync::OnceLock,
 };
@@ -378,7 +377,6 @@ struct World<const W: u8> {
 	/// Every key a call produced, and whether on-chain.
 	produced: BTreeSet<(Vec<u8>, bool)>,
 	onchain_parents: Vec<Vec<u8>>,
-	pinned: Vec<Box<dyn Any>>,
 }
 
 impl<const W: u8> World<W> {
@@ -393,7 +391,6 @@ impl<const W: u8> World<W> {
 			execs: BTreeMap::new(),
 			produced: BTreeSet::new(),
 			onchain_parents: vec![],
-			pinned: vec![],
 		}
 	}
 
@@ -544,7 +541,7 @@ impl<const W: u8> World<W> {
 		outcome
 	}
 
-	/// Records the keys `exec` produced and holds. The model pins each new one.
+	/// Records the keys `exec` produced and holds. The model persists each new one.
 	fn observe(&mut self, exec: usize, classes: &mut Classes) {
 		let e = self.execs.get_mut(&exec).expect("a running execution");
 		let (onchain, state_key, held) = (e.onchain, e.state_key(), e.held::<W>());
@@ -553,7 +550,7 @@ impl<const W: u8> World<W> {
 		}
 		for key in held.iter().chain([&state_key]) {
 			if self.produced.insert((key.clone(), onchain)) && W == 1 {
-				self.pinned.push(suite::pin::<W>(key, onchain));
+				suite::persist::<W>(key, onchain);
 			}
 		}
 		let others = self.execs.iter_mut().filter(|(id, e)| **id != exec && e.onchain != onchain);

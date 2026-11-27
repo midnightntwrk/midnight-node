@@ -57,73 +57,16 @@
 //! is one `TestExternalities`, as one runtime-API instance keeps its extensions across the
 //! calls of a block.
 //!
-//! # Definitions
-//!
-//! ```text
-//! world                   the state every call runs against:
-//!   arena                   default_storage<D>: in-memory nodes, write cache, root counts
-//!   disk                    the ledger DB under the arena
-//!   executions              the live runtime-API instances; each one has:
-//!     onchain                 LedgerOnchainExt is registered (block authoring or import)
-//!     held                    LedgerStatesExt: its intra-block states
-//!     held_offchain           LedgerEphemeralExt and Storage<EphemeralDb<D>>: its off-chain states
-//!     state_key               pallet StateKey in its overlay (FRAME storage, transactional)
-//!     layers                  its open with_storage_layer frames, each with the state_key it reverts to
-//!
-//! call                    one of, inside one execution:
-//!   apply(key, tx)          apply_transaction | apply_system_transaction[_checked], ledger 8 or 9
-//!   post_block(key)         post_block_update | apply_post_block_update
-//!   migrate(key)            migrate_state_v8_to_v9 (persists its output and flushes, on-chain)
-//!   flush                   flush_storage
-//!   read(key)               a call that only loads through get_ledger:
-//!                           get_ledger_state_root, get_transaction_cost, validate_*, pre_dispatch
-//!   open_layer | commit | rollback
-//!                           rollback: the innermost layer fails, state_key := its saved value
-//!   end_execution           the runtime-API instance and its extensions are dropped
-//!
-//! history                 a sequence of calls, from a world holding only the persisted genesis
-//! well_formed(history)    a history the node can produce:
-//!                           on-chain apply and post_block use the execution's state_key
-//!                           migrate runs at most once, on-chain, at the start of a block
-//!                           every commit or rollback closes an open layer, and none is open at post_block
-//!                           an on-chain execution ends: post_block, flush, end_execution,
-//!                             or ends early (an abandoned proposal or a failed import)
-//!                           off-chain calls use any key in live_keys
-//!                           executions interleave
-//! world_after(history)    the world once the history has run
-//! test_cases()            the histories the test's test-case generator produces at random
-//! shrink(history)         shrinking: when a check fails, the test retries it on smaller
-//!                         versions of the failing history (fewer calls, smaller txs) and
-//!                         reports the smallest one that still fails
-//!
-//! tips(world)             genesis, the post_block key of every block, and the output of every
-//!                         on-chain migrate, each counted once per time it was produced
-//! live_keys(world)        every tip, and for each live execution: its state_key and every key
-//!                         saved by its open layers
-//! produced(history)       every key an apply, post_block or migrate in the history returned
-//! resolves(world, key)    get_ledger(key) is Ok and every node under key can be read
-//! root_count(world, key)  the arena's root count for key, 0 when absent
-//! results(history)        each call's whole return value: the state_root bytes, every
-//!                         AppliedStateRoot / SystemTransactionAppliedStateRoot field, or the exact
-//!                         LedgerApiError
-//! model                   a reference store: allocs every state into its own arena, persists it,
-//!                         and never releases or unpersists anything (the never-forget store)
-//! deserializations(call)  the arena deserializations of a ledger root during the call
-//!
-//! key equality            byte equality; keys are content hashes, so equal keys are equal ledgers
-//! ```
-//!
-//! How the definitions are reached:
+//! How the runtime is driven:
 //! - apply: an unsigned `send_mn_transaction` through `Executive::apply_extrinsic`, which runs
 //!   `pre_dispatch` (a read) first; or a cNIGHT update through this pallet's
 //!   `MidnightSystemTransactionCNightExecutor`, in a storage layer as the cNIGHT inherent applies
 //!   it. Several per block stand in for a block of transactions, which are costly to generate.
-//! - post_block and flush: `Executive::finalize_block`, through `on_finalize`.
+//! - post-block update and flush: `Executive::finalize_block`, through `on_finalize`.
 //! - read: `validate_transaction`, `get_transaction_cost` and `get_ledger_state_root`, off-chain.
 //! - rollback: an inherent whose later transaction fails rolls back the earlier ones.
 //! - off-chain executions run reads and dry-run applies, at a tip: a runtime API call runs at an
 //!   imported block, so it never sees another execution's intra-block state.
-//! - migrate is not reached: the runtime no longer calls it.
 
 use super::{
 	Call, Class, Classes, Entry, History, Outcome, Step, check_history, history, world::Hash,
@@ -133,8 +76,10 @@ use std::collections::{BTreeMap, HashMap};
 
 // --- Properties ---
 
-/// P1, live keys resolve (invariant). Every key the node may still load, a block's tip, an
-/// execution's current state or a rollback target, loads in full.
+/// P1, live keys resolve (invariant). Every key the node may still load loads in full: every
+/// node under it can be read, not just the root `get_ledger` checks. The live keys are the tips
+/// (genesis and each finalized block's `StateKey`) and each running execution's `StateKey`,
+/// which after a rollback is the state it rolled back to.
 ///
 /// A released state the node still loads panics on first deref, which wedges block production.
 pub fn live_keys_resolve(step: Step, live: &[(Vec<u8>, bool)]) -> Result<(), TestCaseError> {
@@ -143,7 +88,8 @@ pub fn live_keys_resolve(step: Step, live: &[(Vec<u8>, bool)]) -> Result<(), Tes
 	Ok(())
 }
 
-/// P1, only tips are roots, once per time each was produced (invariant).
+/// P1, only tips are roots, once per time each was produced (invariant): the arena's root
+/// counts equal how many times genesis and each finalized block's `StateKey` were produced.
 ///
 /// The count is strict because nothing garbage-collects abandoned forks today. A double persist
 /// leaves a count of 2 where 1 is right, and a later fork GC that releases one count would leave
@@ -157,8 +103,9 @@ pub fn roots_are_tips(
 	Ok(())
 }
 
-/// The rules a history the node can run follows (see `well_formed` in the module doc). Checks the
-/// shape of the calls: which tip an `Index` picks is settled when the history runs.
+/// Whether the node can run `history`: each execution starts once and ends, inherents and
+/// `finalize_block` run only on-chain and reads only off-chain, and only the end follows
+/// `finalize_block`. Which tip an `Index` picks is settled when the history runs.
 pub fn well_formed(history: &History) -> Result<(), String> {
 	let mut live = BTreeMap::new();
 	let mut ended = std::collections::BTreeSet::new();
@@ -208,7 +155,8 @@ pub fn history_is_well_formed(history: &History) -> Result<(), TestCaseError> {
 }
 
 /// P4, released states are gone (postcondition of flush). After a flush, no produced state that
-/// is not a tip, and that no live execution holds, loads.
+/// is not a tip, and that no live execution holds, loads. Produced states are every key an
+/// execution's `StateKey` or extensions held, in the storage of the side that held it.
 ///
 /// Checked on nodes: `leftover` is each node of such a state that still loads and that no live
 /// key reaches.
@@ -238,10 +186,12 @@ pub fn disk_reachable_from_roots(step: Step, unreachable: &[Hash]) -> Result<(),
 }
 
 /// P5, same results as the never-forget store (model-based). Every call returns, byte for byte,
-/// what it returns against a store that keeps every state forever.
+/// what it returns against a store that keeps every state forever, with the execution's
+/// `StateKey` after it.
 ///
-/// The model shares only the pure ledger functions with the code under test, so a released
-/// state shows up as an error, and a key serialized in another form as different bytes.
+/// The model is the same runtime in a storage of its own, which persists every produced state.
+/// A state the real world released too early shows up as an error, and a key serialized in
+/// another form as different bytes.
 pub fn same_results(step: Step, real: &Outcome, model: &Outcome) -> Result<(), TestCaseError> {
 	prop_assert_eq!(real, model, "P5 same results: {:?}", step);
 	Ok(())
