@@ -10,4 +10,4 @@ This replaces the local workaround from #2252, which is reverted: the Partner Ch
 `check_inherents_on_chain` helper goes back to `sp_block_builder::check_inherents_with_data`,
 and the runtime's `check_inherents` no longer runs `execute_on_runtime_upgrade` itself.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2528

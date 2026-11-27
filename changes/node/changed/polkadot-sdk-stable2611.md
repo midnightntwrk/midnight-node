@@ -35,4 +35,4 @@ Code adjustments for the new SDK API:
 - `prost` now enables its `derive` feature explicitly, which the SDK no longer pulls in.
 - `tracing-subscriber` is pinned to `=0.3.20`, the version the SDK pins.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2528
