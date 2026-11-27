@@ -30,7 +30,7 @@ use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
 		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash,
-		OutputInstructionUnshielded, ProofKind, ProofMarker, SignatureKind, StandardTransaction,
+		OutputInstructionUnshielded, ProofKind, SignatureKind, StandardTransaction,
 		Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
 };
@@ -46,39 +46,41 @@ use crate::{
 	types::PERSISTENT_HASH_BYTES,
 };
 
-pub type InnerTx<S, D> = Tx<S, ProofMarker, PureGeneratorPedersen, D>;
+pub type InnerTx<S, P, D> = Tx<S, P, PureGeneratorPedersen, D>;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Transaction<S: SignatureKind<D>, D: DB>(pub InnerTx<S, D>);
+pub(crate) struct Transaction<S: SignatureKind<D>, P: ProofKind<D>, D: DB>(pub InnerTx<S, P, D>);
 
-impl<S: SignatureKind<D>, D: DB> Deserializable for Transaction<S, D> {
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Deserializable for Transaction<S, P, D> {
 	fn deserialize(reader: &mut impl std::io::Read, recursion_level: u32) -> std::io::Result<Self> {
 		let tx = InnerTx::deserialize(reader, recursion_level)?;
 		Ok(Transaction(tx))
 	}
 }
 
-impl<S: SignatureKind<D>, D: DB> DeserializableError for Transaction<S, D> {
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> DeserializableError for Transaction<S, P, D> {
 	fn error() -> DeserializationError {
 		DeserializationError::Transaction
 	}
 }
 
-impl<S: SignatureKind<D>, D: DB> Borrow<InnerTx<S, D>> for Transaction<S, D> {
-	fn borrow(&self) -> &InnerTx<S, D> {
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Borrow<InnerTx<S, P, D>>
+	for Transaction<S, P, D>
+{
+	fn borrow(&self) -> &InnerTx<S, P, D> {
 		&self.0
 	}
 }
 
-impl<S: SignatureKind<D>, D: DB> SerializableError for InnerTx<S, D> {
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> SerializableError for InnerTx<S, P, D> {
 	fn error() -> SerializationError {
 		SerializationError::UnknownType
 	}
 }
 
-impl<S: SignatureKind<D>, D: DB> Tagged for Transaction<S, D>
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Tagged for Transaction<S, P, D>
 where
-	InnerTx<S, D>: Tagged,
+	InnerTx<S, P, D>: Tagged,
 {
 	fn tag() -> std::borrow::Cow<'static, str> {
 		InnerTx::tag()
@@ -220,7 +222,7 @@ impl UnshieldedUtxos {
 	}
 }
 
-impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
+impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> Transaction<S, P, D> {
 	pub(crate) fn hash(&self) -> Hash {
 		self.0.transaction_hash().0.0
 	}
@@ -441,6 +443,7 @@ mod tests {
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
 	use mn_ledger_local::structure::LedgerState;
+	use mn_ledger_local::structure::ProofMarker;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
 	const MALFORMED: &[u8] = include_bytes!("../../../test-data/malformed_tx.json");
@@ -458,9 +461,9 @@ mod tests {
 	fn prepare_transaction(
 		api: &api::Api,
 		bytes: &[u8],
-	) -> (api::Transaction<Signature, DefaultDB>, BlockContext) {
+	) -> (api::Transaction<Signature, ProofMarker, DefaultDB>, BlockContext) {
 		let (tx, block_context) = extract_tx_with_context(bytes);
-		let tx = api.tagged_deserialize::<Transaction<Signature, DefaultDB>>(&tx);
+		let tx = api.tagged_deserialize::<Transaction<Signature, ProofMarker, DefaultDB>>(&tx);
 		assert!(tx.is_ok(), "Can't deserialize transaction: {}", tx.unwrap_err());
 
 		(tx.unwrap(), block_context.into())
@@ -546,7 +549,7 @@ mod tests {
 
 	#[test]
 	fn utxos_info_from_output_empty_vec() {
-		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+		let result = Transaction::<Signature, ProofMarker, DefaultDB>::utxos_info_from_output(
 			vec![],
 			[0u8; PERSISTENT_HASH_BYTES],
 		);
@@ -556,7 +559,7 @@ mod tests {
 	#[test]
 	fn utxos_info_from_output_single_output() {
 		let output = make_utxo_output(100, 0x01, 0x02);
-		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+		let result = Transaction::<Signature, ProofMarker, DefaultDB>::utxos_info_from_output(
 			vec![output],
 			[0u8; PERSISTENT_HASH_BYTES],
 		);
@@ -572,7 +575,7 @@ mod tests {
 			make_utxo_output(20, 0, 0),
 			make_utxo_output(30, 0, 0),
 		];
-		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+		let result = Transaction::<Signature, ProofMarker, DefaultDB>::utxos_info_from_output(
 			outputs,
 			[0u8; PERSISTENT_HASH_BYTES],
 		);
@@ -595,8 +598,10 @@ mod tests {
 			owner: UserAddress(HashOutput(owner_bytes)),
 			type_: UnshieldedTokenType(HashOutput(type_bytes)),
 		};
-		let result =
-			Transaction::<Signature, DefaultDB>::utxos_info_from_output(vec![output], intent_hash);
+		let result = Transaction::<Signature, ProofMarker, DefaultDB>::utxos_info_from_output(
+			vec![output],
+			intent_hash,
+		);
 		let infos = result.unwrap();
 		assert_eq!(infos.len(), 1);
 
@@ -633,7 +638,7 @@ mod tests {
 				.0
 				.0;
 
-		let tx = Transaction::<(), DefaultDB>(Tx::ClaimRewards(claim));
+		let tx = Transaction::<(), ProofMarker, DefaultDB>(Tx::ClaimRewards(claim));
 		let utxos = tx.unshielded_utxos();
 
 		assert!(utxos.inputs().is_empty(), "a claim spends no UTXO inputs");

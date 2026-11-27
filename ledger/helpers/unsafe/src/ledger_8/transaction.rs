@@ -110,6 +110,9 @@ pub struct StandardTransactionInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub prover: Arc<dyn ProofProvider<D>>,
 	pub funding_seeds: Vec<WalletSeed>,
 	pub mock_proofs_for_fees: bool,
+	/// DUST to spend on the first balancing pass, in specks. Each pass proves the transaction, so
+	/// an estimate at or above the fee saves passes; a shortfall only adds them.
+	pub fee_estimate: u128,
 	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
@@ -133,6 +136,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTransact
 			prover,
 			funding_seeds: vec![],
 			mock_proofs_for_fees: false,
+			fee_estimate: 0,
 			dust_registrations: vec![],
 		}
 	}
@@ -175,7 +179,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 		self.mock_proofs_for_fees = mock_proofs_for_fees;
 	}
 
-	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
+	/// [`Self::prove`] without its final `well_formed` check, for provers whose proofs the
+	/// ledger cannot verify.
+	pub async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
 		let now = self.context.latest_block_context().await.tblock;
 		let delay = self.context.ledger_parameters().await.global_ttl;
 		let ttl = now + delay;
@@ -244,7 +250,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 		now: Timestamp,
 		ttl: Timestamp,
 	) -> Result<FinalizedTransaction<D>> {
-		let mut missing_dust = 0;
+		let mut missing_dust = self.fee_estimate;
 		let dust_params = self.context.ledger_parameters().await.dust;
 		let balance_start = std::time::Instant::now();
 

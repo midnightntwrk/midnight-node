@@ -30,7 +30,7 @@ use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
-	structure::{LedgerParameters, LedgerState, SignatureKind},
+	structure::{LedgerParameters, LedgerState, ProofKind, SignatureKind},
 };
 use std::{borrow::Borrow, collections::BTreeMap};
 use transient_crypto_local::merkle_tree::MerkleTreeDigest;
@@ -152,10 +152,10 @@ impl<D: DB> Ledger<D> {
 	///
 	/// This is used when a `VerifiedTransaction` has been cached from a prior
 	/// validation step, avoiding redundant ZK proof verification.
-	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>>(
+	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>, P: ProofKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
-		tx: &Transaction<S, D>,
+		tx: &Transaction<S, P, D>,
 		verified_tx: &mn_ledger_local::structure::VerifiedTransaction<D>,
 		ctx: &TransactionContext<D>,
 	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
@@ -318,6 +318,7 @@ mod tests {
 	};
 	use midnight_serialize_local::tagged_deserialize;
 	use mn_ledger_local::structure::LedgerState;
+	use mn_ledger_local::structure::ProofMarker;
 
 	fn prepare_ledger() -> Sp<Ledger<DefaultDB>> {
 		sp_tracing::try_init_simple();
@@ -340,7 +341,7 @@ mod tests {
 		block_context: &BlockContext,
 	) {
 		let tx = api
-			.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes)
+			.tagged_deserialize::<Transaction<Signature, ProofMarker, DefaultDB>>(bytes)
 			.expect("failed to deserialize tx");
 		let tx_ctx = ledger.get_transaction_context(block_context.clone()).unwrap();
 		let verified_tx =

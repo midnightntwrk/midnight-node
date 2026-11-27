@@ -23,6 +23,8 @@ frame-system.workspace = true
 log.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
+prometheus-endpoint = { workspace = true, optional = true }
+sp-version = { workspace = true, optional = true }
 # Only for `test-utils`: the exported `mock` registers its block-execution marker.
 midnight-primitives-ledger = { workspace = true, optional = true }
 sp-api.workspace = true
@@ -35,7 +37,7 @@ sp-tracing = { workspace = true}
 sidechain-domain.workspace = true
 
 [dev-dependencies]
-midnight-primitives-ledger = { workspace = true }
+midnight-primitives-ledger = { workspace = true, features = ["std"] }
 sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true
@@ -46,6 +48,8 @@ tempfile.workspace = true
 midnight-ledger-unsafe-helpers = { workspace = true }
 midnight-node-ledger-helpers.workspace = true
 midnight-node-ledger = { workspace = true, features = ["std", "test-utils"] }
+prometheus-endpoint.workspace = true
+sp-version.workspace = true
 test-log.workspace = true
 
 [features]
@@ -75,6 +79,8 @@ runtime-benchmarks = [
 try-runtime = ["frame-support/try-runtime"]
 test-utils = [
     "midnight-primitives-ledger",
+    "prometheus-endpoint",
+    "sp-version",
     "sp-core",
     "sp-io",
     "midnight-node-ledger/test-utils",

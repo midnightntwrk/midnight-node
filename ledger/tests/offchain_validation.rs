@@ -16,8 +16,12 @@
 //! A separate binary because `set_default_storage` is process-global and set-once, and because
 //! the assertions inspect the shared write cache, which other tests would also fill.
 
-use ledger_storage_ledger_8::{db::ParityDb, storage::default_storage};
+use ledger_storage_ledger_8::{
+	db::ParityDb,
+	storage::{default_storage, try_get_default_storage},
+};
 use midnight_node_ledger::{
+	ephemeral::EphemeralDb,
 	host_api::ledger_9::ledger_9_bridge as host,
 	ledger_9::{BlockContext, storage::init_storage_paritydb_separate},
 };
@@ -57,10 +61,26 @@ fn offchain_validation_leaves_no_pending_shared_writes() {
 	drop(offchain);
 	assert_eq!(pending_writes(), 0, "off-chain validation left writes for the next flush");
 
+	let (shared_before, ephemeral_before) = (lookups::<Shared>(), lookups::<EphemeralDb<Shared>>());
 	let mut onchain = BasicExternalities::default();
 	onchain.register_extension(LedgerOnchainExt::default());
 	sp_externalities::set_and_run_with_externalities(&mut onchain, || {
 		host::validate_guaranteed_execution(&genesis, &tx, ctx.clone(), RUNTIME_VERSION).unwrap();
 	});
-	assert!(pending_writes() > 0, "block execution no longer validates in the shared storage");
+	assert!(lookups::<Shared>() > shared_before, "block execution no longer reads shared storage");
+	assert_eq!(
+		lookups::<EphemeralDb<Shared>>(),
+		ephemeral_before,
+		"block execution read the ephemeral storage"
+	);
+	assert_eq!(pending_writes(), 0, "the validation cache kept allocations for the next flush");
+}
+
+fn lookups<D: ledger_storage_ledger_8::db::DB>() -> usize {
+	try_get_default_storage::<D>().map_or(0, |storage| {
+		storage.with_backend(|backend| {
+			let stats = backend.get_stats();
+			stats.get_cache_hits + stats.get_cache_misses
+		})
+	})
 }

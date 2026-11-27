@@ -8568,8 +8568,11 @@ dependencies = [
 name = "midnight-node-ledger"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "derive-where",
  "frame-support",
+ "futures",
  "hex",
  "lazy_static",
  "log",
@@ -8597,6 +8600,7 @@ dependencies = [
  "moka 0.11.3",
  "parity-db 0.5.7",
  "parity-scale-codec",
+ "proptest",
  "scale-info",
  "scale-info-derive",
  "serde",
@@ -11091,6 +11095,8 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-tracing",
+ "sp-version",
+ "substrate-prometheus-endpoint",
  "tempfile",
  "test-log",
 ]

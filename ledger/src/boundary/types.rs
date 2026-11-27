@@ -18,7 +18,6 @@ use scale_info_derive::TypeInfo;
 
 pub const PERSISTENT_HASH_BYTES: usize = 32;
 pub type Hash = [u8; PERSISTENT_HASH_BYTES];
-pub struct WrappedHash(pub Hash);
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionApplied {

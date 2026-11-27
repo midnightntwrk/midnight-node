@@ -1247,6 +1247,32 @@ test-pallet-fixtures:
 
     # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
+# Ledger tests too slow for per-PR CI: the `#[ignore]`d tests of the transaction validation cache
+# suite. Selected by name, so a test ignored for another reason stays out. Run nightly by the
+# workflow "nightly ledger tests".
+test-ledger-nightly:
+    FROM +prep
+    ARG TARGETARCH
+    # Cases per property, for the properties that don't pin their own count.
+    ARG PROPTEST_CASES=1000
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
+
+    # Same flags as +test, which explains them.
+    ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    # On failure, print proptest's regression seeds: the file dies with the container, and the
+    # logged input can't be replayed (tree specs hold fn pointers).
+    RUN --secret NODE_GIT_TOKEN MIDNIGHT_LEDGER_EXPERIMENTAL=1 PROPTEST_CASES=$PROPTEST_CASES \
+        with-git-creds cargo nextest r --profile ci --release --locked \
+        --package midnight-node-ledger --lib --run-ignored only -E 'test(revalidation_tests)' \
+        || { find ledger -name '*.proptest-regressions' -exec cat {} +; exit 1; }
+
 # Compiled Midnight Node Toolkit tests as a nextest archive. Needs no node image, so CI
 # builds it while the node builds; +test-toolkit then gets it from the shared BuildKit cache.
 toolkit-test-archive:

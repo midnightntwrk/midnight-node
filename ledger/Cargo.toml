@@ -53,10 +53,15 @@ scale-info.workspace = true
 # The byte-limit test needs an `Externalities` to call `validate_transaction` with.
 sp-io = { workspace = true, default-features = true }
 midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
-midnight-ledger-unsafe-helpers = { workspace = true }
+midnight-ledger-unsafe-helpers = { workspace = true, features = ["test-utils"] }
 prometheus-endpoint = { workspace = true }
 sp-state-machine = { workspace = true }
 tempfile = { workspace = true }
+# Not ledger-v9's `proptest` feature: it pins proptest ~1.6.
+proptest = { workspace = true }
+futures = { workspace = true, features = ["executor"] }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
 
 [features]
 default = [

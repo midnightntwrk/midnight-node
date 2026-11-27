@@ -12,7 +12,7 @@
 // limitations under the License.
 
 #[cfg(feature = "std")]
-use crate::ledger_8::Bridge;
+use crate::ledger_8::{Bridge, TX_VALIDATION_CACHE_CAPACITY, TxValidationCache};
 use crate::{
 	boundary::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
@@ -36,6 +36,10 @@ use {
 
 #[cfg(feature = "std")]
 type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
+
+#[cfg(feature = "std")]
+static TX_VALIDATION_CACHE: std::sync::LazyLock<TxValidationCache> =
+	std::sync::LazyLock::new(|| TxValidationCache::new(TX_VALIDATION_CACHE_CAPACITY));
 
 /// A still-generating cNIGHT dust entry, read back out of the pre-fork
 /// (ledger-8) dust state by [`Ledger8Bridge::dust_generation_values`].
@@ -126,7 +130,8 @@ pub fn apply_transaction_v1(
 			block_context,
 			true,
 			runtime_version,
-			/* skew_tblock */ true
+			/* skew_tblock */ true,
+			&TX_VALIDATION_CACHE,
 		)
 	)
 }
@@ -152,7 +157,8 @@ fn validate_guaranteed_execution_inner(
 			tx,
 			block_context,
 			runtime_version,
-			skew_tblock
+			skew_tblock,
+			&TX_VALIDATION_CACHE,
 		)
 	)
 }
@@ -252,7 +258,8 @@ pub trait Ledger8Bridge {
 				block_context,
 				true,
 				runtime_version,
-				/* skew_tblock */ false
+				/* skew_tblock */ false,
+				&TX_VALIDATION_CACHE,
 			)
 		)
 	}
@@ -343,7 +350,8 @@ pub trait Ledger8Bridge {
 				block_context,
 				runtime_version,
 				max_weight,
-				false
+				false,
+				&TX_VALIDATION_CACHE,
 			)
 		)?;
 
