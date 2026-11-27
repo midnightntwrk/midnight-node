@@ -22,3 +22,4 @@ through `earthly +test-retention-nightly`. An ignored test,
 another block's held states to disk with no root.
 
 PR: <link to PR>
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2530
