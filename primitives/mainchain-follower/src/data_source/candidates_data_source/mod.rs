@@ -421,7 +421,7 @@ mod tests {
 
 	/// Starts a Postgres owned by the calling test and applies db-sync test migrations.
 	/// The container is removed when the returned handle is dropped, including on panic.
-	async fn test_db(migrations: &str) -> (PgPool, ContainerAsync<GenericImage>) {
+	pub(super) async fn test_db(migrations: &str) -> (PgPool, ContainerAsync<GenericImage>) {
 		// The entrypoint logs the readiness message on stdout for its temporary init server
 		// and on stderr for the final one.
 		let container = GenericImage::new("postgres", "17.2")
@@ -443,7 +443,11 @@ mod tests {
 			"postgres://postgres@127.0.0.1:{}/postgres",
 			container.get_host_port_ipv4(5432).await.unwrap()
 		);
-		let pool = PgPool::connect(&url).await.unwrap();
+		let pool = sqlx::postgres::PgPoolOptions::new()
+			.max_connections(1)
+			.connect(&url)
+			.await
+			.unwrap();
 		let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
 			.join("../../partner-chains/toolkit/data-sources/db-sync/testdata")
 			.join(migrations);
@@ -479,5 +483,181 @@ mod tests {
 	async fn undecodable_datums_do_not_fail_candidate_query_tx_in_consumed() {
 		let (pool, _db) = test_db("migrations-tx-in-consumed").await;
 		undecodable_datums_do_not_fail_candidate_query(pool).await
+	}
+
+	async fn insert_candidate_outputs(pool: &PgPool, count: usize) {
+		sqlx::query(
+			"INSERT INTO tx_out (id, tx_id, index, address, address_raw, address_has_script, value)
+			 SELECT 500000 + n, 0, 100 + n, 'batch_addr', '', TRUE, 0
+			 FROM generate_series(0, $1::integer - 1) n",
+		)
+		.bind(count as i32)
+		.execute(pool)
+		.await
+		.unwrap();
+	}
+
+	async fn candidate_query_batches(pool: PgPool, config: db_model::TxInConfiguration) {
+		use db_model::{MAX_CANDIDATE_OUTPUTS, MAX_CANDIDATE_QUERY_BYTES, MAX_CANDIDATE_ROW_BYTES};
+		let backend_pid = sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()")
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+		let source = CandidatesDataSourceImpl::new(pool.clone(), None).await.unwrap();
+		let before = candidate_snapshot(&source).await;
+		let address = Address("batch_addr".into());
+		let read = || db_model::get_utxos_for_address(&pool, &address, BlockNumber(0), config);
+		assert!(read().await.unwrap().is_empty());
+		insert_candidate_outputs(&pool, MAX_CANDIDATE_OUTPUTS).await;
+		assert_eq!(read().await.unwrap().len(), MAX_CANDIDATE_OUTPUTS);
+		sqlx::query(
+			"INSERT INTO tx_out (id, tx_id, index, address, address_raw, address_has_script, value)
+			 VALUES (600000, 0, 5000, 'batch_addr', '', TRUE, 0)",
+		)
+		.execute(&pool)
+		.await
+		.unwrap();
+		assert!(format!("{:?}", read().await.unwrap_err()).contains("resource limit"));
+		sqlx::query("DELETE FROM tx_out WHERE address = 'batch_addr'")
+			.execute(&pool)
+			.await
+			.unwrap();
+
+		insert_candidate_outputs(&pool, 1).await;
+		sqlx::query(
+			"INSERT INTO datum (id, hash, tx_id, value)
+			 VALUES (500000, decode(repeat('99', 32), 'hex'), 0,
+			 jsonb_build_object('bytes', repeat('00', $1::integer)))",
+		)
+		.bind((MAX_CANDIDATE_ROW_BYTES / 2) as i32)
+		.execute(&pool)
+		.await
+		.unwrap();
+		sqlx::query(
+			"UPDATE tx_out SET data_hash = decode(repeat('99', 32), 'hex')
+			 WHERE address = 'batch_addr'",
+		)
+		.execute(&pool)
+		.await
+		.unwrap();
+		assert!(format!("{:?}", read().await.unwrap_err()).contains("resource limit"));
+
+		sqlx::query(
+			"UPDATE datum SET value = jsonb_build_object('bytes', repeat('00', 32768))
+			 WHERE id = 500000",
+		)
+		.execute(&pool)
+		.await
+		.unwrap();
+		assert_eq!(read().await.unwrap().len(), 1);
+		sqlx::query("DELETE FROM tx_out WHERE address = 'batch_addr'")
+			.execute(&pool)
+			.await
+			.unwrap();
+		insert_candidate_outputs(&pool, MAX_CANDIDATE_QUERY_BYTES / 65536 + 1).await;
+		sqlx::query(
+			"UPDATE tx_out SET data_hash = decode(repeat('99', 32), 'hex')
+			 WHERE address = 'batch_addr'",
+		)
+		.execute(&pool)
+		.await
+		.unwrap();
+		assert!(format!("{:?}", read().await.unwrap_err()).contains("resource limit"));
+		assert!(
+			source
+				.get_candidates(
+					McEpochNumber(191),
+					MainchainAddress::from_str("batch_addr").unwrap()
+				)
+				.await
+				.unwrap_err()
+				.to_string()
+				.contains("resource limit")
+		);
+		assert_eq!(candidate_snapshot(&source).await, before);
+
+		sqlx::query("DELETE FROM tx_out WHERE address = 'batch_addr'")
+			.execute(&pool)
+			.await
+			.unwrap();
+		insert_candidate_outputs(&pool, 1).await;
+		let inputs = MAX_CANDIDATE_ROW_BYTES / 64 + 1;
+		match config {
+			db_model::TxInConfiguration::Enabled => {
+				sqlx::query(
+					"INSERT INTO tx_in (id, tx_in_id, tx_out_id, tx_out_index)
+					 SELECT 700000 + n, 0, 4, 100 + n FROM generate_series(0, $1::integer - 1) n",
+				)
+				.bind(inputs as i32)
+				.execute(&pool)
+				.await
+				.unwrap();
+			},
+			db_model::TxInConfiguration::Consumed => {
+				sqlx::query(
+					"INSERT INTO tx_out (id, tx_id, index, address, address_raw,
+					 address_has_script, value, consumed_by_tx_id)
+					 SELECT 700000 + n, 4, 100 + n, 'input_addr', '', TRUE, 0, 0
+					 FROM generate_series(0, $1::integer - 1) n",
+				)
+				.bind(inputs as i32)
+				.execute(&pool)
+				.await
+				.unwrap();
+			},
+		}
+		if config == db_model::TxInConfiguration::Enabled {
+			sqlx::query(
+				"INSERT INTO tx_out (id, tx_id, index, address, address_raw, address_has_script, value)
+				 SELECT 700000 + n, 4, 100 + n, 'input_addr', '', TRUE, 0
+				 FROM generate_series(0, $1::integer - 1) n",
+			)
+			.bind(inputs as i32)
+			.execute(&pool)
+			.await
+			.unwrap();
+		}
+		assert!(format!("{:?}", read().await.unwrap_err()).contains("resource limit"));
+		assert_eq!(
+			sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()")
+				.fetch_one(&pool)
+				.await
+				.unwrap(),
+			backend_pid
+		);
+	}
+
+	async fn candidate_snapshot(
+		source: &CandidatesDataSourceImpl,
+	) -> Vec<Vec<CandidateRegistrations>> {
+		let mut snapshots = Vec::new();
+		for epoch in [191, 193] {
+			let mut candidates = source
+				.get_candidates(
+					McEpochNumber(epoch),
+					MainchainAddress::from_str("script_addr").unwrap(),
+				)
+				.await
+				.unwrap();
+			assert!(!candidates.is_empty());
+			for candidate in &mut candidates {
+				candidate.registrations.sort_by_key(parity_scale_codec::Encode::encode);
+			}
+			candidates.sort_by_key(|c| c.mainchain_pub_key().0);
+			snapshots.push(candidates);
+		}
+		snapshots
+	}
+
+	#[tokio::test]
+	async fn candidate_query_batches_tx_in_enabled() {
+		let (pool, _db) = test_db("migrations-tx-in-enabled").await;
+		candidate_query_batches(pool, db_model::TxInConfiguration::Enabled).await;
+	}
+
+	#[tokio::test]
+	async fn candidate_query_batches_tx_in_consumed() {
+		let (pool, _db) = test_db("migrations-tx-in-consumed").await;
+		candidate_query_batches(pool, db_model::TxInConfiguration::Consumed).await;
 	}
 }
