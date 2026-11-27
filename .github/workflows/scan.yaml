@@ -37,10 +37,7 @@ jobs:
 
       - name: Scan code
         if: steps.guard.outputs.hit != 'true'
-        # Trial of upload-sarif-github-action PR 157: dependency licences are
-        # checked against the default allowlist (HIGH violation, LOW unknown).
-        # Re-pin to the release once it ships.
-        uses: midnightntwrk/upload-sarif-github-action@23584c64d487b7686644f7005a39bae6a7c905b4 # giles-osv-licenses
+        uses: midnightntwrk/upload-sarif-github-action@ead6c0e0472da1821eb2732eaed3e120a9aaa0ea # v2.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # The action's default checks less Vulnerabilities. That check is one
