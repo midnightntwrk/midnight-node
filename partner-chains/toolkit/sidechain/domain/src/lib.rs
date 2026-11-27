@@ -67,6 +67,7 @@ pub fn offset_data_epoch(epoch: &McEpochNumber) -> Result<McEpochNumber, u32> {
 	Encode,
 	Decode,
 	DecodeWithMemTracking,
+	MaxEncodedLen,
 	Hash,
 	TypeInfo,
 	Ord,

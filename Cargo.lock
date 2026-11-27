@@ -8979,6 +8979,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-candidate-registrations"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "hex-literal 1.1.0",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sidechain-domain",
+ "sp-api",
+ "sp-core",
+ "sp-inherents",
+ "sp-runtime",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "midnight-primitives-cnight-observation"
 version = "0.1.0"
 dependencies = [
