@@ -21,3 +21,10 @@ std = [
     "scale-info/std",
     "sp-api/std",
 ]
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

@@ -44,12 +44,10 @@ pub struct RunMidnight {
 	#[arg(long, default_value_t = 512)]
 	pub rpc_max_finality_subscriptions: u32,
 
-	/// Serve Midnight ledger snapshots to warp-syncing peers even when running as a validator.
+	/// Serve Midnight ledger snapshots to warp-syncing peers (off by default).
 	///
-	/// Non-validator nodes always serve. Validators don't by default — serializing the ledger
-	/// arena is the warp ledger-sync protocol's most CPU-expensive operation and competes with
-	/// authoring/finality duties — but can opt in with this flag, e.g. on small or local networks
-	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
+	/// Serializing the ledger arena is CPU-expensive; on a validator it competes with authoring
+	/// and finality duties.
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
 }
@@ -380,8 +378,8 @@ pub enum Subcommand {
 	#[clap(flatten)]
 	PartnerChains(PartnerChainsSubcommand),
 
-	/// Build a chain specification.
-	BuildSpec(sc_cli::BuildSpecCmd),
+	/// Export a chain specification.
+	ExportChainSpec(sc_cli::ExportChainSpecCmd),
 
 	/// Validate blocks.
 	CheckBlock(sc_cli::CheckBlockCmd),
@@ -482,6 +480,10 @@ pub enum Subcommand {
 
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
+
+	/// Dry-run a runtime upgrade against a state snapshot.
+	#[cfg(feature = "try-runtime")]
+	TryRuntime(crate::try_runtime::TryRuntimeCmd),
 }
 
 // TODO: this is used for signing address associations. Which kind of midnight address do we want to associate with Cardano?

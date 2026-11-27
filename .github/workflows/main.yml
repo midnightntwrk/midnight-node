@@ -61,13 +61,13 @@ jobs:
         # Pull-side rate-limit relief for docker.io base images only; a repo without these
         # credentials must not have the whole build fail before it starts.
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -88,7 +88,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 #v2.90.0
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 #v2.90.5
         with:
           tool: just
 
@@ -302,7 +302,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -545,7 +545,7 @@ jobs:
       attestations: write  # Required for GitHub native attestations
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -555,7 +555,7 @@ jobs:
         # Pull-side rate-limit relief for docker.io base images only; a repo without these
         # credentials must not have the whole build fail before it starts.
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}

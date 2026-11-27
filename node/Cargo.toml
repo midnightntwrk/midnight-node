@@ -87,7 +87,10 @@ substrate-frame-rpc-system.workspace = true
 
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = {workspace = true, optional = true}
-frame-benchmarking-cli = {workspace = true, default-features = true }
+frame-benchmarking-cli = { workspace = true, default-features = true, optional = true }
+# Not used in code. `frame-benchmarking-cli` pulls it in transitively, and its `try-runtime`
+# feature must be on whenever `pallet-session`'s is, or it fails to compile. Enabled together
+# with `frame-benchmarking-cli` by `runtime-benchmarks`.
 pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
@@ -114,10 +117,8 @@ pallet-throttle = { workspace = true, default-features = true }
 pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
-# CLI-specific dependencies
-# try-runtime-cli = { optional = true, workspace = true }
-# The deprecated `try-runtime` subcommand and `try-runtime-cli` crate has been completely removed.
-# If you are not already, you should be using the standalone CLI at https://github.com/paritytech/try-runtime-cli.
+frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
+tempfile = { workspace = true, optional = true }
 
 thiserror = "1.0.50"
 log.workspace = true
@@ -191,15 +192,28 @@ default = []
 runtime-benchmarks = [
     "midnight-node-runtime/runtime-benchmarks",
     "frame-benchmarking/runtime-benchmarks",
+    "dep:frame-benchmarking-cli",
+    "dep:pallet-staking",
     "frame-benchmarking-cli/runtime-benchmarks",
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
 try-runtime = [
     "midnight-node-runtime/try-runtime",
-    "pallet-staking/try-runtime",
+    "pallet-staking?/try-runtime",
+    "frame-try-runtime",
+    "tempfile",
 ]
 experimental = []
 # Builds jemalloc with heap profiling support (Linux only). Profiling stays off until enabled
 # at run time through `MALLOC_CONF`; see docs/operations/heap-profiling.md.
 jemalloc-profiling = ["tikv-jemallocator/profiling"]
+
+[package.metadata.cargo-shear]
+ignored = ["pallet-staking"]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false

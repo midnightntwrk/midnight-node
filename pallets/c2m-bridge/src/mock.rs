@@ -25,6 +25,8 @@ pub type MaxTxLength = ConstU32<1024>;
 pub const TEST_MINIMAL_TRANSFER_CSTARS: u128 = 99;
 
 #[frame_support::pallet]
+// clippy 1.100 lints FRAME-generated code; these fire on macro output, not on this module.
+#[allow(clippy::clone_on_copy, clippy::redundant_field_names, clippy::duplicated_attributes)]
 pub mod mock_pallet {
 	use super::*;
 	use crate::MinBridgeAmountProvider;
@@ -54,7 +56,10 @@ pub mod mock_pallet {
 			if ExecutorFails::<Test>::get() {
 				return Err(DispatchError::Other("ledger rejected the system transaction"));
 			}
-			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx.clone().try_into().unwrap();
+			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx
+				.clone()
+				.try_into()
+				.map_err(|_| DispatchError::Other("system transaction too long"))?;
 			Transfers::<Test>::append(bounded_vec);
 			let count = TransfersCount::<Test>::get();
 			TransfersCount::<Test>::put(count + 1);

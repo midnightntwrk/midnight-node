@@ -55,7 +55,7 @@ jobs:
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Log in to GHCR (for remote cache)
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.guard.outputs.hit != 'true'
         with:
           registry: ghcr.io
@@ -67,7 +67,7 @@ jobs:
       # Skipped on fork PRs where these secrets are not available.
       # If for some reason we can't log in we should proceed unauthed.
       - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         continue-on-error: true
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
@@ -106,7 +106,7 @@ jobs:
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            --strict $PUSH_FLAG \
+            $PUSH_FLAG \
             --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test" \
             +test --CACHE_KEY="$CACHE_KEY"
 

@@ -82,6 +82,17 @@ POLICY_ID=$(jq -r '.validators[] | select(.title == "test_cnight_no_audit.tcnigh
 [ -n "$POLICY_ID" ] && [ "$POLICY_ID" != "null" ] || { echo "ERROR: cNIGHT minting policy id not found in $PLUTUS_JSON"; exit 1; }
 echo "cNIGHT policy id: $POLICY_ID"
 
+# cardano-cli names a native asset as <policy-id>.<asset-name-hex>; the asset name is
+# whatever res/local/cnight-config.json says the node observes.
+CNIGHT_ASSET_NAME_HEX=$(jq -r '
+  # Keep in sync with the copy in midnight-setup/patch-configs.sh.
+  def hexdigit: "0123456789abcdef"[.:.+1];
+  .addresses.cnight_asset_name | explode
+  | if any(. > 127) then error("cnight_asset_name must be ASCII") else . end
+  | map((. / 16 | floor | hexdigit) + (. % 16 | hexdigit)) | join("")' /res/local/cnight-config.json)
+CNIGHT_UNIT="$POLICY_ID.$CNIGHT_ASSET_NAME_HEX"
+echo "cNIGHT asset: $CNIGHT_UNIT"
+
 # The faucet / circulating address is the funded address shared with the e2e suite.
 FAUCET_ADDR=$(cardano-cli latest address build \
   --payment-verification-key-file /keys/funded_address.vkey \
@@ -118,12 +129,12 @@ for attempt in {1..15}; do
       --testnet-magic "$NETWORK_MAGIC" \
       --tx-in "$TX_IN" \
       --tx-in-collateral "$COLLATERAL" \
-      --tx-out "$RESERVE_ADDR+$MIN_UTXO_LOVELACE + $RESERVE_STARS $POLICY_ID" \
+      --tx-out "$RESERVE_ADDR+$MIN_UTXO_LOVELACE + $RESERVE_STARS $CNIGHT_UNIT" \
       --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
-      --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $ICS_STARS $POLICY_ID" \
+      --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $ICS_STARS $CNIGHT_UNIT" \
       --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
-      --tx-out "$FAUCET_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_STARS $POLICY_ID" \
-      --mint "$TOTAL_MINT_STARS $POLICY_ID" \
+      --tx-out "$FAUCET_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_STARS $CNIGHT_UNIT" \
+      --mint "$TOTAL_MINT_STARS $CNIGHT_UNIT" \
       --mint-script-file "$CNIGHT_PLUTUS" \
       --mint-redeemer-value "{}" \
       --change-address "$FAUCET_ADDR" \
@@ -215,7 +226,7 @@ cardano-cli latest transaction build \
   --testnet-magic "$NETWORK_MAGIC" \
   --tx-in "$SEED_TX_ID#2" \
   --tx-in "$SEED_TX_ID#3" \
-  --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_TRANSFER_STARS $POLICY_ID" \
+  --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_TRANSFER_STARS $CNIGHT_UNIT" \
   --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
   --metadata-json-file /tmp/faucet-bridge-metadata.json \
   --json-metadata-detailed-schema \

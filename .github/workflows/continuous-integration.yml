@@ -69,7 +69,7 @@ jobs:
 
       - name: Login to Docker Hub
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -86,7 +86,7 @@ jobs:
           CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
           test -n "$CACHE_KEY"
           . ./.envrc
-          earth -P --strict \
+          earth -P \
             +local-env-ci-prepare --CACHE_KEY="$CACHE_KEY"
 
   run:
@@ -154,16 +154,15 @@ jobs:
 
       - name: Login to GHCR
         if: env.IS_FORK_PR != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      # Earthfile FROMs midnightntwrk/midnight-node-ci and several library/*
-      # images that resolve to docker.io. With --push, earthly tries to write
-      # inline cache back to the midnightntwrk Docker Hub namespace and fails
-      # auth without this login.
+      # Earthfile FROMs several library/* images that resolve to docker.io.
+      # With --push, earthly may try to write inline cache back to docker.io
+      # and fail auth without this login.
       # Non-fatal: the +images push targets ghcr.io only (authed by the GHCR
       # login above) and the docker.io base images are public, so the build
       # still pulls + pushes without these creds. Dependabot runs don't have
@@ -171,7 +170,7 @@ jobs:
       - name: Login to Docker Hub
         if: env.IS_FORK_PR != 'true'
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -386,7 +385,7 @@ jobs:
 
       - name: Login to GHCR
         if: env.IS_FORK_PR != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -470,7 +469,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -602,7 +601,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -690,7 +689,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earth -P --strict \
+          . ./.envrc && earth -P \
             +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -739,7 +738,7 @@ jobs:
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -762,7 +761,7 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
         run: |
-          . ./.envrc && earth -P --strict +toolkit-test-archive
+          . ./.envrc && earth -P +toolkit-test-archive
 
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
@@ -803,22 +802,21 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
-      # images; earthly pushes inline cache back to those repos under --push,
-      # which needs Docker Hub auth.
+      # Earthfile FROMs docker.io library images; earthly pushes inline cache
+      # back to those repos under --push, which needs Docker Hub auth.
       # Non-fatal: pushes target ghcr.io and the docker.io base images are
       # public, so the build proceeds without these creds (e.g. Dependabot runs,
       # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
         continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -871,7 +869,7 @@ jobs:
           . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            -P --strict \
+            -P \
             +test-toolkit \
               --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}"
 
@@ -1037,7 +1035,7 @@ jobs:
           use-cache: false
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true' && env.IS_FORK_PR != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -1057,7 +1055,7 @@ jobs:
           NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
-          . ./.envrc && earth --ci -P \
+          . ./.envrc && earth --no-output -P \
             --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
@@ -1087,7 +1085,7 @@ jobs:
   #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
   #     - name: Login to GHCR
-  #       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+  #       uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
   #       with:
   #         registry: ghcr.io
   #         username: MidnightCI
@@ -1187,7 +1185,7 @@ jobs:
 
       - name: Login to GHCR
         if: env.IS_FORK_PR != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 #v4.8.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -1295,7 +1293,7 @@ jobs:
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 #v2.90.0
+        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 #v2.90.5
         with:
           tool: just
 

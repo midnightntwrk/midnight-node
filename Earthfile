@@ -171,7 +171,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
+    FROM rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -600,7 +600,7 @@ rebuild-chainspec:
         RUN echo "Using srtool-built runtime:" && cat /srtool-digest.json | jq -r '.runtimes.compressed'
     END
 
-    RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+    RUN CFG_PRESET=$NETWORK /midnight-node export-chain-spec > res/$NETWORK/chain-spec.json
 
     # If deterministic, replace the runtime code with srtool-built WASM
     IF [ "$DETERMINISTIC" = "true" ]
@@ -614,7 +614,7 @@ rebuild-chainspec:
     RUN cat res/$NETWORK/chain-spec.json | \
       jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.system_tx = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
-    RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
+    RUN /midnight-node export-chain-spec --chain=res/$NETWORK/chain-spec.json --raw > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
     # Save srtool digest alongside chain-spec if deterministic build
@@ -699,6 +699,7 @@ node-ci-image-single-platform:
         tar \
         gzip \
         xz \
+        perl-Digest-SHA \
         docker \
         jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
@@ -733,15 +734,22 @@ node-ci-image-single-platform:
         curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.6.9/cargo-binstall-${ARCH}-unknown-linux-gnu.tgz" -o binstall.tgz && \
         tar -xzf binstall.tgz -C /root/.cargo/bin cargo-binstall && \
         rm binstall.tgz
-    RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable cargo-hack
+    # renovate: datasource=crate packageName=cargo-hack
+    ARG CARGO_HACK_VERSION=0.6.46
+    RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable cargo-hack@${CARGO_HACK_VERSION}
 
     # Install cargo tools from source in a single layer, then clean up build artifacts
     # renovate: datasource=github-releases packageName=chevdor/subwasm
     ARG SUBWASM_VERSION=0.21.3
     # renovate: datasource=crate packageName=aiken
     ARG AIKEN_VERSION=1.1.19
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION && \
-        cargo install --locked cargo-shear --version 1.9.1 && \
+    # subwasm's lock pins trie-db 0.29.1, which rustc 1.100 rejects (never-type fallback,
+    # rust-lang/rust#148922); 0.29.2 is the patch release that fixes it.
+    RUN git clone --depth 1 --branch v$SUBWASM_VERSION https://github.com/chevdor/subwasm /tmp/subwasm && \
+        cargo update --manifest-path /tmp/subwasm/Cargo.toml -p trie-db@0.29.1 --precise 0.29.2 && \
+        cargo install --locked --path /tmp/subwasm/cli && \
+        rm -rf /tmp/subwasm && \
+        cargo install --locked cargo-shear --version 1.6.6 && \
         cargo install sqlx-cli --no-default-features --features rustls,postgres && \
         cargo install aiken --version $AIKEN_VERSION --locked && \
         rm -rf /root/.cargo/registry /root/.cargo/git
@@ -761,6 +769,7 @@ node-ci-image-single-platform:
         curl -fsSL "https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     # Docker compose + buildx plugins — needed by the +local-env-ci WITH DOCKER targets,
@@ -812,7 +821,8 @@ node-ci-image-single-platform:
     # SAVE IMAGE under the rust version.
     # Security patches land when the FROM @sha256 digest above is bumped (renovate);
     # a rebuild on the same digest reproduces identical packages by design.
-    ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
+    # npm is baked in, so its version is part of the tag: an npm-only bump must publish a new image.
+    ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}"
     LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
@@ -821,6 +831,11 @@ node-ci-image-single-platform:
     # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
         ${GHCR_REGISTRY}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
+    # Public mirror, as for the node and toolkit images: anonymous pulls with no Docker Hub
+    # rate limit. A no-op outside the canonical upstream repo.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push ${GHCR_REGISTRY_PUBLIC}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
+    END
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
@@ -833,18 +848,14 @@ prep-no-copy:
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
+    # Public GHCR, not Docker Hub: anonymous pulls with no rate limit, so forks need no
+    # credentials either. Hard-coded rather than ${GHCR_REGISTRY_PUBLIC}, which in a fork
+    # points at a namespace that holds no CI image.
+    FROM ghcr.io/midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-npm${NPM_VERSION}-$NATIVEARCH
+    # The pulled image's tag tracks Rust, compactc and npm only; cargo tools baked into it
+    # (cargo-hack, cargo-shear, ...) are not in the tag, so republish after bumping one.
 
     # ca-certificates and curl-minimal already present in the CI base image
-
-    # Pin npm for every target built off +prep/+prep-no-copy — notably the +local-env-*
-    # targets, which run `npm ci` in local-environment/ against this image's node with no
-    # tarball overlay of their own. Deliberately here rather than (only) in the CI base
-    # image: that image is consumed by tag above, and the tag is derived from RUST_VERSION
-    # and COMPACTC_VERSION, so an npm-only bump produces no new tag and would not reach
-    # any build until the image was force-republished. Targets that DO overlay node
-    # (+toolkit-js-prep, +build-test-toolkit) re-pin after their overlay.
-    RUN npm install -g npm@${NPM_VERSION} && node --version && npm --version
 
     # cargo's home lives here — git/registry cache, config.toml, AND build-time-installed tool
     # binaries ($CARGO_HOME/bin). Relocating it makes the CACHE --id cargo-git/cargo-reg mounts
@@ -881,7 +892,6 @@ prep-no-copy:
     COPY scripts/with-git-creds.sh /usr/local/bin/with-git-creds
 
     RUN cargo --version
-    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
@@ -991,24 +1001,6 @@ locally-test:
 toolkit-js-prep:
     FROM +prep-no-copy
 
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    ARG TARGETARCH
-    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
-    # `tar` overlays rather than replaces, so leftover files from the base's older npm
-    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
-    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt at the
-    # current NODEJS_VERSION — then the base and this overlay agree and won't mix.
-    RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
-        rm -rf /usr/local/lib/node_modules && \
-        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        npm install -g npm@${NPM_VERSION} && \
-        node --version && npm --version
-
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
@@ -1061,7 +1053,6 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN cargo install cargo-shear --version 1.6.6 --locked
 
     # shear
     RUN --secret NODE_GIT_TOKEN with-git-creds cargo shear
@@ -1134,11 +1125,10 @@ check-feature-unification:
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    # The CI base image ships an unpinned cargo-hack; pin here so the check
-    # doesn't silently change behaviour when that image is rebuilt.
-    # renovate: datasource=crate packageName=cargo-hack
-    ARG CARGO_HACK_VERSION=0.6.45
-    RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
+    # `--no-dev-deps` strips [dev-dependencies], so test-only workspace deps look unused;
+    # relax that one lint in this container's copy only (every other job still denies it).
+    RUN sed -i 's/^unused_workspace_dependencies = "deny"$/unused_workspace_dependencies = "warn"/' Cargo.toml && \
+        grep -q '^unused_workspace_dependencies = "warn"$' Cargo.toml
     RUN --secret NODE_GIT_TOKEN PACKAGES="$(node scripts/feature-unification-scope.ts \
             .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
         if [ -z "$PACKAGES" ]; then \
@@ -1288,28 +1278,6 @@ build-test-toolkit:
     FROM +prep
     ARG TARGETARCH
 
-    # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
-    RUN microdnf -y install tar gzip xz docker && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Native architecture: the tests run on the native platform even though toolkit-js is from amd64.
-    # TARGETARCH already declared above for the /target cache id
-    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
-    # `tar` overlays rather than replaces, so leftover files from the base's older npm
-    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
-    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt at the
-    # current NODEJS_VERSION — then the base and this overlay agree and won't mix.
-    RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            NODE_ARCH="arm64"; \
-        else \
-            NODE_ARCH="x64"; \
-        fi && \
-        rm -rf /usr/local/lib/node_modules && \
-        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        npm install -g npm@${NPM_VERSION} && \
-        node --version && npm --version
 
     # Test
     RUN mkdir /test-artifacts-toolkit
@@ -1494,6 +1462,76 @@ build-benchmarks:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
 
+try-runtime-build:
+    FROM +build-prepare
+    ARG TARGETARCH
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+    COPY scripts/assert-no-fork-transition.sh ./scripts/
+
+    ARG NATIVEARCH
+    ARG OUT=/artifacts-try-runtime-$NATIVEARCH
+
+    RUN ./scripts/assert-no-fork-transition.sh features -p midnight-node --features try-runtime
+    RUN --secret NODE_GIT_TOKEN \
+        with-git-creds cargo auditable build -p midnight-node --locked --release --features try-runtime
+    RUN ./scripts/assert-no-fork-transition.sh wasm /target/release/wbuild/midnight-node-runtime/*.wasm
+
+    # cp, not mv: the binary must stay in the mounted /target cache.
+    RUN mkdir -p $OUT \
+        && cp /target/release/midnight-node \
+              /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
+              $OUT/
+
+    SAVE ARTIFACT $OUT AS LOCAL artifacts-try-runtime
+
+# Only for `create-snapshot`: its dry-run lacks the node's host functions.
+try-runtime-cli:
+    FROM +prep-no-copy
+    # renovate: datasource=github-releases packageName=paritytech/try-runtime-cli
+    ARG TRY_RUNTIME_CLI_VERSION=v0.10.1
+    RUN cargo install --git https://github.com/paritytech/try-runtime-cli \
+        --tag $TRY_RUNTIME_CLI_VERSION --locked --root /out try-runtime-cli
+    SAVE ARTIFACT /out/bin/try-runtime
+
+try-runtime-dry-run:
+    FROM +try-runtime-build
+    ARG NATIVEARCH
+    ARG OUT=/artifacts-try-runtime-$NATIVEARCH
+    ARG --required NETWORK
+    ARG --required URI
+    # false: record the exit code in $NETWORK.status instead of failing. A failing target
+    # makes earthly cancel the other networks and discard every output.
+    ARG FAIL_FAST=true
+
+    COPY +try-runtime-cli/try-runtime /usr/local/bin/try-runtime
+
+    # One RUN, so a failed snapshot is recorded in $NETWORK.status too.
+    # `--uri=` form, as `--uri` takes several values and would swallow the path.
+    RUN --no-cache { { try-runtime create-snapshot --uri="$URI" "$NETWORK.snap" \
+            && $OUT/midnight-node try-runtime \
+                --snap "$NETWORK.snap" \
+                --runtime $OUT/midnight_node_runtime.compact.compressed.wasm \
+                --checks all; } 2>&1; \
+          echo $? > "$NETWORK.status"; } | tee "$NETWORK.log"; \
+        [ "$FAIL_FAST" != true ] || [ "$(cat "$NETWORK.status")" = 0 ]
+
+    SAVE ARTIFACT "$NETWORK.*" AS LOCAL artifacts-try-runtime/
+
+try-runtime-dry-run-all:
+    # FOR needs a shell to split $NETWORKS.
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+    ARG NETWORKS="preview preprod mainnet"
+    ARG FAIL_FAST=true
+    FOR network IN $NETWORKS
+        BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network --FAIL_FAST=$FAIL_FAST
+    END
+
 subwasm:
     ARG NATIVEARCH
     FROM +build
@@ -1505,14 +1543,15 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.98.1) for deterministic builds.
+# Note: srtool uses its own pinned Rust version (currently 1.100.0) for deterministic builds.
 # The project's rust-toolchain.toml is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified, but keep it in step with
 # rust-toolchain.toml anyway.
 srtool-build:
-    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # Tag shape for srtool is: `<rust version>-<srtool version>@<digest>`; the digest
+    # pins the image, since a re-run of srtool's release workflow can move the tag.
     # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
-    ARG SRTOOL_TAG=1.98.1-0.18.5
+    ARG SRTOOL_TAG=1.100.0-0.18.6@sha256:b1407337a28e86c5122c5711415b2dff690ffe9d290fbe0889f8152c82575059
     FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
@@ -1549,9 +1588,10 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # Tag shape for srtool is: `<rust version>-<srtool version>@<digest>`; the digest
+    # pins the image, since a re-run of srtool's release workflow can move the tag.
     # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
-    ARG SRTOOL_TAG=1.98.1-0.18.5
+    ARG SRTOOL_TAG=1.100.0-0.18.6@sha256:b1407337a28e86c5122c5711415b2dff690ffe9d290fbe0889f8152c82575059
     FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root

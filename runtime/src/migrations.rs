@@ -54,6 +54,143 @@ impl FailedMigrationHandler for EnterSafeModeAndUnstuckOnFailedMigration {
 	}
 }
 
+pub mod bridge_reserve_validator {
+	//! #1513 added `reserve_validator_address` to `MainChainScripts` without a migration, so the
+	//! stored 3-field value no longer decodes, silently, as the item is `OptionQuery`. The new
+	//! field is left empty for governance to set via `set_main_chain_scripts`.
+	//!
+	//! Raw bytes rather than `translate`, which would also accept a current value as a legacy
+	//! prefix; `decode_all` tells the layouts apart. Not a `VersionedMigration`, as the bridge
+	//! pallet declares no storage version.
+
+	use frame_support::storage::unhashed;
+	use frame_support::traits::OnRuntimeUpgrade;
+	use frame_support::weights::Weight;
+	use parity_scale_codec::{Decode, DecodeAll, Encode};
+	use sidechain_domain::{AssetName, MainchainAddress, PolicyId};
+	use sp_partner_chains_bridge::MainChainScripts;
+
+	use crate::Runtime;
+
+	type StoredScripts = pallet_partner_chains_bridge::MainChainScriptsConfiguration<Runtime>;
+
+	#[derive(Decode)]
+	struct LegacyMainChainScripts {
+		token_policy_id: PolicyId,
+		token_asset_name: AssetName,
+		illiquid_circulation_supply_validator_address: MainchainAddress,
+	}
+
+	fn stored_bytes() -> Option<alloc::vec::Vec<u8>> {
+		unhashed::get_raw(&StoredScripts::hashed_key())
+	}
+
+	fn is_current_layout(bytes: &[u8]) -> bool {
+		MainChainScripts::decode_all(&mut &bytes[..]).is_ok()
+	}
+
+	pub struct MigrateMainChainScripts;
+
+	impl OnRuntimeUpgrade for MigrateMainChainScripts {
+		fn on_runtime_upgrade() -> Weight {
+			let db_weight = <Runtime as frame_system::Config>::DbWeight::get();
+			let Some(bytes) = stored_bytes().filter(|bytes| !is_current_layout(bytes)) else {
+				return db_weight.reads(1);
+			};
+			let Ok(legacy) = LegacyMainChainScripts::decode_all(&mut &bytes[..]) else {
+				log::error!(
+					"Bridge::MainChainScriptsConfiguration has an unknown layout; left as is"
+				);
+				return db_weight.reads(1);
+			};
+			let migrated = MainChainScripts {
+				token_policy_id: legacy.token_policy_id,
+				token_asset_name: legacy.token_asset_name,
+				illiquid_circulation_supply_validator_address: legacy
+					.illiquid_circulation_supply_validator_address,
+				reserve_validator_address: MainchainAddress::default(),
+			};
+			unhashed::put_raw(&StoredScripts::hashed_key(), &migrated.encode());
+			log::info!(
+				"🚚 Bridge::MainChainScriptsConfiguration migrated to the post-#1513 layout"
+			);
+			db_weight.reads_writes(1, 1)
+		}
+
+		#[cfg(feature = "try-runtime")]
+		fn post_upgrade(_state: alloc::vec::Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+			frame_support::ensure!(
+				stored_bytes().is_none_or(|bytes| is_current_layout(&bytes)),
+				"Bridge::MainChainScriptsConfiguration does not decode as MainChainScripts"
+			);
+			Ok(())
+		}
+	}
+
+	#[cfg(test)]
+	mod tests {
+		use super::*;
+		use std::str::FromStr;
+
+		/// What mainnet holds: policy id, `NIGHT`, illiquid supply validator address.
+		const MAINNET_LEGACY_SCRIPTS: &str = concat!(
+			"0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa144e49474854e861646472317779637a66707866",
+			"6e663568767033366d726e3635357965346b3263776c75766c657a36706878386a7834366b3673327474646171",
+		);
+
+		fn mainnet_legacy_bytes() -> Vec<u8> {
+			sp_core::bytes::from_hex(MAINNET_LEGACY_SCRIPTS).unwrap()
+		}
+
+		fn migrate_from(bytes: Option<Vec<u8>>) -> Option<Vec<u8>> {
+			sp_io::TestExternalities::default().execute_with(|| {
+				if let Some(bytes) = bytes {
+					unhashed::put_raw(&StoredScripts::hashed_key(), &bytes);
+				}
+				MigrateMainChainScripts::on_runtime_upgrade();
+				stored_bytes()
+			})
+		}
+
+		#[test]
+		fn migrates_mainnet_value_with_an_empty_reserve_address() {
+			assert!(!is_current_layout(&mainnet_legacy_bytes()));
+
+			let migrated = migrate_from(Some(mainnet_legacy_bytes())).unwrap();
+			let scripts = MainChainScripts::decode_all(&mut &migrated[..]).unwrap();
+
+			assert_eq!(scripts.token_asset_name, AssetName(b"NIGHT".to_vec().try_into().unwrap()));
+			assert_eq!(
+				scripts.illiquid_circulation_supply_validator_address,
+				MainchainAddress::from_str(
+					"addr1wyczfpxfnf5hvp36mrn655ye4k2cwluvlez6phx8jx46k6s2ttdaq"
+				)
+				.unwrap()
+			);
+			assert_eq!(scripts.reserve_validator_address, MainchainAddress::default());
+			assert_eq!(migrate_from(Some(migrated.clone())), Some(migrated));
+		}
+
+		#[test]
+		fn leaves_a_current_value_alone() {
+			let current = MainChainScripts {
+				token_policy_id: PolicyId([7u8; 28]),
+				token_asset_name: AssetName::empty(),
+				illiquid_circulation_supply_validator_address: MainchainAddress::from_str("addr1a")
+					.unwrap(),
+				reserve_validator_address: MainchainAddress::from_str("addr1b").unwrap(),
+			}
+			.encode();
+			assert_eq!(migrate_from(Some(current.clone())), Some(current));
+		}
+
+		#[test]
+		fn leaves_an_unset_value_unset() {
+			assert_eq!(migrate_from(None), None);
+		}
+	}
+}
+
 pub mod authority_keys {
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
@@ -321,10 +458,9 @@ pub mod authority_keys {
 			let queued_keys: Vec<(
 				<Runtime as pallet_session::Config>::ValidatorId,
 				PreUpgradeSessionKeys,
-			)> =
-				frame_support::storage::unhashed::get_or_default(&pallet_session::QueuedKeys::<
-					Runtime,
-				>::hashed_key());
+			)> = frame_support::storage::unhashed::get_or_default(&pallet_session::QueuedKeys::<
+				Runtime,
+			>::hashed_key());
 
 			Ok((current, next, next_keys, queued_keys).encode())
 		}

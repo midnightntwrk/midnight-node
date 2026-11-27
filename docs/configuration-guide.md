@@ -89,10 +89,10 @@ NAME:          chainspec_registered_candidates_addresses
 NAME:          chainspec_ics_config
 ```
 
-Once all those config values are defined, running the node with `build-spec` will export the chainspec:
+Once all those config values are defined, running the node with `export-chain-spec` will export the chainspec:
 
 ```sh
-$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main build-spec
+$ docker run --rm -e CFG_PRESET=qanet midnightntwrk/midnight-node:latest-main export-chain-spec
 ...
 ```
 

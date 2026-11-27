@@ -23,7 +23,7 @@ BASE="$OUT_DIR/baseline.json"
 
 mkdir -p "$OUT_DIR"
 
-/midnight-node build-spec --chain dev --disable-default-bootnode > "$BASE"
+/midnight-node export-chain-spec --chain dev > "$BASE"
 
 # Sanity: baseline must have a non-empty genesis_extrinsics array.
 count=$(jq '.properties.genesis_extrinsics | length' "$BASE")

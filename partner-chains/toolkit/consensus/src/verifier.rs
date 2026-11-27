@@ -201,7 +201,7 @@ mod tests {
 
 		assert_eq!(
 			client.check_inherents_call_context(),
-			Some(CallContext::Onchain { import: false })
+			Some(CallContext::Onchain { import: true })
 		);
 	}
 

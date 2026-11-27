@@ -368,7 +368,7 @@ The same shadowing applies to the node's own config: `default_cfg()` reads
 `missing field <key>` for a key the current default.toml has dropped.
 `configurations/legacy-node-cfg.env` supplies those keys as environment variables (a config
 source of their own), and is wired into every service that runs the node binary. It is a no-op
-for images built from the checkout — build-spec output is byte-identical with and without it.
+for images built from the checkout — the exported chain spec is byte-identical with and without it.
 Across `node-0.22.1` … `node-2.1.0` only `node-1.0.2` needs any (`tblock_correction_offset`,
 `tblock_correction_disable_after`); add a key there if an older image reports one missing.
 

@@ -110,8 +110,7 @@ pub(crate) fn test_create_inherent_data_providers() -> TestCIDP {
 /// `check_inherents` was invoked.
 ///
 /// Hand-written rather than generated with `sp_api::mock_impl_runtime_apis!`, whose
-/// `set_call_context` is `unimplemented!()`; the call context is what the Partner Chains
-/// inherent check must get right (see `inherent_check::check_inherents_on_chain`).
+/// `set_call_context` is `unimplemented!()` and is called by `sp_block_builder::check_inherents`.
 #[derive(Clone)]
 pub(crate) struct MockApi {
 	check_inherents_called: Arc<AtomicBool>,
@@ -150,7 +149,8 @@ impl sp_api::Core<Block> for MockApi {
 		_at: <Block as BlockT>::Hash,
 		_header: &<Block as BlockT>::Header,
 	) -> Result<sp_runtime::ExtrinsicInclusionMode, ApiError> {
-		unimplemented!()
+		// `sp_block_builder::check_inherents` initializes the block before checking it.
+		Ok(sp_runtime::ExtrinsicInclusionMode::AllExtrinsics)
 	}
 }
 

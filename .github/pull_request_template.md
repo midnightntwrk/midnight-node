@@ -15,6 +15,7 @@
 - [ ] Changes are backward-compatible (or flagged if breaking)
 - [ ] Pull request description explains why the change is needed
 - [ ] Self-reviewed the diff
+- [ ] Run agentic review against these changes: <!-- skill used, e.g. /code-review -->
 - [ ] I have included a change file, or skipped for this reason: <!-- e.g. change only affects CI -->
 - [ ] If the changes introduce a new feature, I have bumped the node minor version
 - [ ] Update documentation (if relevant)

@@ -40,7 +40,7 @@ This can and should be executed even before Midnight release that contains
 migration code.
 
 1. **Generate a fresh, unique sr25519 key pair.** Never reuse any existing
-   key (see the invariant below).
+   key, including the validator's AURA key.
 2. **Load it into the keystore** (key type `babe`), one of:
 
 - `BABE_SEED_FILE` (config key `babe_seed_file`) pointing at the secret —
@@ -48,8 +48,9 @@ migration code.
 - `midnight-node key insert --chain <chainspec> --keystore-path <path>
 --scheme sr25519 --key-type babe --suri '<secret>'`.
 
-Either way, the next node startup logs every BABE key the keystore actually
-holds (see Verify below) — a single check that covers both insertion paths.
+Either way, the next validator startup logs every BABE key the keystore
+actually holds (see Verify below) — a single check that covers both insertion
+paths.
 
 Do **not** use the `author_insertKey` RPC — unsafe-classified; a
 production validator must never expose unsafe RPC methods.
@@ -61,11 +62,17 @@ production validator must never expose unsafe RPC methods.
 
 **Verify (per validator):**
 
-- [ ] On every node startup (target `babe-key-readiness`): `BABE public
-      key(s) in keystore: 0x…`. This lists whatever the keystore actually
-      resolves for BABE. A `WARN … No BABE public key found in keystore` means
-      the step above didn't take. Do **not** trust `author_hasKey` /
-      `author_hasSessionKeys` — they answer through an AURA fallback.
+- [ ] On every validator startup (target `session-key-check`):
+      ``BABE key(s) (key type `babe`) in keystore: 0x…`` lists the BABE keys
+      the keystore actually holds; compare it with the key submitted to the
+      network operator. The same line is logged for `aura`, `gran` and `beef`.
+- [ ] No ``ERROR … No <TYPE> key (key type `<id>`) in keystore`` line. The
+      node logs one per session key type it holds no key of, and keeps
+      running. ``No BABE key (key type `babe`)`` means the step above didn't
+      take; the line names the seed-file variable and the `key insert`
+      command that load the key.
+- [ ] Do **not** trust `author_hasKey` / `author_hasSessionKeys` — they
+      answer through an AURA fallback.
 
 ### 0.2 Update permissioned-candidates list
 
@@ -74,29 +81,29 @@ and drives governance motion submit it to Cardano. Two Cardano epoch
 boundaries after update operation have to be observed before the list
 becomes active.
 
-**Gate — before running `change-federated-ops`:** check the
-`PERMISSIONED_CANDIDATES` value it will submit. Stop and fix the list if:
+**Gate — before running `change-federated-ops`:** check the list it will
+submit with
+[`scripts/verify-permissioned-candidates.sh`](../scripts/verify-permissioned-candidates.sh).
+Stop and fix the list on any `ERROR`. It reads the same `PERMISSIONED_CANDIDATES`
+file the CLI uses, so check the exact file you will submit.
 
-- any candidate has no `babe_pub_key` — it is dropped from the committee from
-  the first rotation after the runtime upgrade (no fallback to its AURA key);
-- two candidates share any session key — from the first rotation after the
-  runtime upgrade the committee stops rotating (`DuplicatedKey`) until the
-  list is fixed;
-- a candidate's BABE key is another candidate's AURA key — the runtime upgrade
-  copies every AURA key into the BABE slot, so the two can collide.
-
-A candidate reusing its own AURA key as BABE works but breaks the fresh-key
-rule of 0.1: decide and record before submitting — accept, or ask for a fresh
-key.
+```bash
+scripts/verify-permissioned-candidates.sh new.env --current current.env
+```
 
 ### 0.3 Gate: permissioned-candidates with BABE keys observed by the Midnight nodes
 
-After the two Cardano epoch boundaries, query
-`systemParameters_getAriadneParameters` with the current Cardano epoch on any
-Midnight RPC node (a 2.1 node works). Repeat the 0.2 checks, confirm every
-entry has `isValid: true`, and confirm the observed list matches the one you
-submitted. A difference means the list was changed or lost on the way to
-Cardano — do not continue to Phase 1 until it is explained.
+After the two Cardano epoch boundaries, compare the submitted list with what
+the Midnight nodes observed (any RPC node; a 2.1 node works). Do not continue
+to Phase 1 until every `ERROR` is fixed or explained.
+
+```bash
+scripts/verify-permissioned-candidates.sh new.env --rpc http://<rpc-node>:9944
+```
+
+To see the result early, run it right after `change-federated-ops` confirms in Cardano epoch N with
+`--epoch <N+2>`: the node already returns the list it will use from that epoch. A later list update
+before epoch N ends replaces it, so run the check above again once N+2 starts.
 
 ## Phase 1 — Binary rollout
 
@@ -280,7 +287,7 @@ metrics; BABE equivocation reporting is disabled.
 | A validator stops authoring after the flip; earlier `WARN … none match the requested public … falling back to AURA` from `aura-to-babe-migration-keystore` | On-chain BABE key matches neither the keystore's BABE key nor its AURA key (e.g. registered one key, loaded a different one)                              | Load the registered key into the keystore, or fix the registration and wait for a rotation. `midnight_babe_key_registered` catches this **before** the flip — keep it green                                                                                                                                                |
 | `midnight_babe_key_registered == 0` on a validator at the Phase 1 gate                                                                                     | Keystore key missing or not registered on Cardano, registration not yet observed, or key mismatch                                                         | Complete 0.1 for that validator, or wait out the observation lag; re-check before 2.1                                                                                                                                                                                                                                      |
 | Committee stops rotating; every session logs `Could not set_keys for … DuplicatedKey`, then `aborting committee hand-off … keeping previous validator set` | The permissioned-candidates list published on Cardano contains a session key already owned by another — possibly former — candidate                       | Chain stays live on the previous committee, but no list change applies until fixed (key rotations included). Publish a corrected list (0.2); rotation resumes once it is observed (two Cardano epochs). Prevention: the 0.3 gate before every list change                                                                  |
-| `author_hasKey`/`author_hasSessionKeys` report a BABE key that isn't there                                                                                 | These RPCs answer through the migration keystore's AURA fallback                                                                                          | Use the metric, the `BABE public key(s) in keystore: …` startup log (target `babe-key-readiness`), or the `62616265…` keystore file instead                                                                                                                                                                                                                                   |
+| `author_hasKey`/`author_hasSessionKeys` report a BABE key that isn't there                                                                                 | These RPCs answer through the migration keystore's AURA fallback                                                                                          | Use the metric, the ``BABE key(s) (key type `babe`) in keystore: …`` validator startup log (target `session-key-check`), or the `62616265…` keystore file instead                                                                                                                                                                                                                                   |
 | Node panics importing a block with an unexpected digest combination (e.g. `AURA pre-runtime digest present in state 'Babe'`)                               | An author emitted digests inconsistent with the on-chain state — misconfigured or malicious author                                                        | The block is invalid and rejected network-wide; identify the author and follow up                                                                                                                                                                                                                                          |
 | Need to abort the migration                                                                                                                                | —                                                                                                                                                         | Before `scheduleFlip` nothing is committed: the network runs AURA with dual digests indefinitely. The consequential action is `scheduleFlip`; once in `ScheduledFlip` the flip commits automatically at an epoch boundary. Reverting any state requires an emergency runtime upgrade via governance                        |
 
@@ -324,4 +331,4 @@ and [fork-testing.md](https://github.com/midnightntwrk/midnight-node/blob/main/d
 | BABE key type              | `babe` (keystore file prefix `62616265`), sr25519; loaded via `BABE_SEED_FILE` or `midnight-node key insert` (never `author_insertKey`)                                                                                                                                     |
 | Cardano registration       | permissioned-candidates list `babe_pub_key` (all candidates are permissioned)                                                                                                                                                                                               |
 | Flip timing                | Last slot of an epoch while in `ScheduledFlip` and `babe.authorities()` non-empty; BABE genesis = first slot of next epoch                                                                                                                                                  |
-| Log targets                | `consensus-engine` (activation, flip, postponement), `babe-authoring` (flip, epoch-tree seed, handover), `babe-predigest` (digest attachment), `aura-to-babe-migration-keystore` (key fallbacks), `babe-key-readiness` (keystore's BABE public keys logged on every startup; periodic probe), `committee-membership` (session membership) |
+| Log targets                | `consensus-engine` (activation, flip, postponement), `babe-authoring` (flip, epoch-tree seed, handover), `babe-predigest` (digest attachment), `aura-to-babe-migration-keystore` (key fallbacks), `babe-key-readiness` (periodic probe), `session-key-check` (validator startup: public keys per session key type, ERROR per missing type), `committee-membership` (session membership) |

@@ -631,7 +631,7 @@ services:
           memory: ${MEM_MIDNIGHT_NODE:-}
 
   # Chain preparation is three one-shot jobs so each step runs on the image that owns
-  # it: config patching and build-spec need the node binary, genesis needs the toolkit
+  # it: config patching and the chain spec export need the node binary, genesis needs the toolkit
   # binary. The genesis step exists because the committed res/genesis/*.mn blobs are
   # serialized for the ledger version of the checkout (`midnight:ledger-state[vNN]`),
   # so feeding them to an older ${MIDNIGHT_NODE_IMAGE} fails to deserialize; building

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # This file is part of midnight-node.
 # Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
@@ -22,7 +22,13 @@ EXTRACT_DIR=/tmp/toolkit-tests
 # one process: libtest, not nextest's process per test.
 mkdir -p "$EXTRACT_DIR"
 cargo nextest list --archive-file "$ARCHIVE" --workspace-remap / --extract-to "$EXTRACT_DIR" > /dev/null
-E2E_BIN=$(find "$EXTRACT_DIR/target/release/deps" -maxdepth 1 -type f -executable -name 'toolkit_e2e-*')
+# No fixed subdir: cargo <1.100 puts test binaries in release/deps, 1.100+ in
+# release/build/<pkg>/<hash>/out.
+E2E_BIN=$(find "$EXTRACT_DIR/target/release" -type f -executable -name 'toolkit_e2e-*')
+if [ -z "$E2E_BIN" ] || [ "$(echo "$E2E_BIN" | wc -l)" -ne 1 ]; then
+    echo "error: expected one toolkit_e2e-* test binary under $EXTRACT_DIR/target/release, found: '${E2E_BIN}'" >&2
+    exit 1
+fi
 
 cargo nextest run --profile ci --workspace-remap / \
     --binaries-metadata "$EXTRACT_DIR/target/nextest/binaries-metadata.json" \

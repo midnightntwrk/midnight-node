@@ -148,12 +148,14 @@ impl TryFrom<&[u8]> for WalletSeed {
 	type Error = WalletSeedError;
 
 	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-		match value.len() {
-			16 => Ok(Self::Short(value.try_into().unwrap())),
-			32 => Ok(Self::Medium(value.try_into().unwrap())),
-			64 => Ok(Self::Long(value.try_into().unwrap())),
-			len => Err(WalletSeedError::InvalidLength(len)),
+		let len = value.len();
+		match len {
+			16 => value.try_into().map(Self::Short),
+			32 => value.try_into().map(Self::Medium),
+			64 => value.try_into().map(Self::Long),
+			_ => return Err(WalletSeedError::InvalidLength(len)),
 		}
+		.map_err(|_| WalletSeedError::InvalidLength(len))
 	}
 }
 
