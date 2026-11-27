@@ -343,8 +343,9 @@ parameter_types! {
 		Weight::from_parts(2u64 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
 		NORMAL_DISPATCH_RATIO,
 	);
-	pub BlockLength: frame_system::limits::BlockLength = frame_system::limits::BlockLength
-		::max_with_normal_ratio(1024 * 1024, NORMAL_DISPATCH_RATIO);
+	pub BlockLength: frame_system::limits::BlockLength = frame_system::limits::BlockLength::builder()
+		.normal_ratio(1024 * 1024, NORMAL_DISPATCH_RATIO)
+		.build();
 	pub const SS58Prefix: u8 = 42;
 }
 
@@ -417,6 +418,13 @@ impl frame_system::Config for Runtime {
 			pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
 		>,
 		migrations::bridge_reserve_validator::MigrateMainChainScripts,
+		// polkadot-stable2611 keys collective proposals by `hash((call, threshold))`; re-keys the
+		// active motions of both governance bodies (storage v4 -> v5).
+		pallet_collective::migrations::v5::MigrateToV5<Runtime, CouncilCollectiveInstance>,
+		pallet_collective::migrations::v5::MigrateToV5<
+			Runtime,
+			TechnicalCommitteeCollectiveInstance,
+		>,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
