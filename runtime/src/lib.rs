@@ -110,6 +110,7 @@ mod mock;
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod beefy;
+pub mod block_production;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -686,6 +687,9 @@ impl pallet_session_validator_management::Config for Runtime {
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
 }
+
+/// The producer of the block being executed.
+pub type BlockProducer = block_production::CommitteeBlockProducer<Runtime>;
 
 pub struct LogBeneficiaries;
 impl sp_sidechain::OnNewEpoch for LogBeneficiaries {

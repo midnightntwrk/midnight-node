@@ -81,6 +81,7 @@ pallet-system-parameters.workspace = true
 pallet-throttle.workspace = true
 pallet-consensus-engine.workspace = true
 pallet-version.workspace = true
+midnight-primitives-block-production.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 midnight-primitives-session-info.workspace = true
@@ -139,6 +140,7 @@ std = [
     "pallet-mmr/std",
     "pallet-partner-chains-bridge/std",
     "pallet-version/std",
+    "midnight-primitives-block-production/std",
     "pallet-c2m-bridge/std",
     "pallet-cnight-observation/std",
     "pallet-federated-authority-observation/std",
