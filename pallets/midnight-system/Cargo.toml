@@ -30,6 +30,12 @@ sp-runtime.workspace = true
 midnight-node-res = { features = ["test", "chain-spec"], workspace = true }
 midnight-node-ledger-helpers.workspace = true
 tempfile.workspace = true
+frame-executive = { workspace = true, features = ["std"] }
+midnight-ledger-unsafe-helpers.workspace = true
+midnight-node-ledger = { workspace = true, features = ["std", "suite-storage"] }
+midnight-primitives-ledger = { workspace = true, features = ["std"] }
+proptest.workspace = true
+sp-externalities.workspace = true
 
 [features]
 default = ["std"]

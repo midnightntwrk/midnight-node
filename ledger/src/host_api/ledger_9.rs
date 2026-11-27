@@ -59,23 +59,55 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+/// The world a test chose with [`crate::suite_storage::SuiteStorageExt`], if any.
+#[cfg(feature = "std")]
+fn suite_world(mut _ext: &mut dyn Externalities) -> Option<u8> {
+	#[cfg(feature = "suite-storage")]
+	if let Some(ext) = _ext.extension::<crate::suite_storage::SuiteStorageExt>() {
+		return Some(**ext);
+	}
+	None
+}
+
+/// Evaluate `$body` with `$db` naming the ledger storage's `DB` type for this call.
+#[cfg(feature = "std")]
+macro_rules! with_db {
+	($ext:expr, $db:ident => $body:expr) => {
+		match suite_world($ext) {
+			#[cfg(feature = "suite-storage")]
+			Some(0) => {
+				type $db = crate::suite_storage::SuiteDb<0>;
+				$body
+			},
+			#[cfg(feature = "suite-storage")]
+			Some(1) => {
+				type $db = crate::suite_storage::SuiteDb<1>;
+				$body
+			},
+			Some(world) => panic!("no suite storage for world {world}"),
+			None if is_unified($ext) => {
+				type $db = DbUnified;
+				$body
+			},
+			None => {
+				type $db = DbSeparate;
+				$body
+			},
+		}
+	};
+}
+
 /// Call `Bridge::$call` instantiated for this call's storage mode, over the shared ledger
 /// storage, or over the ephemeral one when `$ephemeral` (see [`crate::ephemeral`]).
 #[cfg(feature = "std")]
 macro_rules! with_bridge {
 	($bridge:ident<$sig:ty>, $ext:expr, $ephemeral:expr, $call:ident($($arg:expr),* $(,)?)) => {
-		match (is_unified($ext), $ephemeral) {
-			(true, false) => $bridge::<$sig, DbUnified>::$call($($arg),*),
-			(false, false) => $bridge::<$sig, DbSeparate>::$call($($arg),*),
-			(true, true) => {
-				ensure_storage::<DbUnified>($ext);
-				$bridge::<$sig, EphemeralDb<DbUnified>>::$call($($arg),*)
-			},
-			(false, true) => {
-				ensure_storage::<DbSeparate>($ext);
-				$bridge::<$sig, EphemeralDb<DbSeparate>>::$call($($arg),*)
-			},
-		}
+		with_db!($ext, Db => if $ephemeral {
+			ensure_storage::<Db>($ext);
+			$bridge::<$sig, EphemeralDb<Db>>::$call($($arg),*)
+		} else {
+			$bridge::<$sig, Db>::$call($($arg),*)
+		})
 	};
 }
 
@@ -208,19 +240,11 @@ macro_rules! serve_pre_migration_v8_read {
 #[runtime_interface]
 pub trait Ledger9Bridge {
 	fn set_default_storage(&mut self) {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self)
-		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self)
-		}
+		with_db!(*self, Db => Bridge::<Signature, Db>::set_default_storage(*self))
 	}
 
 	fn flush_storage(&mut self) {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::flush_storage(*self)
-		} else {
-			Bridge::<Signature, DbSeparate>::flush_storage(*self)
-		}
+		with_db!(*self, Db => Bridge::<Signature, Db>::flush_storage(*self))
 	}
 
 	fn post_block_update(
@@ -819,25 +843,17 @@ pub trait Ledger9Bridge {
 	fn ensure_storage_initialized(&mut self) -> bool {
 		use ledger_storage_ledger_8::storage::try_get_default_storage;
 
-		let unified = is_unified(*self);
-
 		// If normal storage already exists, we're good
-		let already_initialized = if unified {
-			try_get_default_storage::<DbUnified>().is_some()
-		} else {
-			try_get_default_storage::<DbSeparate>().is_some()
-		};
-		if already_initialized {
+		if with_db!(*self, Db => try_get_default_storage::<Db>().is_some()) {
 			return false;
 		}
 
+		if let Some(world) = suite_world(*self) {
+			panic!("suite world {world} runs the runtime before the test set its storage");
+		}
 		crate::drop_all_default_storage();
 		// Initialize normal storage
-		if unified {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-		}
+		with_db!(*self, Db => Bridge::<Signature, Db>::set_default_storage(*self));
 		true
 	}
 
@@ -861,23 +877,15 @@ pub trait Ledger9Bridge {
 		use crate::host_api::migration_8_to_9::migrate_state_v8_to_v9;
 
 		let ephemeral = !is_onchain(*self);
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self);
+		with_db!(*self, Db => {
+			Bridge::<Signature, Db>::set_default_storage(*self);
 			if ephemeral {
-				ensure_storage::<DbUnified>(*self);
-				migrate_state_v8_to_v9::<EphemeralDb<DbUnified>>(*self, state_key)
+				ensure_storage::<Db>(*self);
+				migrate_state_v8_to_v9::<EphemeralDb<Db>>(*self, state_key)
 			} else {
-				migrate_state_v8_to_v9::<DbUnified>(*self, state_key)
+				migrate_state_v8_to_v9::<Db>(*self, state_key)
 			}
-		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			if ephemeral {
-				ensure_storage::<DbSeparate>(*self);
-				migrate_state_v8_to_v9::<EphemeralDb<DbSeparate>>(*self, state_key)
-			} else {
-				migrate_state_v8_to_v9::<DbSeparate>(*self, state_key)
-			}
-		}
+		})
 	}
 
 	/// Initialize a process-wide temporary ledger ParityDb seeded with the

@@ -1809,6 +1809,68 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
 }
 
+/// Hooks for tests that run worlds on [`crate::suite_storage`].
+#[cfg(feature = "suite-storage")]
+pub mod suite {
+	use super::*;
+	use crate::suite_storage::SuiteDb;
+	use moka::sync::ConcurrentCacheExt;
+
+	pub use ledger_storage_ledger_9 as arena_storage;
+
+	/// Empties the transaction validation caches, and drops what they held.
+	pub fn clear_tx_validation_caches() {
+		for (key, _) in STRICT_TX_VALIDATION_CACHE.iter() {
+			STRICT_TX_VALIDATION_CACHE.invalidate(&key);
+		}
+		for (key, _) in SOFT_TX_VALIDATION_CACHE.iter() {
+			SOFT_TX_VALIDATION_CACHE.invalidate(&key);
+		}
+		STRICT_TX_VALIDATION_CACHE.sync();
+		SOFT_TX_VALIDATION_CACHE.sync();
+	}
+
+	type Suite<const W: u8> = Sp<Ledger<SuiteDb<W>>, SuiteDb<W>>;
+	type Hasher = <SuiteDb<0> as DB>::Hasher;
+
+	/// The state key of a state [`LedgerStatesExt`](midnight_primitives_ledger::LedgerStatesExt)
+	/// holds in world `W`.
+	pub fn held_key<const W: u8>(state: &(dyn Any + Send)) -> Vec<u8> {
+		let state = state.downcast_ref::<Suite<W>>().expect("a ledger 9 state of world W");
+		api::new()
+			.tagged_serialize(&state.as_typed_key())
+			.expect("a state key serializes")
+	}
+
+	/// The arena root a state key names.
+	pub fn root(state_key: &[u8]) -> ArenaKey<Hasher> {
+		let key: TypedArenaKey<Ledger<SuiteDb<0>>, Hasher> =
+			api::new().tagged_deserialize(state_key).expect("a ledger 9 state key");
+		key.into()
+	}
+
+	/// Persists `genesis_state` in world `W`'s storage, flushed, and returns its state key.
+	pub fn genesis<const W: u8>(genesis_state: &[u8]) -> Vec<u8> {
+		storage::alloc_with_initial_state::<TransactionSignature, SuiteDb<W>>(genesis_state)
+	}
+
+	/// Holds the state at `state_key` in world `W`, persisted, for as long as the box lives:
+	/// on-chain in its storage, off-chain in its ephemeral storage.
+	pub fn pin<const W: u8>(state_key: &[u8], onchain: bool) -> Box<dyn Any> {
+		fn pin<D: DB<Hasher = Hasher>>(state_key: &[u8]) -> Box<dyn Any> {
+			let mut state = Bridge::<TransactionSignature, D>::get_ledger(&api::new(), state_key)
+				.expect("the model keeps every state");
+			state.persist();
+			Box::new(state)
+		}
+		if onchain {
+			pin::<SuiteDb<W>>(state_key)
+		} else {
+			pin::<crate::ephemeral::EphemeralDb<SuiteDb<W>>>(state_key)
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

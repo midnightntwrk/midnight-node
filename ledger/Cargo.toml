@@ -102,6 +102,9 @@ std = [
 ]
 runtime-benchmarks = []
 test-utils = []
+# Lets tests pick the host functions' storage per execution. Off by default, unlike
+# `test-utils`, so the node binary never builds it.
+suite-storage = ["std"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(substrate_runtime)'] }
