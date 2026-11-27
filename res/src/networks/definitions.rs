@@ -106,7 +106,7 @@ impl MidnightNetwork for UndeployedNetwork {
 	}
 }
 
-/// Used when `--chain` is not specified when running `build-spec` - it will source chain values from
+/// Used when `--chain` is not specified when running `export-chain-spec` - it will source chain values from
 /// environment variables at runtime rather than hard-coded values at compile-time
 pub struct CustomNetwork {
 	pub name: String,

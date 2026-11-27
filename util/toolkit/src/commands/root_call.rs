@@ -241,20 +241,9 @@ async fn execute_governance_call(
 	log::info!("Decoded call successfully");
 
 	// Step 2: Create the FederatedAuthority::motion_approve call wrapping our decoded call
-	let fed_auth_call = dynamic::tx(
-		"FederatedAuthority",
-		"motion_approve",
-		Composite::unnamed([call_value.clone()]),
-	)
-	.into_value();
-
-	// Compute the proposal hash for the federated authority call
-	let fed_auth_tx = dynamic::tx("FederatedAuthority", "motion_approve", vec![call_value.clone()]);
-	let fed_auth_call_data = api.tx().await?.call_data(&fed_auth_tx)?;
-	let proposal_hash = sp_crypto_hashing::blake2_256(&fed_auth_call_data);
-	let proposal_hash = H256(proposal_hash);
-
-	log::info!("Proposal hash: 0x{}", hex::encode(proposal_hash.0));
+	let fed_auth_call =
+		dynamic::tx("FederatedAuthority", "motion_approve", Composite::unnamed([call_value]))
+			.into_value();
 
 	// Step 2: Council proposes
 	log::info!("Council proposing federated motion approval...");
@@ -269,10 +258,11 @@ async fn execute_governance_call(
 	let council_propose_events =
 		submit_finalized(api, rpc, &council_proposal, council_proposer).await?;
 
-	let council_proposal_index = extract_proposal_index(&council_propose_events, "Council")?;
+	let (council_proposal_index, council_proposal_hash) =
+		extract_proposal(&council_propose_events, "Council")?;
 	log::info!(
 		"Council proposal created with hash: 0x{} and index: {}",
-		hex::encode(proposal_hash.0),
+		hex::encode(council_proposal_hash.0),
 		council_proposal_index
 	);
 
@@ -280,14 +270,29 @@ async fn execute_governance_call(
 	log::info!("Council members voting...");
 	for (i, voter) in council_keypairs.iter().take(2).enumerate() {
 		log::info!("Council vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
-		vote_on_proposal(api, rpc, voter, "Council", proposal_hash, council_proposal_index, true)
-			.await?;
+		vote_on_proposal(
+			api,
+			rpc,
+			voter,
+			"Council",
+			council_proposal_hash,
+			council_proposal_index,
+			true,
+		)
+		.await?;
 	}
 
 	// Step 4: Close Council proposal
 	log::info!("Closing Council proposal...");
-	close_proposal(api, rpc, council_proposer, "Council", proposal_hash, council_proposal_index)
-		.await?;
+	close_proposal(
+		api,
+		rpc,
+		council_proposer,
+		"Council",
+		council_proposal_hash,
+		council_proposal_index,
+	)
+	.await?;
 
 	// Step 5: Technical Committee proposes
 	log::info!("Technical Committee proposing federated motion approval...");
@@ -301,10 +306,11 @@ async fn execute_governance_call(
 
 	let tech_propose_events = submit_finalized(api, rpc, &tech_proposal, tc_proposer).await?;
 
-	let tech_proposal_index = extract_proposal_index(&tech_propose_events, "TechnicalCommittee")?;
+	let (tech_proposal_index, tech_proposal_hash) =
+		extract_proposal(&tech_propose_events, "TechnicalCommittee")?;
 	log::info!(
 		"Technical Committee proposal created with hash: 0x{} and index: {}",
-		hex::encode(proposal_hash.0),
+		hex::encode(tech_proposal_hash.0),
 		tech_proposal_index
 	);
 
@@ -317,7 +323,7 @@ async fn execute_governance_call(
 			rpc,
 			voter,
 			"TechnicalCommittee",
-			proposal_hash,
+			tech_proposal_hash,
 			tech_proposal_index,
 			true,
 		)
@@ -326,8 +332,15 @@ async fn execute_governance_call(
 
 	// Step 7: Close Technical Committee proposal
 	log::info!("Closing Technical Committee proposal...");
-	close_proposal(api, rpc, tc_proposer, "TechnicalCommittee", proposal_hash, tech_proposal_index)
-		.await?;
+	close_proposal(
+		api,
+		rpc,
+		tc_proposer,
+		"TechnicalCommittee",
+		tech_proposal_hash,
+		tech_proposal_index,
+	)
+	.await?;
 
 	log::info!("Federated authority motion approved by both councils!");
 
@@ -412,10 +425,14 @@ async fn close_proposal(
 	Ok(())
 }
 
-fn extract_proposal_index(
+/// The index and hash of the proposal from the collective pallet's `Proposed` event.
+///
+/// The hash is read from the event rather than computed: since polkadot-stable2611 it is
+/// `hash((call, threshold))`, before that `hash(call)`.
+fn extract_proposal(
 	events: &ExtrinsicEvents<SubstrateConfig>,
 	pallet: &str,
-) -> Result<u32, RootCallError> {
+) -> Result<(u32, H256), RootCallError> {
 	use parity_scale_codec::Decode;
 
 	/// Prefix of the collective pallet's `Proposed` event.
@@ -424,6 +441,7 @@ fn extract_proposal_index(
 	struct ProposedPrefix {
 		_account: [u8; 32],
 		proposal_index: u32,
+		proposal_hash: [u8; 32],
 	}
 
 	for event in events.iter() {
@@ -431,7 +449,7 @@ fn extract_proposal_index(
 		if event.pallet_name() == pallet && event.event_name() == "Proposed" {
 			let prefix = ProposedPrefix::decode(&mut event.field_bytes())
 				.map_err(|_| RootCallError::ProposalIndexNotFound)?;
-			return Ok(prefix.proposal_index);
+			return Ok((prefix.proposal_index, H256(prefix.proposal_hash)));
 		}
 	}
 	Err(RootCallError::ProposalIndexNotFound)
