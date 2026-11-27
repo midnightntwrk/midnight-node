@@ -683,6 +683,29 @@ fn state_key_is_block_start_after_a_block_with_system_transactions() {
 		assert_state_key_is_block_start();
 	})
 }
+/// `on_finalize` has the ledger leave out of the DUST price what the hook asks, and hands the hook
+/// the block's fullness from before the reset.
+#[test]
+fn the_end_of_block_hook_gets_the_fullness_and_shapes_the_price_update() {
+	use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
+
+	let state_after_a_block = |leave_out_everything: bool| {
+		mock::new_test_ext().execute_with(|| {
+			let (tx, block_context) =
+				midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+			init_ledger_state(block_context.into());
+			assert_ok!(send_mn_transaction(tx));
+			let fullness = LedgerApi::get_block_fullness(&StateKey::<Test>::get()).unwrap();
+			assert!(fullness.block_usage.used > 0);
+			mock::LeftOut::set(leave_out_everything.then_some(fullness));
+			mock::Midnight::on_finalize(1);
+			assert_eq!(mock::Noted::get(), Some(fullness));
+			assert_state_key_is_block_start();
+			StateKey::<Test>::get()
+		})
+	};
+	assert_ne!(state_after_a_block(true), state_after_a_block(false));
+}
 // grcov-excl-stop
 
 /// A payload far inside the byte limit is still refused when it declares too many nodes.
@@ -786,4 +809,123 @@ fn tx_cost_bounded_by_normal_dispatch_budget() {
 			 get_transaction_cost must scale against the Normal class budget, not max_block."
 		);
 	});
+}
+
+/// Tries a system transaction through `apply`; the state key moves only if it succeeds.
+fn try_apply_system_transaction(
+	apply: ApplySystemTransactionFn,
+	tx: Vec<u8>,
+) -> Result<(), LedgerApiError> {
+	<mock::Midnight as LedgerStateProviderMut>::mut_ledger_state(|state_key| {
+		let block_context =
+			<mock::Midnight as midnight_primitives::LedgerBlockContextProvider>::get_block_context(
+			);
+		let runtime_version = <frame_system::Pallet<Test>>::runtime_version().spec_version;
+		apply(&state_key, &tx, block_context, runtime_version).map(|result| (result.state_root, ()))
+	})
+}
+
+mod reward_system_transactions {
+	use super::*;
+	use midnight_node_ledger::types::{
+		RewardOutput, RewardPools, active_ledger_bridge as LedgerApi,
+	};
+	use test_log::test;
+
+	fn reward(amount: u128, address: u8) -> Vec<u8> {
+		LedgerApi::construct_distribute_night_reward_system_tx(vec![RewardOutput {
+			amount,
+			target_address: [address; 32],
+			nonce: [address; 32],
+		}])
+		.unwrap()
+	}
+
+	#[test]
+	fn payouts_move_night_out_of_the_block_reward_pool() {
+		mock::new_test_ext().execute_with(|| {
+			init_ledger_state(BlockContext::default());
+			let start = mock::Midnight::get_reward_pools().unwrap();
+			let funded = 1_000u128.min(start.reserve_pool);
+			assert!(funded > 0, "the test ledger has a reserve: {start:?}");
+			apply_system_transaction(
+				LedgerApi::apply_bridge_system_transaction,
+				LedgerApi::construct_distribute_reserve_system_tx(funded).unwrap(),
+			);
+			assert_eq!(
+				mock::Midnight::get_reward_pools().unwrap(),
+				RewardPools {
+					reserve_pool: start.reserve_pool - funded,
+					block_reward_pool: start.block_reward_pool + funded,
+				}
+			);
+
+			apply_system_transaction(
+				LedgerApi::apply_reward_system_transaction,
+				LedgerApi::construct_pay_block_rewards_to_treasury_system_tx(funded / 4).unwrap(),
+			);
+			apply_system_transaction(
+				LedgerApi::apply_reward_system_transaction,
+				reward(funded / 2, 7),
+			);
+			assert_eq!(
+				mock::Midnight::get_reward_pools().unwrap().block_reward_pool,
+				start.block_reward_pool + funded - funded / 4 - funded / 2
+			);
+
+			let overdraw = LedgerApi::construct_pay_block_rewards_to_treasury_system_tx(
+				start.block_reward_pool + funded,
+			)
+			.unwrap();
+			assert!(
+				try_apply_system_transaction(LedgerApi::apply_reward_system_transaction, overdraw)
+					.is_err()
+			);
+		})
+	}
+
+	#[test]
+	fn outputs_are_sorted_by_address() {
+		mock::new_test_ext().execute_with(|| {
+			let output = |address: u8| RewardOutput {
+				amount: 1,
+				target_address: [address; 32],
+				nonce: [address; 32],
+			};
+			let construct = LedgerApi::construct_distribute_night_reward_system_tx;
+			assert_eq!(
+				construct(vec![output(9), output(2), output(5)]).unwrap(),
+				construct(vec![output(2), output(5), output(9)]).unwrap()
+			);
+		})
+	}
+
+	#[test]
+	fn block_fullness_accrues_within_the_block_and_resets_at_its_end() {
+		mock::new_test_ext().execute_with(|| {
+			init_ledger_state(BlockContext::default());
+			let at_start = mock::Midnight::get_block_fullness().unwrap();
+			assert_eq!(at_start.bytes_written.used, 0);
+			assert!(at_start.bytes_churned.limit > 0);
+
+			apply_system_transaction(
+				LedgerApi::apply_reward_system_transaction,
+				LedgerApi::construct_pay_block_rewards_to_treasury_system_tx(0).unwrap(),
+			);
+			let mid = mock::Midnight::get_block_fullness().unwrap();
+			assert_ne!(mid, at_start);
+			for dimension in [
+				mid.read_time,
+				mid.compute_time,
+				mid.block_usage,
+				mid.bytes_written,
+				mid.bytes_churned,
+			] {
+				assert!(dimension.used <= dimension.limit);
+			}
+
+			mock::Midnight::on_finalize(1);
+			assert_eq!(mock::Midnight::get_block_fullness().unwrap(), at_start);
+		})
+	}
 }

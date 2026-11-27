@@ -1,0 +1,42 @@
+[package]
+name = "pallet-block-rewards"
+version = "0.1.0"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish = false
+repository.workspace = true
+description = "Native NIGHT block rewards: the per-block draw and the settlement of each epoch through the ledger"
+
+[dependencies]
+parity-scale-codec = { workspace = true, features = ["derive", "max-encoded-len"] }
+scale-info = { workspace = true, features = ["derive"] }
+frame-support.workspace = true
+frame-system.workspace = true
+midnight-primitives-block-rewards.workspace = true
+midnight-primitives-block-production.workspace = true
+log.workspace = true
+sp-api.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+sp-io.workspace = true
+sp-runtime.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "parity-scale-codec/std",
+    "scale-info/std",
+    "frame-support/std",
+    "frame-system/std",
+    "midnight-primitives-block-rewards/std",
+    "midnight-primitives-block-production/std",
+    "log/std",
+    "sp-api/std",
+]
+try-runtime = [
+    "frame-support/try-runtime",
+    "frame-system/try-runtime",
+]

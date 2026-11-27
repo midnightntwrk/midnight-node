@@ -13,7 +13,7 @@
 
 use frame_support::sp_runtime::{
 	BuildStorage,
-	traits::{BlakeTwo256, Get, IdentityLookup},
+	traits::{BlakeTwo256, IdentityLookup},
 };
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::*;
@@ -91,18 +91,8 @@ impl pallet_timestamp::Config for Test {
 	type WeightInfo = ();
 }
 
-pub type BeneficiaryId = midnight_node_ledger::types::Hash;
-pub type BlockRewardPoints = u128;
-pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
-pub struct LedgerBlockReward;
-impl Get<BlockReward> for LedgerBlockReward {
-	fn get() -> BlockReward {
-		(0, None)
-	}
-}
-
 impl pallet_midnight::Config for Test {
-	type BlockReward = LedgerBlockReward;
+	type LedgerBlockEnd = ();
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }

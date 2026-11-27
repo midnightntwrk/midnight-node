@@ -22,6 +22,7 @@ use midnight_node_ledger_helpers::{DustPublicKey, Fr, serialize_untagged};
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives::{
 	MidnightSystemTransactionBridgeExecutor, MidnightSystemTransactionCNightExecutor,
+	MidnightSystemTransactionRewardExecutor,
 };
 
 fn init_ledger_state() {
@@ -263,6 +264,78 @@ fn bridge_executor_rejects_every_variant_outside_its_three() {
 				"bridge executor must reject {name}",
 			);
 		}
+	});
+}
+
+#[test]
+fn reward_executor_rejects_every_variant_outside_its_two() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state();
+		const ALLOWED: [&str; 2] = ["distribute_night_reward", "pay_block_rewards_to_treasury"];
+		for (name, tx) in all_variants() {
+			if ALLOWED.contains(&name) {
+				continue;
+			}
+			assert_eq!(
+				<mock::MidnightSystem as MidnightSystemTransactionRewardExecutor>::execute_system_transaction(tx),
+				Err(Error::<Test>::SystemTransactionNotAllowedForRewards.into()),
+				"reward executor must reject {name}",
+			);
+		}
+	});
+}
+
+/// Block rewards wait for a later block on a full one and halt on anything else, so a full
+/// block must read as one.
+#[test]
+fn reward_executor_reports_a_full_block_and_nothing_else_as_one() {
+	use midnight_node_ledger::types::active_version::LedgerApiError;
+	use sp_runtime::DispatchError;
+	type Rewards = mock::MidnightSystem;
+	let full: DispatchError = Error::<Test>::from(LedgerApiError::BlockLimitExceededError).into();
+	assert!(<Rewards as MidnightSystemTransactionRewardExecutor>::is_block_limit_exceeded(&full));
+	let refused: DispatchError = Error::<Test>::SystemTransactionNotAllowedForRewards.into();
+	assert!(!<Rewards as MidnightSystemTransactionRewardExecutor>::is_block_limit_exceeded(
+		&refused
+	));
+}
+
+/// The variants `reward_executor_rejects_every_variant_outside_its_two` skips.
+#[test]
+fn reward_executor_accepts_its_two() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state();
+		for tx in [distribute_night_reward_tx(), pay_block_rewards_to_treasury_tx()] {
+			assert_ok!(
+				<mock::MidnightSystem as MidnightSystemTransactionRewardExecutor>::execute_system_transaction(tx)
+			);
+		}
+	});
+}
+
+/// A reward payout and the pallet storage written next to it commit or roll back together.
+#[test]
+fn a_reward_payout_rolls_back_with_its_storage_layer() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let before = pallet_midnight::StateKey::<Test>::get();
+
+		let result = frame_support::storage::with_storage_layer(|| {
+			<mock::MidnightSystem as MidnightSystemTransactionRewardExecutor>::execute_system_transaction(
+				pay_block_rewards_to_treasury_tx(),
+			)?;
+			assert_ne!(before, pallet_midnight::StateKey::<Test>::get());
+			Err::<(), sp_runtime::DispatchError>(sp_runtime::DispatchError::Other(
+				"later step failed",
+			))
+		});
+
+		assert!(result.is_err());
+		assert_eq!(before, pallet_midnight::StateKey::<Test>::get());
+		assert!(!mock::System::events().iter().any(|r| matches!(
+			r.event,
+			mock::RuntimeEvent::MidnightSystem(crate::Event::SystemTransactionApplied(_))
+		)));
 	});
 }
 

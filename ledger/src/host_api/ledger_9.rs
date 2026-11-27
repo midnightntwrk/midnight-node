@@ -15,7 +15,8 @@
 use crate::ledger_9::Bridge;
 use crate::{
 	boundary::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
+		BlockFullness, GasCost, Hash, RewardOutput, RewardPools, SystemTransactionAppliedStateRoot,
+		TransactionAppliedStateRoot, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
 };
@@ -249,6 +250,23 @@ pub trait Ledger9Bridge {
 		)
 	}
 
+	/// Leaves the `used` of `left_out` out of the DUST price update; the block limits still
+	/// counted it. Also returns the block's fullness from before the update resets it.
+	#[version(2)]
+	fn apply_post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		left_out: PassFatPointerAndDecode<BlockFullness>,
+	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, BlockFullness), LedgerApiError>> {
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_post_block_update_leaving_out(*self, state_key, block_context, left_out)
+		)
+	}
+
 	// Current Enabled Version
 	fn get_version(&mut self) -> AllocateAndReturnFatPointer<Vec<u8>> {
 		// Dispatch on storage mode even though `get_version` doesn't read storage today —
@@ -389,6 +407,62 @@ pub trait Ledger9Bridge {
 			!is_onchain(*self),
 			apply_bridge_system_transaction(*self, state_key, tx, block_context)
 		)
+	}
+
+	fn apply_reward_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		with_bridge!(
+			Bridge<Signature>,
+			*self,
+			!is_onchain(*self),
+			apply_reward_system_transaction(*self, state_key, tx, block_context)
+		)
+	}
+
+	fn get_reward_pools(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<RewardPools, LedgerApiError>> {
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_reward_pools(state_key))
+	}
+
+	/// Read before `apply_post_block_update`, which resets the block's fullness.
+	fn get_block_fullness(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<BlockFullness, LedgerApiError>> {
+		with_bridge!(Bridge<Signature>, *self, !is_onchain(*self), get_block_fullness(state_key))
+	}
+
+	fn construct_distribute_night_reward_system_tx(
+		&mut self,
+		outputs: PassFatPointerAndDecode<Vec<RewardOutput>>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::construct_distribute_night_reward_system_tx(outputs)
+		} else {
+			Bridge::<Signature, DbSeparate>::construct_distribute_night_reward_system_tx(outputs)
+		}
+	}
+
+	fn construct_pay_block_rewards_to_treasury_system_tx(
+		&mut self,
+		amount: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::construct_pay_block_rewards_to_treasury_system_tx(
+				amount,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::construct_pay_block_rewards_to_treasury_system_tx(
+				amount,
+			)
+		}
 	}
 
 	/*

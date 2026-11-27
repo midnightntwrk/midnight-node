@@ -119,6 +119,11 @@ impl<D: DB> Ledger<D> {
 		self.block_fullness.is_zero()
 	}
 
+	/// What the block's transactions have used so far; zero at block start.
+	pub(crate) fn block_fullness(&self) -> SyntheticCost {
+		self.block_fullness.clone().into()
+	}
+
 	pub(crate) fn get_zswap_state(
 		&self,
 		maybe_contract_address: Option<ContractAddress>,
@@ -224,11 +229,23 @@ impl<D: DB> Ledger<D> {
 	/// [`apply_system_tx`]), and the accumulated `block_fullness` is clamped to the block limits
 	/// here before being applied, so the underlying update cannot fail on block limits. Suitable
 	/// for `on_finalize`, which cannot propagate an error.
+	///
+	/// `left_out` is subtracted from the fullness the price update sees; the block limits were
+	/// already checked with it.
 	pub(crate) fn apply_post_block_update(
 		sp: Sp<Self, D>,
 		block_context: BlockContext,
+		left_out: SyntheticCost,
 	) -> Sp<Self, D> {
-		let block_fullness: SyntheticCost = sp.block_fullness.clone().into();
+		let accrued: SyntheticCost = sp.block_fullness.clone().into();
+		// `CostDuration`'s `-` saturates, like the other three.
+		let block_fullness = SyntheticCost {
+			read_time: accrued.read_time - left_out.read_time,
+			compute_time: accrued.compute_time - left_out.compute_time,
+			block_usage: accrued.block_usage.saturating_sub(left_out.block_usage),
+			bytes_written: accrued.bytes_written.saturating_sub(left_out.bytes_written),
+			bytes_churned: accrued.bytes_churned.saturating_sub(left_out.bytes_churned),
+		};
 		let block_limits = sp.state.parameters.limits.block_limits;
 		let normalized_fullness = helpers_local::clamp_and_normalize(
 			&block_fullness,
@@ -415,7 +432,11 @@ mod tests {
 		assert_apply_transaction_only(&api, &mut ledger, &deploy_tx, &block_context);
 		assert!(!ledger.is_block_start(), "a transaction has been applied in this block");
 
-		ledger = Ledger::<DefaultDB>::apply_post_block_update(ledger.clone(), block_context);
+		ledger = Ledger::<DefaultDB>::apply_post_block_update(
+			ledger.clone(),
+			block_context,
+			SyntheticCost::ZERO,
+		);
 		assert!(ledger.is_block_start(), "the end-of-block update starts a new block");
 	}
 
@@ -440,7 +461,11 @@ mod tests {
 		assert!(!ledger.is_block_start(), "a transaction has been applied in this block");
 		assert_ne!(ledger.as_typed_key(), block_start_key(&ledger));
 
-		let applied = Ledger::apply_post_block_update(mid_block(), BlockContext::default());
+		let applied = Ledger::apply_post_block_update(
+			mid_block(),
+			BlockContext::default(),
+			SyntheticCost::ZERO,
+		);
 		assert!(applied.is_block_start(), "apply_post_block_update starts a new block");
 		assert_eq!(applied.as_typed_key(), block_start_key(&applied));
 
@@ -448,6 +473,36 @@ mod tests {
 			.expect("Post block update failed");
 		assert!(updated.is_block_start(), "post_block_update starts a new block");
 		assert_eq!(updated.as_typed_key(), block_start_key(&updated));
+	}
+
+	/// What `left_out` leaves out does not reach the DUST price update: the result equals the
+	/// update of a block that accrued only the rest.
+	#[test]
+	fn left_out_fullness_does_not_reach_the_price_update() {
+		let limit = LedgerState::<DefaultDB>::new("undeployed")
+			.parameters
+			.limits
+			.block_limits
+			.block_usage;
+		let usage = |block_usage| SyntheticCost { block_usage, ..SyntheticCost::ZERO };
+		let ledger = |block_usage| {
+			Sp::new(Ledger::<DefaultDB>::new_with_block_fullness(
+				LedgerState::new("undeployed"),
+				usage(block_usage),
+			))
+		};
+		let context = BlockContext::default();
+
+		let leaving_out = Ledger::apply_post_block_update(
+			ledger(limit),
+			context.clone(),
+			usage(limit - limit / 4),
+		);
+		let rest_only =
+			Ledger::apply_post_block_update(ledger(limit / 4), context.clone(), usage(0));
+		let everything = Ledger::apply_post_block_update(ledger(limit), context, usage(0));
+		assert_eq!(leaving_out.as_typed_key(), rest_only.as_typed_key());
+		assert_ne!(leaving_out.as_typed_key(), everything.as_typed_key());
 	}
 
 	#[test]

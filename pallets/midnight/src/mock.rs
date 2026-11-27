@@ -23,7 +23,7 @@ use frame_support::{
 use sp_core::H256;
 use sp_runtime::{
 	BuildStorage, Perbill,
-	traits::{BlakeTwo256, Get, IdentityLookup},
+	traits::{BlakeTwo256, IdentityLookup},
 };
 
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -89,18 +89,26 @@ impl pallet_timestamp::Config for Test {
 	type WeightInfo = ();
 }
 
-pub type BeneficiaryId = midnight_node_ledger::types::Hash;
-pub type BlockRewardPoints = u128;
-pub type BlockReward = (BlockRewardPoints, Option<BeneficiaryId>);
-pub struct LedgerBlockReward;
-impl Get<BlockReward> for LedgerBlockReward {
-	fn get() -> BlockReward {
-		(0, None)
+parameter_types! {
+	/// What [`RecordBlockEnd`] has the end-of-block update leave out of the DUST price.
+	pub static LeftOut: Option<midnight_node_ledger::types::BlockFullness> = None;
+	/// The fullness the end-of-block update handed [`RecordBlockEnd`].
+	pub static Noted: Option<midnight_node_ledger::types::BlockFullness> = None;
+}
+
+pub struct RecordBlockEnd;
+
+impl midnight_primitives::LedgerBlockEnd for RecordBlockEnd {
+	fn left_out_of_price() -> Option<midnight_node_ledger::types::BlockFullness> {
+		LeftOut::get()
+	}
+	fn note_block_fullness(fullness: midnight_node_ledger::types::BlockFullness) {
+		Noted::set(Some(fullness));
 	}
 }
 
 impl pallet_midnight::Config for Test {
-	type BlockReward = LedgerBlockReward;
+	type LedgerBlockEnd = RecordBlockEnd;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 	type MaxDecodedTxItems = frame_support::traits::ConstU32<4096>;
 }
