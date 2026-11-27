@@ -37,9 +37,15 @@ jobs:
 
       - name: Scan code
         if: steps.guard.outputs.hit != 'true'
-        uses: midnightntwrk/upload-sarif-github-action@4e7a363e1fcd1be102b28485ad17bcb507deada6
+        uses: midnightntwrk/upload-sarif-github-action@ead6c0e0472da1821eb2732eaed3e120a9aaa0ea # v2.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The action's default checks less Vulnerabilities. That check is one
+          # count of every advisory in the tree, and this repo always trails
+          # polkadot-sdk releases a little, so it would stay red. osv-scanner
+          # already gates each advisory on its own, with per-advisory waivers in
+          # osv-scanner.toml.
+          scorecard_checks: "Binary-Artifacts,Dangerous-Workflow,Dependency-Update-Tool,License,Pinned-Dependencies,Security-Policy,Token-Permissions"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

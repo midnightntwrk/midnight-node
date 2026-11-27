@@ -68,7 +68,8 @@ feature-depth = 1
 # The url(s) of the advisory databases to use
 #db-urls = ["https://github.com/rustsec/advisory-db"]
 # A list of advisory IDs to ignore. Note that ignored advisories will still
-# output a note when they are encountered.
+# output a note when they are encountered. Mirrored as [[IgnoredVulns]] in
+# osv-scanner.toml for the scan workflow: change both together.
 ignore = [
     { id = "RUSTSEC-2023-0091", reason = "vuln in old wasmtime version used by polkadot-sdk" },
     { id = "RUSTSEC-2024-0438", reason = "vuln in old wasmtime version used by polkadot-sdk" },

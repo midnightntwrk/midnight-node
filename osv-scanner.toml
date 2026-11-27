@@ -1,0 +1,196 @@
+# osv-scanner config for the root Cargo.lock, read by the scan workflow
+# (midnightntwrk/upload-sarif-github-action).
+
+# Advisory excuses: a copy of deny.toml's [advisories] ignore list (cargo-deny,
+# run by the Earthfile's +audit-rust). Keep the two in sync: one waiver per
+# advisory, in both files, so cargo-deny and osv-scanner agree.
+[[IgnoredVulns]]
+id = "RUSTSEC-2023-0091"
+reason = "vuln in old wasmtime version used by polkadot-sdk"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0438"
+reason = "vuln in old wasmtime version used by polkadot-sdk"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0442"
+reason = "vuln in old wasmtime version used by polkadot-sdk"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0012"
+reason = "backoff is unmaintained but no replacement is available"
+
+# Not in deny.toml: cargo-deny only checks crates.io packages, and this one is
+# the [patch.crates-io] git fork. osv-scanner matches on name and version, so
+# it reads yamux 0.12.2 as upstream's vulnerable release.
+[[IgnoredVulns]]
+id = "GHSA-vxx9-2994-q338"
+reason = "yamux 0.12.2 is patched to midnightntwrk/rust-yamux (branch yamux-v0.12.2, 8ed778c backports the fix); node/tests/yamux_vulnerability.rs covers it. The 0.13.10 also in the lockfile is a fixed release."
+
+# Advisories that do not reach the node: crates only in the lockfile, or code
+# behind a feature the build does not enable. Not mirrored in deny.toml yet:
+# add them there too if cargo-deny reports them. Re-check each on its review
+# date; a polkadot-sdk bump can change either answer.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0505"
+ignoreUntil = 2027-02-26
+reason = "hickory-proto: DNSSEC validation flaw; hickory 0.24 is built (libp2p-dns, libp2p-mdns) with features mdns, socket2, tokio only, so no DNSSEC validation is compiled. Fixed only in 0.26, which needs libp2p >= 0.56 (not in polkadot-sdk stable2611)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0509"
+ignoreUntil = 2027-02-26
+reason = "hickory-proto/hickory-net: DNSSEC validation flaw; hickory 0.24 is built (libp2p-dns, libp2p-mdns) with features mdns, socket2, tokio only, so no DNSSEC validation is compiled. Fixed only in 0.26, which needs libp2p >= 0.56 (not in polkadot-sdk stable2611)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0514"
+ignoreUntil = 2027-02-26
+reason = "hickory-resolver: DNSSEC validation flaw; hickory 0.24 is built (libp2p-dns, libp2p-mdns) with features mdns, socket2, tokio only, so no DNSSEC validation is compiled. Fixed only in 0.26, which needs libp2p >= 0.56 (not in polkadot-sdk stable2611)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0525"
+ignoreUntil = 2027-02-26
+reason = "libp2p-quic 0.11.1: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0340"
+ignoreUntil = 2027-02-26
+reason = "quinn-proto 0.11.15: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0341"
+ignoreUntil = 2027-02-26
+reason = "quinn-proto 0.11.15: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0104"
+ignoreUntil = 2027-02-26
+reason = "rustls-webpki 0.101.7: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0344"
+ignoreUntil = 2027-02-26
+reason = "ruzstd 0.8.2: lockfile only: Cargo.lock records every optional dependency, but cargo tree --all-features --target all finds no path to this crate, so it is never compiled"
+
+# Licence excuses: GPL-3.0-only polkadot-sdk crates that reach the lockfile
+# only through frame-benchmarking-cli (-> cumulus), an optional dependency of
+# node behind the `runtime-benchmarks` feature. The released node and runtime
+# are built without it; only +build-benchmarks, an internal artifact, links
+# them. Matched by name, not version, so a polkadot-sdk bump does not re-raise
+# them. Re-check before relying on this:
+#
+#   cargo tree --workspace --target all -e normal,build -i polkadot-primitives
+#
+# must find nothing; once it does, these crates ship and the excuses are wrong.
+
+[[PackageOverrides]]
+name = "polkadot-core-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-metrics"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-network-protocol"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-node-subsystem-types"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-overseer"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-parachain-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-primitives"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-runtime-metrics"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-runtime-parachains"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "polkadot-statement-table"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "staging-xcm"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "staging-xcm-builder"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "staging-xcm-executor"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "tracing-gum"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "tracing-gum-proc-macro"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+[[PackageOverrides]]
+name = "xcm-procedural"
+ecosystem = "crates.io"
+license.ignore = true
+reason = "runtime-benchmarks only, via frame-benchmarking-cli; not in the released node or runtime"
+
+# Wrongly labelled: pallet-migrations inherits polkadot-sdk's workspace
+# `license = "GPL-3.0-only"` in its Cargo.toml, so crates.io and deps.dev say
+# GPL, but every source file is `SPDX-License-Identifier: Apache-2.0`
+# (substrate/frame/migrations), like the rest of FRAME. Record what the
+# source says rather than excuse it, so the allowlist still judges it.
+[[PackageOverrides]]
+name = "pallet-migrations"
+ecosystem = "crates.io"
+license.override = ["Apache-2.0"]
+reason = "source is SPDX Apache-2.0; the Cargo metadata inherits polkadot-sdk's GPL-3.0-only by mistake"

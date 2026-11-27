@@ -1,0 +1,13 @@
+# zizmor suppressions, read by the Scan workflow. Each entry states why the
+# finding does not apply; prefer fixing the workflow over listing it here.
+rules:
+  dangerous-triggers:
+    # These bots are issue_comment-triggered by design (a `/command` on the
+    # PR). Each one's first step rejects the comment unless the author is a
+    # MEMBER/OWNER *and* getCollaboratorPermissionLevel grants write, before
+    # anything checks out or runs the PR's code.
+    ignore:
+      - cargo-fmt-bot.yml
+      - fix-metadata-conflicts-bot.yml
+      - rebuild-chainspec-bot.yml
+      - rebuild-metadata-bot.yml

@@ -1,0 +1,24 @@
+# osv-scanner config for local-environment/package-lock.json, read by the scan
+# workflow (midnightntwrk/upload-sarif-github-action).
+#
+# Licence excuses: local-environment is a local test network launcher, used
+# only for testing and never shipped, so its GPL-3.0-only @substrate/connect
+# packages are excused by name.
+
+[[PackageOverrides]]
+name = "@substrate/connect"
+ecosystem = "npm"
+license.ignore = true
+reason = "local-environment is a local test network, never shipped"
+
+[[PackageOverrides]]
+name = "@substrate/connect-known-chains"
+ecosystem = "npm"
+license.ignore = true
+reason = "local-environment is a local test network, never shipped"
+
+[[PackageOverrides]]
+name = "@substrate/connect-extension-protocol"
+ecosystem = "npm"
+license.ignore = true
+reason = "local-environment is a local test network, never shipped"
