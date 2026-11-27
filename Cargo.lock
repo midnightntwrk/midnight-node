@@ -8505,6 +8505,7 @@ dependencies = [
  "sp-io",
  "sp-keyring",
  "sp-keystore",
+ "sp-maybe-compressed-blob",
  "sp-mmr-primitives",
  "sp-partner-chains-bridge",
  "sp-runtime",
@@ -8750,6 +8751,7 @@ dependencies = [
  "sp-genesis-builder",
  "sp-inherents",
  "sp-io",
+ "sp-keystore",
  "sp-offchain",
  "sp-partner-chains-bridge",
  "sp-runtime",
@@ -9086,6 +9088,7 @@ name = "midnight-primitives-session-info"
 version = "0.1.0"
 dependencies = [
  "sp-api",
+ "sp-core",
 ]
 
 [[package]]

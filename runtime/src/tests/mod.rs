@@ -1280,3 +1280,64 @@ mod tx_pause_inherents {
 		});
 	}
 }
+
+mod generate_session_keys {
+	use crate::{Block, CROSS_CHAIN, Runtime};
+	use sp_keystore::{Keystore, KeystoreExt, testing::MemoryKeystore};
+	use sp_session::runtime_decl_for_session_keys::SessionKeysV2;
+	use std::sync::Arc;
+
+	#[test]
+	fn does_not_generate_a_cross_chain_key() {
+		let keystore = Arc::new(MemoryKeystore::new());
+		let mut ext = sp_io::TestExternalities::default();
+		ext.register_extension(KeystoreExt(keystore.clone()));
+
+		ext.execute_with(|| {
+			<Runtime as SessionKeysV2<Block>>::generate_session_keys(vec![0u8; 32], None)
+		});
+
+		assert!(!keystore.keys(sp_runtime::key_types::AURA).unwrap().is_empty());
+		assert!(keystore.keys(CROSS_CHAIN).unwrap().is_empty());
+	}
+
+	#[test]
+	fn generates_each_session_key_with_its_own_proof_of_possession() {
+		use crate::{AccountId, CrossChainPublic, opaque::SessionKeys};
+		use midnight_primitives_session_info::runtime_decl_for_session_keys_generation_api::SessionKeysGenerationApiV1;
+		use parity_scale_codec::{Decode, Encode};
+		use sp_core::Pair;
+		use sp_runtime::traits::OpaqueKeys;
+
+		let keystore = Arc::new(MemoryKeystore::new());
+		let mut ext = sp_io::TestExternalities::default();
+		ext.register_extension(KeystoreExt(keystore.clone()));
+		let cross_chain = sp_core::ecdsa::Pair::from_seed(&[7; 32]).public();
+
+		let generated = ext.execute_with(|| {
+			<Runtime as SessionKeysGenerationApiV1<Block>>::generate_session_keys_with_proofs(
+				cross_chain,
+			)
+		});
+
+		let key_types: Vec<_> = generated.iter().map(|(key_type, ..)| *key_type).collect();
+		assert_eq!(key_types, SessionKeys::key_ids());
+		assert_eq!(key_types, <Runtime as SessionKeysGenerationApiV1<Block>>::key_ids());
+		for (key_type, public, _) in &generated {
+			assert_eq!(keystore.keys(*key_type).unwrap(), vec![public.clone()]);
+		}
+		assert!(keystore.keys(CROSS_CHAIN).unwrap().is_empty());
+
+		// Joined in key order, the signatures are the `pallet_session` ownership proof for the
+		// account of the `crch` key.
+		let keys: Vec<u8> = generated.iter().flat_map(|(_, public, _)| public.clone()).collect();
+		let keys = SessionKeys::decode(&mut &keys[..]).unwrap();
+		let proof: Vec<u8> =
+			generated.iter().flat_map(|(.., signature)| signature.clone()).collect();
+		let owner = AccountId::from(CrossChainPublic::from(cross_chain)).encode();
+		assert!(keys.ownership_proof_is_valid(&owner, &proof));
+		let other = sp_core::ecdsa::Pair::from_seed(&[8; 32]).public();
+		let other = AccountId::from(CrossChainPublic::from(other)).encode();
+		assert!(!keys.ownership_proof_is_valid(&other, &proof));
+	}
+}

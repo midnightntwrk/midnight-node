@@ -8,12 +8,14 @@ license-file.workspace = true
 
 [dependencies]
 sp-api.workspace = true
+sp-core.workspace = true
 
 
 [features]
 default = ["std"]
 std = [
     "sp-api/std",
+    "sp-core/std",
 ]
 
 [lints]

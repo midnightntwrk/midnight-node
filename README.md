@@ -382,3 +382,7 @@ See [fork-testing.md](docs/fork-testing.md)
 
 See [aura-to-babe-migration-runbook.md](docs/aura-to-babe-migration-runbook.md)
 
+### Generating session keys
+
+See [session-key-generation.md](docs/session-key-generation.md)
+
