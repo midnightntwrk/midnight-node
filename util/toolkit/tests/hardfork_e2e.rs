@@ -438,8 +438,9 @@ async fn hardfork_single_tx() {
 
 	// 5b. The 3.0.0 migrations ran in the boundary block: the committee pallet moved to
 	//     storage version 2 (BABE and BEEFY keys added to the session keys, queued
-	//     committee initialised) and the BEEFY genesis was reset to `None` (SCALE `0x00`
-	//     under a `ValueQuery`), which keeps BEEFY disabled until governance re-enables it.
+	//     committee initialised) and on to 3 (committees record their Cardano epoch), and
+	//     the BEEFY genesis was reset to `None` (SCALE `0x00` under a `ValueQuery`), which
+	//     keeps BEEFY disabled until governance re-enables it.
 	assert_eq!(
 		storage_at(&rpc, b"SessionCommitteeManagement", b":__STORAGE_VERSION__:", &pre_fork_hash)
 			.await,
@@ -449,15 +450,15 @@ async fn hardfork_single_tx() {
 	assert_eq!(
 		storage_at(&rpc, b"SessionCommitteeManagement", b":__STORAGE_VERSION__:", &applied_hash)
 			.await,
-		Some(storage_version(2)),
-		"the committee/session-key migration must have run in the boundary block #{applied}",
+		Some(storage_version(3)),
+		"the committee/session-key and Cardano epoch migrations must have run in the boundary block #{applied}",
 	);
 	assert_eq!(
 		storage_at(&rpc, b"Beefy", b"GenesisBlock", &applied_hash).await,
 		Some(vec![0]),
 		"the BEEFY genesis must be reset to None in the boundary block #{applied}",
 	);
-	eprintln!("[hardfork_e2e] committee storage v1 -> v2 and BEEFY genesis reset at #{applied}");
+	eprintln!("[hardfork_e2e] committee storage v1 -> v3 and BEEFY genesis reset at #{applied}");
 
 	// 5c. The whole fork boundary must stay readable.
 	assert_ledger_state_readable(&rpc, applied - 1, "pre-fork").await;

@@ -23,6 +23,8 @@
 /// [`pallet_session`] integration.
 pub mod pallet_session_support;
 
+pub mod migrations;
+
 pub use pallet::*;
 
 #[cfg(test)]
@@ -49,14 +51,14 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use log::{info, warn};
 	use sidechain_domain::byte_string::SizedByteString;
-	use sidechain_domain::{MainchainAddress, PolicyId};
+	use sidechain_domain::{MainchainAddress, McEpochNumber, PolicyId};
 	use sp_crypto_hashing::blake2_256;
 	use sp_runtime::traits::{MaybeSerializeDeserialize, One, Zero};
 	use sp_session_validator_management::*;
 	use sp_std::fmt::Display;
 	use sp_std::{ops::Add, vec::Vec};
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(3);
 
 	#[pallet::pallet]
 	#[pallet::storage_version(STORAGE_VERSION)]
@@ -134,6 +136,11 @@ pub mod pallet {
 		pub epoch: ScEpochNumber,
 		/// List of committee members.
 		pub committee: BoundedVec<CommitteeMember, MaxValidators>,
+		/// Cardano epoch `E` whose stake snapshot selected the members, built from the data of
+		/// `E − 2`; a block of this committee belongs to `E`. [None] only for the genesis committee
+		/// and committees stored before storage version 3. A kept committee keeps its members'
+		/// epoch; one without takes the epoch of the selection that kept it.
+		pub mc_epoch: Option<McEpochNumber>,
 	}
 
 	impl<ScEpochNumber: Clone, CommitteeMember: Clone, MaxValidators>
@@ -152,7 +159,7 @@ pub mod pallet {
 		ScEpochNumber: Clone + Zero,
 	{
 		fn default() -> Self {
-			Self { epoch: ScEpochNumber::zero(), committee: BoundedVec::new() }
+			Self { epoch: ScEpochNumber::zero(), committee: BoundedVec::new(), mc_epoch: None }
 		}
 	}
 
@@ -222,8 +229,11 @@ pub mod pallet {
 		fn build(&self) {
 			let initial_authorities = BoundedVec::truncate_from(self.initial_authorities.clone());
 			provide_committee_accounts::<T>(&initial_authorities);
-			let committee_info =
-				CommitteeInfo { epoch: T::ScEpochNumber::zero(), committee: initial_authorities };
+			let committee_info = CommitteeInfo {
+				epoch: T::ScEpochNumber::zero(),
+				committee: initial_authorities,
+				mc_epoch: None,
+			};
 			CurrentCommittee::<T>::put(committee_info.clone());
 			// The genesis committee is both the active and the queued validator set of the
 			// session machinery until the first rotation.
@@ -269,48 +279,70 @@ pub mod pallet {
 				None
 			} else {
 				let for_epoch_number = QueuedCommittee::<T>::get().epoch + One::one();
-				let (authority_selection_inputs, selection_inputs_hash) =
-					Self::inherent_data_to_authority_selection_inputs(data);
+				let (authority_selection_inputs, selection_inputs_hash, provided_mc_epoch) =
+					Self::inherent_data_to_authority_selection_inputs(data).expect(
+					"Committee selection inherent data must be SelectionInherentData: the node predates runtime API version 3",
+				);
 				if let Some(validators) =
 					Self::select_non_empty_authorities(authority_selection_inputs, for_epoch_number)
 				{
-					Some(Call::set { validators, for_epoch_number, selection_inputs_hash })
+					Some(Call::set {
+						validators,
+						for_epoch_number,
+						selection_inputs_hash,
+						mc_epoch: provided_mc_epoch,
+					})
 				} else {
 					let queued_committee = QueuedCommittee::<T>::get();
 					let queued_committee_epoch = queued_committee.epoch;
 					warn!(
 						"Committee for epoch {for_epoch_number} is the same as for epoch {queued_committee_epoch}"
 					);
+					let mc_epoch =
+						Self::kept_committee_mc_epoch(&queued_committee, provided_mc_epoch);
 					let validators = queued_committee.committee;
-					Some(Call::set { validators, for_epoch_number, selection_inputs_hash })
+					Some(Call::set {
+						validators,
+						for_epoch_number,
+						selection_inputs_hash,
+						mc_epoch,
+					})
 				}
 			}
 		}
 
 		// TODO make this call run by every full node, so it can be relied upon for ensuring that the block is correct
 		fn check_inherent(call: &Self::Call, data: &InherentData) -> Result<(), Self::Error> {
-			let (validators_param, for_epoch_number_param, call_selection_inputs_hash) = match call
-			{
-				Call::set { validators, for_epoch_number, selection_inputs_hash } => {
-					(validators, for_epoch_number, selection_inputs_hash)
+			let (
+				validators_param,
+				for_epoch_number_param,
+				call_selection_inputs_hash,
+				call_mc_epoch,
+			) = match call {
+				Call::set { validators, for_epoch_number, selection_inputs_hash, mc_epoch } => {
+					(validators, for_epoch_number, selection_inputs_hash, mc_epoch)
 				},
 				_ => return Ok(()),
 			};
 
-			let (authority_selection_inputs, computed_selection_inputs_hash) =
-				Self::inherent_data_to_authority_selection_inputs(data);
-			let validators = Self::select_non_empty_authorities(
+			let (authority_selection_inputs, computed_selection_inputs_hash, provided_mc_epoch) =
+				Self::inherent_data_to_authority_selection_inputs(data)?;
+			let (validators, expected_mc_epoch) = match Self::select_non_empty_authorities(
 				authority_selection_inputs,
 				*for_epoch_number_param,
-			)
-			.unwrap_or_else(|| {
-				// Proposed block should keep the same committee if calculation of new one was impossible.
-				// This is code is executed before the committee rotation, so the NextCommittee should be used.
-				let committee_info = NextCommittee::<T>::get()
-					// Needed only for verification of the block no 1, before any `set` call is executed.
-					.unwrap_or_else(QueuedCommittee::<T>::get);
-				committee_info.committee
-			});
+			) {
+				Some(validators) => (validators, provided_mc_epoch),
+				None => {
+					// Proposed block should keep the same committee if calculation of new one was impossible.
+					// This is code is executed before the committee rotation, so the NextCommittee should be used.
+					let committee_info = NextCommittee::<T>::get()
+						// Needed only for verification of the block no 1, before any `set` call is executed.
+						.unwrap_or_else(QueuedCommittee::<T>::get);
+					let mc_epoch =
+						Self::kept_committee_mc_epoch(&committee_info, provided_mc_epoch);
+					(committee_info.committee, mc_epoch)
+				},
+			};
 
 			if *validators_param != validators {
 				if *call_selection_inputs_hash == computed_selection_inputs_hash {
@@ -323,6 +355,10 @@ pub mod pallet {
 						call_selection_inputs_hash.clone(),
 					));
 				}
+			}
+
+			if *call_mc_epoch != expected_mc_epoch {
+				return Err(InherentError::InvalidMcEpoch(*call_mc_epoch, expected_mc_epoch));
 			}
 
 			Ok(())
@@ -348,6 +384,8 @@ pub mod pallet {
 		/// Alternative approach would be to put epoch number inside InherentData. However, sidechain
 		/// epoch number is set in Runtime, thus, inherent data provider doesn't have to know about it.
 		/// On top of that, the latter approach is slightly more complicated to code.
+		///
+		/// `mc_epoch` is the Cardano epoch whose stake snapshot selected `validators`.
 		#[pallet::call_index(0)]
 		#[pallet::weight((
 		T::WeightInfo::set(validators.len() as u32),
@@ -358,6 +396,7 @@ pub mod pallet {
 			validators: BoundedVec<T::CommitteeMember, T::MaxValidators>,
 			for_epoch_number: T::ScEpochNumber,
 			selection_inputs_hash: SizedByteString<32>,
+			mc_epoch: McEpochNumber,
 		) -> DispatchResult {
 			ensure_none(origin)?;
 			let expected_epoch_number = QueuedCommittee::<T>::get().epoch + One::one();
@@ -373,6 +412,7 @@ pub mod pallet {
 			NextCommittee::<T>::put(CommitteeInfo {
 				epoch: for_epoch_number,
 				committee: validators,
+				mc_epoch: Some(mc_epoch),
 			});
 			Ok(())
 		}
@@ -439,16 +479,30 @@ pub mod pallet {
 			))
 		}
 
+		/// A kept committee keeps the Cardano epoch of its members. One stored before storage
+		/// version 3 has none, and takes the one provided for this selection instead.
+		fn kept_committee_mc_epoch(
+			kept: &CommitteeInfo<T::ScEpochNumber, T::CommitteeMember, T::MaxValidators>,
+			provided: McEpochNumber,
+		) -> McEpochNumber {
+			kept.mc_epoch.unwrap_or(provided)
+		}
+
+		/// Decodes the inherent data, the [SelectionInherentData] of runtime API version 3. The
+		/// selection inputs hash covers the inputs alone, as before version 3.
 		fn inherent_data_to_authority_selection_inputs(
 			data: &InherentData,
-		) -> (T::AuthoritySelectionInputs, SizedByteString<32>) {
-			let decoded_data = data
-				.get_data::<T::AuthoritySelectionInputs>(&INHERENT_IDENTIFIER)
-				.expect("Validator inherent data not correctly encoded")
+		) -> Result<(T::AuthoritySelectionInputs, SizedByteString<32>, McEpochNumber), InherentError>
+		{
+			let SelectionInherentData { inputs, mc_epoch } = data
+				.get_data::<SelectionInherentData<T::AuthoritySelectionInputs>>(
+					&INHERENT_IDENTIFIER,
+				)
+				.map_err(|_| InherentError::UndecodableSelectionInherentData)?
 				.expect("Validator inherent data must be provided");
-			let data_hash = SizedByteString(blake2_256(&decoded_data.encode()));
+			let data_hash = SizedByteString(blake2_256(&inputs.encode()));
 
-			(decoded_data, data_hash)
+			Ok((inputs, data_hash, mc_epoch))
 		}
 
 		/// Calculates committee using configured `select_authorities` function

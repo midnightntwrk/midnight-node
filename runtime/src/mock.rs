@@ -407,6 +407,9 @@ pub fn for_next_n_blocks_after_finalizing(n: u32, f: &dyn Fn()) {
 	}
 }
 
+/// Cardano epoch that [create_inherent_data_struct] selects for
+pub const MOCK_MC_EPOCH: sidechain_domain::McEpochNumber = sidechain_domain::McEpochNumber(1);
+
 pub fn create_inherent_data_struct(
 	expected_authorities: &[TestKeys],
 ) -> AriadneInherentDataProvider {
@@ -465,6 +468,7 @@ pub fn create_inherent_data_struct(
 			registered_candidates: candidates,
 			epoch_nonce: EpochNonce(DUMMY_EPOCH_NONCE.to_vec()),
 		}),
+		format: authority_selection_inherents::InherentDataFormat::WithMcEpoch(MOCK_MC_EPOCH),
 	}
 }
 

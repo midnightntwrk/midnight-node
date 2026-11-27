@@ -197,12 +197,14 @@ mod tests {
 			QueuedCommittee::<Test>::put(CommitteeInfo {
 				epoch: queued_committee_epoch,
 				committee: queued_committee,
+				mc_epoch: None,
 			});
 			CurrentEpoch::<Test>::set(queued_committee_epoch + 2);
 			assert!(!Manager::should_end_session(IRRELEVANT));
 			NextCommittee::<Test>::put(CommitteeInfo {
 				epoch: next_committee_epoch,
 				committee: next_committee,
+				mc_epoch: None,
 			});
 			assert!(Manager::should_end_session(IRRELEVANT));
 		});

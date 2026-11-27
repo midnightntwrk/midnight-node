@@ -405,6 +405,9 @@ impl frame_system::Config for Runtime {
 		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
 		// `on_initialize` sees the first BABE pre-digest).
 		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
+		// Adds the Cardano epoch that selected each committee (v2 -> v3); stored committees get
+		// none.
+		pallet_session_validator_management::migrations::v3::MigrateV2ToV3<Runtime>,
 		// Resets the BEEFY genesis block to `None`, disabling BEEFY: the voters have been stuck
 		// on the unsigned mandatory block 1 since launch, and the session-key migration above
 		// does not unstick it. Governance re-enables BEEFY later with `set_new_genesis`, once a

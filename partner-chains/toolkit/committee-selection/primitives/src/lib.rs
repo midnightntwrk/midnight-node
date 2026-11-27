@@ -6,12 +6,26 @@
 use core::str::FromStr;
 
 use scale_info::TypeInfo;
-use sidechain_domain::{MainchainAddress, PolicyId, byte_string::SizedByteString};
+use sidechain_domain::{MainchainAddress, McEpochNumber, PolicyId, byte_string::SizedByteString};
 use sp_core::{Decode, Encode, MaxEncodedLen};
 use sp_inherents::{InherentIdentifier, IsFatalError};
 
 /// Inherent identifier used by the Committee Selection pallet
 pub const INHERENT_IDENTIFIER: InherentIdentifier = *b"/ariadne";
+
+/// First [SessionValidatorManagementApi] version whose runtime takes [INHERENT_IDENTIFIER] data
+/// as [SelectionInherentData]. Older runtimes take the selection inputs alone.
+pub const MC_EPOCH_API_VERSION: u32 = 3;
+
+/// [INHERENT_IDENTIFIER] data of a runtime at [MC_EPOCH_API_VERSION] or later
+#[derive(Clone, Debug, Encode, Decode, PartialEq, Eq)]
+pub struct SelectionInherentData<AuthoritySelectionInputs> {
+	/// Inputs of the committee selection
+	pub inputs: AuthoritySelectionInputs,
+	/// Cardano epoch `E` the committee is selected for: the one holding the first slot of its
+	/// Midnight epoch, whose stake snapshot (built from the data of `E − 2`) the inputs carry
+	pub mc_epoch: McEpochNumber,
+}
 
 #[derive(Debug, Encode, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(Decode, thiserror::Error))]
@@ -47,6 +61,20 @@ pub enum InherentError {
 	)]
 	/// The validators and input data hash in the block do not match the calculated values.
 	InvalidValidatorsHashMismatch(SizedByteString<32>, SizedByteString<32>),
+	#[cfg_attr(
+		feature = "std",
+		error("The committee in the block points to Cardano epoch {0}, expected {1}")
+	)]
+	/// The Cardano epoch the committee in the block points to differs from the computed one.
+	InvalidMcEpoch(McEpochNumber, McEpochNumber),
+	#[cfg_attr(
+		feature = "std",
+		error(
+			"The committee selection inherent data is not SelectionInherentData: the node predates runtime API version 3"
+		)
+	)]
+	/// The inherent data does not decode as [SelectionInherentData].
+	UndecodableSelectionInherentData,
 }
 
 impl IsFatalError for InherentError {
@@ -128,7 +156,8 @@ impl MainChainScripts {
 }
 
 sp_api::decl_runtime_apis! {
-	#[api_version(2)]
+	/// Version 3: [INHERENT_IDENTIFIER] data is [SelectionInherentData].
+	#[api_version(3)]
 	/// Runtime API declaration for Session Validator Management
 	pub trait SessionValidatorManagementApi<
 		CommitteeMember: parity_scale_codec::Decode + parity_scale_codec::Encode + crate::CommitteeMember,
