@@ -25,7 +25,8 @@ use sp_runtime::{
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
 
-type Block = frame_system::mocking::MockBlock<Test>;
+// A signature type so extrinsics are `Checkable`, for tests that run blocks through `Executive`.
+type Block = frame_system::mocking::MockBlock<Test, sp_runtime::testing::TestSignature>;
 
 // Configure a mock runtime to test the pallet.
 frame_support::construct_runtime!(

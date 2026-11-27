@@ -1214,6 +1214,25 @@ test:
     # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
     # SAVE ARTIFACT --if-exists ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
 
+# The slow retention property tests, for a nightly run. Excludes the known-leak test, which fails.
+test-retention-nightly:
+    FROM +prep
+    ARG TARGETARCH
+    ARG PROPTEST_CASES=1000
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
+
+    # Same flags as +test, which explains them.
+    ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
+    RUN --secret NODE_GIT_TOKEN MIDNIGHT_LEDGER_EXPERIMENTAL=1 PROPTEST_CASES=$PROPTEST_CASES \
+        with-git-creds cargo nextest r --profile ci --release --locked \
+        --package pallet-midnight-system --lib --run-ignored only \
+        -E 'test(retention_suite) & not test(flush_while_another_execution_holds)'
+
 # Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
 # These tests do NOT require toolkit-js
 test-pallet-fixtures:

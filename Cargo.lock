@@ -11114,17 +11114,22 @@ dependencies = [
 name = "pallet-midnight-system"
 version = "0.1.0"
 dependencies = [
+ "frame-executive",
  "frame-support",
  "frame-system",
+ "midnight-ledger-unsafe-helpers",
  "midnight-node-ledger",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-primitives",
+ "midnight-primitives-ledger",
  "pallet-midnight",
  "pallet-timestamp",
  "parity-scale-codec",
+ "proptest",
  "scale-info",
  "sp-core",
+ "sp-externalities",
  "sp-io",
  "sp-runtime",
  "tempfile",

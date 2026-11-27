@@ -32,6 +32,9 @@ mod utils;
 #[cfg(feature = "std")]
 pub mod ephemeral;
 
+#[cfg(all(feature = "std", feature = "suite-storage"))]
+pub mod suite_storage;
+
 pub mod host_api;
 
 pub mod ledger_8;
