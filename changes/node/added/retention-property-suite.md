@@ -21,5 +21,5 @@ through `earthly +test-retention-nightly`. An ignored test,
 `flush_while_another_execution_holds`, reproduces a known leak: a block's flush writes
 another block's held states to disk with no root.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2531
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2530
