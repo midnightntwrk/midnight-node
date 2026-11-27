@@ -36,8 +36,9 @@ engine produces blocks.
 
 ### 0.1 Generate, load, and submit BABE keys — every validator
 
-This can and should be executed even before Midnight release that contains
-migration code.
+Generate and submit the keys (steps 1 and 3) before the migration-aware
+release: the list needs 2 Cardano epochs to become active (0.3). Loading
+(step 2) depends on the binary — see the table under step 2.
 
 1. **Generate a fresh, unique sr25519 key pair.** Never reuse any existing
    key, including the validator's AURA key.
@@ -51,6 +52,17 @@ migration code.
 Either way, the next validator startup logs every BABE key the keystore
 actually holds (see Verify below) — a single check that covers both insertion
 paths.
+
+| Binary | `BABE_SEED_FILE` | `key insert` | Verify below |
+| --- | --- | --- | --- |
+| Pre-migration (2.1.x; checked on 2.1.101) | Ignored, no error: nothing is loaded | Writes the key to the keystore | Not available |
+| Migration-aware (v3) | Loaded at startup | Writes the key to the keystore | Available |
+
+So with `BABE_SEED_FILE` the key is loaded only when the validator first
+starts on the migration-aware binary (1.2): mount the seed in the same
+change that rolls out that binary, or earlier (it does nothing on 2.1.x). Either
+way, the Verify checks below can pass only on the migration-aware binary;
+run them at 1.2.
 
 Do **not** use the `author_insertKey` RPC — unsafe-classified; a
 production validator must never expose unsafe RPC methods.
@@ -124,6 +136,8 @@ before epoch N ends replaces it, so run the check above again once N+2 starts.
 
 1. Upgrade **all** nodes: validators, full, RPC, archive, boot nodes.
 2. Confirm each node starts and syncs.
+3. On every validator, run the 0.1 Verify checks: a key loaded with
+   `BABE_SEED_FILE` reaches the keystore only now.
 
 **Verify:**
 
