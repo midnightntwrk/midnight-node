@@ -42,6 +42,12 @@ fn get_motion_hash(call: &RuntimeCall) -> H256 {
 	<Test as frame_system::Config>::Hashing::hash_of(call)
 }
 
+/// Collective proposals are keyed by `(call, threshold)`, unlike federated motions. Both
+/// collective instances hash the same way.
+fn get_proposal_hash(call: &RuntimeCall, threshold: u32) -> H256 {
+	pallet_collective::Pallet::<Test, pallet_collective::Instance1>::proposal_hash(call, threshold)
+}
+
 fn council_origin() -> RuntimeOrigin {
 	pallet_collective::RawOrigin::<u64, pallet_collective::Instance1>::Members(2, 3).into()
 }
@@ -78,7 +84,7 @@ fn motion_approve_creates_new_motion() {
 		assert_ok!(propose_call.dispatch(RuntimeOrigin::signed(1)));
 
 		// Get the proposal hash and index
-		let proposal_hash = get_motion_hash(&fed_auth_call);
+		let proposal_hash = get_proposal_hash(&fed_auth_call, 2);
 		let proposals = Proposals::<Test, pallet_collective::Instance1>::get();
 		let proposal_index = proposals.iter().position(|h| *h == proposal_hash).unwrap() as u32;
 
@@ -770,7 +776,7 @@ fn complete_collective_to_federated_flow() {
 			.dispatch(RuntimeOrigin::signed(1))
 		);
 
-		let council_proposal_hash = get_motion_hash(&council_fed_call);
+		let council_proposal_hash = get_proposal_hash(&council_fed_call, 2);
 		let council_proposals = Proposals::<Test, pallet_collective::Instance1>::get();
 		let council_proposal_index =
 			council_proposals.iter().position(|h| *h == council_proposal_hash).unwrap() as u32;
@@ -825,7 +831,7 @@ fn complete_collective_to_federated_flow() {
 			.dispatch(RuntimeOrigin::signed(4))
 		);
 
-		let tech_proposal_hash = get_motion_hash(&tech_fed_call);
+		let tech_proposal_hash = get_proposal_hash(&tech_fed_call, 2);
 		let tech_proposals = Proposals::<Test, pallet_collective::Instance2>::get();
 		let tech_proposal_index =
 			tech_proposals.iter().position(|h| *h == tech_proposal_hash).unwrap() as u32;
